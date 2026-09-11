@@ -1155,12 +1155,14 @@ describe("through dispatch", () => {
   });
 
   test("lets no rendered human text reach stdout in a machine format", async () => {
-    // #19 owns these arms. Until then they must not leak this renderer's text
-    // into a stream a parser is reading.
     for (const format of ["json", "jsonl"]) {
       const { out } = await run(["--format", format, "doctor"]);
       expect(out).not.toContain("Falryn diagnostics");
-      expect(() => JSON.parse(out.trim())).not.toThrow();
+      const records = format === "jsonl" ? out.trim().split("\n") : [out.trim()];
+      expect(records.length).toBeGreaterThan(0);
+      for (const record of records) expect(() => JSON.parse(record)).not.toThrow();
+      const result = JSON.parse(records.at(-1) ?? "null");
+      expect(result.payload.sandbox.requestedMode).toBe("off");
     }
   });
 });

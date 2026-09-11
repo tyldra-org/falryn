@@ -24,6 +24,11 @@ import {
 import { createHostCommandRunner } from "./host-commands.ts";
 
 const runner = createHostCommandRunner();
+const OFF_SANDBOX = expect.objectContaining({
+  effectiveMode: "off",
+  state: "terminated",
+  environment: "explicit",
+});
 
 const ECHO = "/bin/echo";
 const ENV = "/usr/bin/env";
@@ -98,7 +103,12 @@ describe("running a command", () => {
   test("delivers bounded input through stdin instead of argv or environment", async () => {
     const input = new TextEncoder().encode("protected input\n");
     const outcome = await runner.run(request({ executable: CAT, stdinBytes: input }));
-    expect(outcome).toEqual({ kind: "exited", exitCode: 0, stdout: "protected input\n" });
+    expect(outcome).toEqual({
+      sandbox: OFF_SANDBOX,
+      kind: "exited",
+      exitCode: 0,
+      stdout: "protected input\n",
+    });
   });
 
   test("runs an intentional Bash script through the selected interpreter", async () => {
@@ -109,7 +119,12 @@ describe("running a command", () => {
       }),
     );
 
-    expect(outcome).toEqual({ kind: "exited", exitCode: 0, stdout: "bash value\n" });
+    expect(outcome).toEqual({
+      sandbox: OFF_SANDBOX,
+      kind: "exited",
+      exitCode: 0,
+      stdout: "bash value\n",
+    });
   });
 
   test("passes the requested working directory to either execution mode", async () => {
@@ -198,7 +213,7 @@ describe("the output bound", () => {
     );
     const elapsedMs = (Bun.nanoseconds() - started) / 1_000_000;
 
-    expect(outcome).toEqual({ kind: "output-exceeded", maxOutputBytes: 256 });
+    expect(outcome).toEqual({ sandbox: OFF_SANDBOX, kind: "output-exceeded", maxOutputBytes: 256 });
     // The point of the fix this asserts: the child is killed when the bound is
     // reached, not left blocked on a full pipe until its deadline expires. A
     // deadline-shaped answer would tell the caller the command was slow when it
@@ -231,6 +246,7 @@ describe("the output bound", () => {
       }),
     );
     expect(outcome).toEqual({
+      sandbox: OFF_SANDBOX,
       kind: "output-exceeded",
       maxOutputBytes: MAX_COMMAND_OUTPUT_BYTES,
     });
@@ -243,7 +259,7 @@ describe("the deadline", () => {
     const outcome = await runner.run(request({ executable: SLEEP, argv: ["30"], timeoutMs: 250 }));
     const elapsedMs = (Bun.nanoseconds() - started) / 1_000_000;
 
-    expect(outcome).toEqual({ kind: "timed-out", timeoutMs: duration(250) });
+    expect(outcome).toEqual({ sandbox: OFF_SANDBOX, kind: "timed-out", timeoutMs: duration(250) });
     // Killed near the deadline rather than run to completion.
     expect(elapsedMs).toBeLessThan(10_000);
   });
@@ -258,7 +274,7 @@ describe("the deadline", () => {
     );
     const elapsedMs = (Bun.nanoseconds() - started) / 1_000_000;
 
-    expect(outcome).toEqual({ kind: "timed-out", timeoutMs: duration(400) });
+    expect(outcome).toEqual({ sandbox: OFF_SANDBOX, kind: "timed-out", timeoutMs: duration(400) });
     expect(elapsedMs).toBeLessThan(10_000);
   });
 
@@ -299,7 +315,7 @@ describe("cancellation", () => {
 
     // Cancelled, not timed out: the two are different facts and the deadline
     // here is long enough that confusing them would be visible.
-    expect(outcome).toEqual({ kind: "cancelled" });
+    expect(outcome).toEqual({ kind: "cancelled", sandbox: OFF_SANDBOX });
     expect(elapsedMs).toBeLessThan(10_000);
   });
 });
@@ -338,7 +354,7 @@ describe("stderr never crosses the boundary", () => {
     expect(outcome.stdout).toBe("");
     // There is no field it could have arrived in, and none appears.
     expect(JSON.stringify(outcome)).not.toContain("sk-live");
-    expect(Object.keys(outcome).sort()).toEqual(["exitCode", "kind", "stdout"]);
+    expect(Object.keys(outcome).sort()).toEqual(["exitCode", "kind", "sandbox", "stdout"]);
   });
 
   test("a command whose stderr is larger than any bound still completes", async () => {

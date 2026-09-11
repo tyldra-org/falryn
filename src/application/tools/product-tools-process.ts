@@ -1,3 +1,4 @@
+import { sandboxExpansionSchema } from "../../domain/security/sandbox.ts";
 /**
  * Product process tools (#712, #796): shell, process capture, and recoverable output.
  *
@@ -68,6 +69,7 @@ const runProcessInput = z
     cwd: z.string().min(1).optional(),
     timeoutMs: z.number().int().positive().optional(),
     execution: processTaskExecutionSchema.optional(),
+    sandboxExpansion: sandboxExpansionSchema.optional(),
     origin: z.enum(["shell", "git", "test", "search", "process"]).optional(),
     environment: z.record(z.string(), z.string()).optional(),
     stdinScratch: z
@@ -85,6 +87,7 @@ const runShellInput = z
     cwd: z.string().min(1).optional(),
     timeoutMs: z.number().int().positive().optional(),
     execution: processTaskExecutionSchema.optional(),
+    sandboxExpansion: sandboxExpansionSchema.optional(),
     environment: z.record(z.string(), z.string()).optional(),
     outputMode: z.enum(PRODUCT_PROCESS_OUTPUT_MODES).default("hush"),
   })
@@ -380,7 +383,20 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
         },
         outputMode,
       );
-      if (!observed.ok) return { capture: null, outcome: failed(errorCode(observed.error)) };
+      if (!observed.ok) {
+        if ("sandbox" in observed.error && observed.error.sandbox?.state === "refused") {
+          request.processTask?.reportTermination?.(true);
+          return {
+            capture: null,
+            outcome: {
+              status: "unavailable",
+              effect: "none",
+              reason: observed.error.sandbox.reason ?? "sandbox-unavailable",
+            } as const,
+          };
+        }
+        return { capture: null, outcome: failed(errorCode(observed.error)) };
+      }
       if (ownership === undefined) {
         const capture = observed.value.capture;
         // Capture owns process liveness. A later output-retention failure must not

@@ -1,3 +1,5 @@
+import { runTaskCommitPlan } from "./commands/task-commit-plan-commands.ts";
+import { createProductSandbox } from "./runtime/sandbox-configuration.ts";
 /**
  * One invocation, start to finish.
  *
@@ -417,12 +419,21 @@ async function launchShell(
           fileSystem: graph.fileSystem,
           workspace: graph.workspaceRoot,
         });
+        const workspaceSandbox = createProductSandbox({
+          configuration: () => graph.loader.current(),
+          values: () => graph.loader.current()?.values ?? configuration,
+          generation: () => Number(graph.loader.current()?.generation ?? configurationGeneration),
+          now: () => Number(graph.clock.now()),
+          workspaceRoot: graph.workspaceRoot,
+        });
         const gitExecutable = Bun.which("git");
         const gitDashboard =
           gitExecutable === null || graph.workspaceRoot === null
             ? undefined
             : createGitDashboard({
-                git: createHostGitPort({ capture: createHostProcessCapturePort() }),
+                git: createHostGitPort({
+                  capture: createHostProcessCapturePort({ sandbox: workspaceSandbox }),
+                }),
                 gitExecutable,
                 startPath: graph.workspaceRoot,
               });
@@ -505,6 +516,8 @@ async function launchShell(
         try {
           if (productArtifactSession !== null) {
             productAttachments = await composeProductShellAttachments({
+              configurationValues: () => graph.loader.current()?.values ?? configuration,
+              sandboxConfiguration: () => graph.loader.current(),
               async resolveAgentProvider(profileId, signal) {
                 const resolved = await providerConnections.resolveProfile(profileId, signal);
                 return resolved.kind === "ready"
@@ -584,6 +597,7 @@ async function launchShell(
           scopes: governance.scopes,
           ...(fileProbe === null ? {} : { fileProbe }),
           ...(gitDashboard === undefined ? {} : { gitDashboard }),
+          taskCommitPlan: (args) => runTaskCommitPlan(args, stopped.signal, workspaceSandbox),
           ...(workspaceController === undefined ? {} : { workspaceController }),
           ...(workspace === undefined ? {} : { workspace }),
           ...(sessionNavigationBundle === undefined

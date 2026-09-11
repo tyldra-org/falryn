@@ -14,6 +14,7 @@ import type { DurationMs, Instant } from "../foundation/clock.ts";
 import { elapsedBetween } from "../foundation/clock.ts";
 import type { InvocationId, ProcessCaptureId } from "../foundation/identity.ts";
 import { assertNever, err, type Result } from "../foundation/result.ts";
+import type { SandboxReceipt } from "../security/sandbox.ts";
 import {
   type CommandRequest,
   isAbsoluteCommandPath,
@@ -154,6 +155,7 @@ export type ProcessCaptureEvent =
     });
 
 export type ProcessCaptureReport = {
+  readonly sandbox?: SandboxReceipt;
   readonly captureId: ProcessCaptureId;
   readonly pid: number | null;
   readonly startedAt: Instant;
@@ -184,7 +186,7 @@ export type ProcessCaptureValidationCode =
   | "invalid-queue-limit"
   | "invalid-artifact-limit";
 
-export type ProcessCaptureError =
+export type ProcessCaptureError = { readonly sandbox?: SandboxReceipt } & (
   | {
       readonly kind: "process-capture";
       readonly code: "invalid-request";
@@ -198,7 +200,8 @@ export type ProcessCaptureError =
   | {
       readonly kind: "process-capture";
       readonly code: "invalid-capture-id" | "ownership-unavailable";
-    };
+    }
+);
 
 export type ProcessCaptureListener = (event: ProcessCaptureEvent) => void | Promise<void>;
 

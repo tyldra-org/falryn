@@ -1,5 +1,10 @@
 import { compositionProvenanceSchema } from "../capabilities/composition.ts";
 import { workflowReceiptSchema } from "../orchestration/workflow-state.ts";
+import {
+  MAX_SANDBOX_LAUNCHES,
+  MAX_SANDBOX_RECEIPT_BYTES,
+  sandboxReceiptSchema,
+} from "../security/sandbox.ts";
 /**
  * The JSON representation of a runtime event, and its Zod 4 schema.
  *
@@ -341,6 +346,14 @@ const capabilityInvocationCompletedPayloadSchema: z.ZodType<CapabilityInvocation
   z.object({
     outcome: terminalOutcomeSchema,
     admission: resourceAdmissionReceiptSchema.optional(),
+    sandbox: z
+      .array(sandboxReceiptSchema)
+      .max(MAX_SANDBOX_LAUNCHES + 1)
+      .refine(
+        (value) =>
+          new TextEncoder().encode(JSON.stringify(value)).byteLength <= MAX_SANDBOX_RECEIPT_BYTES,
+      )
+      .optional(),
     composition: compositionProvenanceSchema.optional(),
     observedStatus: z
       .enum([
@@ -580,6 +593,7 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
           : { composition: event.payload.composition }),
         outcome: outcomeToJson(event.payload.outcome),
         ...(event.payload.admission === undefined ? {} : { admission: event.payload.admission }),
+        ...(event.payload.sandbox === undefined ? {} : { sandbox: event.payload.sandbox }),
         ...(event.payload.observedStatus === undefined
           ? {}
           : { observedStatus: event.payload.observedStatus }),

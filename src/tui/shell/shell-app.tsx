@@ -1,3 +1,4 @@
+import type { TaskCommitPlanRunner } from "../../cli/commands/task-commit-plan-commands.ts";
 /**
  * The interactive root.
  *
@@ -150,6 +151,7 @@ export type ShellAppProps = {
   readonly artifactViewer?: ArtifactViewer;
   /** Git changes dashboard. Absent in static frames and tests that do not need it. */
   readonly gitDashboard?: GitDashboard;
+  readonly taskCommitPlan?: TaskCommitPlanRunner;
   /** Application-backed workspace-set mutations (#607). */
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
@@ -392,6 +394,7 @@ function ResolvedShell(
       onCompressionSelect={props.runtime.selectCompression}
       {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
+      {...(props.taskCommitPlan === undefined ? {} : { taskCommitPlan: props.taskCommitPlan })}
       onChangesSettled={props.runtime.settleChanges}
       {...(props.workspaceController === undefined
         ? {}

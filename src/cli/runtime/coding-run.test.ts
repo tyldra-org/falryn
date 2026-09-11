@@ -2039,3 +2039,30 @@ describe("falryn run through dispatch", () => {
     expect(lines.at(-1)?.terminal).toBe(true);
   });
 });
+
+test("headless composition enforces and durably projects selected sandbox policy", async () => {
+  const { sandboxProductJourney } = await import("./sandbox-product-fixtures.ts");
+  const { createHostSandbox } = await import("../../integrations/security/host-sandbox.ts");
+  for (const mode of [
+    "off",
+    "degraded",
+    ...(createHostSandbox().probe().status === "available" ? ["strict" as const] : []),
+  ] as const) {
+    const home = await mkdtemp(join(tmpdir(), "falryn-sandbox-headless-"));
+    homes.push(home);
+    const observed = await sandboxProductJourney({ home, executable: process.execPath, mode });
+    expect(observed.receipts).toHaveLength(1);
+    expect(observed.receipts[0]).toMatchObject({
+      requestedMode: mode,
+      effectiveMode: mode === "degraded" ? null : mode,
+      policyGeneration: 0,
+    });
+    expect(observed.result.payload?.sandbox).toContain(
+      mode === "degraded" ? "Sandbox unavailable" : `Sandbox ${mode}`,
+    );
+    if (mode !== "degraded")
+      expect(observed.requests.at(-1)).toContain(
+        mode === "strict" ? "outside-denied" : "outside-allowed",
+      );
+  }
+}, 30_000);

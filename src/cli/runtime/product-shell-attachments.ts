@@ -1,3 +1,5 @@
+import type { ConfigurationValues } from "../../domain/configuration/index.ts";
+import { createProductSandbox } from "./sandbox-configuration.ts";
 /**
  * Default live-product attachments for the TUI.
  *
@@ -88,6 +90,10 @@ import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  readonly configurationValues?: () => ConfigurationValues;
+  readonly sandboxConfiguration?: () =>
+    | import("../../domain/configuration/index.ts").ConfigurationGenerationRecord
+    | null;
   readonly rehydrateExtensions?: (signal: AbortSignal) => Promise<CatalogRehydration>;
   readonly peers?: import("./product-peer-mailboxes.ts").ProductPeerMailboxes;
   readonly resolveAgentProvider?: import("../../application/runtime/delegated-agent-runtime.ts").DelegatedRuntimeOptions["resolveProvider"];
@@ -146,11 +152,22 @@ export async function composeProductShellAttachments(
       : primaryWorkspaceRoot(ports.workspaceSet).rootId,
   );
   const generation = ports.configurationGeneration;
+  const sandbox = createProductSandbox({
+    ...(ports.sandboxConfiguration === undefined
+      ? {}
+      : { configuration: ports.sandboxConfiguration }),
+    now: () => Number(ports.clock.now()),
+    values: ports.configurationValues ?? (() => ({})),
+    generation: () => Number(ports.modelConfigurationGeneration?.() ?? generation),
+    workspaceRoot:
+      ports.workspaceSet === null ? null : String(primaryWorkspaceRoot(ports.workspaceSet).path),
+  });
   const commands =
     ports.commands ??
-    createHostCommandRunner(
-      ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses },
-    );
+    createHostCommandRunner({
+      sandbox,
+      ...(ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses }),
+    });
 
   const providerAdapter = ports.provider?.kind === "ready" ? ports.provider.adapter : undefined;
   const providerProfile =
@@ -186,9 +203,10 @@ export async function composeProductShellAttachments(
     await indexLifecycle.rebuild(ports.signal);
   }
 
-  const managedServices = createHostManagedServicePort(
-    ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses },
-  );
+  const managedServices = createHostManagedServicePort({
+    sandbox,
+    ...(ports.ownedProcesses === undefined ? {} : { ownedProcesses: ports.ownedProcesses }),
+  });
   let selectedExecutionProfile: ExecutionProfileId = "agent";
   const brief = composeProductBriefControls({
     initialVerbosity: executionProfile(selectedExecutionProfile).defaultBriefVerbosity,
@@ -231,6 +249,7 @@ export async function composeProductShellAttachments(
             capture:
               ports.processCapture ??
               createHostProcessCapturePort({
+                sandbox,
                 clock: ports.clock,
                 ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
                 ...(ports.ownedProcesses === undefined
@@ -256,6 +275,7 @@ export async function composeProductShellAttachments(
             generation,
             git: createHostGitPort({
               capture: createHostProcessCapturePort({
+                sandbox,
                 clock: ports.clock,
                 ...(ports.ownedProcesses === undefined
                   ? {}
@@ -378,6 +398,7 @@ export async function composeProductShellAttachments(
             capabilityRegistry: productTools.capabilityRegistry,
             toolCatalog: productTools.catalog,
             toolRunner: productTools.runner,
+            sandbox,
           }),
     });
     if (!composed.ok) {

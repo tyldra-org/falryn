@@ -48,6 +48,11 @@ import {
 import type { GlobalOptions } from "../options.ts";
 import type { CliStreams } from "../output/streams.ts";
 import type { InvocationGovernance } from "../runtime/invocation-scope.ts";
+import {
+  loadProductConfiguration,
+  productConfigurationLoadRequest,
+} from "../runtime/product-configuration.ts";
+import { createProductSandbox } from "../runtime/sandbox-configuration.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import {
   runSessionForkOrRewind,
@@ -190,11 +195,28 @@ export async function produce(
         throw new Error("Missing parsed task progress arguments.");
       }
       return runTaskProgress(taskArgs, signal);
-    case "task.commit-plan":
+    case "task.commit-plan": {
       if (commitPlanArgs === null) {
         throw new Error("Missing parsed task commit-plan arguments.");
       }
-      return runTaskCommitPlan(commitPlanArgs, signal);
+      const graph = services();
+      const configuration = await loadProductConfiguration(
+        graph,
+        productConfigurationLoadRequest(globals),
+        signal,
+      );
+      return runTaskCommitPlan(
+        commitPlanArgs,
+        signal,
+        createProductSandbox({
+          configuration: () => graph.loader.current(),
+          values: () => graph.loader.current()?.values ?? configuration.values,
+          generation: () => Number(graph.loader.current()?.generation ?? configuration.generation),
+          now: () => Number(graph.clock.now()),
+          workspaceRoot: graph.workspaceRoot,
+        }),
+      );
+    }
     case "session.list":
       if (sessionArgs === null || sessionArgs.action !== "list") {
         throw new Error("Missing parsed session list arguments.");

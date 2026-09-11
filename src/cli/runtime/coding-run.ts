@@ -1,3 +1,5 @@
+import { sandboxSummary } from "../../domain/security/sandbox.ts";
+import { createProductSandbox } from "./sandbox-configuration.ts";
 /**
  * Headless `falryn run` coding command (#708).
  *
@@ -133,6 +135,7 @@ export type CodingRunArguments = {
 };
 
 export type CodingRunPayload = {
+  readonly sandbox?: string;
   readonly workspaceTrust?: import("../../domain/security/workspace-trust.ts").WorkspaceTrustReport;
   readonly prompt: string;
   readonly sessionId: string;
@@ -517,8 +520,17 @@ export async function runCoding(
     await indexLifecycle?.rebuild(options.signal);
     const indexFreshness = indexLifecycle?.status().freshness ?? "absent";
     const indexOwner = PRODUCT_INDEX_LIFECYCLE_OWNER;
-    const ownedProcessOptions =
-      options.ownedProcesses === undefined ? {} : { ownedProcesses: options.ownedProcesses };
+    const sandbox = createProductSandbox({
+      configuration: () => graph.loader.current(),
+      now: () => Number(graph.clock.now()),
+      values: () => graph.loader.current()?.values ?? configuration.values,
+      generation: () => Number(graph.loader.current()?.generation ?? generation),
+      workspaceRoot: String(workspaceRoot),
+    });
+    const ownedProcessOptions = {
+      sandbox,
+      ...(options.ownedProcesses === undefined ? {} : { ownedProcesses: options.ownedProcesses }),
+    };
     let providerAdapter = options.providerAdapter;
     let providerCatalog = options.providerCatalog ?? null;
     let providerUnavailableCode = providerAdapter === null ? "provider-not-attached" : null;
@@ -712,6 +724,7 @@ export async function runCoding(
         capabilityRegistry: productTools.capabilityRegistry,
         toolCatalog: productTools.catalog,
         toolRunner: productTools.runner,
+        sandbox,
         ...(options.toolConfirmation === undefined
           ? {}
           : { toolConfirmation: options.toolConfirmation }),
@@ -926,6 +939,11 @@ function codingResult(
   effect: CommandEffect = READ_ONLY_EFFECT,
   events: readonly RuntimeEvent[] = [],
 ): CodingRunResult {
+  const sandbox = sandboxSummary(
+    events.flatMap((event) =>
+      event.kind === "capability.invocation.completed" ? (event.payload.sandbox ?? []) : [],
+    ),
+  );
   return attachResultEvents(
     {
       schemaFamily: COMMAND_RESULT_SCHEMA_FAMILY,
@@ -935,7 +953,7 @@ function codingResult(
         outcome ??
         (errors.length === 0 ? { kind: "completed" } : { kind: "failed", effect: "none" }),
       effect,
-      payload,
+      payload: { ...payload, ...(sandbox === null ? {} : { sandbox }) },
       errors,
       warnings: [],
       omissions: [],

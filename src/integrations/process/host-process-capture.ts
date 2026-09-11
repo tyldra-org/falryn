@@ -9,7 +9,6 @@
  */
 
 import { createHash, randomUUID } from "node:crypto";
-
 import type { ArtifactStorePort } from "../../domain/artifacts/artifact.ts";
 import type { ClockPort } from "../../domain/foundation/clock.ts";
 import { createSystemClock } from "../../domain/foundation/clock.ts";
@@ -31,6 +30,8 @@ import {
   validateProcessCaptureRequest,
 } from "../../domain/process/index.ts";
 import { sameProcessBirth } from "../../domain/process/process-identity.ts";
+import type { SandboxPort } from "../../domain/security/sandbox.ts";
+import { createHostSandbox } from "../security/host-sandbox.ts";
 import type { OwnedProcessRegistry } from "./host-owned-process-registry.ts";
 import { createHostProcessIdentityPort } from "./host-process-identity.ts";
 import {
@@ -41,6 +42,7 @@ import {
 } from "./host-process-tree.ts";
 
 export type HostProcessCaptureOptions = {
+  readonly sandbox?: SandboxPort;
   readonly artifacts?: ArtifactStorePort;
   readonly clock?: ClockPort;
   readonly ownedProcesses?: OwnedProcessRegistry;
@@ -50,6 +52,7 @@ export function createHostProcessCapturePort(
   options: HostProcessCaptureOptions = {},
 ): ProcessCapturePort {
   const clock = options.clock ?? createSystemClock();
+  const sandbox = options.sandbox ?? createHostSandbox();
   const artifacts = options.artifacts ?? null;
   const ownedProcesses = options.ownedProcesses;
   const identities = createHostProcessIdentityPort();
@@ -72,164 +75,201 @@ export function createHostProcessCapturePort(
         return cancelledWithoutProcess(clock, artifacts, request, listener);
       }
 
-      const captureId = captureIdFor(request);
-      const controller = new AbortController();
-      let ended: ProcessCaptureStop | null = null;
-      let started = false;
-      let child: Bun.Subprocess | null = null;
-      let treeStop: Promise<{ readonly stage: ProcessKillStage }> | null = null;
-      let forceRequested = false;
-
-      const stopFor = (reason: ProcessCaptureStop, force = false): void => {
-        if (force && child !== null && typeof child.pid === "number") {
-          forceRequested = true;
-          signalOwnedTree(child.pid, "SIGKILL");
-        }
-        if (ended !== null && reason.kind === "uncertain") {
-          // A later evidence failure must survive an earlier cancellation request.
-          ended = reason;
-          return;
-        }
-        if (ended === null) {
-          ended = reason;
-          controller.abort();
-          if (child !== null && typeof child.pid === "number") {
-            treeStop = escalateOwnedTree({ pid: child.pid, exited: child.exited });
-          }
-        }
-      };
-
-      const collector = createProcessCaptureCollector({
-        captureId,
-        ...(request.invocationId === undefined ? {} : { invocationId: request.invocationId }),
-        ...(request.retainChunkEvents === undefined
-          ? {}
-          : { retainChunkEvents: request.retainChunkEvents }),
-        limits: resolveProcessCaptureLimits(request),
-        artifacts,
-        listener: async (event) => {
-          try {
-            await request.ownership?.event(event);
-          } catch {
-            stopFor({ kind: "uncertain", reason: "owner-persistence-failed" });
-          }
-          await listener?.(event);
-        },
+      const prepared = sandbox.prepare({
+        ...request,
+        argv: spawnArgv(request).slice(1),
+        channel: "capture",
       });
-
-      const timer = setTimeout(() => {
-        stopFor({ kind: "timed-out", timeoutMs: request.timeoutMs });
-      }, request.timeoutMs);
-      const onAbort = (): void => {
-        stopFor({ kind: "cancelled" });
-      };
-      request.signal?.addEventListener("abort", onAbort, { once: true });
-
-      try {
-        const spawned = Bun.spawn(spawnArgv(request), {
-          ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
-          ...ownedTreeSpawnOptions(),
-          env: request.environment,
-          stdin: "ignore",
-          stdout: "pipe",
-          stderr: "pipe",
-          signal: controller.signal,
-        });
-        child = spawned;
-        if (typeof spawned.pid === "number") {
-          ownedProcesses?.adopt(spawned.pid, spawned.exited);
-        }
-        if (ended !== null && typeof spawned.pid === "number") {
-          treeStop = escalateOwnedTree({ pid: spawned.pid, exited: spawned.exited });
-        }
-        const pid = typeof spawned.pid === "number" ? spawned.pid : 0;
-        await collector.start(pid, clock.now());
-        started = true;
-        if (request.ownership !== undefined) {
-          const birth = await identities.inspect(pid);
-          if (birth.kind !== "present")
-            stopFor({ kind: "uncertain", reason: "ownership-unavailable" });
-          else {
-            try {
-              await request.ownership.started({
-                identity: birth.identity,
-                async stop(force, authorize) {
-                  const current = await identities.inspect(pid);
-                  if (
-                    current.kind !== "present" ||
-                    !sameProcessBirth(birth.identity, current.identity)
-                  )
-                    return "unavailable";
-                  if (authorize !== undefined && !authorize()) return "unavailable";
-                  stopFor({ kind: "cancelled" }, force);
-                  return "requested";
-                },
-              });
-            } catch {
-              stopFor({ kind: "uncertain", reason: "owner-persistence-failed" });
-            }
-          }
-        }
-
-        let chain = Promise.resolve();
-        const serialize = (work: () => Promise<CapturePressure>): Promise<CapturePressure> => {
-          const next = chain.then(work, work);
-          chain = next.then(
-            () => undefined,
-            () => undefined,
-          );
-          return next;
-        };
-
-        await Promise.all([
-          readStream(spawned.stdout, "stdout", serialize, collector, stopFor),
-          readStream(spawned.stderr, "stderr", serialize, collector, stopFor),
-        ]);
-        const exitCode = await spawned.exited;
-        let cleanup = treeStop === null ? null : await treeStop;
-        if (request.ownership !== undefined) {
-          // Leader exit and closed pipes do not prove that redirected descendants stopped.
-          clearTimeout(timer);
-          request.signal?.removeEventListener("abort", onAbort);
-          const group = await settleOwnedGroupAfterLeader(pid);
-          if (group.hadMembers) {
-            ended ??= { kind: "uncertain", reason: "owned-descendants-remained" };
-            cleanup = group.cleanup;
-          }
-        }
-        return ok(
-          await collector.finish(
-            { exitCode, signal: signalText(spawned.signalCode) },
-            clock.now(),
-            ended ?? { kind: "exited" },
-            cleanup?.stage === "unconfirmed"
-              ? "unconfirmed"
-              : forceRequested
-                ? "kill"
-                : (cleanup?.stage ?? "none"),
-          ),
-        );
-      } catch (thrown) {
-        if (started && ended !== null) {
-          const cleanup = treeStop === null ? null : await treeStop;
-          return ok(
-            await collector.finish(
-              { exitCode: null, signal: null },
-              clock.now(),
-              ended,
-              forceRequested ? "kill" : (cleanup?.stage ?? "none"),
-            ),
-          );
-        }
+      if (prepared.kind === "refused")
         return err({
           kind: "process-capture",
           code: "spawn-failed",
-          detail: spawnFailureCode(thrown),
+          detail: prepared.receipt.reason ?? "sandbox-unavailable",
+          sandbox: prepared.receipt,
         });
-      } finally {
-        clearTimeout(timer);
-        request.signal?.removeEventListener("abort", onAbort);
+      const launch = prepared.launch;
+      let leaderExited = false;
+      const outcome = await (async (): Promise<
+        Result<ProcessCaptureReport, ProcessCaptureError>
+      > => {
+        const captureId = captureIdFor(request);
+        const controller = new AbortController();
+        let ended: ProcessCaptureStop | null = null;
+        let started = false;
+        let child: Bun.Subprocess | null = null;
+        let treeStop: Promise<{ readonly stage: ProcessKillStage }> | null = null;
+        let forceRequested = false;
+
+        const stopFor = (reason: ProcessCaptureStop, force = false): void => {
+          if (force && child !== null && typeof child.pid === "number") {
+            forceRequested = true;
+            signalOwnedTree(child.pid, "SIGKILL");
+          }
+          if (ended !== null && reason.kind === "uncertain") {
+            // A later evidence failure must survive an earlier cancellation request.
+            ended = reason;
+            return;
+          }
+          if (ended === null) {
+            ended = reason;
+            controller.abort();
+            if (child !== null && typeof child.pid === "number") {
+              treeStop = escalateOwnedTree({ pid: child.pid, exited: child.exited });
+            }
+          }
+        };
+
+        const collector = createProcessCaptureCollector({
+          captureId,
+          ...(request.invocationId === undefined ? {} : { invocationId: request.invocationId }),
+          ...(request.retainChunkEvents === undefined
+            ? {}
+            : { retainChunkEvents: request.retainChunkEvents }),
+          limits: resolveProcessCaptureLimits(request),
+          artifacts,
+          listener: async (event) => {
+            try {
+              await request.ownership?.event(event);
+            } catch {
+              stopFor({ kind: "uncertain", reason: "owner-persistence-failed" });
+            }
+            await listener?.(event);
+          },
+        });
+
+        const timer = setTimeout(() => {
+          stopFor({ kind: "timed-out", timeoutMs: request.timeoutMs });
+        }, request.timeoutMs);
+        const onAbort = (): void => {
+          stopFor({ kind: "cancelled" });
+        };
+        request.signal?.addEventListener("abort", onAbort, { once: true });
+
+        try {
+          const spawned = Bun.spawn([launch.executable, ...launch.argv], {
+            ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+            ...ownedTreeSpawnOptions(),
+            env: launch.environment,
+            stdin: "ignore",
+            stdout: "pipe",
+            stderr: "pipe",
+            signal: controller.signal,
+          });
+          child = spawned;
+          const observedExit = spawned.exited.then((code) => {
+            leaderExited = true;
+            return code;
+          });
+          launch.started(spawned.pid);
+          if (typeof spawned.pid === "number") {
+            ownedProcesses?.adopt(spawned.pid, spawned.exited);
+          }
+          if (ended !== null && typeof spawned.pid === "number") {
+            treeStop = escalateOwnedTree({ pid: spawned.pid, exited: spawned.exited });
+          }
+          const pid = typeof spawned.pid === "number" ? spawned.pid : 0;
+          await collector.start(pid, clock.now());
+          started = true;
+          if (request.ownership !== undefined) {
+            const birth = await identities.inspect(pid);
+            if (birth.kind !== "present")
+              stopFor({ kind: "uncertain", reason: "ownership-unavailable" });
+            else {
+              try {
+                await request.ownership.started({
+                  identity: birth.identity,
+                  async stop(force, authorize) {
+                    const current = await identities.inspect(pid);
+                    if (
+                      current.kind !== "present" ||
+                      !sameProcessBirth(birth.identity, current.identity)
+                    )
+                      return "unavailable";
+                    if (authorize !== undefined && !authorize()) return "unavailable";
+                    stopFor({ kind: "cancelled" }, force);
+                    return "requested";
+                  },
+                });
+              } catch {
+                stopFor({ kind: "uncertain", reason: "owner-persistence-failed" });
+              }
+            }
+          }
+
+          let chain = Promise.resolve();
+          const serialize = (work: () => Promise<CapturePressure>): Promise<CapturePressure> => {
+            const next = chain.then(work, work);
+            chain = next.then(
+              () => undefined,
+              () => undefined,
+            );
+            return next;
+          };
+
+          await Promise.all([
+            readStream(spawned.stdout, "stdout", serialize, collector, stopFor),
+            readStream(spawned.stderr, "stderr", serialize, collector, stopFor),
+          ]);
+          const exitCode = await observedExit;
+          let cleanup = treeStop === null ? null : await treeStop;
+          if (request.ownership !== undefined) {
+            // Leader exit and closed pipes do not prove that redirected descendants stopped.
+            clearTimeout(timer);
+            request.signal?.removeEventListener("abort", onAbort);
+            const group = await settleOwnedGroupAfterLeader(pid);
+            if (group.hadMembers) {
+              ended ??= { kind: "uncertain", reason: "owned-descendants-remained" };
+              cleanup = group.cleanup;
+            }
+          }
+          return ok(
+            await collector.finish(
+              { exitCode, signal: signalText(spawned.signalCode) },
+              clock.now(),
+              ended ?? { kind: "exited" },
+              cleanup?.stage === "unconfirmed"
+                ? "unconfirmed"
+                : forceRequested
+                  ? "kill"
+                  : (cleanup?.stage ?? "none"),
+            ),
+          );
+        } catch (thrown) {
+          if (started && ended !== null) {
+            const cleanup = treeStop === null ? null : await treeStop;
+            return ok(
+              await collector.finish(
+                { exitCode: null, signal: null },
+                clock.now(),
+                ended,
+                forceRequested ? "kill" : (cleanup?.stage ?? "none"),
+              ),
+            );
+          }
+          return err({
+            kind: "process-capture",
+            code: "spawn-failed",
+            detail: spawnFailureCode(thrown),
+          });
+        } finally {
+          clearTimeout(timer);
+          request.signal?.removeEventListener("abort", onAbort);
+          if (child === null) launch.failed();
+          else {
+            const cleanup = treeStop === null ? null : await treeStop;
+            launch.finish(leaderExited && cleanup?.stage !== "unconfirmed");
+          }
+        }
+      })();
+      if (outcome.ok) {
+        launch.finish(
+          leaderExited &&
+            outcome.value.stop.kind !== "uncertain" &&
+            outcome.value.killStage !== "unconfirmed",
+        );
+        return ok({ ...outcome.value, sandbox: launch.receipt() });
       }
+      return err({ ...outcome.error, sandbox: launch.receipt() });
     },
   };
 }

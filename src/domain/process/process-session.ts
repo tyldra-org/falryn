@@ -1,3 +1,4 @@
+import type { SandboxReceipt } from "../security/sandbox.ts";
 /**
  * Contracts for interactive PTYs and long-lived managed processes.
  *
@@ -96,6 +97,7 @@ export type PtySessionEvent =
   | (PtyEventBase & { readonly kind: "exited"; readonly exit: PtyExit });
 
 export type PtySessionSnapshot = {
+  readonly sandbox?: SandboxReceipt;
   readonly sessionId: PtySessionId;
   readonly pid: number;
   readonly state: PtySessionState;
@@ -150,7 +152,7 @@ export type PtyValidationCode =
   | "invalid-backlog"
   | "unsupported-encoding";
 
-export type PtySessionError =
+export type PtySessionError = { readonly sandbox?: SandboxReceipt } & (
   | { readonly kind: "pty"; readonly code: "invalid-request"; readonly reason: PtyValidationCode }
   | { readonly kind: "pty"; readonly code: "capacity-exceeded"; readonly maximum: number }
   | { readonly kind: "pty"; readonly code: "spawn-failed"; readonly detail: string | null }
@@ -159,7 +161,8 @@ export type PtySessionError =
   | { readonly kind: "pty"; readonly code: "not-running"; readonly state: PtySessionState }
   | { readonly kind: "pty"; readonly code: "input-too-large"; readonly maxBytes: number }
   | { readonly kind: "pty"; readonly code: "write-failed"; readonly detail: string | null }
-  | { readonly kind: "pty"; readonly code: "resize-failed"; readonly detail: string | null };
+  | { readonly kind: "pty"; readonly code: "resize-failed"; readonly detail: string | null }
+);
 
 export type PtySessionListener = (event: PtySessionEvent) => void;
 
@@ -248,6 +251,7 @@ export type ManagedServiceExit = {
 };
 
 export type ManagedServiceSnapshot = {
+  readonly sandbox?: SandboxReceipt;
   readonly serviceId: ManagedServiceId;
   readonly protocol: string;
   readonly generation: ServiceGeneration;
@@ -341,6 +345,7 @@ export type ManagedServiceError =
       readonly kind: "managed-service";
       readonly code: "spawn-failed";
       readonly detail: string | null;
+      readonly sandbox?: SandboxReceipt;
     }
   | { readonly kind: "managed-service"; readonly code: "readiness-timeout" }
   | { readonly kind: "managed-service"; readonly code: "readiness-output-exceeded" }

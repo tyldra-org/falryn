@@ -1,3 +1,5 @@
+import type { SandboxLaunch, SandboxPort } from "../../../domain/security/sandbox.ts";
+import { createHostSandbox } from "../../security/host-sandbox.ts";
 /** Bun interactive PTY session adapter. */
 
 import type { PtySessionId } from "../../../domain/foundation/identity.ts";
@@ -40,11 +42,13 @@ import {
 } from "./shared.ts";
 
 export type HostPtySessionPortOptions = {
+  readonly sandbox?: SandboxPort;
   readonly ownedProcesses?: OwnedProcessRegistry;
 };
 
 export function createHostPtySessionPort(options: HostPtySessionPortOptions = {}): PtySessionPort {
   const ownedProcesses = options.ownedProcesses;
+  const sandbox = options.sandbox ?? createHostSandbox();
   const sessions = new Map<PtySessionId, HostPtySession>();
   let nextId = 1;
 
@@ -70,11 +74,20 @@ export function createHostPtySessionPort(options: HostPtySessionPortOptions = {}
 
       const sessionId = ptySessionId.from(`pty-${nextId}`);
       nextId += 1;
-      const session = new HostPtySession(sessionId, request);
+      const prepared = sandbox.prepare({ ...request, channel: "pty" });
+      if (prepared.kind === "refused")
+        return err({
+          kind: "pty",
+          code: "spawn-failed",
+          detail: prepared.receipt.reason,
+          sandbox: prepared.receipt,
+        });
+      const launch = prepared.launch;
+      const session = new HostPtySession(sessionId, request, launch);
       try {
-        const child = Bun.spawn([request.executable, ...request.argv], {
+        const child = Bun.spawn([launch.executable, ...launch.argv], {
           ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
-          env: request.environment,
+          env: launch.environment,
           terminal: {
             cols: request.dimensions.columns,
             rows: request.dimensions.rows,
@@ -83,21 +96,33 @@ export function createHostPtySessionPort(options: HostPtySessionPortOptions = {}
             exit: () => session.onEof(),
           },
         });
-        const terminal = child.terminal;
-        if (terminal === undefined) {
-          signalHostTree(child, "SIGKILL");
-          return err({ kind: "pty", code: "unsupported" });
-        }
-        session.attachProcess(child, terminal);
+        launch.started(child.pid);
         if (typeof child.pid === "number") {
           ownedProcesses?.adopt(child.pid, child.exited);
         }
+        const terminal = child.terminal;
+        if (terminal === undefined) {
+          signalHostTree(child, "SIGKILL");
+          const exit = await waitForExit(
+            child.exited.then((exitCode) => ({ exitCode, signal: signalText(child.signalCode) })),
+            PTY_TERMINATION_TIMEOUT_MS,
+          );
+          launch.finish(exit !== null);
+          return err({ kind: "pty", code: "unsupported", sandbox: launch.receipt() });
+        }
+        session.attachProcess(child, terminal);
         sessions.set(sessionId, session);
         session.announceOpened();
         void session.watchExit();
         return ok(session.snapshot());
       } catch (thrown) {
-        return err({ kind: "pty", code: "spawn-failed", detail: safeHostCode(thrown) });
+        launch.failed();
+        return err({
+          kind: "pty",
+          code: "spawn-failed",
+          detail: safeHostCode(thrown),
+          sandbox: launch.receipt(),
+        });
       }
     },
 
@@ -157,6 +182,7 @@ class HostPtySession {
   constructor(
     private readonly sessionId: PtySessionId,
     request: PtySessionRequest,
+    private readonly sandbox: SandboxLaunch,
   ) {
     this.request = request;
     this.dimensions = request.dimensions;
@@ -215,6 +241,7 @@ class HostPtySession {
       this.exit = exit;
       if (this.state !== "exited") {
         this.state = "exited";
+        this.sandbox.finish(true);
       }
       this.closeTerminal();
       this.emit({ kind: "exited", exit });
@@ -262,7 +289,12 @@ class HostPtySession {
         acceptedBytes,
       });
     } catch (thrown) {
-      return err({ kind: "pty", code: "write-failed", detail: safeHostCode(thrown) });
+      return err({
+        kind: "pty",
+        code: "write-failed",
+        detail: safeHostCode(thrown),
+        sandbox: this.sandbox.receipt(),
+      });
     }
   }
 
@@ -284,7 +316,12 @@ class HostPtySession {
       this.emit({ kind: "resized", dimensions });
       return ok(dimensions);
     } catch (thrown) {
-      return err({ kind: "pty", code: "resize-failed", detail: safeHostCode(thrown) });
+      return err({
+        kind: "pty",
+        code: "resize-failed",
+        detail: safeHostCode(thrown),
+        sandbox: this.sandbox.receipt(),
+      });
     }
   }
 
@@ -301,7 +338,12 @@ class HostPtySession {
       this.emit({ kind: "interrupted", signal: "SIGINT" });
       return ok({ signal, state: this.state });
     } catch (thrown) {
-      return err({ kind: "pty", code: "write-failed", detail: safeHostCode(thrown) });
+      return err({
+        kind: "pty",
+        code: "write-failed",
+        detail: safeHostCode(thrown),
+        sandbox: this.sandbox.receipt(),
+      });
     }
   }
 
@@ -321,7 +363,12 @@ class HostPtySession {
       signalHostTree(child, signal);
       this.emit({ kind: "termination-requested", signal });
     } catch (thrown) {
-      return err({ kind: "pty", code: "write-failed", detail: safeHostCode(thrown) });
+      return err({
+        kind: "pty",
+        code: "write-failed",
+        detail: safeHostCode(thrown),
+        sandbox: this.sandbox.receipt(),
+      });
     }
     const firstExit = await waitForExit(exitPromise, PTY_TERMINATION_TIMEOUT_MS);
     if (firstExit !== null) {
@@ -332,12 +379,14 @@ class HostPtySession {
       signalHostTree(child, "SIGKILL");
     } catch {
       this.state = "uncertain";
+      this.sandbox.finish(false);
       this.closeTerminal();
       return ok({ kind: "uncertain", signal, exit: this.exit });
     }
     const finalExit = await waitForExit(exitPromise, PTY_TERMINATION_TIMEOUT_MS);
     if (finalExit === null) {
       this.state = "uncertain";
+      this.sandbox.finish(false);
       this.closeTerminal();
       return ok({ kind: "uncertain", signal, exit: this.exit });
     }
@@ -347,6 +396,7 @@ class HostPtySession {
 
   snapshot(): PtySessionSnapshot {
     return {
+      sandbox: this.sandbox.receipt(),
       sessionId: this.sessionId,
       pid: this.child?.pid ?? -1,
       state: this.state,

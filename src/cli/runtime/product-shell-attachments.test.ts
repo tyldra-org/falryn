@@ -860,3 +860,132 @@ describe("composeProductShellAttachments", () => {
     ).toBeGreaterThanOrEqual(2);
   });
 });
+
+test("terminal submission preserves selected sandbox refusal in its transcript feed", async () => {
+  const home = await mkdtemp(join(tmpdir(), "falryn-sandbox-terminal-"));
+  homes.push(home);
+  const services = createServiceProvider(
+    { ...GLOBALS, workspace: home },
+    {
+      home: localPath(home),
+      currentDirectory: localPath(home),
+      environment: createStaticEnvironment({
+        FALRYN_STATE_DIR: join(home, "state"),
+        FALRYN_CONFIG_DIR: join(home, "config"),
+      }),
+    },
+  )();
+  const workspace = await services.ensureWorkspaceSet();
+  if (!workspace.ok) throw new Error("fixture workspace unavailable");
+  const clock = services.clock;
+  const adapter = createDeterministicProviderAdapter({
+    script: (_request, index) =>
+      index === 0
+        ? {
+            kind: "tool",
+            name: "run_process",
+            toolCallId: "sandbox-terminal",
+            argumentFragments: [
+              JSON.stringify({
+                executable: process.execPath,
+                argv: ["-e", 'throw new Error("must not execute")'],
+                outputMode: "raw",
+              }),
+            ],
+          }
+        : { kind: "text", text: "Sandbox refusal observed." },
+  });
+  const model = adapter.supportedModels[0];
+  if (model === undefined) throw new Error("fixture model unavailable");
+  const attached = await composeProductShellAttachments({
+    configurationValues: () => ({
+      "tools.sandbox": { version: 1, mode: "degraded", readRoots: [], writeRoots: [] },
+    }),
+    eventStore: createInMemoryEventStore(),
+    clock,
+    fileSystem: services.fileSystem,
+    workspaceSet: workspace.value.set,
+    configurationGeneration: configurationGeneration.from(0),
+    toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+    provider: {
+      kind: "ready",
+      adapter,
+      session: {
+        kind: "ready",
+        release: async () => {},
+        connection: {
+          profile: {
+            ...adapter.identity,
+            adapterKind: "deterministic",
+            displayName: "Sandbox fixture",
+            endpoint: null,
+            credential: null,
+            organization: null,
+            project: null,
+            enabledModels: [model],
+            transportCompatibility: null,
+            modelCapabilities: [],
+            discovery: "static",
+            timeouts: { connectMs: 1_000, requestMs: 10_000 },
+          },
+          account: null,
+          updatedAt: clock.now(),
+        },
+        auth: {
+          profileId: adapter.identity.profileId,
+          state: "ready",
+          consumer: "provider:fixture",
+          observedAt: clock.now(),
+          health: null,
+          code: null,
+          retryable: false,
+        },
+        catalog: {
+          generation: 1,
+          provenance: "static-config",
+          fetchedAt: clock.now(),
+          expiresAt: null,
+          models: [
+            {
+              schemaVersion: 1,
+              modelId: model,
+              displayName: null,
+              inputModalities: ["text"],
+              outputModalities: ["text"],
+              tools: "supported",
+              structuredOutput: "supported",
+              streaming: "supported",
+              reasoning: "supported",
+              reasoningControls: ["balanced"],
+              completeness: "complete",
+              availability: "available",
+              provenance: ["profile-declaration"],
+              contextTokens: 128_000,
+              outputTokens: 8_000,
+            },
+          ],
+        },
+      },
+    },
+  });
+  if (attached === null) throw new Error("terminal composition unavailable");
+  const submitted = await attached.submission.submit(snapshotOf("run the sandbox fixture", 1));
+  expect(submitted.kind).toBe("accepted");
+  const completed = attached.transcriptFeed
+    .events()
+    .filter(
+      (event) =>
+        event.kind === "capability.invocation.completed" &&
+        event.capabilityId === "builtin:workspace/run_process@1",
+    );
+  expect(completed).toHaveLength(1);
+  const completedEvent = completed[0];
+  if (completedEvent?.kind !== "capability.invocation.completed")
+    throw new Error("missing sandbox event");
+  expect(completedEvent.payload.sandbox?.[0]).toMatchObject({
+    state: "refused",
+    pid: null,
+    requestedMode: "degraded",
+    effectiveMode: null,
+  });
+});

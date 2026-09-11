@@ -1,3 +1,4 @@
+import { sandboxSummary } from "../../domain/security/sandbox.ts";
 /**
  * Events in, transcript out.
  *
@@ -70,9 +71,10 @@ export const EMPTY_PROJECTION: TranscriptProjection = {
 function invocationResultOutput(
   event: Extract<RuntimeEvent, { readonly kind: "capability.invocation.completed" }>,
 ) {
+  const sandbox = sandboxSummary(event.payload.sandbox ?? []);
   const degradation = event.payload.degradation;
   if (degradation === undefined) {
-    return omitted("invocation events carry no result payload");
+    return sandbox === null ? omitted("invocation events carry no result payload") : bound(sandbox);
   }
   const fallbacks =
     degradation.candidateIds.length === 0 ? "none" : degradation.candidateIds.join(", ");
@@ -81,7 +83,8 @@ function invocationResultOutput(
       ? ""
       : ` Recovery: ${degradation.recoveryHandles.join(", ")}.`;
   return bound(
-    `Observed ${event.payload.observedStatus ?? "unavailable"}. ` +
+    (sandbox === null ? "" : `${sandbox} `) +
+      `Observed ${event.payload.observedStatus ?? "unavailable"}. ` +
       `Degradation: ${degradation.decision}. ` +
       `Fallbacks: ${fallbacks}. ` +
       `Terminal: ${degradation.terminalReason}.${recovery}`,

@@ -479,3 +479,52 @@ describe.if(!built)("the standalone executable", () => {
     // Recorded as skipped rather than silently absent: `bun run build` first.
   });
 });
+
+describe.if(built)("compiled sandbox composition", () => {
+  test("the shipped diagnostic reports explicit off policy", async () => {
+    const root = await temporaryRoot();
+    const result = spawnCompiled(root, ["doctor", "--format", "json"]);
+    expect(result.exitCode).toBe(0);
+    expect(JSON.parse(result.stdout).payload.sandbox.requestedMode).toBe("off");
+  });
+  test(
+    "the compiled headless owner enforces strict and replays its effective boundary",
+    async () => {
+      const { createHostSandbox } = await import("./integrations/security/host-sandbox.ts");
+      const mode = createHostSandbox().probe().status === "available" ? "strict" : "degraded";
+      const home = await temporaryRoot();
+      const binary = join(
+        bootstrapDirectory,
+        `sandbox-product${process.platform === "win32" ? ".exe" : ""}`,
+      );
+      const build = Bun.spawnSync(
+        [
+          process.execPath,
+          "build",
+          join(import.meta.dir, "cli/runtime/sandbox-product-fixtures.ts"),
+          "--compile",
+          "--outfile",
+          binary,
+        ],
+        { stdout: "pipe", stderr: "pipe" },
+      );
+      expect(build.exitCode).toBe(0);
+      const child = Bun.spawnSync(
+        [binary, JSON.stringify({ home, executable: process.execPath, mode })],
+        { stdout: "pipe", stderr: "pipe", timeout: 20_000 },
+      );
+      expect(child.exitCode).toBe(0);
+      const observed = JSON.parse(child.stdout.toString());
+      expect(observed.receipts[0]).toMatchObject({
+        requestedMode: mode,
+        effectiveMode: mode === "strict" ? "strict" : null,
+        state: mode === "strict" ? "terminated" : "refused",
+      });
+      expect(observed.result.payload.sandbox).toContain(
+        mode === "strict" ? "Sandbox strict" : "Sandbox unavailable",
+      );
+      if (mode === "strict") expect(observed.requests.at(-1)).toContain("outside-denied");
+    },
+    COMPILED_BUILD_TIMEOUT_MS,
+  );
+});

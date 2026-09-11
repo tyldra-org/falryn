@@ -69,6 +69,7 @@ export function renderCodingRun(
     `  Workspace    ${safe(payload.workspaceId === "" ? "(none)" : payload.workspaceId)}`,
     `  Events       ${payload.eventCount}`,
   ];
+  if (payload.sandbox !== undefined) lines.push(`  ${safe(payload.sandbox)}`);
   if (payload.executionProfile !== undefined) {
     lines.push(
       `  Mode         ${safe(payload.executionProfile)}  completion=${safe(payload.completionCriterion ?? "unknown")}`,

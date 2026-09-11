@@ -30,6 +30,7 @@
  */
 
 import type { DurationMs } from "../foundation/clock.ts";
+import type { SandboxReceipt } from "../security/sandbox.ts";
 
 /** Longest output a supervised command may produce before it is abandoned. */
 export const MAX_COMMAND_OUTPUT_BYTES = 64 * 1_024;
@@ -86,7 +87,7 @@ export type BashCommandRequest = CommandRequestBase & {
 
 export type CommandRequest = DirectCommandRequest | BashCommandRequest;
 
-export type CommandOutcome =
+export type CommandOutcome = { readonly sandbox?: SandboxReceipt } & (
   | {
       readonly kind: "exited";
       readonly exitCode: number;
@@ -105,7 +106,8 @@ export type CommandOutcome =
   | { readonly kind: "timed-out"; readonly timeoutMs: DurationMs }
   | { readonly kind: "cancelled" }
   /** The command could not be started: absent, not executable, refused. */
-  | { readonly kind: "spawn-failed"; readonly code: string };
+  | { readonly kind: "spawn-failed"; readonly code: string }
+);
 
 export type CommandRunnerPort = {
   run(request: CommandRequest): Promise<CommandOutcome>;

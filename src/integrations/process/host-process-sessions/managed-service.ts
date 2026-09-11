@@ -1,3 +1,9 @@
+import type {
+  SandboxLaunch,
+  SandboxPort,
+  SandboxReceipt,
+} from "../../../domain/security/sandbox.ts";
+import { createHostSandbox } from "../../security/host-sandbox.ts";
 /** Bun pipe-based managed service adapter. */
 
 import type { ManagedServiceId, ServiceGeneration } from "../../../domain/foundation/identity.ts";
@@ -44,6 +50,7 @@ import {
 } from "./shared.ts";
 
 export type HostManagedServicePortOptions = {
+  readonly sandbox?: SandboxPort;
   readonly ownedProcesses?: OwnedProcessRegistry;
 };
 
@@ -51,6 +58,7 @@ export function createHostManagedServicePort(
   options: HostManagedServicePortOptions = {},
 ): ManagedServicePort {
   const ownedProcesses = options.ownedProcesses;
+  const sandbox = options.sandbox ?? createHostSandbox();
   const services = new Map<ManagedServiceId, HostManagedService>();
 
   return {
@@ -85,7 +93,7 @@ export function createHostManagedServicePort(
           maximum: MAX_RETAINED_MANAGED_SERVICES,
         });
       }
-      const service = new HostManagedService(request, ownedProcesses);
+      const service = new HostManagedService(request, sandbox, ownedProcesses);
       services.set(request.serviceId, service);
       return service.start();
     },
@@ -152,9 +160,12 @@ class HostManagedService {
   private writeChain: Promise<void> = Promise.resolve();
 
   private readonly ownedProcesses: OwnedProcessRegistry | undefined;
+  private sandboxLaunch: SandboxLaunch | null = null;
+  private sandboxRefusal: SandboxReceipt | null = null;
 
   constructor(
     private readonly request: ManagedServiceRequest,
+    private readonly sandbox: SandboxPort,
     ownedProcesses?: OwnedProcessRegistry,
   ) {
     this.ownedProcesses = ownedProcesses;
@@ -269,7 +280,9 @@ class HostManagedService {
   }
 
   snapshot(): ManagedServiceSnapshot {
+    const sandbox = this.sandboxLaunch?.receipt() ?? this.sandboxRefusal;
     return {
+      ...(sandbox === null ? {} : { sandbox }),
       serviceId: this.request.serviceId,
       protocol: this.request.protocol,
       generation: this.generation ?? serviceGeneration.from(1),
@@ -301,15 +314,36 @@ class HostManagedService {
     this.clearIdleTimer();
 
     try {
-      const child = Bun.spawn([this.request.executable, ...this.request.argv], {
+      this.sandboxLaunch = null;
+      this.sandboxRefusal = null;
+      const prepared = this.sandbox.prepare({ ...this.request, channel: "service" });
+      if (prepared.kind === "refused") {
+        this.sandboxRefusal = prepared.receipt;
+        this.state = "failed";
+        this.emit({ kind: "failed", reason: "spawn-failed", generation });
+        this.resolveStart({
+          ok: false,
+          error: {
+            kind: "managed-service",
+            code: "spawn-failed",
+            detail: prepared.receipt.reason,
+            sandbox: prepared.receipt,
+          },
+        });
+        return;
+      }
+      const launch = prepared.launch;
+      this.sandboxLaunch = launch;
+      const child = Bun.spawn([launch.executable, ...launch.argv], {
         ...(this.request.cwd === undefined ? {} : { cwd: this.request.cwd }),
         ...ownedTreeSpawnOptions(),
-        env: this.request.environment,
+        env: launch.environment,
         stdin: "pipe",
         stdout: "pipe",
         stderr: "pipe",
       });
       this.child = child;
+      launch.started(child.pid);
       if (typeof child.pid === "number") {
         this.ownedProcesses?.adopt(child.pid, child.exited);
       }
@@ -336,6 +370,7 @@ class HostManagedService {
         }, this.request.readiness.timeoutMs);
       }
     } catch {
+      this.sandboxLaunch?.failed();
       this.finishFailure(generation, {
         kind: "failure",
         reason: "spawn-failed",
@@ -450,6 +485,7 @@ class HostManagedService {
   }
 
   private handleExit(generation: ServiceGeneration, exit: ManagedServiceExit): void {
+    if (generation === this.generation) this.sandboxLaunch?.finish(true);
     if (this.generation !== generation) {
       return;
     }
@@ -522,6 +558,7 @@ class HostManagedService {
     this.clearIdleTimer();
     this.stdin = null;
     this.intent = null;
+    this.sandboxLaunch?.finish(false);
     this.emit({ kind: "failed", reason: "shutdown-timeout", generation });
     this.resolveStart({
       ok: false,
@@ -582,6 +619,7 @@ class HostManagedService {
       ok: false,
       error: { kind: "managed-service", code: "shutdown-timeout" },
     });
+    this.sandboxLaunch?.finish(false);
     this.emit({ kind: "failed", reason: "shutdown-timeout", generation });
   }
 

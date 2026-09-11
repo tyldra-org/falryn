@@ -1,4 +1,5 @@
 import type { CompositionProvenance } from "../capabilities/composition.ts";
+import type { SandboxReceipt } from "../security/sandbox.ts";
 /**
  * Tool-call pipeline contracts: proposal binding, effect class, and typed
  * invocation outcomes.
@@ -147,6 +148,7 @@ type ToolInvocationResultCarrier = {
  * `effect: "none"`.
  */
 export type ToolInvocationOutcome = {
+  readonly sandbox?: readonly SandboxReceipt[];
   readonly admission?: ResourceAdmissionReceipt;
   readonly composition?: CompositionProvenance;
 } & (

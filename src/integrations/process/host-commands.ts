@@ -35,15 +35,19 @@ import {
   MAX_COMMAND_OUTPUT_BYTES,
   MAX_COMMAND_SCRIPT_BYTES,
 } from "../../domain/process/index.ts";
+import type { SandboxPort } from "../../domain/security/sandbox.ts";
+import { createHostSandbox } from "../security/host-sandbox.ts";
 import type { OwnedProcessRegistry } from "./host-owned-process-registry.ts";
 import { escalateOwnedTree, ownedTreeSpawnOptions } from "./host-process-tree.ts";
 
 export type HostCommandRunnerOptions = {
+  readonly sandbox?: SandboxPort;
   readonly ownedProcesses?: OwnedProcessRegistry;
 };
 
 export function createHostCommandRunner(options: HostCommandRunnerOptions = {}): CommandRunnerPort {
   const ownedProcesses = options.ownedProcesses;
+  const sandbox = options.sandbox ?? createHostSandbox();
   return {
     async run(request: CommandRequest): Promise<CommandOutcome> {
       const invalid = invalidRequest(request);
@@ -54,88 +58,114 @@ export function createHostCommandRunner(options: HostCommandRunnerOptions = {}):
         return { kind: "cancelled" };
       }
 
-      const maxOutputBytes = Math.min(request.maxOutputBytes, MAX_COMMAND_OUTPUT_BYTES);
-      const controller = new AbortController();
-      let ended: StopReason | null = null;
-      let child: ReturnType<typeof Bun.spawn> | null = null;
-      let treeStop: Promise<unknown> | null = null;
+      const prepared = sandbox.prepare({
+        ...request,
+        argv: spawnArgv(request).slice(1),
+        channel: "command",
+      });
+      if (prepared.kind === "refused")
+        return {
+          kind: "spawn-failed",
+          code: prepared.receipt.reason ?? "sandbox-unavailable",
+          sandbox: prepared.receipt,
+        };
+      const launch = prepared.launch;
+      const outcome = await (async (): Promise<CommandOutcome> => {
+        const maxOutputBytes = Math.min(request.maxOutputBytes, MAX_COMMAND_OUTPUT_BYTES);
+        const controller = new AbortController();
+        let ended: StopReason | null = null;
+        let child: ReturnType<typeof Bun.spawn> | null = null;
+        let treeStop: ReturnType<typeof escalateOwnedTree> | null = null;
+        let leaderExited = false;
 
-      const stopFor = (reason: StopReason): void => {
-        if (ended === null) {
-          ended = reason;
-          controller.abort();
-          if (child !== null && typeof child.pid === "number") {
-            treeStop = escalateOwnedTree({ pid: child.pid, exited: child.exited });
+        const stopFor = (reason: StopReason): void => {
+          if (ended === null) {
+            ended = reason;
+            controller.abort();
+            if (child !== null && typeof child.pid === "number") {
+              treeStop = escalateOwnedTree({ pid: child.pid, exited: child.exited });
+            }
+          }
+        };
+
+        const timer = setTimeout(() => {
+          stopFor("timed-out");
+        }, request.timeoutMs);
+        const onAbort = (): void => {
+          stopFor("cancelled");
+        };
+        request.signal?.addEventListener("abort", onAbort, { once: true });
+
+        try {
+          // Direct mode passes a list, so no shell parses any argument. Bash mode
+          // passes one deliberate command string to the named interpreter. `env`
+          // is exactly what was supplied — Bun replaces rather than merges when
+          // it is given.
+          const spawned = Bun.spawn([launch.executable, ...launch.argv], {
+            ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
+            ...ownedTreeSpawnOptions(),
+            env: launch.environment,
+            stdin: request.stdinBytes ?? "ignore",
+            stdout: "pipe",
+            stderr: "pipe",
+            signal: controller.signal,
+          });
+          child = spawned;
+          const observedExit = spawned.exited.then((code) => {
+            leaderExited = true;
+            return code;
+          });
+          launch.started(spawned.pid);
+          if (typeof spawned.pid === "number") {
+            ownedProcesses?.adopt(spawned.pid, spawned.exited);
+          }
+          if (ended !== null && typeof spawned.pid === "number") {
+            treeStop = escalateOwnedTree({ pid: spawned.pid, exited: spawned.exited });
+          }
+
+          const [stdoutBytes] = await Promise.all([
+            // One byte past the bound, so exceeding it is detectable rather than
+            // indistinguishable from filling it exactly.
+            readBounded(spawned.stdout, maxOutputBytes + 1, () => {
+              stopFor("output-exceeded");
+            }),
+            // Drained and dropped. An undrained pipe fills and stalls the child.
+            drain(spawned.stderr),
+          ]);
+          const exitCode = await observedExit;
+          if (treeStop !== null) {
+            await treeStop;
+          }
+
+          const stopped = stoppedOutcome(ended, request.timeoutMs, maxOutputBytes);
+          if (stopped !== null) {
+            return stopped;
+          }
+          if (stdoutBytes.length > maxOutputBytes) {
+            // The child finished on its own but wrote past the bound.
+            return { kind: "output-exceeded", maxOutputBytes };
+          }
+
+          return { kind: "exited", exitCode, stdout: new TextDecoder().decode(stdoutBytes) };
+        } catch (thrown) {
+          const stopped = stoppedOutcome(ended, request.timeoutMs, maxOutputBytes);
+          if (stopped !== null) {
+            return stopped;
+          }
+          // The thrown value's message is discarded rather than reported: a spawn
+          // failure's text carries an absolute path and sometimes the argv.
+          return { kind: "spawn-failed", code: spawnFailureCode(thrown) };
+        } finally {
+          clearTimeout(timer);
+          request.signal?.removeEventListener("abort", onAbort);
+          if (child === null) launch.failed();
+          else {
+            const cleanup = treeStop === null ? null : await treeStop;
+            launch.finish(leaderExited && cleanup?.stage !== "unconfirmed");
           }
         }
-      };
-
-      const timer = setTimeout(() => {
-        stopFor("timed-out");
-      }, request.timeoutMs);
-      const onAbort = (): void => {
-        stopFor("cancelled");
-      };
-      request.signal?.addEventListener("abort", onAbort, { once: true });
-
-      try {
-        // Direct mode passes a list, so no shell parses any argument. Bash mode
-        // passes one deliberate command string to the named interpreter. `env`
-        // is exactly what was supplied — Bun replaces rather than merges when
-        // it is given.
-        const spawned = Bun.spawn(spawnArgv(request), {
-          ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
-          ...ownedTreeSpawnOptions(),
-          env: request.environment,
-          stdin: request.stdinBytes ?? "ignore",
-          stdout: "pipe",
-          stderr: "pipe",
-          signal: controller.signal,
-        });
-        child = spawned;
-        if (typeof spawned.pid === "number") {
-          ownedProcesses?.adopt(spawned.pid, spawned.exited);
-        }
-        if (ended !== null && typeof spawned.pid === "number") {
-          treeStop = escalateOwnedTree({ pid: spawned.pid, exited: spawned.exited });
-        }
-
-        const [stdoutBytes] = await Promise.all([
-          // One byte past the bound, so exceeding it is detectable rather than
-          // indistinguishable from filling it exactly.
-          readBounded(spawned.stdout, maxOutputBytes + 1, () => {
-            stopFor("output-exceeded");
-          }),
-          // Drained and dropped. An undrained pipe fills and stalls the child.
-          drain(spawned.stderr),
-        ]);
-        const exitCode = await spawned.exited;
-        if (treeStop !== null) {
-          await treeStop;
-        }
-
-        const stopped = stoppedOutcome(ended, request.timeoutMs, maxOutputBytes);
-        if (stopped !== null) {
-          return stopped;
-        }
-        if (stdoutBytes.length > maxOutputBytes) {
-          // The child finished on its own but wrote past the bound.
-          return { kind: "output-exceeded", maxOutputBytes };
-        }
-
-        return { kind: "exited", exitCode, stdout: new TextDecoder().decode(stdoutBytes) };
-      } catch (thrown) {
-        const stopped = stoppedOutcome(ended, request.timeoutMs, maxOutputBytes);
-        if (stopped !== null) {
-          return stopped;
-        }
-        // The thrown value's message is discarded rather than reported: a spawn
-        // failure's text carries an absolute path and sometimes the argv.
-        return { kind: "spawn-failed", code: spawnFailureCode(thrown) };
-      } finally {
-        clearTimeout(timer);
-        request.signal?.removeEventListener("abort", onAbort);
-      }
+      })();
+      return { ...outcome, sandbox: launch.receipt() };
     },
   };
 }

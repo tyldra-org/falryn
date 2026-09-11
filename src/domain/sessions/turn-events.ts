@@ -99,6 +99,7 @@ export type TurnLifecycleFact =
       readonly capabilityId: CapabilityId;
       readonly outcome: TerminalOutcome;
       readonly admission?: CapabilityInvocationCompletedPayload["admission"];
+      readonly sandbox?: CapabilityInvocationCompletedPayload["sandbox"];
       readonly observedStatus?: CapabilityInvocationCompletedPayload["observedStatus"];
       readonly degradation?: CapabilityInvocationCompletedPayload["degradation"];
     };
@@ -256,6 +257,7 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
           outcome: fact.outcome,
           ...(fact.composition === undefined ? {} : { composition: fact.composition }),
           ...(fact.admission === undefined ? {} : { admission: fact.admission }),
+          ...(fact.sandbox === undefined ? {} : { sandbox: fact.sandbox }),
           ...(fact.observedStatus === undefined ? {} : { observedStatus: fact.observedStatus }),
           ...(fact.degradation === undefined ? {} : { degradation: fact.degradation }),
         },
@@ -283,6 +285,7 @@ export type ReplayedInvocation = {
   readonly completedAt: Timestamp | null;
   readonly outcome: TerminalOutcome | null;
   readonly admission: CapabilityInvocationCompletedPayload["admission"] | null;
+  readonly sandbox?: CapabilityInvocationCompletedPayload["sandbox"];
   readonly observedStatus: CapabilityInvocationCompletedPayload["observedStatus"] | null;
   readonly degradation: CapabilityInvocationCompletedPayload["degradation"] | null;
 };
@@ -333,6 +336,7 @@ type MutableInvocation = {
   completedAt: Timestamp | null;
   outcome: TerminalOutcome | null;
   admission: CapabilityInvocationCompletedPayload["admission"] | null;
+  sandbox?: CapabilityInvocationCompletedPayload["sandbox"];
   observedStatus: CapabilityInvocationCompletedPayload["observedStatus"] | null;
   degradation: CapabilityInvocationCompletedPayload["degradation"] | null;
 };
@@ -491,6 +495,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
         invocation.composition = event.payload.composition ?? invocation.composition;
         invocation.outcome = event.payload.outcome;
         invocation.admission = event.payload.admission ?? null;
+        if (event.payload.sandbox !== undefined) invocation.sandbox = event.payload.sandbox;
         invocation.observedStatus = event.payload.observedStatus ?? null;
         invocation.degradation = event.payload.degradation ?? null;
         invocation.capabilityId = event.capabilityId;
@@ -582,6 +587,7 @@ function freezeTurn(turn: MutableTurn): ReplayedTurn {
               completedAt: invocation.completedAt,
               outcome: invocation.outcome,
               admission: invocation.admission,
+              ...(invocation.sandbox === undefined ? {} : { sandbox: invocation.sandbox }),
               observedStatus: invocation.observedStatus,
               degradation: invocation.degradation,
               ...(invocation.composition === null ? {} : { composition: invocation.composition }),

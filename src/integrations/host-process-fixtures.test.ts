@@ -79,12 +79,22 @@ function captureRequest(
 describe("quoting", () => {
   platformTest("direct argv keeps metacharacters as one literal argument", async () => {
     const outcome = await runner.run(argvRequest({ executable: ECHO, argv: [HOSTILE] }));
-    expect(outcome).toEqual({ kind: "exited", exitCode: 0, stdout: `${HOSTILE}\n` });
+    expect(outcome).toEqual({
+      kind: "exited",
+      exitCode: 0,
+      stdout: `${HOSTILE}\n`,
+      sandbox: expect.objectContaining({ effectiveMode: "off", state: "terminated" }),
+    });
   });
 
   platformTest("Bash mode parses a deliberate command string", async () => {
     const outcome = await runner.run(bashRequest('printf %s "$(printf parsed)"'));
-    expect(outcome).toEqual({ kind: "exited", exitCode: 0, stdout: "parsed" });
+    expect(outcome).toEqual({
+      kind: "exited",
+      exitCode: 0,
+      stdout: "parsed",
+      sandbox: expect.objectContaining({ effectiveMode: "off", state: "terminated" }),
+    });
   });
 
   platformTest("the same hostile text is not a shell line in argv mode", async () => {
@@ -120,7 +130,11 @@ describe("truncation", () => {
           timeoutMs: 5_000,
         }),
       );
-      expect(outcome).toEqual({ kind: "output-exceeded", maxOutputBytes: 64 });
+      expect(outcome).toEqual({
+        kind: "output-exceeded",
+        maxOutputBytes: 64,
+        sandbox: expect.objectContaining({ effectiveMode: "off", state: "terminated" }),
+      });
     },
   );
 
@@ -161,14 +175,21 @@ describe("interruption", () => {
         signal: controller.signal,
       }),
     );
-    expect(outcome).toEqual({ kind: "cancelled" });
+    expect(outcome).toEqual({
+      kind: "cancelled",
+      sandbox: expect.objectContaining({ effectiveMode: "off", state: "terminated" }),
+    });
   });
 
   platformTest("a deadline is timed-out rather than cancelled", async () => {
     const outcome = await runner.run(
       argvRequest({ executable: SLEEP, argv: ["30"], timeoutMs: 200 }),
     );
-    expect(outcome).toEqual({ kind: "timed-out", timeoutMs: duration(200) });
+    expect(outcome).toEqual({
+      kind: "timed-out",
+      timeoutMs: duration(200),
+      sandbox: expect.objectContaining({ effectiveMode: "off", state: "terminated" }),
+    });
   });
 
   platformTest("disabled stdin closes so cat exits instead of hanging", async () => {
