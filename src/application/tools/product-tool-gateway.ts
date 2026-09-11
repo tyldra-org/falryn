@@ -469,6 +469,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
             processTask: _processTask,
             delegation: _delegation,
             afterAdmission: _afterAdmission,
+            invokeCapability: _invokeCapability,
             ...nativeRequest
           } = request;
           let nativeTerminated: boolean | undefined;
@@ -478,9 +479,40 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
               ...nativeRequest,
               taskResources: task,
               ...(options.delegation === undefined ? {} : { delegation: options.delegation }),
-              ...(!["builtin:orchestration/delegate@1", "builtin:orchestration/peer@1"].includes(
-                String(manifest.capabilityId),
-              )
+              ...(String(manifest.capabilityId) !== "builtin:orchestration/workflow@1"
+                ? {}
+                : {
+                    invokeCapability: (
+                      child: ToolRunnerRequest,
+                      resources: ProductTaskResources,
+                    ) => {
+                      const binding = options.registry.resolveByCapabilityId(child.capabilityId);
+                      if (
+                        !binding ||
+                        !options.delegation?.capabilities.includes(String(child.capabilityId)) ||
+                        binding.manifest.name !== child.toolName ||
+                        binding.manifest.version !== child.version
+                      )
+                        return Promise.resolve({
+                          status: "unavailable" as const,
+                          reason: "workflow-native-binding-unavailable",
+                          effect: "none" as const,
+                        });
+                      // The native graph binds this registered action explicitly. Model-schema
+                      // disclosure is not its selector; policy, trust, hooks, scopes and focused
+                      // confirmation still run in the same gateway for every node.
+                      return createProductToolGateway({
+                        ...options,
+                        taskResources: resources,
+                        disclosedToolNames: new Set([child.toolName]),
+                      }).execute(child);
+                    },
+                  }),
+              ...(![
+                "builtin:orchestration/delegate@1",
+                "builtin:orchestration/peer@1",
+                "builtin:orchestration/workflow@1",
+              ].includes(String(manifest.capabilityId))
                 ? {}
                 : {
                     afterAdmission(run: (signal: AbortSignal) => Promise<ToolInvocationOutcome>) {

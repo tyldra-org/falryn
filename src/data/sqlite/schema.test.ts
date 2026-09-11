@@ -102,6 +102,7 @@ describe("a fresh database", () => {
       19,
       20,
       21,
+      22,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -165,6 +166,7 @@ describe("a fresh database", () => {
       "work_dependency_dependents",
       "work_dependency_mutations",
       "work_dependency_reverse_history",
+      "workflow_owner_runs",
     ]);
     await store.close();
   });
@@ -213,6 +215,7 @@ describe("a fresh database", () => {
       19,
       20,
       21,
+      22,
     ]);
     expect(
       upgraded.read(

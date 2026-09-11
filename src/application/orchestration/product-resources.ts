@@ -92,6 +92,8 @@ export type ProductTaskResources = {
     dimension?: ResourceDimension,
   ): ResourceAdmissionReceipt;
   remaining(dimension: ResourceDimension): number;
+  /** Remaining declared ceilings. An omitted dimension is not a known unlimited allowance. */
+  remainingBudget(): ResourceAmounts;
   tighten(limits: ResourceAmounts): boolean;
   execute<Value>(work: ResourceWork<Value>): Promise<ResourceExecution<Value>>;
   subdivide(
@@ -269,6 +271,14 @@ export function createProductResources(
           return ledger.remaining(
             taskScope(dimension),
             currentLimits[dimension] ?? Number.MAX_SAFE_INTEGER,
+          );
+        },
+        remainingBudget() {
+          return Object.fromEntries(
+            Object.keys(currentLimits).map((name) => [
+              name,
+              task.remaining(name as ResourceDimension),
+            ]),
           );
         },
         tighten(narrower) {
@@ -581,6 +591,14 @@ function childTask(
             )
           : ledger.remaining(scope(dimension), limits[dimension] ?? Number.MAX_SAFE_INTEGER);
       return Math.min(parent.remaining(dimension), own);
+    },
+    remainingBudget() {
+      return Object.fromEntries(
+        Object.keys({ ...parent.remainingBudget(), ...limits }).map((name) => [
+          name,
+          child.remaining(name as ResourceDimension),
+        ]),
+      );
     },
     tighten(narrower) {
       if (closed || !resourceAmountsSchema.safeParse(narrower).success) return false;

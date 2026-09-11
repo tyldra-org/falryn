@@ -325,6 +325,15 @@ test("a later role limit cannot turn previous unknown usage into zero", async ()
     signal: new AbortController().signal,
     run: async () => ({ value: "ok", terminated: true }),
   });
+  const captured = task.remainingBudget();
+  expect(captured).not.toHaveProperty("inputTokens");
+  expect(captured).not.toHaveProperty("costMicros");
+  const child = task.subdivide(captured);
+  if (!child) throw new Error("missing child allowance");
+  expect(
+    (await request(child, "declared-only", async () => ({ value: "ok", terminated: true }))).kind,
+  ).toBe("completed");
+  child.close();
   task.tighten({ inputTokens: 100 });
   expect(
     (await request(task, "fallback", async () => ({ value: "bad", terminated: true }))).receipt

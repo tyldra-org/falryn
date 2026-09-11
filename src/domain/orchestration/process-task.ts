@@ -87,6 +87,8 @@ export const processTaskTerminalSchema = z
       "ownership-uncertain",
       "agent-completed",
       "agent-failed",
+      "workflow-completed",
+      "workflow-failed",
       "question-settled",
     ]),
     exitCode: z.int().nullable(),
@@ -96,7 +98,11 @@ export const processTaskTerminalSchema = z
     outputComplete: z.boolean().optional(),
   })
   .refine((terminal) => {
-    if (terminal.reason === "agent-completed" && terminal.outcome !== "completed") return false;
+    if (
+      ["agent-completed", "workflow-completed"].includes(terminal.reason) &&
+      terminal.outcome !== "completed"
+    )
+      return false;
     if (terminal.outcome === "uncertain") return terminal.effect === "uncertain";
     if (terminal.outcome !== "completed") return true;
     if (terminal.reason === "question-settled")
@@ -106,7 +112,7 @@ export const processTaskTerminalSchema = z
         terminal.signal === null &&
         terminal.result === null
       );
-    if (terminal.reason === "agent-completed")
+    if (["agent-completed", "workflow-completed"].includes(terminal.reason))
       return (
         terminal.effect !== "uncertain" &&
         terminal.exitCode === null &&
@@ -125,7 +131,7 @@ export type ProcessTaskTerminal = z.infer<typeof processTaskTerminalSchema>;
 
 const common = {
   /** Omitted in existing captured-process records. Task kinds share durable ownership. */
-  executionKind: z.enum(["process", "agent", "question"]).optional(),
+  executionKind: z.enum(["process", "agent", "question", "workflow"]).optional(),
   handle: processTaskHandleSchema,
   revision,
   owner: processTaskOwnerSchema,
@@ -178,15 +184,18 @@ export const processTaskSnapshotSchema = z
             task.terminal.result === null)
         : task.state !== "terminal" || task.terminal.reason !== "question-settled") &&
       (task.executionKind === "question" || task.supervisor.process !== null) &&
-      (!["agent", "question"].includes(task.executionKind ?? "process") || task.process === null) &&
-      (task.state !== "running" || task.executionKind === "agent" || task.process !== null) &&
+      (!["agent", "question", "workflow"].includes(task.executionKind ?? "process") ||
+        task.process === null) &&
+      (task.state !== "running" ||
+        ["agent", "workflow"].includes(task.executionKind ?? "process") ||
+        task.process !== null) &&
       (task.state !== "terminal" ||
         (task.terminal.sealedAt >= task.createdAt &&
           (task.terminal.outcome !== "completed" ||
             (task.executionKind === "question"
               ? task.terminal.reason === "question-settled"
-              : task.executionKind === "agent"
-                ? task.terminal.reason === "agent-completed"
+              : task.executionKind === "agent" || task.executionKind === "workflow"
+                ? task.terminal.reason === `${task.executionKind}-completed`
                 : task.process !== null && task.terminal.reason === "exited")))),
     "task lifecycle contradicts process evidence",
   );
@@ -331,7 +340,9 @@ export function transitionProcessTask(
     case "started":
       return current.state === "queued" &&
         now < current.deadline &&
-        (current.executionKind === "agent" ? change.process === null : change.process !== null)
+        (["agent", "workflow"].includes(current.executionKind ?? "process")
+          ? change.process === null
+          : change.process !== null)
         ? {
             ok: true,
             value: { ...next, state: "running", process: change.process, terminal: null },
@@ -350,8 +361,8 @@ export function transitionProcessTask(
         change.terminal.sealedAt === now &&
         processTaskTerminalSchema.safeParse(change.terminal).success &&
         (change.terminal.outcome !== "completed" ||
-          (current.executionKind === "agent"
-            ? change.terminal.reason === "agent-completed"
+          (current.executionKind === "agent" || current.executionKind === "workflow"
+            ? change.terminal.reason === `${current.executionKind}-completed`
             : current.process !== null && change.terminal.reason === "exited"))
         ? { ok: true, value: { ...next, state: "terminal", terminal: change.terminal } }
         : { ok: false, code: "invalid-transition" };

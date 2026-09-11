@@ -10,6 +10,7 @@ export const WORKSPACE_LOADER_FAMILIES = [
   "mcp",
   "hooks",
   "skills",
+  "workflows",
 ] as const;
 export const workspaceLoaderSchema = z.strictObject({
   source: digestSchema,
@@ -18,7 +19,7 @@ export const workspaceLoaderSchema = z.strictObject({
   digest: digestSchema,
   sourceVersion: digestSchema,
   bytes: z.int().nonnegative(),
-  activation: z.enum(["configuration", "unavailable"]),
+  activation: z.enum(["configuration", "definition", "unavailable"]),
 });
 export const workspaceInventorySchema = z.strictObject({
   version: z.literal(1),
@@ -77,7 +78,7 @@ export const workspaceTrustEventPayloadSchema = workspaceTrustReportSchema.exten
             count: z.int().nonnegative(),
           }),
         )
-        .max(5),
+        .max(WORKSPACE_LOADER_FAMILIES.length),
     })
     .nullable(),
 });

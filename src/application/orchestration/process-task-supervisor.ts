@@ -44,7 +44,7 @@ export type ProcessTaskNotification = {
 };
 export type ProcessTaskRun = {
   readonly onAdmitted?: (handle: ProcessTaskHandle) => void;
-  readonly executionKind?: "process" | "agent";
+  readonly executionKind?: "process" | "agent" | "workflow";
   readonly request: ToolRunnerRequest;
   readonly execution: ProcessTaskExecution;
   readonly timeoutMs: number;
@@ -56,7 +56,7 @@ export type ProcessTaskRun = {
   ): Promise<{
     readonly outcome: ToolInvocationOutcome;
     readonly capture: ProcessCaptureReport | null;
-    readonly agentTerminal?: Pick<ProcessTaskTerminal, "outcome" | "effect">;
+    readonly executionTerminal?: Pick<ProcessTaskTerminal, "outcome" | "effect">;
   }>;
 };
 export type ProcessTaskSupervisorOptions = {
@@ -93,11 +93,16 @@ function boundedOutput(output: Readonly<Record<string, unknown>>): ToolInvocatio
     ? { status: "completed", output, effect: "completed" }
     : refused("process-task-control-limit");
 }
+function orchestrationReason(kind: "agent" | "workflow", outcome: ProcessTaskTerminal["outcome"]) {
+  if (outcome === "cancelled" || outcome === "timed-out") return outcome;
+  return `${kind}-${outcome === "completed" ? "completed" : "failed"}` as const;
+}
+
 function terminalFacts(
   capture: ProcessCaptureReport | null,
   outcome: ToolInvocationOutcome,
   failure: string | null,
-  executionKind: "process" | "agent" = "process",
+  executionKind: "process" | "agent" | "workflow" = "process",
 ): Omit<ProcessTaskTerminal, "sealedAt" | "result"> {
   const evidence = {
     exitCode: capture?.exit.exitCode ?? null,
@@ -117,14 +122,14 @@ function terminalFacts(
       effect: "uncertain",
       reason: "persistence-unavailable",
     };
-  if (executionKind === "agent") {
+  if (executionKind === "agent" || executionKind === "workflow") {
     const observed = { exitCode: null, signal: null, outputComplete: true };
     if (outcome.status === "completed")
       return {
         ...observed,
         outcome: "completed",
         effect: outcome.effect,
-        reason: "agent-completed",
+        reason: `${executionKind}-completed`,
       };
     if (outcome.status === "uncertain")
       return {
@@ -140,7 +145,12 @@ function terminalFacts(
         effect: outcome.effect,
         reason: outcome.status,
       };
-    return { ...observed, outcome: "failed", effect: outcome.effect, reason: "agent-failed" };
+    return {
+      ...observed,
+      outcome: "failed",
+      effect: outcome.effect,
+      reason: `${executionKind}-failed`,
+    };
   }
   if (capture === null)
     return outcome.status === "cancelled"
@@ -311,20 +321,23 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
       result.capture,
       result.outcome,
       entry.failure,
-      current.value.executionKind === "agent" ? "agent" : "process",
+      current.value.executionKind === "workflow"
+        ? "workflow"
+        : current.value.executionKind === "agent"
+          ? "agent"
+          : "process",
     );
     const facts =
-      current.value.executionKind === "agent" && result.agentTerminal && entry.failure === null
+      (current.value.executionKind === "agent" || current.value.executionKind === "workflow") &&
+      result.executionTerminal &&
+      entry.failure === null
         ? {
             ...observed,
-            ...result.agentTerminal,
-            reason:
-              result.agentTerminal.outcome === "completed"
-                ? ("agent-completed" as const)
-                : result.agentTerminal.outcome === "cancelled" ||
-                    result.agentTerminal.outcome === "timed-out"
-                  ? result.agentTerminal.outcome
-                  : ("agent-failed" as const),
+            ...result.executionTerminal,
+            reason: orchestrationReason(
+              current.value.executionKind,
+              result.executionTerminal.outcome,
+            ),
           }
         : observed;
     const sealedAt = now();
@@ -450,7 +463,7 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
       if (input.execution.attachment === "background") publish();
       else timer = setTimeout(publish, input.execution.foregroundWaitMs);
       const signal = AbortSignal.any([input.request.signal, entry.cancel.signal]);
-      if (input.executionKind === "agent") {
+      if (input.executionKind === "agent" || input.executionKind === "workflow") {
         const current = store.get(handle);
         if (
           !current.ok ||
@@ -562,7 +575,7 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
   async function control(
     request: ToolRunnerRequest,
     input: ProcessTaskControl,
-    agentControl = false,
+    orchestrationControl = false,
   ): Promise<ToolInvocationOutcome> {
     const scope = request.processTask?.owner;
     const retained = store.get(input);
@@ -580,11 +593,11 @@ export function createProcessTaskSupervisor(options: ProcessTaskSupervisorOption
     if (request.signal.aborted) return { status: "cancelled", effect: "none" };
     const task = current.value;
     if (
-      task.executionKind === "agent" &&
-      !agentControl &&
+      ["agent", "workflow"].includes(task.executionKind ?? "process") &&
+      !orchestrationControl &&
       !["inspect", "result", "logs", "wait"].includes(input.operation)
     )
-      return refused("agent-control-owner-required");
+      return refused(`${task.executionKind}-control-owner-required`);
     if ("expectedRevision" in input && input.expectedRevision !== task.revision - (cleaned ? 1 : 0))
       return refused("process-task-stale-revision");
     if (cleaned) return boundedOutput({ kind: "process-task-cleaned", handle: task.handle });

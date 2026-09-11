@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ArtifactStorePort } from "../../domain/artifacts/artifact.ts";
 import { canonicalJson } from "../../domain/extensions/canonical.ts";
 import { capabilityId, sessionId, streamId, turnId } from "../../domain/foundation/index.ts";
+import type { WorkflowStore } from "../../domain/orchestration/workflow-state.ts";
 import { createToolRegistry } from "../../domain/tools/index.ts";
 import {
   EMPTY_MODEL_PREFERENCES,
@@ -32,13 +33,17 @@ import {
   mergeProductToolBundles,
   type ProductToolSourceBundle,
 } from "../tools/product-tools-merge.ts";
+import { composeWorkflowTool } from "../tools/workflow-tool.ts";
 import {
   composeProductAgentRuntime,
   type ProductAgentRuntimePorts,
 } from "./product-agent-runtime.ts";
 import { createProductLiveTurnExecutor } from "./product-live-turn.ts";
+import { composeWorkflowRuntime, type WorkflowRuntimeOptions } from "./workflow-runtime.ts";
 
 export type DelegatedRuntimeOptions = {
+  readonly workflows?: WorkflowStore;
+  readonly workflowQuestions?: WorkflowRuntimeOptions["questions"];
   readonly peers?: PeerMailboxFactory;
   readonly joins?: import("../orchestration/agent-joins.ts").AgentJoins;
   readonly tasks: ProcessTaskSupervisor;
@@ -297,7 +302,7 @@ export function composeDelegatedAgentRuntime(
             : base.runner.execute(request),
       },
     };
-    const tools = mergeProductToolBundles(
+    const baseTools = mergeProductToolBundles(
       generation,
       [
         bundle,
@@ -319,6 +324,46 @@ export function composeDelegatedAgentRuntime(
           ) ?? [],
       },
     );
+    const workflows =
+      options.workflows && options.joins && parent === undefined
+        ? composeWorkflowRuntime(
+            {
+              ...childPorts,
+              toolRegistry: baseTools.registry,
+              toolRunner: baseTools.runner,
+              toolCatalog: baseTools.catalog,
+              capabilityRegistry: baseTools.capabilityRegistry,
+            },
+            {
+              store: options.workflows,
+              tasks: options.tasks,
+              joins: options.joins,
+              agents: registry,
+              artifacts: options.artifacts,
+              preferences,
+              ...(options.workflowQuestions ? { questions: options.workflowQuestions } : {}),
+              async provider(profile, signal) {
+                const current = providers.get(profile);
+                if (current) return current;
+                const resolved = await options.resolveProvider?.(profile, signal);
+                if (!resolved || "reason" in resolved) return null;
+                providers.set(profile, resolved);
+                return resolved;
+              },
+            },
+          )
+        : null;
+    const tools = workflows
+      ? mergeProductToolBundles(
+          generation,
+          [baseTools, composeWorkflowTool(generation, workflows)],
+          {
+            capabilityEntries: baseTools.capabilityRegistry.entries.filter(
+              (entry) => !baseTools.registry.resolveByCapabilityId(entry.capabilityId),
+            ),
+          },
+        )
+      : baseTools;
     return composeProductAgentRuntime({
       ...childPorts,
       canComplete(turn) {

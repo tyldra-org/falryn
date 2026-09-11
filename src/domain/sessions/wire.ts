@@ -1,4 +1,5 @@
 import { compositionProvenanceSchema } from "../capabilities/composition.ts";
+import { workflowReceiptSchema } from "../orchestration/workflow-state.ts";
 /**
  * The JSON representation of a runtime event, and its Zod 4 schema.
  *
@@ -458,6 +459,12 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
   }),
   z.object({
     ...envelopeSpine,
+    kind: z.literal("workflow.changed"),
+    correlation: sessionCorrelationSchema,
+    payload: workflowReceiptSchema,
+  }),
+  z.object({
+    ...envelopeSpine,
     kind: z.literal("work.queue.changed"),
     correlation: sessionCorrelationSchema,
     payload: workReceiptSchema,
@@ -584,6 +591,7 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
       return configurationPayloadToJson(event);
     case "workspace.trust.reviewed":
     case "work.queue.changed":
+    case "workflow.changed":
       return event.payload;
     case "execution.profile.selected":
       return {

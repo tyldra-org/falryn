@@ -1,3 +1,4 @@
+import { MIGRATION_0022, WORKFLOW_TABLES } from "../orchestration/workflow-store.ts";
 /**
  * The registered migration set, and the rules a set has to satisfy to be run.
  *
@@ -110,6 +111,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0019,
   MIGRATION_0020,
   MIGRATION_0021,
+  MIGRATION_0022,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -140,6 +142,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   ...SCOPE_CONTROL_TABLES,
   ...PACKAGE_DATA_TABLES,
   ...WORK_QUEUE_TABLES,
+  ...WORKFLOW_TABLES,
 ];
 
 function issue(

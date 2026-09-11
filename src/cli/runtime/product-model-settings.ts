@@ -1,5 +1,6 @@
 /** Local composition for the shared model settings service. No model calls on save. */
 
+import { loadWorkflowFiles } from "../../application/orchestration/workflow-files.ts";
 import { createUserCatalogModelDiscovery } from "../../application/providers/model-catalogs.ts";
 import {
   createModelSettingsService,
@@ -61,6 +62,16 @@ export function composeProductModelSettings(
       if (!after.ok || before.value?.revision !== after.value?.revision)
         throw new Error("Settings changed during inspection.");
       const preferences = modelPreferencesFrom(loaded.values);
+      const workflows = await loadWorkflowFiles(
+        {
+          fileSystem: services.fileSystem,
+          configurationRoot: services.configurationRoot,
+          workspaceRoot: services.workspaceRoot,
+          trust: loaded.trust,
+        },
+        signal,
+      );
+      if (!workflows.ok) throw new Error(workflows.error.code);
       const connections = parseProviderConnectionState(
         loaded.values[PROVIDER_CONNECTIONS_CONFIGURATION_KEY] ?? DEFAULT_PROVIDER_CONNECTION_STATE,
       );
@@ -89,7 +100,7 @@ export function composeProductModelSettings(
         scope,
         generation: Number(loaded.generation),
         main: captured,
-        definitions: agentRegistryFrom(loaded.values).models(),
+        definitions: [...agentRegistryFrom(loaded.values).models(), ...workflows.value.models()],
       };
     },
     async write(preferences, expectedRevision, signal) {

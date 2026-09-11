@@ -33,11 +33,28 @@ import { createHostProcessCapturePort } from "../../integrations/index.ts";
 import type { ScratchResourcePort } from "../artifacts/scratch-resources.ts";
 import { createLoomPort } from "../compression/loom.ts";
 import { MAX_PRODUCT_PROCESS_MODEL_BYTES } from "../compression/product-process-output.ts";
+import type { ToolRunnerRequest } from "../runtime/tool-call-loop.ts";
 import { createProductReadCoordinator, productReadInputSchema } from "../workspace/product-read.ts";
 import { createWorkspaceReader } from "../workspace/workspace-read.ts";
 import { composeProductProcessTools } from "./product-tools-process.ts";
 
 const encoder = new TextEncoder();
+
+function terminationObserver(observed: boolean[]): NonNullable<ToolRunnerRequest["processTask"]> {
+  return {
+    owner: {
+      sessionId: "session-1",
+      workspaceId: "ws-1",
+      turnId: "turn-1",
+      invocationId: "inv-1",
+      attemptId: "attempt-1",
+      configurationGeneration: 0,
+      resourceTaskId: "resources-1",
+    },
+    publishReceipt: () => false,
+    reportTermination: (terminated) => observed.push(terminated),
+  };
+}
 
 function stream(name: "stdout" | "stderr", text: string) {
   const bytes = encoder.encode(text);
@@ -861,7 +878,9 @@ describe("composeProductProcessTools", () => {
       workspaceId: "ws-1",
       sessionId: "session-1",
     });
+    const terminations: boolean[] = [];
     const partial = await tools.runner.execute({
+      processTask: terminationObserver(terminations),
       invocationId: invocationId.from("inv-artifact-failed"),
       toolCallId: "call-artifact-failed",
       toolName: "run_process",
@@ -872,9 +891,35 @@ describe("composeProductProcessTools", () => {
       signal: new AbortController().signal,
     });
     expect(partial.status).toBe("partial");
+    expect(terminations).toEqual([true]);
     if (partial.status === "partial") {
       expect(partial.result?.artifacts[0]).toMatchObject({ committed: false, required: true });
       expect((partial.output.stdout as { recovery: unknown }).recovery).toBeNull();
     }
+  });
+
+  test("does not release native process occupancy for an unconfirmed exit", async () => {
+    const terminations: boolean[] = [];
+    const tools = processTools({
+      async run(request) {
+        return ok({
+          ...report(request),
+          killStage: "unconfirmed" as const,
+          stop: { kind: "uncertain" as const, reason: "unconfirmed-exit" as const },
+        });
+      },
+    }).tools;
+    await tools.runner.execute({
+      processTask: terminationObserver(terminations),
+      invocationId: invocationId.from("inv-unconfirmed"),
+      toolCallId: "call-unconfirmed",
+      toolName: "run_process",
+      capabilityId: capabilityId.from("builtin:workspace/run_process@1"),
+      version: 1,
+      effect: "mutation",
+      input: { executable: "/bin/ls", argv: [], outputMode: "raw" },
+      signal: new AbortController().signal,
+    });
+    expect(terminations).toEqual([false]);
   });
 });
