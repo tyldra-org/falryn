@@ -1,3 +1,7 @@
+import {
+  createHostSandbox,
+  installationSandboxPolicy,
+} from "../../integrations/security/host-sandbox.ts";
 /** Product composition for provider state, credentials, and live adapter handoff. */
 
 import {
@@ -123,9 +127,11 @@ export function composeProductProviderConnections(
   globals: GlobalOptions,
   options: ProductProviderConnectionOptions = {},
 ): ProductProviderConnections {
-  const commands = createHostCommandRunner(
-    options.ownedProcesses === undefined ? {} : { ownedProcesses: options.ownedProcesses },
-  );
+  // Authentication is a trusted host operation, disclosed separately by doctor.
+  const commands = createHostCommandRunner({
+    sandbox: createHostSandbox({ policy: installationSandboxPolicy }),
+    ...(options.ownedProcesses === undefined ? {} : { ownedProcesses: options.ownedProcesses }),
+  });
   const credentialOptions = {
     clock: services.clock,
     commands,

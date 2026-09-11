@@ -1,3 +1,4 @@
+import type { TaskCommitPlanRunner } from "../../cli/commands/task-commit-plan-commands.ts";
 /**
  * The interactive shell, start to finish.
  *
@@ -140,6 +141,7 @@ export type ShellRunRequest = {
   readonly fileProbe?: FileAttachmentProbe | null;
   /** Git changes dashboard. Optional when no workspace or git executable is available. */
   readonly gitDashboard?: GitDashboard;
+  readonly taskCommitPlan?: TaskCommitPlanRunner;
   /** Workspace-set controller and initial roots for header and palette commands. */
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
@@ -359,6 +361,7 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
       {...(request.controls === undefined ? {} : { controls: request.controls })}
       {...(request.fileProbe === undefined ? {} : { fileProbe: request.fileProbe })}
       {...(request.gitDashboard === undefined ? {} : { gitDashboard: request.gitDashboard })}
+      {...(request.taskCommitPlan === undefined ? {} : { taskCommitPlan: request.taskCommitPlan })}
       {...(request.workspaceController === undefined
         ? {}
         : { workspaceController: request.workspaceController })}
@@ -395,6 +398,7 @@ function LiveShell(props: {
   readonly controls?: ControlCatalog;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
+  readonly taskCommitPlan?: TaskCommitPlanRunner;
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
   readonly sessionNavigationController?: SessionNavigationController;
@@ -415,6 +419,7 @@ function LiveShell(props: {
         {...(props.controls === undefined ? {} : { controls: props.controls })}
         {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
         {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
+        {...(props.taskCommitPlan === undefined ? {} : { taskCommitPlan: props.taskCommitPlan })}
         {...(props.workspaceController === undefined
           ? {}
           : { workspaceController: props.workspaceController })}
@@ -441,6 +446,7 @@ function ProjectedShell(props: {
   readonly controls?: ControlCatalog;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
+  readonly taskCommitPlan?: TaskCommitPlanRunner;
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
   readonly sessionNavigationController?: SessionNavigationController;
@@ -464,6 +470,7 @@ function ProjectedShell(props: {
       {...(props.controls === undefined ? {} : { controls: props.controls })}
       {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
+      {...(props.taskCommitPlan === undefined ? {} : { taskCommitPlan: props.taskCommitPlan })}
       {...(props.workspaceController === undefined
         ? {}
         : { workspaceController: props.workspaceController })}

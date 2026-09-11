@@ -1,3 +1,4 @@
+import { SANDBOX_CONFIGURATION_KEYS } from "./sandbox-configuration.ts";
 /**
  * What a command may reach, and when it is allowed to reach it.
  *
@@ -93,6 +94,7 @@ export const CLI_EVENT_STREAM = "configuration";
 
 /** Product-owned declarations whose consumers are live in this build. */
 export const PRODUCT_CONFIGURATION_KEYS = [
+  ...SANDBOX_CONFIGURATION_KEYS,
   ...V0_1_CONFIGURATION_KEYS,
   ...PROVIDER_CONNECTION_KEYS,
   ...MODEL_CONFIGURATION_KEYS,

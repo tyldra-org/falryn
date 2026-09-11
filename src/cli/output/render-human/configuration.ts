@@ -293,6 +293,13 @@ export function renderDoctor(
           `  Workspace trust  ${payload.workspaceTrust.status}: ${safe(payload.workspaceTrust.reason)}`,
         ]),
     `  Build      ${safe(payload.build.platform)} ${safe(payload.build.architecture)}`,
+    ...(payload.sandbox === undefined
+      ? []
+      : [
+          `  Sandbox    ${safe(payload.sandbox.description)}`,
+          `             ${safe(payload.sandbox.probe.status)}: ${safe(payload.sandbox.probe.adapter ?? payload.sandbox.probe.reason ?? "unknown")}`,
+          `             ${safe(payload.sandbox.trustedHostAuthentication)}`,
+        ]),
     `  Config     ${fit(session, configurationHomeSentence(payload.configurationHome), session.columns - 13)}`,
     "  Data roots",
     ...payload.roots.map((entry) => {

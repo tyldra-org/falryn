@@ -1,3 +1,11 @@
+import {
+  createSandboxExpansionGrant,
+  MAX_SANDBOX_RECEIPT_BYTES,
+  SANDBOX_EXPANSION_TTL_MS,
+  type SandboxInvocation,
+  type SandboxInvocationPort,
+  sandboxExpansionSchema,
+} from "../../domain/security/sandbox.ts";
 /**
  * Non-bypassable product tool lifecycle used by the live model loop (#786).
  *
@@ -65,6 +73,7 @@ export type ProductToolConfirmationPort = {
 export type ProductToolEffectLedger = Map<string, ToolInvocationOutcome>;
 
 export type ProductToolGatewayOptions = {
+  readonly sandbox?: SandboxInvocationPort;
   readonly trust?: CapabilityTrustPort;
   readonly delegation?: ToolRunnerRequest["delegation"];
   readonly clock: ClockPort;
@@ -430,7 +439,10 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         inputBytes: new TextEncoder().encode(JSON.stringify(ready.input)).length,
         amounts: {
           ...manifest.resourceAmounts,
-          bufferedBytes: manifest.limits.maxInputBytes + manifest.limits.maxOutputBytes,
+          bufferedBytes:
+            manifest.limits.maxInputBytes +
+            manifest.limits.maxOutputBytes +
+            (options.sandbox === undefined ? 0 : MAX_SANDBOX_RECEIPT_BYTES),
           bufferedItems: 1,
         },
         scopes,
@@ -474,84 +486,212 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           } = request;
           let nativeTerminated: boolean | undefined;
           const finished = Promise.withResolvers<void>();
-          const value = await options.runner
-            .execute({
-              ...nativeRequest,
-              taskResources: task,
-              ...(options.delegation === undefined ? {} : { delegation: options.delegation }),
-              ...(String(manifest.capabilityId) !== "builtin:orchestration/workflow@1"
-                ? {}
-                : {
-                    invokeCapability: (
-                      child: ToolRunnerRequest,
-                      resources: ProductTaskResources,
-                    ) => {
-                      const binding = options.registry.resolveByCapabilityId(child.capabilityId);
-                      if (
-                        !binding ||
-                        !options.delegation?.capabilities.includes(String(child.capabilityId)) ||
-                        binding.manifest.name !== child.toolName ||
-                        binding.manifest.version !== child.version
-                      )
-                        return Promise.resolve({
-                          status: "unavailable" as const,
-                          reason: "workflow-native-binding-unavailable",
-                          effect: "none" as const,
-                        });
-                      // The native graph binds this registered action explicitly. Model-schema
-                      // disclosure is not its selector; policy, trust, hooks, scopes and focused
-                      // confirmation still run in the same gateway for every node.
-                      return createProductToolGateway({
-                        ...options,
-                        taskResources: resources,
-                        disclosedToolNames: new Set([child.toolName]),
-                      }).execute(child);
-                    },
-                  }),
-              ...(![
-                "builtin:orchestration/delegate@1",
-                "builtin:orchestration/peer@1",
-                "builtin:orchestration/workflow@1",
-              ].includes(String(manifest.capabilityId))
-                ? {}
-                : {
-                    afterAdmission(run: (signal: AbortSignal) => Promise<ToolInvocationOutcome>) {
-                      if (deferred.run !== undefined)
-                        throw new Error("duplicate deferred orchestration action");
-                      deferred.run = run;
-                    },
-                  }),
-              ...(options.attemptId === undefined || options.correlation.workspaceId === null
-                ? {}
-                : {
-                    processTask: {
-                      owner: {
-                        sessionId: String(options.correlation.sessionId),
-                        workspaceId: String(options.correlation.workspaceId),
-                        turnId: String(options.turnId),
-                        invocationId: String(request.invocationId),
-                        attemptId: options.attemptId,
-                        configurationGeneration: Number(options.registry.generation),
-                        resourceTaskId: task.id,
-                      },
-                      publishReceipt,
-                      finished: finished.promise,
-                      deadline: Math.min(
-                        task.expiresAt,
-                        Number(workDeadline?.expiresAt ?? task.expiresAt),
-                      ),
-                      reportTermination(terminated) {
-                        nativeTerminated = terminated;
-                      },
-                    },
-                  }),
-              capabilityId: manifest.capabilityId,
-              version: manifest.version,
-              effect: ready.effect,
-              input: ready.input,
+          let sandboxInvocation: SandboxInvocation = {
+            invocationId: String(request.invocationId),
+            capabilityId: String(manifest.capabilityId),
+            source: requiresEcosystemTrust(manifest.source) ? "extension" : "builtin",
+            catalogGeneration: Number(options.registry.generation),
+            policyGeneration: Number(options.correlation.configurationGeneration),
+            inputFingerprint: createHash("sha256")
+              .update(
+                confirmationInputFingerprint(manifest.capabilityId, ready.input, ready.effect),
+              )
+              .digest("hex"),
+            effect: ready.effect,
+            confirmationId: authorized.value.confirmation.required
+              ? createHash("sha256")
+                  .update(authorized.value.confirmation.confirmationId)
+                  .digest("hex")
+              : null,
+            resourceTaskId: task.id,
+            expiresAt: task.expiresAt,
+          };
+          if (ready.input.sandboxExpansion !== undefined) {
+            const expansion = sandboxExpansionSchema.safeParse(ready.input.sandboxExpansion);
+            if (
+              !expansion.success ||
+              !["run_process", "run_shell"].includes(manifest.name) ||
+              options.sandbox === undefined
+            ) {
+              return {
+                value: {
+                  status: "denied",
+                  effect: "none",
+                  reason: "sandbox-expansion-unavailable",
+                } as const,
+                terminated: true,
+                observedEffect: "none" as const,
+              };
+            }
+            const destinations = options.sandbox.resolveExpansion(expansion.data);
+            if (destinations === null)
+              return {
+                value: {
+                  status: "denied",
+                  effect: "none",
+                  reason: "sandbox-expansion-invalid-root",
+                } as const,
+                terminated: true,
+                observedEffect: "none" as const,
+              };
+            const confirmationInput = { ...ready.input, sandboxExpansion: destinations };
+            sandboxInvocation = {
+              ...sandboxInvocation,
+              inputFingerprint: createHash("sha256")
+                .update(
+                  confirmationInputFingerprint(
+                    manifest.capabilityId,
+                    confirmationInput,
+                    ready.effect,
+                  ),
+                )
+                .digest("hex"),
+            };
+            const confirmationId = `sandbox:${request.invocationId}:${sandboxInvocation.inputFingerprint}`;
+            const expiresAt = Math.min(
+              sandboxInvocation.expiresAt,
+              Number(workDeadline?.expiresAt ?? task.expiresAt),
+              Number(options.clock.now()) + SANDBOX_EXPANSION_TTL_MS,
+            );
+            const decision = await options.confirmation?.resolve(
+              {
+                confirmationId,
+                invocationId: request.invocationId,
+                capabilityId: manifest.capabilityId,
+                toolName: manifest.name,
+                effectClass: ready.effect,
+                title: "Allow these sandbox filesystem roots once?",
+                normalizedInput: confirmationInput,
+                inputFingerprint: sandboxInvocation.inputFingerprint,
+              },
               signal,
-            })
-            .finally(() => finished.resolve());
+            );
+            if (
+              signal.aborted ||
+              Number(options.clock.now()) >= expiresAt ||
+              decision?.kind !== "confirmed" ||
+              decision.confirmationId !== confirmationId
+            ) {
+              return {
+                value: {
+                  status: "denied",
+                  effect: "none",
+                  reason: "sandbox-expansion-confirmation-required",
+                } as const,
+                terminated: true,
+                observedEffect: "none" as const,
+              };
+            }
+            sandboxInvocation = { ...sandboxInvocation, confirmationId };
+            sandboxInvocation = {
+              ...sandboxInvocation,
+              expansion: createSandboxExpansionGrant({
+                invocation: sandboxInvocation,
+                expansion: destinations,
+                expiresAt,
+              }),
+            };
+          }
+          const executeNative = (): Promise<ToolInvocationOutcome> =>
+            options.runner
+              .execute({
+                ...nativeRequest,
+                taskResources: task,
+                ...(options.delegation === undefined ? {} : { delegation: options.delegation }),
+                ...(String(manifest.capabilityId) !== "builtin:orchestration/workflow@1"
+                  ? {}
+                  : {
+                      invokeCapability: (
+                        child: ToolRunnerRequest,
+                        resources: ProductTaskResources,
+                      ) => {
+                        const binding = options.registry.resolveByCapabilityId(child.capabilityId);
+                        if (
+                          !binding ||
+                          !options.delegation?.capabilities.includes(String(child.capabilityId)) ||
+                          binding.manifest.name !== child.toolName ||
+                          binding.manifest.version !== child.version
+                        )
+                          return Promise.resolve({
+                            status: "unavailable" as const,
+                            reason: "workflow-native-binding-unavailable",
+                            effect: "none" as const,
+                          });
+                        // The native graph binds this registered action explicitly. Model-schema
+                        // disclosure is not its selector; policy, trust, hooks, scopes and focused
+                        // confirmation still run in the same gateway for every node.
+                        return createProductToolGateway({
+                          ...options,
+                          taskResources: resources,
+                          disclosedToolNames: new Set([child.toolName]),
+                        }).execute(child);
+                      },
+                    }),
+                ...(![
+                  "builtin:orchestration/delegate@1",
+                  "builtin:orchestration/peer@1",
+                  "builtin:orchestration/workflow@1",
+                ].includes(String(manifest.capabilityId))
+                  ? {}
+                  : {
+                      afterAdmission(run: (signal: AbortSignal) => Promise<ToolInvocationOutcome>) {
+                        if (deferred.run !== undefined)
+                          throw new Error("duplicate deferred orchestration action");
+                        deferred.run = run;
+                      },
+                    }),
+                ...(options.attemptId === undefined || options.correlation.workspaceId === null
+                  ? {}
+                  : {
+                      processTask: {
+                        owner: {
+                          sessionId: String(options.correlation.sessionId),
+                          workspaceId: String(options.correlation.workspaceId),
+                          turnId: String(options.turnId),
+                          invocationId: String(request.invocationId),
+                          attemptId: options.attemptId,
+                          configurationGeneration: Number(options.registry.generation),
+                          resourceTaskId: task.id,
+                        },
+                        publishReceipt(outcome) {
+                          const receipts = options.sandbox?.receipts() ?? [];
+                          return publishReceipt({
+                            ...outcome,
+                            ...(receipts.length === 0 ? {} : { sandbox: receipts }),
+                          });
+                        },
+                        finished: finished.promise,
+                        deadline: Math.min(
+                          task.expiresAt,
+                          Number(workDeadline?.expiresAt ?? task.expiresAt),
+                        ),
+                        reportTermination(terminated) {
+                          nativeTerminated = terminated;
+                        },
+                      },
+                    }),
+                capabilityId: manifest.capabilityId,
+                version: manifest.version,
+                effect: ready.effect,
+                input: ready.input,
+                signal,
+              })
+              .catch(
+                (): ToolInvocationOutcome => ({
+                  status: "uncertain",
+                  effect: "uncertain",
+                  recoveryHint: "native-execution-interrupted",
+                }),
+              )
+              .finally(() => finished.resolve());
+          const sandboxed =
+            options.sandbox === undefined
+              ? { value: await executeNative(), receipts: [] }
+              : await options.sandbox.run(sandboxInvocation, executeNative);
+          const value: ToolInvocationOutcome = {
+            ...sandboxed.value,
+            ...(sandboxed.receipts.length === 0 ? {} : { sandbox: sandboxed.receipts }),
+          };
           return {
             value,
             observedEffect: value.effect,
@@ -605,6 +745,14 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         signal: request.signal,
       });
 
+      const sandboxReceipts = outcome.sandbox?.map((receipt) => ({
+        ...receipt,
+        readRoots: receipt.readRoots.map((root) => redactor.redactText(root, 1_024)),
+        writeRoots: receipt.writeRoots.map((root) => redactor.redactText(root, 1_024)),
+        credentialHandles: receipt.credentialHandles.map((handle) =>
+          redactor.redactText(handle, 256),
+        ),
+      }));
       const degradation = degradationObservation(request, outcome, options.opportunityPlan);
       const elapsed = Math.max(0, Number(endedAt) - Number(startedAt));
       const entry = ready.entry;
@@ -655,6 +803,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         observedStatus: validatedOutcome.status,
         ...(request.composition === undefined ? {} : { composition: request.composition }),
         admission: admitted.receipt,
+        ...(sandboxReceipts === undefined ? {} : { sandbox: sandboxReceipts }),
         ...(degradation === undefined ? {} : { degradation }),
       });
       if (!committed) enveloped = envelopeToolResult({ ...envelopeInput, persistFailed: true });
@@ -674,10 +823,14 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         failureReason(outcome),
       );
       if (ready.effect !== "observation" && effectOf(projected) !== "none") {
-        options.effectLedger.set(ledgerKey, projected);
+        options.effectLedger.set(ledgerKey, {
+          ...projected,
+          ...(sandboxReceipts === undefined ? {} : { sandbox: sandboxReceipts }),
+        });
       }
       return {
         ...projected,
+        ...(sandboxReceipts === undefined ? {} : { sandbox: sandboxReceipts }),
         admission: admitted.receipt,
         ...(request.composition === undefined ? {} : { composition: request.composition }),
       };

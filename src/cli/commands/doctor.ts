@@ -1,3 +1,4 @@
+import { inspectProductSandbox } from "../runtime/sandbox-configuration.ts";
 /** Read-only environment and storage diagnostics command. */
 
 import { fromUnknown } from "../../application/diagnostics/index.ts";
@@ -30,6 +31,7 @@ export type DoctorStorage =
   | { readonly kind: "undetermined"; readonly reason: "state-root-not-viable" };
 
 export type DoctorPayload = {
+  readonly sandbox?: Awaited<ReturnType<typeof inspectProductSandbox>>;
   readonly workspaceTrust?: WorkspaceTrustReport;
   /** Effective user-authored configuration home selected without mutation. */
   readonly configurationHome: ConfigurationHomeResolution;
@@ -127,6 +129,7 @@ export async function runDoctor(
       "doctor",
       {
         configurationHome,
+        sandbox: await inspectProductSandbox(services()),
         ...(globals === undefined
           ? {}
           : { workspaceTrust: await inspectWorkspaceTrust(services(), globals) }),

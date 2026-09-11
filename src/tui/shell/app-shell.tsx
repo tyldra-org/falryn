@@ -1,3 +1,4 @@
+import type { TaskCommitPlanRunner } from "../../cli/commands/task-commit-plan-commands.ts";
 /**
  * `AppShell` — the root, and the only component that decides anything.
  *
@@ -134,6 +135,7 @@ export type AppShellProps = {
   readonly artifactViewer?: ArtifactViewer;
   /** Observes Git status, worktrees, and checkpoints. Absent in static frames. */
   readonly gitDashboard?: GitDashboard;
+  readonly taskCommitPlan?: TaskCommitPlanRunner;
   readonly onChangesSettled?: (notice: string) => void;
   /** Application-backed workspace-set mutations. Absent when no set is attached. */
   readonly workspaceController?: WorkspaceController;
@@ -241,6 +243,7 @@ export function AppShell(props: AppShellProps): ReactNode {
             : { onCompressionSelect: props.onCompressionSelect })}
           {...(props.artifactViewer === undefined ? {} : { artifactViewer: props.artifactViewer })}
           {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
+          {...(props.taskCommitPlan === undefined ? {} : { taskCommitPlan: props.taskCommitPlan })}
           {...(props.onChangesSettled === undefined
             ? {}
             : { onChangesSettled: props.onChangesSettled })}
@@ -315,6 +318,7 @@ function ShellFrame(props: {
   readonly onCompressionSelect?: (action: CompressionControlAction) => void;
   readonly artifactViewer?: ArtifactViewer;
   readonly gitDashboard?: GitDashboard;
+  readonly taskCommitPlan?: TaskCommitPlanRunner;
   readonly onChangesSettled?: (notice: string) => void;
   readonly workspaceController?: WorkspaceController;
   readonly workspace?: WorkspaceSetView;
@@ -495,6 +499,7 @@ function overlayBody(
     readonly onCompressionSelect?: (action: CompressionControlAction) => void;
     readonly artifactViewer?: ArtifactViewer;
     readonly gitDashboard?: GitDashboard;
+    readonly taskCommitPlan?: TaskCommitPlanRunner;
     readonly onChangesSettled?: (notice: string) => void;
     readonly workspaceController?: WorkspaceController;
     readonly workspace?: WorkspaceSetView;
@@ -628,6 +633,7 @@ function overlayBody(
     case "task-intelligence":
       return (
         <TaskIntelligenceSheet
+          {...(props.taskCommitPlan === undefined ? {} : { commitPlan: props.taskCommitPlan })}
           panel={overlay.panel}
           draft={overlay.draft}
           rows={rows}

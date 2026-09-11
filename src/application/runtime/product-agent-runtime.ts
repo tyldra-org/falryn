@@ -1,3 +1,4 @@
+import type { SandboxInvocationPort } from "../../domain/security/sandbox.ts";
 /**
  * Product bootstrap composition for the live coding agent host (#705).
  *
@@ -63,6 +64,7 @@ import type { PersistTurnEventsOutcome, TurnEventJournal } from "./turn-event-jo
 import { createTurnEventJournal } from "./turn-event-journal.ts";
 
 export type ProductAgentRuntimePorts = {
+  readonly sandbox?: SandboxInvocationPort;
   readonly canComplete?: NonNullable<Parameters<typeof createTurnCoordinator>[0]>["canComplete"];
   readonly onTerminal?: NonNullable<Parameters<typeof createTurnCoordinator>[0]>["onTerminal"];
   readonly takeSteering?: () => readonly { readonly id: string; readonly text: string }[];
@@ -262,6 +264,7 @@ export function composeProductAgentRuntime(
     ports.attemptRunner ??
     (providerAdapter !== null && toolRunner !== null && toolRegistry !== null
       ? createProductAttemptRunner({
+          ...(ports.sandbox === undefined ? {} : { sandbox: ports.sandbox }),
           ...(ports.takeSteering === undefined ? {} : { takeSteering: ports.takeSteering }),
           resources: ports.resources ?? processProductResources,
           clock: ports.clock,

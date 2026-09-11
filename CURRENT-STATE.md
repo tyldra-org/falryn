@@ -83,6 +83,67 @@ over-limit declarations and failed decision writes keep project loaders disabled
 The decision contains hashes and redacted labels, not file contents or credentials.
 After correcting a failure or change, reopen interactively to review again.
 
+## Executable sandbox policy
+
+The existing command, capture, PTY and managed-service launchers consume
+`SandboxPort`. Application authorization, workspace trust, scheduling and
+credential resolution remain separate controls. Built-in workspace commands
+use the explicit installation compatibility default, `off`, which provides no
+OS filesystem, network or process isolation. Executable extensions cannot use
+that exception and remain unavailable through their existing activation rules.
+
+The user-only `tools.sandbox` object has `version: 1`, `mode`, `readRoots` and
+`writeRoots`. Project/profile configuration and model arguments cannot select a
+weaker mode. `strict` admits the primary workspace for read/write and explicit
+additional roots, requires offline execution, and denies subprocess creation.
+The current macOS adapter qualifies Darwin 25.6.0 arm64 with the checked system
+`sandbox-exec` identity. Other hosts, broader network/process controls and
+strict PTYs are unavailable. `degraded` is unavailable because no weaker
+boundary is qualified. A strict refusal never retries without isolation.
+Missing accepted configuration or unread sources refuse workspace launches.
+
+The adapter also permits runtime reads from `/System/Library`, `/usr/lib`,
+`/Library/Apple`, the executable and root-directory entry, plus metadata for
+admitted-root ancestors and existence checks through verified macOS path aliases.
+The version-3 profile permits named hardware queries and own-process metadata,
+and denies numeric sysctl and ptrace syscalls. It supplies explicit environment
+and standard I/O.
+It does not provide CPU/memory containment or protection from a privileged host
+or kernel compromise. The system helper is deprecated. Debugger attachment was
+denied with and without the adapter on the qualification host; that observation
+does not establish an independent adapter restriction.
+
+`run_process` and `run_shell` can propose `sandboxExpansion` with extra read/write
+roots. A separate focused confirmation shows canonical destinations and binds
+one launch to the invocation, argument-aware effect, input digest, catalog and
+policy generations, task, and expiry. The grant expires within 60 seconds and
+cannot authorize a second launch or modify a running child. Receipts are bounded
+to 32 launches plus one terminal refusal and 64 KiB per invocation; each root
+list has at most eight entries. Existing execution budgets still apply.
+
+Effective boundary and cleanup receipts reach tool/model output, the semantic
+journal, CLI human/JSON/JSONL output, terminal transcripts and replay. Export
+preserves the typed policy facts and redacts credential handles. `doctor`
+reports selected workspace policy and platform availability, and identifies
+trusted vault/provider-login helpers as host operations under `off` policy.
+Those authentication helpers are outside workspace isolation. Managed-service
+restarts recheck policy; an expired or changed invocation cannot authorize a
+new launch. Existing process supervisors retain stop and cleanup ownership.
+
+Reproduce hostile source/compiled child checks with
+`bun test src/integrations/security/sandbox-qualification.test.ts`, product
+composition with the coding-run and shell-attachment suites, and packaged
+composition with `bun run smoke:macos-arm64` after `bun run build`.
+`bun run tools/benchmarks/sandbox-scorecard.ts` measures raw disabled, supervised
+off and strict startup and 64 KiB read/write workloads separately. Qualification
+covers APFS mount aliases, filesystem escapes, live TCP/DNS/proxy/listener
+controls, subprocess/daemon creation, parent signals, explicit environment and
+closed inherited descriptors. Source and compiled positive controls also prove
+that strict mode blocks reading a sibling process’s initial environment and
+the tested ptrace syscall. Privileged mounting and kernel exploits are
+outside this boundary. These are development results, not a release or a
+browser/computer-use isolation claim.
+
 ## Provider connections
 
 Provider profiles are stored in the typed `providers.connections`

@@ -16,6 +16,7 @@ import {
   describeTaskCommitPlanError,
   type TerminalOutcome,
 } from "../../domain/orchestration/index.ts";
+import type { SandboxPort } from "../../domain/security/sandbox.ts";
 import { createHostGitPort, createHostProcessCapturePort } from "../../integrations/index.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
@@ -93,6 +94,7 @@ export function summarizeTaskCommitPlan(payload: TaskCommitPlanPayload): string 
 export async function runTaskCommitPlan(
   arguments_: TaskCommitPlanArguments,
   signal?: AbortSignal,
+  sandbox?: SandboxPort,
 ): Promise<CommandResultOf<"task.commit-plan", TaskCommitPlanPayload>> {
   const gitExecutable = Bun.which("git");
   if (gitExecutable === null) {
@@ -102,7 +104,9 @@ export async function runTaskCommitPlan(
       }),
     ]);
   }
-  const git = createHostGitPort({ capture: createHostProcessCapturePort() });
+  const git = createHostGitPort({
+    capture: createHostProcessCapturePort(sandbox === undefined ? {} : { sandbox }),
+  });
   const result = await executeOutcomeCommitPlan(
     git,
     {
@@ -166,3 +170,7 @@ export function taskCommitPlanArgumentsFor(parsed: {
     confirmation: parsed.confirm?.trim() || null,
   };
 }
+
+export type TaskCommitPlanRunner = (
+  arguments_: TaskCommitPlanArguments,
+) => ReturnType<typeof runTaskCommitPlan>;

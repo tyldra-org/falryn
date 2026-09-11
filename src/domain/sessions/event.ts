@@ -1,5 +1,6 @@
 import type { CompositionProvenance } from "../capabilities/composition.ts";
 import type { CatalogHistory } from "../extensions/catalog-history.ts";
+import type { SandboxReceipt } from "../security/sandbox.ts";
 /**
  * The semantic event envelope.
  *
@@ -222,6 +223,7 @@ export type CapabilityInvocationStartedPayload = {
 };
 
 export type CapabilityInvocationCompletedPayload = TerminalPayload & {
+  readonly sandbox?: readonly SandboxReceipt[] | undefined;
   readonly composition?: CompositionProvenance | undefined;
   readonly admission?: ResourceAdmissionReceipt | undefined;
   /** Exact normalized runner status; absent on legacy events. */

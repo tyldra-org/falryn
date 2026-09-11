@@ -1,3 +1,7 @@
+import {
+  createHostSandbox,
+  installationSandboxPolicy,
+} from "./integrations/security/host-sandbox.ts";
 /**
  * Falryn's application bootstrap.
  *
@@ -241,7 +245,10 @@ export async function main(options: BootstrapOptions = {}): Promise<BootstrapRep
     const eventStore = createSqliteEventStore(opened.value);
     const productCredentials = composeProductCredentials({
       clock: systemClock,
-      commands: createHostCommandRunner({ ownedProcesses: ownedProcesses.registry }),
+      commands: createHostCommandRunner({
+        sandbox: createHostSandbox({ policy: installationSandboxPolicy }),
+        ownedProcesses: ownedProcesses.registry,
+      }),
       platform: options.platform ?? hostPlatform(),
       environment,
     });

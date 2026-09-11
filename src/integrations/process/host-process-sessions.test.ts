@@ -279,3 +279,52 @@ describe("host managed services", () => {
     }
   });
 });
+
+platformTest("PTY and managed service denial never execute the requested child", async () => {
+  const { createHostSandbox, installationSandboxPolicy } = await import(
+    "../security/host-sandbox.ts"
+  );
+  const sandbox = createHostSandbox({
+    policy: () => ({ ...installationSandboxPolicy(), mode: "degraded" }),
+  });
+  const pty = await createHostPtySessionPort({ sandbox }).open(ptyRequest("exit 0"));
+  expect(pty.ok).toBe(false);
+  if (!pty.ok)
+    expect(pty.error.sandbox).toMatchObject({
+      state: "refused",
+      pid: null,
+      reason: "sandbox-degraded-boundary-unqualified",
+    });
+  const services = createHostManagedServicePort({ sandbox });
+  const request = serviceRequest("sandbox-service-denial", "printf ready", {
+    restart: { maxRestarts: 8, windowMs: duration(2_000) },
+  });
+  const service = await services.start(request);
+  expect(service.ok).toBe(false);
+  expect(services.snapshot(request.serviceId)).toMatchObject({
+    generation: 1,
+    sandbox: { state: "refused", pid: null },
+  });
+});
+
+platformTest("service restart rechecks policy and retains the pre-launch refusal", async () => {
+  const { createHostSandbox, installationSandboxPolicy } = await import(
+    "../security/host-sandbox.ts"
+  );
+  let launches = 0;
+  const sandbox = createHostSandbox({
+    policy: () => ({ ...installationSandboxPolicy(), mode: launches++ === 0 ? "off" : "degraded" }),
+  });
+  const services = createHostManagedServicePort({ sandbox });
+  const request = serviceRequest("sandbox-service-restart", "printf ready; sleep 0.03; exit 7", {
+    restart: { maxRestarts: 1, windowMs: duration(2_000) },
+  });
+  const service = await services.start(request);
+  expect(service.ok).toBe(true);
+  await waitUntil(() => services.snapshot(request.serviceId)?.state === "failed");
+  expect(launches).toBe(2);
+  expect(services.snapshot(request.serviceId)).toMatchObject({
+    generation: 2,
+    sandbox: { state: "refused", effectiveMode: null, pid: null },
+  });
+});

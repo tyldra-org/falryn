@@ -15,8 +15,8 @@ import {
   recommendOutcomeValidation,
 } from "../../application/orchestration/index.ts";
 import {
-  runTaskCommitPlan,
   summarizeTaskCommitPlan,
+  type TaskCommitPlanRunner,
   taskCommitPlanArgumentsFor,
 } from "../../cli/commands/task-commit-plan-commands.ts";
 import {
@@ -43,6 +43,7 @@ import type { TaskIntelligencePanel } from "./format.ts";
 import { TASK_INTELLIGENCE_PANEL_TITLES } from "./format.ts";
 
 export type TaskIntelligenceSheetProps = {
+  readonly commitPlan?: TaskCommitPlanRunner;
   readonly panel: TaskIntelligencePanel;
   readonly draft: string;
   readonly rows: number;
@@ -151,7 +152,11 @@ async function submitDraft(props: TaskIntelligenceSheetProps): Promise<void> {
         props.onNotice?.(args);
         return;
       }
-      const result = await runTaskCommitPlan(args);
+      if (props.commitPlan === undefined) {
+        props.onNotice?.("Commit-plan execution is unavailable in this shell.");
+        return;
+      }
+      const result = await props.commitPlan(args);
       if (result.payload === null) {
         const first = result.errors[0];
         props.onNotice?.(first === undefined ? "Commit plan failed." : String(first));

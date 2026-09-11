@@ -1,3 +1,4 @@
+import { sandboxReceiptSchema } from "../security/sandbox.ts";
 /**
  * The export package contract: what a package is, what it declares, and what a
  * reader must satisfy to open one.
@@ -678,13 +679,23 @@ function walkExportValue(
   const scopeIdentity = activation?.success === true;
   const scopeDigest =
     scopeIdentity && digestSchema.safeParse(activation.data.scopeAuthorityId).success;
+  const sandbox = "effectiveMode" in value ? sandboxReceiptSchema.safeParse(value) : null;
   const next: Record<string, unknown> = {};
   for (const [key, nested] of Object.entries(value)) {
     const nestedPath = childPath(path, key);
     const structuralScopeFact =
       (key === "scopeAuthorityGeneration" && scopeIdentity) ||
       (key === "scopeAuthorityId" && scopeDigest);
-    if (redactor.isSecretName(key) && !structuralScopeFact) {
+    if (sandbox?.success && key === "credentialHandles") {
+      next[key] = sandbox.data.credentialHandles.map(() => redactor.placeholder);
+      if (sandbox.data.credentialHandles.length > 0) {
+        const recorded = recordRedaction(redactions, nestedPath);
+        if (!recorded.ok) return recorded;
+      }
+      continue;
+    }
+    const sandboxPolicyAuthority = sandbox?.success && key === "authority";
+    if (redactor.isSecretName(key) && !structuralScopeFact && !sandboxPolicyAuthority) {
       const recorded = recordRedaction(redactions, nestedPath);
       if (!recorded.ok) {
         return recorded;

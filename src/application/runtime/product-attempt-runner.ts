@@ -1,4 +1,5 @@
 import type { CapabilityRegistry } from "../../domain/capabilities/index.ts";
+import type { SandboxInvocationPort } from "../../domain/security/sandbox.ts";
 import { createCapabilityComposition } from "../capabilities/capability-composition.ts";
 /**
  * Production provider/tool continuation controller (#786).
@@ -76,6 +77,7 @@ import type { TurnCoordinator } from "./turn-coordinator.ts";
 import type { TurnEventJournalPort } from "./turn-event-journal.ts";
 
 export type ProductAttemptRunnerOptions = {
+  readonly sandbox?: SandboxInvocationPort;
   readonly takeSteering?: () => readonly { readonly id: string; readonly text: string }[];
   readonly capabilities?: CapabilityRegistry;
   readonly resources?: ProductResources;
@@ -842,6 +844,7 @@ export function createProductAttemptRunner(
       const continuation: { terminal: ProviderStreamConsumeOutcome | null } = { terminal: null };
 
       const gateway = createProductToolGateway({
+        ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
         delegation: {
           route: {
             providerProfileId: request.receipt.providerProfileId,
