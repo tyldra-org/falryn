@@ -1,9 +1,10 @@
+import { languageStartupFixture } from "./language-startup.test-support.ts";
 /**
  * Default TUI product attachments (#752 / #728).
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
@@ -989,3 +990,113 @@ test("terminal submission preserves selected sandbox refusal in its transcript f
     effectiveMode: null,
   });
 });
+
+for (const kind of ["lsp", "dap"] as const) {
+  (process.platform === "win32" ? test.skip : test)(
+    `terminal model starts and uses a configured ${kind} service`,
+    async () => {
+      const home = await mkdtemp(join(tmpdir(), "falryn-language-terminal-"));
+      homes.push(home);
+      const root = await realpath(home);
+      await writeFile(join(root, "fixture.ts"), "const answer = 42;");
+      const services = createServiceProvider(
+        { ...GLOBALS, workspace: root },
+        {
+          home: localPath(home),
+          currentDirectory: localPath(root),
+          environment: createStaticEnvironment({
+            FALRYN_STATE_DIR: join(home, "state"),
+            FALRYN_CONFIG_DIR: join(home, "config"),
+          }),
+        },
+      )();
+      const workspace = await services.ensureWorkspaceSet();
+      if (!workspace.ok) throw new Error("fixture workspace unavailable");
+      const fixture = languageStartupFixture(root, kind, "attach");
+      const adapter = fixture.provider;
+      const model = adapter.supportedModels[0];
+      if (model === undefined) throw new Error("fixture model unavailable");
+      const clock = services.clock;
+      const attached = await composeProductShellAttachments({
+        configurationValues: () =>
+          z.record(z.string(), z.json()).parse({ "tools.languageServices": fixture.configuration }),
+        eventStore: createInMemoryEventStore(),
+        clock,
+        fileSystem: services.fileSystem,
+        workspaceSet: workspace.value.set,
+        configurationGeneration: configurationGeneration.from(0),
+        toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+        provider: {
+          kind: "ready",
+          adapter,
+          session: {
+            kind: "ready",
+            release: async () => {},
+            connection: {
+              profile: {
+                ...adapter.identity,
+                adapterKind: "deterministic",
+                displayName: "Sandbox fixture",
+                endpoint: null,
+                credential: null,
+                organization: null,
+                project: null,
+                enabledModels: [model],
+                transportCompatibility: null,
+                modelCapabilities: [],
+                discovery: "static",
+                timeouts: { connectMs: 1_000, requestMs: 10_000 },
+              },
+              account: null,
+              updatedAt: clock.now(),
+            },
+            auth: {
+              profileId: adapter.identity.profileId,
+              state: "ready",
+              consumer: "provider:fixture",
+              observedAt: clock.now(),
+              health: null,
+              code: null,
+              retryable: false,
+            },
+            catalog: {
+              generation: 1,
+              provenance: "static-config",
+              fetchedAt: clock.now(),
+              expiresAt: null,
+              models: [
+                {
+                  schemaVersion: 1,
+                  modelId: model,
+                  displayName: null,
+                  inputModalities: ["text"],
+                  outputModalities: ["text"],
+                  tools: "supported",
+                  structuredOutput: "supported",
+                  streaming: "supported",
+                  reasoning: "supported",
+                  reasoningControls: ["balanced"],
+                  completeness: "complete",
+                  availability: "available",
+                  provenance: ["profile-declaration"],
+                  contextTokens: 128_000,
+                  outputTokens: 8_000,
+                },
+              ],
+            },
+          },
+        },
+      });
+      if (attached === null) throw new Error("terminal composition unavailable");
+      const submitted = await attached.submission.submit(snapshotOf(fixture.prompt, 1));
+      expect(submitted.kind).toBe("accepted");
+      expect(fixture.results.length, JSON.stringify(attached.transcriptFeed.events())).toBe(
+        kind === "lsp" ? 8 : 6,
+      );
+      expect(fixture.results.at(-1)).toMatchObject({ state: "stopped" });
+      const started = z.object({ pid: z.number() }).parse(fixture.results[1]);
+      expect(() => process.kill(started.pid, 0)).toThrow();
+    },
+    30_000,
+  );
+}

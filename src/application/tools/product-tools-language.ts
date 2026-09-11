@@ -17,13 +17,16 @@ import type {
 } from "../../domain/tools/index.ts";
 import { createToolRegistry, createToolRegistryEntry } from "../../domain/tools/index.ts";
 import type { FileSystemPort, LocalPath } from "../../domain/workspace/index.ts";
-import { localPath } from "../../domain/workspace/index.ts";
+import { bindWorkspacePath, localPath } from "../../domain/workspace/index.ts";
 import type { DebugAdapterSupervisor } from "../debugging/debug-adapter.ts";
 import type { LanguageServerSupervisor } from "../language/language-server.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "../runtime/tool-call-loop.ts";
 import { createWorkspacePathBinder } from "../workspace/workspace-path.ts";
+import type { LanguageServiceConfiguration } from "./product-language-tools/configuration.ts";
 import { dapToolDefinitions } from "./product-language-tools/dap.ts";
+import { bindHierarchyReferences } from "./product-language-tools/hierarchy-references.ts";
 import { lspToolDefinitions } from "./product-language-tools/lsp.ts";
+import { bindLanguageToolReferences } from "./product-language-tools/references.ts";
 
 export const PRODUCT_LANGUAGE_TOOLS_OWNER = "#805";
 
@@ -37,6 +40,7 @@ export type ProductLanguageToolPorts = {
   readonly debugAdapters: DebugAdapterSupervisor;
   readonly fileSystem?: FileSystemPort;
   readonly workspaceRoot?: LocalPath;
+  readonly configuration?: () => LanguageServiceConfiguration;
 };
 
 export type ProductLanguageTools = {
@@ -58,10 +62,13 @@ function mustEntry(result: ReturnType<typeof createToolRegistryEntry>): ToolRegi
 
 /** Compose the complete strict LSP/DAP product operation set. */
 export function composeProductLanguageTools(ports: ProductLanguageToolPorts): ProductLanguageTools {
-  const definitions = [
-    ...lspToolDefinitions(ports.languageServers),
-    ...dapToolDefinitions(ports.debugAdapters),
-  ];
+  const definitions = bindLanguageToolReferences({
+    ...ports,
+    definitions: bindHierarchyReferences(
+      [...lspToolDefinitions(ports.languageServers), ...dapToolDefinitions(ports.debugAdapters)],
+      ports.languageServers,
+    ),
+  });
   const entries = definitions.map((definition) =>
     mustEntry(
       createToolRegistryEntry(definition.document, {
@@ -95,11 +102,51 @@ export function composeProductLanguageTools(ports: ProductLanguageToolPorts): Pr
           effect: "none",
         };
       }
+      const entry = registry.resolveByName(request.toolName);
+      if (
+        entry?.manifest.capabilityId !== request.capabilityId ||
+        entry.manifest.version !== request.version
+      ) {
+        return { status: "unavailable", reason: "capability-binding-mismatch", effect: "none" };
+      }
       const parsed = definition.inputSchema.safeParse(request.input);
       if (!parsed.success) {
         return { status: "malformed", reason: "malformed-input", effect: "none" };
       }
+      if (ports.workspaceRoot !== undefined) {
+        const input = parsed.data;
+        const uris = [input.uri];
+        for (const folders of [input.added, input.removed]) {
+          if (Array.isArray(folders))
+            for (const folder of folders) {
+              if (typeof folder === "object" && folder !== null && "uri" in folder)
+                uris.push(folder.uri);
+            }
+        }
+        const paths: unknown[] = [input.sourcePath];
+        for (const uri of uris) {
+          if (uri === undefined) continue;
+          const decoded = typeof uri === "string" ? fileUriToAbsolutePath(uri) : null;
+          if (!decoded?.ok)
+            return { status: "malformed", reason: "invalid-document-uri", effect: "none" };
+          paths.push(decoded.value);
+        }
+        for (const path of paths) {
+          if (path === undefined) continue;
+          const bound =
+            workspacePathBinder === null
+              ? bindWorkspacePath(ports.workspaceRoot, path)
+              : await workspacePathBinder.bind(ports.workspaceRoot, path, request.signal);
+          if (!bound.ok)
+            return { status: "unavailable", reason: `path-${bound.error.code}`, effect: "none" };
+        }
+      }
       const outcome = await definition.execute({ ...request, input: parsed.data });
+      // An acknowledged protocol refusal has settled its request even though
+      // the shared server process remains available for another operation.
+      if (outcome.status === "failed" && outcome.effect === "none") {
+        request.processTask?.reportTermination?.(true);
+      }
       if (
         outcome.status === "completed" &&
         request.toolName.startsWith("lsp_") &&

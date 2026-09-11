@@ -1,10 +1,20 @@
+import { languageStartupFixture } from "./language-startup.test-support.ts";
 /**
  * Headless `falryn run` (#708): prompt resolution, product hosting, fail-closed
  * without a provider, and the four output contracts through dispatch.
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sealedAgentResultSchema } from "../../application/orchestration/delegation-contract.ts";
@@ -2066,3 +2076,50 @@ test("headless composition enforces and durably projects selected sandbox policy
       );
   }
 }, 30_000);
+
+for (const kind of ["lsp", "dap"] as const) {
+  (process.platform === "win32" ? test.skip : test)(
+    `headless model starts and uses a configured ${kind} service`,
+    async () => {
+      const seeded = await seededHome();
+      const fixture = languageStartupFixture(await realpath(seeded.primary), kind);
+      await writeFile(join(seeded.primary, "fixture.ts"), "const answer = 42;");
+      const services = providerFor(seeded)(globalsFor(seeded));
+      await writeFile(
+        join(String(services().configurationRoot), CONFIGURATION_FILE_NAME),
+        JSON.stringify({ schemaVersion: 1, tools: { languageServices: fixture.configuration } }),
+      );
+      const result = await runCoding(
+        services,
+        { promptParts: [fixture.prompt] },
+        {
+          input: createRecordingCliStreams({ stdin: null }).input,
+          globals: globalsFor(seeded),
+          providerAdapter: fixture.provider,
+          toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+        },
+      );
+      expect(
+        result.outcome.kind,
+        JSON.stringify({
+          result,
+          results: fixture.results,
+          messages: fixture.requests.at(-1)?.messages,
+        }),
+      ).toBe("completed");
+      expect(
+        fixture.results.length,
+        JSON.stringify({
+          result,
+          results: fixture.results,
+          messages: fixture.requests.at(-1)?.messages,
+        }),
+      ).toBe(kind === "lsp" ? 8 : 6);
+      expect(fixture.results.at(-1)).toMatchObject({ state: "stopped" });
+      if (kind === "lsp")
+        expect(fixture.results[3]).toMatchObject({ contents: { value: "fixture symbol: number" } });
+      else expect(fixture.results[4]).toMatchObject([{ name: "fixture" }]);
+    },
+    30_000,
+  );
+}

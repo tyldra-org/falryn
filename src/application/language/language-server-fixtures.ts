@@ -45,9 +45,64 @@ function handle(message: Record<string, unknown>): void {
         jsonrpc: "2.0",
         id: message.id,
         result: {
-          capabilities: { hoverProvider: true },
+          capabilities: {
+            hoverProvider: true,
+            definitionProvider: true,
+            callHierarchyProvider: true,
+            typeHierarchyProvider: true,
+          },
           serverInfo: { name: "fixture-lsp", version: "0.0.1" },
         },
+      }),
+    );
+    return;
+  }
+  if (message.id !== undefined && message.method.startsWith("textDocument/")) {
+    const params = message.params as { textDocument?: { uri: string } };
+    const uri = params.textDocument?.uri ?? "file:///fixture.ts";
+    const range = { start: { line: 0, character: 0 }, end: { line: 0, character: 5 } };
+    const result =
+      message.method === "textDocument/hover"
+        ? { contents: { kind: "plaintext", value: "fixture symbol: number" } }
+        : message.method === "textDocument/definition"
+          ? [{ uri, range }]
+          : [
+              {
+                name: "fixture",
+                kind: 12,
+                uri,
+                range,
+                selectionRange: range,
+                data: { extension: { token: [1, true, null] } },
+              },
+            ];
+    const response = encode({ jsonrpc: "2.0", id: message.id, result });
+    const delay =
+      message.method === "textDocument/hover"
+        ? Number(process.env.FALRYN_FIXTURE_HOVER_DELAY_MS ?? 0)
+        : 0;
+    if (delay > 0)
+      setTimeout(() => {
+        void write(response);
+      }, delay);
+    else void write(response);
+    return;
+  }
+  if (
+    message.id !== undefined &&
+    (message.method.startsWith("callHierarchy/") || message.method.startsWith("typeHierarchy/"))
+  ) {
+    const params = message.params as { item?: { data?: unknown } };
+    const preserved =
+      JSON.stringify(params.item?.data) ===
+      JSON.stringify({ extension: { token: [1, true, null] } });
+    void write(
+      encode({
+        jsonrpc: "2.0",
+        id: message.id,
+        ...(preserved
+          ? { result: [] }
+          : { error: { code: -32602, message: "hierarchy extension data was lost" } }),
       }),
     );
     return;
