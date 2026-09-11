@@ -556,8 +556,8 @@ contribution selected by its exact digest in `health.contribution`. Trust, scope
 enablement, installed revisions and locked dependency compatibility are checked
 before confirmation and each protocol request. Preview starts no code. Confirmed
 health uses the product resource owner and the qualified macOS arm64 strict
-sandbox with package-only reads, no writes, network or children, and an empty
-environment. Other hosts, loaders, module services and full-user execution remain
+sandbox with package reads and its fixed system-runtime read allowance, no
+writes, network or children, and an empty environment. Other hosts, loaders, module services and full-user execution remain
 unavailable. Required CPU or memory controls, including inherited limits, refuse
 admission because the native profile cannot enforce them.
 
