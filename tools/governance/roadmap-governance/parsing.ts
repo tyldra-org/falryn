@@ -157,6 +157,8 @@ function parseProjectItem(value: unknown, subject: string): RoadmapProjectItem {
     statusUpdatedAt: nullableTimestamp(record.statusUpdatedAt, `${subject}.statusUpdatedAt`),
     priority: nullableString(record.priority, `${subject}.priority`),
     readiness: nullableString(record.readiness, `${subject}.readiness`),
+    targetRelease: nullableString(record.targetRelease, `${subject}.targetRelease`),
+    releaseException: nullableString(record.releaseException, `${subject}.releaseException`),
   };
   if ((item.status === null) !== (item.statusUpdatedAt === null)) {
     throw new Error(`${subject}.status and statusUpdatedAt must both be null or present`);
@@ -179,11 +181,6 @@ function parseIssue(value: unknown, index: number): RoadmapGovernanceIssue {
     closedAt: nullableTimestamp(record.closedAt, `${subject}.closedAt`),
     assignees: stringArray(record.assignees, `${subject}.assignees`),
     labels: stringArray(record.labels, `${subject}.labels`),
-    milestone: nullableString(record.milestone, `${subject}.milestone`),
-    milestoneState:
-      record.milestoneState === null
-        ? null
-        : issueState(record.milestoneState, `${subject}.milestoneState`),
     parent: parent === null ? null : parseRelation(parent, `${subject}.parent`),
     subIssues: arrayValue(record.subIssues, `${subject}.subIssues`).map((entry, relationIndex) =>
       parseRelation(entry, `${subject}.subIssues[${relationIndex}]`),
@@ -202,9 +199,6 @@ function parseIssue(value: unknown, index: number): RoadmapGovernanceIssue {
         parseProjectItem(entry, `${subject}.projectItems[${projectItemIndex}]`),
     ),
   };
-  if ((issue.milestone === null) !== (issue.milestoneState === null)) {
-    throw new Error(`${subject}.milestone and milestoneState must both be null or present`);
-  }
   if ((issue.state === "OPEN") !== (issue.closedAt === null)) {
     throw new Error(`${subject}.state and closedAt disagree`);
   }
@@ -235,6 +229,9 @@ export function parseRoadmapGovernanceSnapshot(value: unknown): RoadmapGovernanc
   const record = asRecord(value, "snapshot");
   if (record.schemaVersion !== SCHEMA_VERSION) {
     throw new Error(`snapshot.schemaVersion must be ${SCHEMA_VERSION}`);
+  }
+  if (typeof record.projectPublic !== "boolean") {
+    throw new Error("snapshot.projectPublic must be a boolean");
   }
   const repositories = stringArray(record.repositories, "snapshot.repositories").map(
     (repository, index) => repositoryValue(repository, `snapshot.repositories[${index}]`),
@@ -310,6 +307,7 @@ export function parseRoadmapGovernanceSnapshot(value: unknown): RoadmapGovernanc
     schemaVersion: SCHEMA_VERSION,
     generatedAt,
     projectOwner,
+    projectPublic: record.projectPublic,
     projectNumber,
     projectId: stringValue(record.projectId, "snapshot.projectId"),
     repositories,
@@ -323,6 +321,10 @@ export function parseRoadmapGovernanceSnapshot(value: unknown): RoadmapGovernanc
     readinessOptions: arrayValue(record.readinessOptions, "snapshot.readinessOptions").map(
       (option, index) => parseFieldOption(option, `snapshot.readinessOptions[${index}]`),
     ),
+    targetReleaseOptions: arrayValue(
+      record.targetReleaseOptions,
+      "snapshot.targetReleaseOptions",
+    ).map((option, index) => parseFieldOption(option, `snapshot.targetReleaseOptions[${index}]`)),
     projectWorkflows: arrayValue(record.projectWorkflows, "snapshot.projectWorkflows").map(
       (workflow, index) => parseProjectWorkflow(workflow, `snapshot.projectWorkflows[${index}]`),
     ),

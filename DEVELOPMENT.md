@@ -135,7 +135,7 @@ the same issue-backed path that will apply when outside contributions open.
 Choose `Feature` for new user-visible behavior, `Bug report` for a defect
 correction, and `Work item` for documentation, infrastructure or maintenance,
 and research or qualification. These public contribution types do not require
-access to the maintainer's milestones or private Roadmap.
+access to the maintainer's release targets or private Roadmap.
 
 1. Select one open, unblocked, PR-sized public issue whose Contribution
    checklist is current. Discuss large or direction-setting changes first.
@@ -148,8 +148,12 @@ access to the maintainer's milestones or private Roadmap.
 
 Maintainer product work uses a separate private lane. When a maintainer
 deliberately adds an issue to the Falryn Roadmap, that issue also receives the
-Roadmap's assignee, milestone, Status, Priority, Readiness, hierarchy, and
+Roadmap's assignee, Target release, Status, Priority, Readiness, hierarchy, and
 delivery rules. Issues outside the Project do not inherit those requirements.
+Release scheduling stays in the private Project’s Target release field. Public
+issues and PRs do not carry repository milestones or private release names.
+The authenticated auditors read the Project field; contributor checks do not
+need private access.
 
 Repository automation uses the maintainer-applied `roadmap` label to select the
 maintainer issue format. It checks Outcome, Completion proof, and repository

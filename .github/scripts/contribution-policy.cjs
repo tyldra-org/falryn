@@ -170,7 +170,13 @@ function validateIssueContract(issue) {
 }
 
 function validateIssue(issue) {
-  return [...validateIssueContract(issue), ...validateIssueClassification(issue)];
+  const errors = [...validateIssueContract(issue), ...validateIssueClassification(issue)];
+  if (issue.milestone != null) {
+    errors.push(
+      "remove the repository milestone; release scheduling belongs in the private Project",
+    );
+  }
+  return errors;
 }
 
 function parseOwningIssue(body) {
@@ -197,6 +203,11 @@ function validatePullRequest(pullRequest) {
 
   const errors = [];
   const body = pullRequest.body ?? "";
+  if (pullRequest.milestone != null) {
+    errors.push(
+      "remove the repository milestone; release scheduling belongs in the private Project",
+    );
+  }
   const conventionalTitle =
     /^(?:build|chore|ci|docs|feat|fix|perf|refactor|revert|test)(?:\([A-Za-z0-9._/-]+\))?!?: .+$/;
   if (!conventionalTitle.test(pullRequest.title)) {

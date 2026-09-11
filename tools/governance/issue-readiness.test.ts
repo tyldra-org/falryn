@@ -28,7 +28,7 @@ function issue(overrides: Partial<IssueReadinessIssue> = {}): IssueReadinessIssu
     updatedAt: "2026-09-02T00:00:00Z",
     assignees: ["maintainer"],
     labels: ["type: chore", "area: docs"],
-    milestone: "v0.4 Extensions and Collaboration",
+    targetRelease: "Release A",
     roadmapItemCount: 1,
     roadmapStatuses: ["Todo"],
     parent: null,
@@ -40,7 +40,7 @@ function issue(overrides: Partial<IssueReadinessIssue> = {}): IssueReadinessIssu
 
 function snapshot(issues: readonly IssueReadinessIssue[]): IssueReadinessSnapshot {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     repository: "tyldra-org/falryn",
     generatedAt: "2026-09-02T00:00:00Z",
     issues,
@@ -127,7 +127,7 @@ describe("issue readiness audit", () => {
 
   test("rejects malformed or duplicate snapshot identities", () => {
     expect(() => parseIssueReadinessSnapshot({ schemaVersion: 1 })).toThrow(
-      "snapshot.schemaVersion must be 2",
+      "snapshot.schemaVersion must be 3",
     );
     expect(() => parseIssueReadinessSnapshot(snapshot([issue(), issue()]))).toThrow(
       "snapshot contains duplicate issue #1",
@@ -139,7 +139,7 @@ describe("issue readiness audit", () => {
       body: "",
       assignees: [],
       labels: ["type: docs", "bug"],
-      milestone: null,
+      targetRelease: null,
       roadmapItemCount: 2,
       roadmapStatuses: ["Todo", "Done"],
     });
@@ -148,7 +148,7 @@ describe("issue readiness audit", () => {
       "assignee-count",
       "work-type-count",
       "area-missing",
-      "milestone-missing",
+      "target-release-missing",
       "roadmap-status-count",
       "planning-relationship-missing",
       "body-empty",
@@ -161,7 +161,7 @@ describe("issue readiness audit", () => {
     const contribution = issue({
       assignees: [],
       labels: [],
-      milestone: null,
+      targetRelease: null,
       roadmapItemCount: 0,
       roadmapStatuses: [],
       body: "A public contribution report may start with partial context.",
@@ -270,15 +270,16 @@ describe("issue readiness audit", () => {
     ]);
   });
 
-  test("detects title or milestone changes whose body was not reconciled", () => {
+  test("detects title changes but keeps private release changes out of public bodies", () => {
     const previous = snapshot([issue()]);
-    const current = snapshot([
-      issue({ title: "Renamed fixture", milestone: "v0.5 Web and Computer Use" }),
-    ]);
+    const current = snapshot([issue({ title: "Renamed fixture", targetRelease: "Release B" })]);
 
-    expect(codes(current, { baseline: previous })).toEqual([
-      "body-title-drift",
-      "body-milestone-drift",
-    ]);
+    expect(codes(current, { baseline: previous })).toEqual(["body-title-drift"]);
   });
+});
+
+test("private release changes do not require public body edits", () => {
+  const original = snapshot([issue()]);
+  const changed = snapshot([issue({ targetRelease: "Different private release" })]);
+  expect(auditIssueReadiness(changed, { baseline: original })).toEqual([]);
 });

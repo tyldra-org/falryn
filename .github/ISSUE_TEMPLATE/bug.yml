@@ -9,7 +9,7 @@ body:
       value: |
         Please do not disclose vulnerabilities here; use the private security
         reporting path in SECURITY.md. This public report does not need an
-        assignee, milestone, Priority, Readiness, or access to the private
+        assignee, Target release, Priority, Readiness, or access to the private
         Falryn Roadmap. Maintainers decide separately whether to adopt an issue
         into the product-development plan. A focused correction may use the
         public contribution path without private planning metadata.

@@ -8,7 +8,7 @@ body:
         Use this form when the outcome is neither a user-visible feature nor a
         defect correction. The selected work type is reconciled to one
         `type:*` label. This public contribution does not need an assignee,
-        milestone, Priority, Readiness, or private Roadmap access. Maintainers
+        Target release, Priority, Readiness, or private Roadmap access. Maintainers
         decide separately whether to adopt it into the product-development
         plan. Security vulnerabilities belong in the private reporting path.
   - type: dropdown

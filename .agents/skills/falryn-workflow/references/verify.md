@@ -27,7 +27,7 @@ Do not merge. Any later head, base, check, review, ruleset, companion, message, 
 
 - A PR-sized issue verifies delivered behavior against every public acceptance criterion and, for maintainers, private documentation and Project reconciliation.
 - A parent requires all necessary children complete plus integrated behavior, failure, recovery, resource, security, and projection evidence.
-- A milestone or range requires private Roadmap and documentation authority.
+- A target release or range requires private Roadmap and documentation authority.
 - A docs-only target requires private Falryn Docs authority.
 
 Verify may perform only explicit governance reconciliation that the user authorized, such as reopening incomplete merged work, correcting issue and Project state, recording a missing PR-sized owner, or closing a fully proven parent. It never silently fixes source.

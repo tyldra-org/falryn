@@ -16,7 +16,7 @@ An ordinary Falryn request without one of those meanings remains an ordinary tas
 | `Parent issue #N` | `tyldra-org/falryn` parent issue N |
 | `Parent chain #N` | Remaining ordered children of `tyldra-org/falryn` parent N |
 | `PR #N` | `tyldra-org/falryn` pull request N and its explicitly linked companions |
-| `Milestone "title"` or an exact milestone range | `tyldra-org/falryn` milestone scope |
+| `Target release "title"` or an exact target release range | private Roadmap Target release scope across the selected canonical repositories |
 | `Docs issue #N` | `tyldra-org/falryn-docs` docs-only issue N |
 | `Docs parent issue #N` | `tyldra-org/falryn-docs` docs-only parent N |
 | `Docs parent chain #N` | Remaining ordered children of the docs-only parent N |
@@ -27,7 +27,7 @@ An ordinary Falryn request without one of those meanings remains an ordinary tas
 Never substitute a same-numbered object from the other repository. A companion link expands a delivery bundle only after the primary target is resolved and the reciprocal link, delivery owner, and current revision agree.
 
 For issue or PR work, inspect native hierarchy, blockers, and closing PRs needed
-by the operation. For Roadmap work, also resolve milestone, assignee, and exact
+by the operation. For Roadmap work, also resolve target release, assignee, and exact
 Project membership through authenticated authority. Public inspection must not
 require private metadata. Never reconstruct hierarchy or dependencies from body
 prose when native relationships exist.
@@ -59,7 +59,7 @@ to that companion, deliver only that authorized member and report the remaining
 application delivery. Suggest the resolved application Deliver target when the
 user wants the whole outcome; do not silently acquire authority to merge it.
 
-Milestones, ranges, and Roadmap targets are selection or assessment scopes,
+Release targets, ranges, and Roadmap targets are selection or assessment scopes,
 not new bulk Deliver controllers. Use the authoritative sequence to recommend
 an existing issue, PR, or parent selector within the requested scope. Missing
 scope, owner, authority, or sequence evidence requires resolution, not an
@@ -117,7 +117,7 @@ the missing prerequisite.
 | Plan | Complete the resolved issue contract and, for Roadmap-owned work, reconcile planning metadata | Source or docs implementation, implementation branch, In Progress, merge |
 | Implement | Deliver one complete, unblocked PR-sized issue to a PR in its repository; require Ready and assignment only when Roadmap-owned | Parent implementation, approval, merge |
 | Review | Assess one exact pull-request revision | Comments, approval, edits, Project mutation, merge |
-| Verify | Audit an exact PR, issue, parent, milestone, or range; perform only named governance reconciliation | Product or documentation repair, merge, release |
+| Verify | Audit an exact PR, issue, parent, target release, or range; perform only named governance reconciliation | Product or documentation repair, merge, release |
 | Merge | Merge the unchanged bundle from a fresh Verify preview and reconcile it | Changed revisions, release publication, branch deletion |
 | Deliver | Resolve the named issue, PR, docs, or parent scope and complete its remaining planning, implementation, review, verification, correction, merge, and reconciliation | Unrelated work, stale revision evidence, unlimited retries |
 | Next | Read and route from one valid private Roadmap generation | Any mutation or automatic start of the suggested mode |
@@ -138,7 +138,7 @@ One owner never substitutes for another. A checked Contribution or Ready list ca
 ## Invalidation
 
 Re-resolve affected facts after a head, base, issue contract, hierarchy, blocker,
-assignee, milestone, Project field, companion, check, review, ruleset, default
+assignee, target release, Project field, companion, check, review, ruleset, default
 branch, mergeability, or relevant checkout change. Refresh the affected review,
 verification, and authoritative sequence before relying on them.
 

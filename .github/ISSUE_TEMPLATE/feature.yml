@@ -8,7 +8,7 @@ body:
     attributes:
       value: |
         Thanks for proposing an improvement. This public contribution does not
-        need an assignee, milestone, Priority, Readiness, or access to the
+        need an assignee, Target release, Priority, Readiness, or access to the
         private Falryn Roadmap. Maintainers decide separately whether to adopt
         an issue into the product-development plan. Discuss a large change
         before investing in an implementation. See CONTRIBUTING.md.

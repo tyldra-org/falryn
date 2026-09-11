@@ -14,7 +14,7 @@ Without private Roadmap access, return:
 Next unavailable: authenticated maintainer Roadmap access is required. Explicit public issue and PR inspection remains available.
 ```
 
-Do not list, infer, or approximate private candidates from public issue numbers, milestones, recency, labels, or board-independent guesses. Do not suggest making the Project public.
+Do not list, infer, or approximate private candidates from public issue numbers, release targets, recency, labels, or board-independent guesses. Do not suggest making the Project public.
 
 ## Routing
 

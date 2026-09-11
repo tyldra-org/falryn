@@ -4,7 +4,7 @@ Closes #
 
 <!-- Every non-Dependabot PR closes exactly one PR-sized Falryn issue.
      Split or re-plan partial work instead of replacing this with Refs.
-     Contributors do not need an assignee, milestone, private Roadmap item,
+     Contributors do not need an assignee, Target release, private Roadmap item,
      Priority, or Readiness. -->
 
 ## Primary change class
