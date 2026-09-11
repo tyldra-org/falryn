@@ -4,7 +4,6 @@ import {
   CLOSED_PRIORITIES,
   DEFAULT_LIVENESS_GRACE_HOURS,
   type IssueKey,
-  MILESTONE_ORDER,
   OPEN_PRIORITIES,
   READINESS_VALUES,
   ROADMAP_PRIORITY_OPTIONS,
@@ -137,29 +136,41 @@ function hoursBetween(earlier: string, later: string): number | null {
   return (laterTime - earlierTime) / 3_600_000;
 }
 
-function milestoneRank(milestone: string): number {
-  const rank = MILESTONE_ORDER.indexOf(milestone as (typeof MILESTONE_ORDER)[number]);
-  return rank === -1 ? Number.MAX_SAFE_INTEGER : rank;
+type ReleaseCatalog = ReadonlyMap<
+  string,
+  { readonly rank: number; readonly state: RoadmapIssueState }
+>;
+
+function targetRelease(issue: RoadmapGovernanceIssue): string | null {
+  return issue.projectItems[0]?.targetRelease ?? null;
 }
 
-function declaresEarlyPrerequisiteMilestone(
+function releaseRank(name: string | null, releases: ReleaseCatalog): number {
+  return name === null
+    ? Number.MAX_SAFE_INTEGER
+    : (releases.get(name)?.rank ?? Number.MAX_SAFE_INTEGER);
+}
+
+function declaresEarlyPrerequisiteRelease(
   issue: RoadmapGovernanceIssue,
   parent: RoadmapGovernanceIssue,
+  releases: ReleaseCatalog,
 ): boolean {
-  if (issue.milestone === null || parent.milestone === null) {
-    return false;
-  }
-  const issueRank = milestoneRank(issue.milestone);
-  const parentRank = milestoneRank(parent.milestone);
+  const childRelease = targetRelease(issue);
+  const parentRelease = targetRelease(parent);
+  const childRank = releaseRank(childRelease, releases);
+  const parentRank = releaseRank(parentRelease, releases);
   if (
-    issueRank === Number.MAX_SAFE_INTEGER ||
+    childRelease === null ||
+    parentRelease === null ||
+    childRank === Number.MAX_SAFE_INTEGER ||
     parentRank === Number.MAX_SAFE_INTEGER ||
-    issueRank >= parentRank
+    childRank >= parentRank
   ) {
     return false;
   }
-  const declaration = `Milestone exception: early-prerequisite-v1; parent ${parent.repository}#${parent.number}; child ${issue.milestone}; parent ${parent.milestone}.`;
-  return issue.body.split("\n").some((line) => line.trim() === declaration);
+  const declaration = `early-prerequisite-v1; parent ${parent.repository}#${parent.number}; child ${childRelease}; parent ${parentRelease}.`;
+  return issue.projectItems[0]?.releaseException === declaration;
 }
 
 function priorityRank(priority: string): number {
@@ -258,10 +269,11 @@ function validParentContinuation(
 
 function sequence(
   issues: ReadonlyMap<IssueKey, RoadmapGovernanceIssue>,
+  releases: ReleaseCatalog,
 ): readonly RoadmapDeliverySequenceEntry[] {
   const edges = new Map<IssueKey, Set<IssueKey>>();
   const indegree = new Map<IssueKey, number>();
-  const crossMilestonePrerequisites = new Set<IssueKey>();
+  const crossReleasePrerequisites = new Set<IssueKey>();
   for (const key of issues.keys()) {
     edges.set(key, new Set());
     indegree.set(key, 0);
@@ -284,11 +296,12 @@ function sequence(
       const blockerIssue = issues.get(blockerKey);
       if (
         blockerIssue !== undefined &&
-        blockerIssue.milestone !== null &&
-        issue.milestone !== null &&
-        milestoneRank(blockerIssue.milestone) > milestoneRank(issue.milestone)
+        targetRelease(blockerIssue) !== null &&
+        targetRelease(issue) !== null &&
+        releaseRank(targetRelease(blockerIssue), releases) >
+          releaseRank(targetRelease(issue), releases)
       ) {
-        crossMilestonePrerequisites.add(blockerKey);
+        crossReleasePrerequisites.add(blockerKey);
       }
     }
     for (const child of issue.subIssues) {
@@ -319,10 +332,11 @@ function sequence(
     if (p0Difference !== 0) {
       return p0Difference;
     }
-    const milestoneDifference =
-      milestoneRank(left.milestone ?? "") - milestoneRank(right.milestone ?? "");
-    if (milestoneDifference !== 0) {
-      return milestoneDifference;
+    const releaseDifference =
+      releaseRank(targetRelease(left) ?? "", releases) -
+      releaseRank(targetRelease(right) ?? "", releases);
+    if (releaseDifference !== 0) {
+      return releaseDifference;
     }
     const priorityDifference =
       priorityRank(left.projectItems[0]?.priority ?? "") -
@@ -364,12 +378,14 @@ function sequence(
   for (const key of ordered) {
     const issue = issues.get(key);
     const item = issue?.projectItems[0];
+    const release = item?.targetRelease;
     if (
       issue === undefined ||
       item === undefined ||
       issue.subIssues.length > 0 ||
-      issue.milestone === null ||
-      issue.milestoneState !== "OPEN" ||
+      release === null ||
+      release === undefined ||
+      (releases.get(targetRelease(issue) ?? "")?.state ?? null) !== "OPEN" ||
       !isOneOf(item.priority, OPEN_PRIORITIES) ||
       (item.readiness !== "Ready" &&
         item.readiness !== "Needs Planning" &&
@@ -383,12 +399,12 @@ function sequence(
       repository: issue.repository,
       issueNumber: issue.number,
       title: issue.title,
-      milestone: issue.milestone,
+      targetRelease: release,
       priority: item.priority,
       readiness: item.readiness,
       status: item.status,
       openTransitiveDependents: dependentCounts.get(key) ?? 0,
-      crossMilestonePrerequisite: crossMilestonePrerequisites.has(key),
+      crossReleasePrerequisite: crossReleasePrerequisites.has(key),
     });
   }
   return result;
@@ -404,6 +420,42 @@ export function analyzeRoadmapGovernance(
   }
   const diagnostics: RoadmapGovernanceDiagnostic[] = [];
   const liveness: RoadmapLivenessDecision[] = [];
+  const releases = new Map<string, { rank: number; state: RoadmapIssueState }>();
+  let invalidReleases =
+    snapshot.targetReleaseOptions.length === 0 || snapshot.targetReleaseOptions.length > 50;
+  for (const [rank, option] of snapshot.targetReleaseOptions.entries()) {
+    const stateLine = option.description.split("\n")[0];
+    const state =
+      stateLine === "State: OPEN" ? "OPEN" : stateLine === "State: CLOSED" ? "CLOSED" : null;
+    if (
+      state === null ||
+      option.name.trim() !== option.name ||
+      option.name.length === 0 ||
+      releases.has(option.name)
+    ) {
+      invalidReleases = true;
+    } else {
+      releases.set(option.name, { rank, state });
+    }
+  }
+  if (invalidReleases) {
+    diagnostics.push({
+      code: "target-release-field-invalid",
+      repository: "*",
+      issueNumber: 0,
+      message:
+        "Target release requires 1–50 unique non-empty options whose descriptions begin with State: OPEN or State: CLOSED",
+    });
+  }
+  if (snapshot.projectPublic) {
+    diagnostics.push({
+      code: "project-public",
+      repository: "*",
+      issueNumber: 0,
+      message: "Release planning requires a private Project",
+    });
+  }
+
   const allIssues = new Map<IssueKey, RoadmapGovernanceIssue>(
     snapshot.issues.map((issue) => [issueKey(issue.repository, issue.number), issue]),
   );
@@ -479,6 +531,21 @@ export function analyzeRoadmapGovernance(
       continue;
     }
 
+    if (issue.state === "OPEN" && item.releaseException !== null) {
+      const parent =
+        issue.parent === null
+          ? undefined
+          : allIssues.get(issueKey(issue.parent.repository, issue.parent.number));
+      if (parent === undefined || !declaresEarlyPrerequisiteRelease(issue, parent, releases)) {
+        add(
+          diagnostics,
+          "release-exception-invalid",
+          issue,
+          "private release exception no longer matches the parent and selected releases",
+        );
+      }
+    }
+
     if (issue.state === "OPEN") {
       const workTypes = issue.labels.filter(
         (label) => label === "bug" || label.startsWith("type:"),
@@ -502,21 +569,21 @@ export function analyzeRoadmapGovernance(
       if (!issue.labels.some((label) => label.startsWith("area:"))) {
         add(diagnostics, "area-missing", issue, "missing area:* label");
       }
-      if (issue.milestone === null || issue.milestoneState === null) {
-        add(diagnostics, "milestone-missing", issue, "missing milestone");
-      } else if (issue.milestoneState === "CLOSED") {
+      if (targetRelease(issue) === null) {
+        add(diagnostics, "target-release-missing", issue, "missing release");
+      } else if ((releases.get(targetRelease(issue) ?? "")?.state ?? null) === "CLOSED") {
         add(
           diagnostics,
-          "milestone-closed",
+          "target-release-closed",
           issue,
-          `open issue belongs to closed milestone ${issue.milestone}`,
+          `open issue belongs to closed release ${targetRelease(issue)}`,
         );
-      } else if (milestoneRank(issue.milestone) === Number.MAX_SAFE_INTEGER) {
+      } else if (releaseRank(targetRelease(issue), releases) === Number.MAX_SAFE_INTEGER) {
         add(
           diagnostics,
-          "milestone-order-unknown",
+          "target-release-order-unknown",
           issue,
-          `unknown milestone order: ${issue.milestone}`,
+          `unknown release order: ${targetRelease(issue)}`,
         );
       }
       if (issue.parent !== null && issue.subIssues.length > 0) {
@@ -589,8 +656,8 @@ export function analyzeRoadmapGovernance(
           issue.assignees.length === 1 &&
           workTypes.length === 1 &&
           issue.labels.some((label) => label.startsWith("area:")) &&
-          issue.milestone !== null &&
-          issue.milestoneState === "OPEN" &&
+          targetRelease(issue) !== null &&
+          (releases.get(targetRelease(issue) ?? "")?.state ?? null) === "OPEN" &&
           (issue.parent !== null || declaresStandalone(issue.body));
         if (
           !metadataReady ||
@@ -897,25 +964,28 @@ export function analyzeRoadmapGovernance(
     for (const child of issue.subIssues) {
       validateRelation(child, "child");
       const target = allIssues.get(issueKey(child.repository, child.number));
-      if (target !== undefined && (issue.milestone === null || target.milestone === null)) {
-        add(
-          diagnostics,
-          "hierarchy-milestone-missing",
-          target,
-          `native child or parent milestone is missing for ${sourceKey}`,
-        );
-      } else if (
+      if (
         target !== undefined &&
-        issue.milestone !== null &&
-        target.milestone !== null &&
-        target.milestone !== issue.milestone &&
-        !declaresEarlyPrerequisiteMilestone(target, issue)
+        (targetRelease(issue) === null || targetRelease(target) === null)
       ) {
         add(
           diagnostics,
-          "hierarchy-milestone-mismatch",
+          "hierarchy-target-release-missing",
           target,
-          `milestone ${target.milestone} differs from parent milestone ${issue.milestone}`,
+          `native child or parent release is missing for ${sourceKey}`,
+        );
+      } else if (
+        target !== undefined &&
+        targetRelease(issue) !== null &&
+        targetRelease(target) !== null &&
+        targetRelease(target) !== targetRelease(issue) &&
+        !declaresEarlyPrerequisiteRelease(target, issue, releases)
+      ) {
+        add(
+          diagnostics,
+          "hierarchy-target-release-mismatch",
+          target,
+          `release ${targetRelease(target)} differs from parent release ${targetRelease(issue)}`,
         );
       }
       if (
@@ -976,7 +1046,7 @@ export function analyzeRoadmapGovernance(
 
   return {
     diagnostics,
-    deliverySequence: diagnostics.length === 0 ? sequence(issues) : [],
+    deliverySequence: diagnostics.length === 0 ? sequence(issues, releases) : [],
     liveness: liveness.sort((left, right) => {
       const repositoryDifference = compareText(left.repository, right.repository);
       return repositoryDifference !== 0

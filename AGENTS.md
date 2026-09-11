@@ -16,6 +16,10 @@ build and validate the product. Public source, issue, and pull-request work must
 not require private documentation or Roadmap access. Do not copy private
 roadmaps, detailed future designs, unannounced capabilities, or research here.
 
+Release scheduling uses the private Project
+`Target release` field; never recreate repository milestones or publish its
+option values in public handoffs.
+
 ## Before acting
 
 1. Read applicable higher-priority instructions and this file.

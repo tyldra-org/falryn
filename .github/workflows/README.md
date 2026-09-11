@@ -24,7 +24,8 @@ merge permission. `issue-governance.yml` maps an issue form's declared work
 type and primary area to canonical labels, then comments on missing evidence for
 the selected format. It reads current issue state, leaves an unchanged reminder
 alone, and removes its reminder when the issue passes. It never asks for an
-assignee, milestone, or private Project field.
+assignee or private Project field. It flags a repository milestone on an issue
+or PR using only public metadata, without echoing the milestone name.
 
 Metadata validation runs only on `pull_request` with read-only permissions.
 Area and size labeling run on `pull_request_target` for opened, reopened, and
@@ -35,7 +36,7 @@ its target-selection job; the other jobs run independently.
 
 The private Roadmap is a separate maintainer product-development system.
 Project membership marks an issue as adopted into that plan. Only those issues
-are subject to private Status, Priority, Readiness, milestone, hierarchy,
+are subject to private Status, Priority, Readiness, Target release, hierarchy,
 liveness, and sequencing checks from `bun run audit:issues` and
 `bun run audit:roadmap`, documented in the vendored
 [`governance-audits.md`](../../.agents/skills/falryn-workflow/references/governance-audits.md)

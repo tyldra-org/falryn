@@ -360,3 +360,24 @@ describe("contribution policy", () => {
     expect(errors).toContain("the owning issue has open blocker(s): tyldra-org/falryn#9");
   });
 });
+
+test("public checks reject repository release metadata without reading private planning", async () => {
+  const input = maintainerIssue({ milestone: { title: "Private planning value" } });
+  const error =
+    "remove the repository milestone; release scheduling belongs in the private Project";
+  expect(policy.validateIssue(input)).toEqual([error]);
+  const writes = await runIssueWorkflow({
+    ...input,
+    labels: [{ name: "roadmap" }, { name: "type: feature" }, { name: "area: runtime" }],
+  });
+  expect(writes).toHaveLength(1);
+  expect(writes[0]?.payload.body).toContain(error);
+  expect(writes[0]?.payload.body).not.toContain("Private planning value");
+});
+
+test("PR planning metadata stays private", () => {
+  expect(
+    policy.validatePullRequest(pullRequest({ milestone: { title: "Private planning value" } }))
+      .errors,
+  ).toEqual(["remove the repository milestone; release scheduling belongs in the private Project"]);
+});

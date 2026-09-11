@@ -34,6 +34,8 @@ type LiveProject = {
   readonly statusOptions: readonly RoadmapFieldOption[];
   readonly priorityOptions: readonly RoadmapFieldOption[];
   readonly readinessOptions: readonly RoadmapFieldOption[];
+  readonly targetReleaseOptions: readonly RoadmapFieldOption[];
+  readonly projectPublic: boolean;
   readonly projectWorkflows: readonly RoadmapProjectWorkflow[];
   readonly itemsByContentId: ReadonlyMap<string, readonly RoadmapProjectItem[]>;
   readonly nonIssueProjectItems: readonly RoadmapNonIssueProjectItem[];
@@ -169,7 +171,7 @@ export function fieldValues(value: unknown, subject: string): ReadonlyMap<string
   return result;
 }
 
-function projectItemFromGraphQl(
+export function projectItemFromGraphQl(
   value: unknown,
   subject: string,
 ): {
@@ -184,11 +186,21 @@ function projectItemFromGraphQl(
   const status = values.get("Status");
   const priority = values.get("Priority");
   const readiness = values.get("Readiness");
+  const targetRelease = values.get("Target release");
+  const releaseException = values.get("Release exception");
   return {
     contentId: content === null ? null : nullableString(content.id, `${subject}.content.id`),
     contentKind,
     item: {
       id: stringValue(record.id, `${subject}.id`),
+      targetRelease:
+        targetRelease === undefined
+          ? null
+          : nullableString(targetRelease.name, `${subject}.Target release.name`),
+      releaseException:
+        releaseException === undefined
+          ? null
+          : nullableString(releaseException.text, `${subject}.Release exception.text`),
       status: status === undefined ? null : nullableString(status.name, `${subject}.Status.name`),
       statusUpdatedAt:
         status === undefined
@@ -212,7 +224,7 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
     }
   }
   fragment Project on ProjectV2 {
-    id
+    id public
     fields(first:100) {
       totalCount
       nodes {
@@ -239,6 +251,10 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
         fieldValues(first:100) {
           totalCount
           nodes {
+            ... on ProjectV2ItemFieldTextValue {
+              text
+              field { ... on ProjectV2Field { id name } }
+            }
             ... on ProjectV2ItemFieldSingleSelectValue {
               name updatedAt
               field { ... on ProjectV2SingleSelectField { id name } }
@@ -250,9 +266,11 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
   }`;
   let after: string | null = null;
   let projectId: string | null = null;
+  let projectPublic: boolean | null = null;
   let statusOptions: readonly RoadmapFieldOption[] = [];
   let priorityOptions: readonly RoadmapFieldOption[] = [];
   let readinessOptions: readonly RoadmapFieldOption[] = [];
+  let targetReleaseOptions: readonly RoadmapFieldOption[] = [];
   let projectWorkflows: readonly RoadmapProjectWorkflow[] | null = null;
   const observedFields = new Map<
     string,
@@ -269,15 +287,42 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
     const data = asRecord(payload.data, "Roadmap response.data");
     const owner = asRecord(data.repositoryOwner, "Roadmap owner");
     const project = asRecord(owner.projectV2, "Roadmap project");
-    projectId ??= stringValue(project.id, "Roadmap project.id");
+    const currentId = stringValue(project.id, "Roadmap project.id");
+    const currentPublic = booleanValue(project.public, "Roadmap project.public");
+    if (
+      currentPublic ||
+      (projectId !== null && projectId !== currentId) ||
+      (projectPublic !== null && projectPublic !== currentPublic)
+    ) {
+      throw new Error("Roadmap must remain the same private Project during collection");
+    }
+    projectId = currentId;
+    projectPublic = currentPublic;
     const fields = completeConnectionNodes(project.fields, "Roadmap project.fields");
     for (const [index, value] of fields.entries()) {
       const field = asRecord(value, `Roadmap project.fields.nodes[${index}]`);
       const name = nullableString(field.name, `Roadmap project.fields.nodes[${index}].name`);
-      if (name !== "Status" && name !== "Priority" && name !== "Readiness") {
+      if (
+        name !== "Status" &&
+        name !== "Priority" &&
+        name !== "Readiness" &&
+        name !== "Target release" &&
+        name !== "Release exception"
+      ) {
         continue;
       }
       const id = stringValue(field.id, `Roadmap project field ${name}.id`);
+      if (name === "Release exception") {
+        if (field.dataType !== "TEXT") {
+          throw new Error("Release exception must be a text field");
+        }
+        const previous = observedFields.get(name);
+        if (previous !== undefined && previous.id !== id) {
+          throw new Error("Roadmap contains duplicate Release exception fields");
+        }
+        observedFields.set(name, { id, options: [] });
+        continue;
+      }
       const options = arrayValue(field.options, `Roadmap project field ${name}.options`).map(
         (option, optionIndex) =>
           fieldOptionFromGraphQl(option, `Roadmap project field ${name}.options[${optionIndex}]`),
@@ -294,8 +339,10 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
         statusOptions = options;
       } else if (name === "Priority") {
         priorityOptions = options;
-      } else {
+      } else if (name === "Readiness") {
         readinessOptions = options;
+      } else {
+        targetReleaseOptions = options;
       }
     }
     const workflows = completeConnectionNodes(project.workflows, "Roadmap project.workflows").map(
@@ -330,6 +377,7 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
 
   if (
     projectId === null ||
+    projectPublic === null ||
     projectWorkflows === null ||
     expectedItems === null ||
     expectedItems !== itemRecords.length
@@ -337,6 +385,9 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
     throw new Error(
       `Roadmap item pagination mismatch: expected ${expectedItems ?? "unknown"}, received ${itemRecords.length}`,
     );
+  }
+  if (!observedFields.has("Release exception")) {
+    throw new Error("Roadmap is missing its private Release exception field");
   }
   const mutableItems = new Map<string, RoadmapProjectItem[]>();
   const nonIssueProjectItems: RoadmapNonIssueProjectItem[] = [];
@@ -352,6 +403,8 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
   }
   return {
     id: projectId,
+    projectPublic,
+    targetReleaseOptions,
     statusOptions,
     priorityOptions,
     readinessOptions,
@@ -535,23 +588,6 @@ async function loadRepositoryIssues(
         `${subject}.labels[${labelIndex}].name`,
       ),
     );
-    const milestoneRecord =
-      record.milestone === null ? null : asRecord(record.milestone, `${subject}.milestone`);
-    const milestone =
-      milestoneRecord === null
-        ? null
-        : stringValue(milestoneRecord.title, `${subject}.milestone.title`);
-    const rawMilestoneState =
-      milestoneRecord === null
-        ? null
-        : stringValue(milestoneRecord.state, `${subject}.milestone.state`).toUpperCase();
-    if (
-      rawMilestoneState !== null &&
-      rawMilestoneState !== "OPEN" &&
-      rawMilestoneState !== "CLOSED"
-    ) {
-      throw new Error(`${subject}.milestone.state must be open or closed`);
-    }
     const nodeId = stringValue(record.node_id, `${subject}.node_id`);
     if (projectItems.has(nodeId)) {
       consumedProjectContentIds.add(nodeId);
@@ -567,8 +603,6 @@ async function loadRepositoryIssues(
       closedAt: nullableString(record.closed_at, `${subject}.closed_at`),
       assignees,
       labels,
-      milestone,
-      milestoneState: rawMilestoneState,
       parent: relation?.parent ?? null,
       subIssues: relation?.subIssues ?? [],
       blockedBy: relation?.blockedBy ?? [],
@@ -603,11 +637,13 @@ async function loadLiveSnapshot(options: CliOptions): Promise<RoadmapGovernanceS
   );
   assertAllProjectIssueItemsConsumed(project.itemsByContentId, consumedProjectContentIds);
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: new Date().toISOString(),
     projectOwner: options.projectOwner,
     projectNumber: options.projectNumber,
     projectId: project.id,
+    projectPublic: project.projectPublic,
+    targetReleaseOptions: project.targetReleaseOptions,
     repositories: options.source.repositories,
     repositoryIssueCounts: options.source.repositories.map((repository, index) => ({
       repository,
@@ -738,7 +774,7 @@ async function main(): Promise<void> {
     );
     for (const entry of report.deliverySequence) {
       process.stdout.write(
-        `${entry.position}. ${entry.repository}#${entry.issueNumber} [${entry.milestone}; ${entry.priority}; ${entry.readiness}] ${entry.title}\n`,
+        `${entry.position}. ${entry.repository}#${entry.issueNumber} [${entry.targetRelease}; ${entry.priority}; ${entry.readiness}] ${entry.title}\n`,
       );
     }
     process.stdout.write("\nIn Progress liveness:\n");

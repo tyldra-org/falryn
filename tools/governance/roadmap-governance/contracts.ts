@@ -1,4 +1,4 @@
-export const SCHEMA_VERSION = 2 as const;
+export const SCHEMA_VERSION = 3 as const;
 
 export const ROADMAP_STATUS_OPTIONS = [
   { name: "Todo", description: "This item hasn't been started", color: "GREEN" },
@@ -92,17 +92,6 @@ export const READINESS_VALUES = [
 
 const ROADMAP_STATUSES = ["Todo", "In Progress", "Done"] as const;
 
-export const MILESTONE_ORDER = [
-  "v0.1 Foundation",
-  "v0.2 Core Coding Agent",
-  "v0.3 Intelligence and Memory",
-  "v0.35 Live Product Coding Agent",
-  "v0.4 Extensions and Collaboration",
-  "v0.5 Web and Computer Use",
-  "v0.9 Hardening and Distribution",
-  "v1.0 Stable Release",
-] as const;
-
 export const DEFAULT_LIVENESS_GRACE_HOURS = 7 * 24;
 
 export const ROADMAP_REPOSITORIES = ["tyldra-org/falryn", "tyldra-org/falryn-docs"] as const;
@@ -148,6 +137,8 @@ export type RoadmapProjectItem = {
   readonly statusUpdatedAt: string | null;
   readonly priority: string | null;
   readonly readiness: string | null;
+  readonly targetRelease: string | null;
+  readonly releaseException: string | null;
 };
 
 export type RoadmapGovernanceIssue = {
@@ -161,8 +152,6 @@ export type RoadmapGovernanceIssue = {
   readonly closedAt: string | null;
   readonly assignees: readonly string[];
   readonly labels: readonly string[];
-  readonly milestone: string | null;
-  readonly milestoneState: RoadmapIssueState | null;
   readonly parent: RoadmapRelation | null;
   readonly subIssues: readonly RoadmapRelation[];
   readonly blockedBy: readonly RoadmapRelation[];
@@ -191,6 +180,8 @@ export type RoadmapGovernanceSnapshot = {
   readonly statusOptions: readonly RoadmapFieldOption[];
   readonly priorityOptions: readonly RoadmapFieldOption[];
   readonly readinessOptions: readonly RoadmapFieldOption[];
+  readonly targetReleaseOptions: readonly RoadmapFieldOption[];
+  readonly projectPublic: boolean;
   readonly projectWorkflows: readonly RoadmapProjectWorkflow[];
   readonly issues: readonly RoadmapGovernanceIssue[];
   readonly nonIssueProjectItems: readonly RoadmapNonIssueProjectItem[];
@@ -199,18 +190,21 @@ export type RoadmapGovernanceSnapshot = {
 export type RoadmapGovernanceCode =
   | "project-membership-count"
   | "non-issue-project-item"
+  | "project-public"
+  | "target-release-field-invalid"
+  | "release-exception-invalid"
   | "assignee-count"
   | "work-type-count"
   | "area-missing"
-  | "milestone-missing"
-  | "milestone-closed"
+  | "target-release-missing"
+  | "target-release-closed"
   | "planning-relationship-missing"
   | "relationship-target-missing"
   | "relationship-state-mismatch"
   | "hierarchy-not-reciprocal"
   | "hierarchy-depth-invalid"
-  | "hierarchy-milestone-missing"
-  | "hierarchy-milestone-mismatch"
+  | "hierarchy-target-release-missing"
+  | "hierarchy-target-release-mismatch"
   | "status-field-invalid"
   | "status-invalid"
   | "closed-status-invalid"
@@ -238,7 +232,7 @@ export type RoadmapGovernanceCode =
   | "open-issue-merged-closing-pr"
   | "dependency-cycle"
   | "external-open-blocker"
-  | "milestone-order-unknown";
+  | "target-release-order-unknown";
 
 export type RoadmapGovernanceDiagnostic = {
   readonly code: RoadmapGovernanceCode;
@@ -252,12 +246,12 @@ export type RoadmapDeliverySequenceEntry = {
   readonly repository: string;
   readonly issueNumber: number;
   readonly title: string;
-  readonly milestone: string;
+  readonly targetRelease: string;
   readonly priority: Exclude<RoadmapPriority, "Historical">;
   readonly readiness: "Ready" | "Needs Planning" | "Needs Decision";
   readonly status: "Todo" | "In Progress";
   readonly openTransitiveDependents: number;
-  readonly crossMilestonePrerequisite: boolean;
+  readonly crossReleasePrerequisite: boolean;
 };
 
 export type RoadmapLivenessDecision = {

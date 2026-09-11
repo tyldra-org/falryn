@@ -1,6 +1,6 @@
 import { declaresStandalone } from "./issue-governance-body";
 
-export const ISSUE_READINESS_SCHEMA_VERSION = 2 as const;
+export const ISSUE_READINESS_SCHEMA_VERSION = 3 as const;
 export const DEFAULT_MAXIMUM_ISSUE_BODY_BYTES = 65_536;
 
 const ROADMAP_STATUSES = new Set(["Todo", "In Progress", "Done"]);
@@ -30,7 +30,7 @@ export type IssueReadinessIssue = {
   readonly updatedAt: string;
   readonly assignees: readonly string[];
   readonly labels: readonly string[];
-  readonly milestone: string | null;
+  readonly targetRelease: string | null;
   readonly roadmapItemCount: number;
   readonly roadmapStatuses: readonly string[];
   readonly parent: IssueReadinessRelation | null;
@@ -49,7 +49,7 @@ export type IssueReadinessCode =
   | "assignee-count"
   | "work-type-count"
   | "area-missing"
-  | "milestone-missing"
+  | "target-release-missing"
   | "roadmap-status-count"
   | "planning-relationship-missing"
   | "parent-reference-missing"
@@ -69,8 +69,7 @@ export type IssueReadinessCode =
   | "canonical-document-missing"
   | "canonical-document-owner-invalid"
   | "docs-only-product-completion"
-  | "body-title-drift"
-  | "body-milestone-drift";
+  | "body-title-drift";
 
 export type IssueReadinessDiagnostic = {
   readonly code: IssueReadinessCode;
@@ -159,7 +158,7 @@ function parseIssue(value: unknown, index: number): IssueReadinessIssue {
     labels: arrayValue(record.labels, `${subject}.labels`).map((entry, itemIndex) =>
       stringValue(entry, `${subject}.labels[${itemIndex}]`),
     ),
-    milestone: nullableString(record.milestone, `${subject}.milestone`),
+    targetRelease: nullableString(record.targetRelease, `${subject}.targetRelease`),
     roadmapItemCount: nonNegativeInteger(record.roadmapItemCount, `${subject}.roadmapItemCount`),
     roadmapStatuses: arrayValue(record.roadmapStatuses, `${subject}.roadmapStatuses`).map(
       (entry, itemIndex) => stringValue(entry, `${subject}.roadmapStatuses[${itemIndex}]`),
@@ -408,8 +407,8 @@ export function auditIssueReadiness(
     if (!issue.labels.some((label) => label.startsWith("area:"))) {
       add(diagnostics, "area-missing", issue.number, "missing area:* label");
     }
-    if (issue.milestone === null) {
-      add(diagnostics, "milestone-missing", issue.number, "missing milestone");
+    if (issue.targetRelease === null) {
+      add(diagnostics, "target-release-missing", issue.number, "missing Target release");
     }
     const validStatuses = issue.roadmapStatuses.filter((status) => ROADMAP_STATUSES.has(status));
     if (
@@ -605,14 +604,6 @@ export function auditIssueReadiness(
           "body-title-drift",
           issue.number,
           `title changed without a body update: ${previous.title} -> ${issue.title}`,
-        );
-      }
-      if (previous.milestone !== issue.milestone) {
-        add(
-          diagnostics,
-          "body-milestone-drift",
-          issue.number,
-          `milestone changed without a body update: ${previous.milestone ?? "none"} -> ${issue.milestone ?? "none"}`,
         );
       }
     }

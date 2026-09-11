@@ -13,6 +13,7 @@ import {
   assertAllProjectIssueItemsConsumed,
   fieldValues,
   parseCli,
+  projectItemFromGraphQl,
 } from "./roadmap-governance-cli";
 
 const REPOSITORY = "tyldra-org/falryn";
@@ -26,11 +27,19 @@ function projectItem(
     statusUpdatedAt: "2026-09-01T00:00:00.000Z",
     priority: "P2",
     readiness: "Needs Planning",
+    targetRelease: "Release A",
+    releaseException: null,
     ...overrides,
   };
 }
 
-function issue(overrides: Partial<RoadmapGovernanceIssue> = {}): RoadmapGovernanceIssue {
+function issue(
+  overrides: Partial<RoadmapGovernanceIssue> & {
+    targetRelease?: string | null;
+    releaseException?: string | null;
+  } = {},
+): RoadmapGovernanceIssue {
+  const { targetRelease, releaseException, ...rest } = overrides;
   return {
     repository: REPOSITORY,
     number: 1,
@@ -53,14 +62,16 @@ Planning relationship: Standalone-v1.
     closedAt: null,
     assignees: ["owner"],
     labels: ["type: infrastructure", "area: docs"],
-    milestone: "v0.4 Extensions and Collaboration",
-    milestoneState: "OPEN",
     parent: null,
     subIssues: [],
     blockedBy: [],
     closingPullRequests: [],
-    projectItems: [projectItem()],
-    ...overrides,
+    ...rest,
+    projectItems: (rest.projectItems ?? [projectItem()]).map((item) => ({
+      ...item,
+      ...(targetRelease === undefined ? {} : { targetRelease }),
+      ...(releaseException === undefined ? {} : { releaseException }),
+    })),
   };
 }
 
@@ -73,11 +84,20 @@ function readyBody(): string {
 
 function snapshot(issues: readonly RoadmapGovernanceIssue[]): RoadmapGovernanceSnapshot {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     generatedAt: "2026-09-03T00:00:00.000Z",
     projectOwner: "tyldra-org",
     projectNumber: 1,
     projectId: "project-1",
+    projectPublic: false,
+    targetReleaseOptions: [
+      { name: "Retired release", description: "State: CLOSED", color: "GRAY" },
+      ...["Release A", "Release B", "Release C"].map((name) => ({
+        name,
+        description: "State: OPEN",
+        color: "BLUE",
+      })),
+    ],
     repositories: [REPOSITORY, "tyldra-org/falryn-docs"],
     repositoryIssueCounts: [
       {
@@ -447,10 +467,12 @@ Planning relationship: Standalone-v1.
     expect(codes(snapshot([input]))).toEqual(["in-progress-readiness-invalid"]);
   });
 
-  test("rejects an open issue assigned to a closed milestone", () => {
-    const input = issue({ milestoneState: "CLOSED" });
+  test("rejects an open issue assigned to a closed release", () => {
+    const input = issue({ targetRelease: "Retired release" });
     const report = analyzeRoadmapGovernance(snapshot([input]));
-    expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["milestone-closed"]);
+    expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
+      "target-release-closed",
+    ]);
     expect(report.deliverySequence).toEqual([]);
   });
 
@@ -483,26 +505,24 @@ Planning relationship: Standalone-v1.
     expect(reciprocityReport.deliverySequence).toEqual([]);
   });
 
-  test("requires native children to preserve the parent milestone", () => {
+  test("requires native children to preserve the parent release", () => {
     const parent = issue({
       body: "## Outcome\n\nDeliver the parent.\n",
-      milestone: "v0.9 Hardening and Distribution",
+      targetRelease: "Release C",
       subIssues: [{ repository: REPOSITORY, number: 2, state: "OPEN" }],
       projectItems: [projectItem({ readiness: "Parent" })],
     });
     const child = issue({
       number: 2,
-      milestone: "v0.5 Web and Computer Use",
+      targetRelease: "Release B",
       parent: { repository: REPOSITORY, number: 1, state: "OPEN" },
       projectItems: [projectItem({ id: "item-2" })],
     });
-    expect(codes(snapshot([parent, child]))).toEqual(["hierarchy-milestone-mismatch"]);
+    expect(codes(snapshot([parent, child]))).toEqual(["hierarchy-target-release-mismatch"]);
     const declared = issue({
       ...child,
-      body: [
-        child.body,
-        "Milestone exception: early-prerequisite-v1; parent tyldra-org/falryn#1; child v0.5 Web and Computer Use; parent v0.9 Hardening and Distribution.",
-      ].join("\n"),
+      releaseException:
+        "early-prerequisite-v1; parent tyldra-org/falryn#1; child Release B; parent Release C.",
     });
     expect(codes(snapshot([parent, declared]))).toEqual([]);
 
@@ -523,21 +543,22 @@ Planning relationship: Standalone-v1.
     });
     const parentWithClosedChild = issue({
       ...parent,
+      targetRelease: "Release C",
       subIssues: [{ repository: REPOSITORY, number: 2, state: "CLOSED" }],
       projectItems: [projectItem({ status: "In Progress", readiness: "Parent" })],
     });
     expect(codes(snapshot([parentWithClosedChild, closedChild]))).toEqual([
-      "hierarchy-milestone-mismatch",
+      "hierarchy-target-release-mismatch",
     ]);
-    const missingMilestone = issue({ ...closedChild, milestone: null });
-    expect(codes(snapshot([parentWithClosedChild, missingMilestone]))).toEqual([
-      "hierarchy-milestone-missing",
+    const missingRelease = issue({ ...closedChild, targetRelease: null });
+    expect(codes(snapshot([parentWithClosedChild, missingRelease]))).toEqual([
+      "hierarchy-target-release-missing",
     ]);
 
     const unknownClosedParent = issue({
       ...parent,
       state: "CLOSED",
-      milestone: "Unordered historical milestone",
+      targetRelease: "Unordered historical release",
       updatedAt: "2026-09-01T12:00:00.000Z",
       closedAt: "2026-09-01T12:00:00.000Z",
       projectItems: [
@@ -552,13 +573,12 @@ Planning relationship: Standalone-v1.
     const childOfUnknownParent = issue({
       ...child,
       parent: { repository: REPOSITORY, number: 1, state: "CLOSED" },
-      body: [
-        child.body,
-        "Milestone exception: early-prerequisite-v1; parent tyldra-org/falryn#1; child v0.5 Web and Computer Use; parent Unordered historical milestone.",
-      ].join("\n"),
+      releaseException:
+        "early-prerequisite-v1; parent tyldra-org/falryn#1; child Release B; parent Unordered historical release.",
     });
     expect(codes(snapshot([unknownClosedParent, childOfUnknownParent]))).toEqual([
-      "hierarchy-milestone-mismatch",
+      "hierarchy-target-release-mismatch",
+      "release-exception-invalid",
     ]);
   });
 
@@ -604,19 +624,19 @@ Planning relationship: Standalone-v1.
       number: 10,
       title: "Build prerequisite",
       createdAt: "2026-09-02T00:00:00.000Z",
-      milestone: "v0.5 Web and Computer Use",
+      targetRelease: "Release B",
       projectItems: [projectItem({ id: "item-10", priority: "P3" })],
     });
     const dependent = issue({
       number: 20,
-      title: "Deliver earlier-milestone outcome",
+      title: "Deliver earlier-release outcome",
       createdAt: "2026-09-01T00:00:00.000Z",
       blockedBy: [{ repository: REPOSITORY, number: 10, state: "OPEN" }],
       projectItems: [projectItem({ id: "item-20", priority: "P1" })],
     });
     const report = analyzeRoadmapGovernance(snapshot([dependent, prerequisite]));
     expect(report.deliverySequence.map((entry) => entry.issueNumber)).toEqual([10, 20]);
-    expect(report.deliverySequence[0]?.crossMilestonePrerequisite).toBe(true);
+    expect(report.deliverySequence[0]?.crossReleasePrerequisite).toBe(true);
   });
 
   test("orders offset timestamps by absolute creation time", () => {
@@ -636,7 +656,7 @@ Planning relationship: Standalone-v1.
     expect(report.deliverySequence.map((entry) => entry.issueNumber)).toEqual([2, 1]);
   });
 
-  test("uses milestone, priority, unlock count, and creation as stable frontier ties", () => {
+  test("uses release, priority, unlock count, and creation as stable frontier ties", () => {
     const earlyP2 = issue({
       number: 2,
       createdAt: "2026-08-01T00:00:00.000Z",
@@ -652,15 +672,13 @@ Planning relationship: Standalone-v1.
       blockedBy: [{ repository: REPOSITORY, number: 3, state: "OPEN" }],
       projectItems: [projectItem({ id: "item-4", priority: "P1" })],
     });
-    const laterMilestone = issue({
+    const laterRelease = issue({
       number: 5,
       body: `${issue().body}\nP0 approval: @owner on 2026-09-03 — active release emergency.\n`,
-      milestone: "v0.9 Hardening and Distribution",
+      targetRelease: "Release C",
       projectItems: [projectItem({ id: "item-5", priority: "P0" })],
     });
-    const report = analyzeRoadmapGovernance(
-      snapshot([earlyP2, p1Unlocker, blocked, laterMilestone]),
-    );
+    const report = analyzeRoadmapGovernance(snapshot([earlyP2, p1Unlocker, blocked, laterRelease]));
     expect(report.deliverySequence.map((entry) => entry.issueNumber)).toEqual([5, 3, 4, 2]);
   });
 
@@ -910,5 +928,98 @@ Planning relationship: Standalone-v1.
       "external-open-blocker",
     );
     expect(report.deliverySequence).toEqual([]);
+  });
+});
+
+describe("private release planning", () => {
+  test("uses the Project option order without a compiled release catalog", () => {
+    const first = issue({ number: 1, targetRelease: "Release A" });
+    const second = issue({ number: 2, targetRelease: "Release B" });
+    const original = snapshot([first, second]);
+    const reordered = {
+      ...original,
+      targetReleaseOptions: [...original.targetReleaseOptions].reverse(),
+    };
+    expect(
+      analyzeRoadmapGovernance(original).deliverySequence.map((row) => row.issueNumber),
+    ).toEqual([1, 2]);
+    expect(
+      analyzeRoadmapGovernance(reordered).deliverySequence.map((row) => row.issueNumber),
+    ).toEqual([2, 1]);
+  });
+
+  test("rejects absent, duplicate and malformed release catalogs and a public Project", () => {
+    const original = snapshot([issue()]);
+    const duplicate = { name: "Release A", description: "State: OPEN", color: "BLUE" };
+    for (const targetReleaseOptions of [
+      [],
+      [duplicate, duplicate],
+      [{ name: "Release A", description: "Open", color: "BLUE" }],
+      [{ name: " Release A", description: "State: OPEN", color: "BLUE" }],
+    ]) {
+      const report = analyzeRoadmapGovernance({ ...original, targetReleaseOptions });
+      expect(report.diagnostics.map((row) => row.code)).toContain("target-release-field-invalid");
+      expect(report.deliverySequence).toEqual([]);
+    }
+    expect(codes({ ...original, projectPublic: true })).toEqual(["project-public"]);
+    expect(codes(snapshot([issue({ targetRelease: "Unknown release" })]))).toEqual([
+      "target-release-order-unknown",
+    ]);
+    expect(codes(snapshot([issue({ targetRelease: null })]))).toEqual(["target-release-missing"]);
+  });
+
+  test("does not accept a public-body exception or an orphaned private exception", () => {
+    const parent = issue({
+      targetRelease: "Release C",
+      subIssues: [{ repository: REPOSITORY, number: 2, state: "OPEN" }],
+      projectItems: [projectItem({ readiness: "Parent" })],
+    });
+    const declaration =
+      "early-prerequisite-v1; parent tyldra-org/falryn#1; child Release B; parent Release C.";
+    const child = issue({
+      number: 2,
+      targetRelease: "Release B",
+      parent: { repository: REPOSITORY, number: 1, state: "OPEN" },
+      body: `Release exception: ${declaration}`,
+    });
+    expect(codes(snapshot([parent, child]))).toEqual(["hierarchy-target-release-mismatch"]);
+    expect(codes(snapshot([parent, issue({ ...child, releaseException: declaration })]))).toEqual(
+      [],
+    );
+    expect(codes(snapshot([issue({ releaseException: declaration })]))).toContain(
+      "release-exception-invalid",
+    );
+  });
+
+  test("rejects old snapshots instead of interpreting repository milestones as Project fields", () => {
+    expect(() =>
+      parseRoadmapGovernanceSnapshot({ ...snapshot([issue()]), schemaVersion: 2 }),
+    ).toThrow("schemaVersion must be 3");
+    const original = snapshot([issue()]);
+    const { targetReleaseOptions: _options, ...missing } = original;
+    expect(() => parseRoadmapGovernanceSnapshot(missing)).toThrow("targetReleaseOptions");
+  });
+
+  test("collects release selection and exception from Project fields only", () => {
+    const base = {
+      id: "item",
+      type: "ISSUE",
+      content: { id: "issue", milestone: { title: "Wrong source" } },
+      fieldValues: {
+        totalCount: 2,
+        nodes: [
+          { name: "Release B", field: { name: "Target release" } },
+          { text: "private exception", field: { name: "Release exception" } },
+        ],
+      },
+    };
+    expect(projectItemFromGraphQl(base, "item").item).toMatchObject({
+      targetRelease: "Release B",
+      releaseException: "private exception",
+    });
+    expect(
+      projectItemFromGraphQl({ ...base, fieldValues: { totalCount: 0, nodes: [] } }, "item").item
+        .targetRelease,
+    ).toBeNull();
   });
 });

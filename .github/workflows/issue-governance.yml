@@ -97,7 +97,7 @@ jobs:
             const contract = maintainer ? "maintainer issue contract" : "public contribution contract";
             const guidance = maintainer
               ? "This check covers public issue content and classification only. Private Roadmap membership, planning, and readiness are checked separately by the maintainer auditors."
-              : "You do not need an assignee, milestone, Priority, Readiness, or access to the private Falryn Roadmap. Maintainers decide separately whether an issue belongs in the product-development plan.";
+              : "You do not need an assignee, Target release, Priority, Readiness, or access to the private Falryn Roadmap. Maintainers decide separately whether an issue belongs in the product-development plan.";
             const body = `${marker}\nPlease complete the ${contract}:\n\n${checklist}\n\n${guidance} See the [contribution guide](https://github.com/tyldra-org/falryn/blob/main/CONTRIBUTING.md).`;
             if (existing) {
               if (existing.body !== body) {

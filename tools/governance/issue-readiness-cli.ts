@@ -118,10 +118,9 @@ function liveIssueFromGraphQl(
   value: unknown,
   roadmapItemCount: number,
   roadmapStatuses: readonly string[],
+  targetReleases: readonly string[],
 ): IssueReadinessIssue {
   const record = asRecord(value, "live issue");
-  const milestone =
-    record.milestone === null ? null : asRecord(record.milestone, "live issue.milestone");
   const parent =
     record.parent === null ? null : relationFromGraphQl(record.parent, "live issue.parent");
   return {
@@ -136,7 +135,7 @@ function liveIssueFromGraphQl(
     labels: completeConnectionNodes(record.labels, "live issue.labels").map((entry) =>
       stringValue(asRecord(entry, "label").name, "label.name"),
     ),
-    milestone: milestone === null ? null : stringValue(milestone.title, "milestone.title"),
+    targetRelease: targetReleases.length === 1 ? (targetReleases[0] ?? null) : null,
     roadmapItemCount,
     roadmapStatuses,
     parent,
@@ -154,7 +153,14 @@ async function loadRoadmapStatuses(
   projectOwner: string,
   projectNumber: number,
 ): Promise<
-  ReadonlyMap<number, { readonly itemCount: number; readonly statuses: readonly string[] }>
+  ReadonlyMap<
+    number,
+    {
+      readonly itemCount: number;
+      readonly statuses: readonly string[];
+      readonly targetReleases: readonly string[];
+    }
+  >
 > {
   const query = `query($after:String) {
   repositoryOwner(login:${JSON.stringify(projectOwner)}) {
@@ -163,6 +169,7 @@ async function loadRoadmapStatuses(
   }
 }
 fragment ProjectItems on ProjectV2 {
+  public
   items(first:100,after:$after) {
     pageInfo { hasNextPage endCursor }
     nodes {
@@ -179,7 +186,10 @@ fragment ProjectItems on ProjectV2 {
     }
   }
 }`;
-  const membership = new Map<number, { itemCount: number; statuses: string[] }>();
+  const membership = new Map<
+    number,
+    { itemCount: number; statuses: string[]; targetReleases: string[] }
+  >();
   let after: string | null = null;
   while (true) {
     const args = ["api", "graphql", "-f", `query=${query}`];
@@ -190,6 +200,9 @@ fragment ProjectItems on ProjectV2 {
     const root = asRecord(data.data, "Roadmap GraphQL response.data");
     const repositoryOwner = asRecord(root.repositoryOwner, "Roadmap owner");
     const project = asRecord(repositoryOwner.projectV2, "Roadmap project");
+    if (project.public !== false) {
+      throw new Error("Roadmap must be private");
+    }
     const items = asRecord(project.items, "Roadmap project.items");
     for (const value of arrayValue(items.nodes, "Roadmap project.items.nodes")) {
       const item = asRecord(value, "Roadmap item");
@@ -205,8 +218,9 @@ fragment ProjectItems on ProjectV2 {
         continue;
       }
       const number = positiveInteger(content.number, "Roadmap item.number");
-      const current = membership.get(number) ?? { itemCount: 0, statuses: [] };
+      const current = membership.get(number) ?? { itemCount: 0, statuses: [], targetReleases: [] };
       const issueStatuses = [...current.statuses];
+      const targetReleases = [...current.targetReleases];
       for (const fieldValue of completeConnectionNodes(
         item.fieldValues,
         "Roadmap item.fieldValues",
@@ -216,11 +230,18 @@ fragment ProjectItems on ProjectV2 {
           continue;
         }
         const field = asRecord(fieldRecord.field, "Roadmap field value.field");
+        if (field.name === "Target release") {
+          targetReleases.push(fieldRecord.name);
+        }
         if (field.name === "Status") {
           issueStatuses.push(fieldRecord.name);
         }
       }
-      membership.set(number, { itemCount: current.itemCount + 1, statuses: issueStatuses });
+      membership.set(number, {
+        itemCount: current.itemCount + 1,
+        statuses: issueStatuses,
+        targetReleases,
+      });
     }
     const pageInfo = asRecord(items.pageInfo, "Roadmap project.items.pageInfo");
     if (pageInfo.hasNextPage !== true) {
@@ -245,7 +266,7 @@ async function loadLiveSnapshot(
   ) {
     throw new Error("--live must use owner/repository");
   }
-  const query = `query($after:String){repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){issues(states:OPEN,first:100,after:$after,orderBy:{field:CREATED_AT,direction:ASC}){pageInfo{hasNextPage endCursor}nodes{number title body state updatedAt assignees(first:100){totalCount nodes{login}} labels(first:100){totalCount nodes{name}} milestone{title} parent{number state} subIssues(first:100){totalCount nodes{number state}} blockedBy(first:100){totalCount nodes{number state}}}}}}`;
+  const query = `query($after:String){repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){issues(states:OPEN,first:100,after:$after,orderBy:{field:CREATED_AT,direction:ASC}){pageInfo{hasNextPage endCursor}nodes{number title body state updatedAt assignees(first:100){totalCount nodes{login}} labels(first:100){totalCount nodes{name}} parent{number state} subIssues(first:100){totalCount nodes{number state}} blockedBy(first:100){totalCount nodes{number state}}}}}}`;
   const issueRecords: unknown[] = [];
   let after: string | null = null;
   while (true) {
@@ -270,8 +291,13 @@ async function loadLiveSnapshot(
     .map((value) => {
       const record = asRecord(value, "live issue");
       const number = positiveInteger(record.number, "live issue.number");
-      const roadmap = membership.get(number) ?? { itemCount: 0, statuses: [] };
-      return liveIssueFromGraphQl(value, roadmap.itemCount, roadmap.statuses);
+      const roadmap = membership.get(number) ?? { itemCount: 0, statuses: [], targetReleases: [] };
+      return liveIssueFromGraphQl(
+        value,
+        roadmap.itemCount,
+        roadmap.statuses,
+        roadmap.targetReleases,
+      );
     })
     .sort((left, right) => left.number - right.number);
   return {

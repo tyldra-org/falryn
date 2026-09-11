@@ -2,6 +2,43 @@
 
 The private Falryn Roadmap owns scheduling metadata for maintainer-selected product-development issues in the two canonical repositories. Project membership is deliberate adoption into that plan. Repository issues outside the Project are ordinary contributions or discussions and have no Roadmap field requirements. This file owns the exact field vocabulary, option descriptions, transitions, and Project automation contract. The repository auditor in `tools/governance/roadmap-governance.ts` is the executable copy of this contract.
 
+## Target release and private exceptions
+
+Release scheduling belongs exclusively to the private Project's `Target release`
+single-select field. Every adopted open issue needs one existing open option.
+Keep option names and ordering out of public issue bodies, pull requests,
+source, fixtures, labels and comments. Repository milestones are not planning
+authority and must not be recreated to route maintainer work. Public issues
+retain their complete implementation scope and native dependencies.
+
+The field has 1–50 unique, non-empty names without surrounding whitespace. Its
+option order is the delivery order, subject to native dependencies. Each
+option description begins with exactly `State: OPEN` or `State: CLOSED` on its
+own line; remaining text can describe the release privately. Closed options
+remain for history and cannot receive open implementation work. Colors are
+presentation only. Do not sort names lexically or compile an option catalog
+into public code. A private scheduling change does not require public prose
+changes, new readiness evidence or a new implementation issue by itself.
+
+Children normally use their parent's target release. An intentionally earlier
+prerequisite uses the private `Release exception` text field on that child's
+Project item, with the exact value:
+
+```text
+early-prerequisite-v1; parent <owner/repository>#<N>; child <exact child release>; parent <exact parent release>.
+```
+
+The analyzer checks identity, both selections and strictly earlier option
+order. Moving either issue, changing the parent, or reordering options can
+invalidate the exception; reconcile the private field, never public body text.
+Do not infer exceptions from prose. Ordinary cross-release native blockers
+remain legal and take precedence over release order without such an exception.
+
+Select a release with `Target release "name"` in a maintainer prompt. An older
+`Milestone` selector requires explicit resolution to the private field; it
+never authorizes creating or assigning repository milestones. Public-only
+actors cannot resolve these scopes.
+
 ## Priority
 
 Priority answers only: “How urgently should this issue be selected among work whose dependencies permit it?” It does not encode severity, readiness, blocking, progress, or issue type.
@@ -10,8 +47,8 @@ Priority answers only: “How urgently should this issue be selected among work 
 | --- | --- | --- | --- |
 | `P0` | Red | `Immediate: approved active security, data-loss, availability, or release emergency.` | A current emergency with `P0 approval: @owner on YYYY-MM-DD — reason` in the public issue. Never infer it. |
 | `P1` | Orange | `High: milestone critical path, safety prerequisite, or multi-outcome unlocker.` | Critical-path, safety-prerequisite, or high-leverage required work. |
-| `P2` | Yellow | `Normal: required milestone work outside the critical path.` | Default when a maintainer adopts an open issue into the Roadmap, and for ordinary required milestone work. |
-| `P3` | Gray | `Low: optional, experimental, polish, or safely deferrable work.` | Useful work that may move without compromising the milestone. |
+| `P2` | Yellow | `Normal: required milestone work outside the critical path.` | Default when a maintainer adopts an open issue into the Roadmap, and for ordinary required release work. |
+| `P3` | Gray | `Low: optional, experimental, polish, or safely deferrable work.` | Useful work that may move without compromising the release. |
 | `Historical` | Gray | `Closed-only: no contemporaneous P0-P3 value; excluded from routing.` | Closed legacy records only. Never assign it to new, open, or reopened work. |
 
 Retain the last real P0–P3 value when current work closes. `Historical` preserves the absence of a trustworthy old value; it is not a low priority.
@@ -65,4 +102,27 @@ GitHub's API exposes workflow names and enabled state but not every rule and fil
 
 ## Safe field migration
 
-Land and publish the public skill, templates, workflow checks, and schema-versioned auditors before changing live option names or descriptions. Then update the private Project, preserve existing issue values during the `Not Ready` to `Needs Planning` rename, add `Needs Decision`, remove any broad repository auto-add rule, verify the remaining automation configuration, and run both live audits. Never leave the live Project on a contract that the published auditor rejects.
+Capture private preimages of milestones, assignments, Project fields, items,
+exceptions and the audited delivery sequence before migration. Additional
+private staging fields can be created and populated while the published
+legacy auditor remains valid. Do not retire the old authority until the
+compatible schema-versioned auditor, skill, templates and checks are published.
+
+Copy each adopted item's release without changing Status, Priority, Readiness,
+hierarchy or blockers. Transfer exact exception values into the private field.
+Preserve historical assignments and release descriptions in a private migration
+record; a repository PR's former milestone is history, not a new planned issue.
+Verify every copied value and the unchanged ordering of existing issues before
+removing repository assignments and retiring public milestone definitions.
+Clean release-planning text from active public handoffs without removing their
+scope, tests, native relationships or legitimate shipped-version evidence.
+Previously public history and external copies cannot be made private by this
+operation. Do not rewrite Git history as part of a field migration.
+
+Set Project views to show/filter/group by Target release instead of Milestone;
+verify workflow filters and field effects. Re-run both live audits and inspect
+repository milestone lists after cutover. Stop on drift or a partial write,
+retain the exact private receipts, and resume from verified state. Never fall
+back to public metadata when private access fails. Changes to existing governed
+option names or descriptions must be compatible with the published auditor
+before the live edit. Never leave the live Project on a rejected contract.

@@ -26,7 +26,7 @@ item for documentation, infrastructure or maintenance, and research or
 qualification. These types do not change the shared contribution or pull-request
 quality bar.
 
-Do not assign or wait for an assignee, milestone, private Roadmap item, Priority,
+Do not assign or wait for an assignee, Target release, private Roadmap item, Priority,
 or Readiness. Those fields belong to the maintainer's separate product-development
 plan. A maintainer may adopt a contribution issue into that plan, but adoption is
 not required for the issue or its pull request to use the public contribution

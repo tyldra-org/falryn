@@ -22,7 +22,7 @@ Use native GitHub blockers when they exist. Private product planning may add nat
 
 An agent without private Roadmap access may inspect and improve the public contribution contract and work on an explicitly authorized contribution. It may not assert Roadmap Status, Priority, Readiness, sequence position, or ownership metadata it cannot observe. A missing private connection does not block ordinary contribution work.
 
-Ordinary contributors do not need maintainer Project access. They follow the public issue, `CONTRIBUTING.md`, source, and checks. They never assign or wait for a milestone or private field.
+Ordinary contributors do not need maintainer Project access. They follow the public issue, `CONTRIBUTING.md`, source, and checks. They never assign or wait for a target release or private field.
 
 ## Maintainer behavior
 
@@ -34,7 +34,7 @@ Ready checklist, or the original Contribution checklist for an adopted public
 form, plus an open, unblocked leaf. Private planning requirements remain with
 the authenticated auditors below. Unlabeled issues keep the public form checks.
 
-Project membership means a maintainer deliberately adopted the issue into product development. Only then resolve its exact repository, assignee, milestone, Status, Priority, Readiness, Project item, native parent and children, blockers, and linked pull requests. Keep these rules:
+Project membership means a maintainer deliberately adopted the issue into product development. Only then resolve its exact repository, assignee, target release, Status, Priority, Readiness, Project item, native parent and children, blockers, and linked pull requests. Keep these rules:
 
 - Todo covers planning and blocked work.
 - In Progress requires active implementation. A leaf without an open closing PR follows the private liveness limit.
