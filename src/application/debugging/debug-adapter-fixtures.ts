@@ -44,6 +44,11 @@ function handle(message: Record<string, unknown>): void {
     return;
   }
   const requestSeq = typeof message.seq === "number" ? message.seq : 0;
+  if (
+    (message.command === "launch" || message.command === "attach") &&
+    process.env.FALRYN_FIXTURE_DROP_TARGET_RESPONSE === "1"
+  )
+    return;
   if (message.command === "initialize") {
     void write(
       encode({
@@ -59,6 +64,57 @@ function handle(message: Record<string, unknown>): void {
       }),
     );
     nextSeq += 1;
+    return;
+  }
+  if (
+    [
+      "launch",
+      "attach",
+      "threads",
+      "stackTrace",
+      "scopes",
+      "variables",
+      "configurationDone",
+      "next",
+      "continue",
+    ].includes(message.command)
+  ) {
+    const args = message.arguments as Record<string, unknown> | undefined;
+    const reject = args?.reject === true;
+    const body =
+      message.command === "threads"
+        ? { threads: [{ id: 1, name: "fixture" }] }
+        : message.command === "stackTrace"
+          ? { stackFrames: [{ id: 1, name: "fixture", line: 1, column: 1 }], totalFrames: 1 }
+          : message.command === "scopes"
+            ? { scopes: [{ name: "locals", variablesReference: 1, expensive: false }] }
+            : message.command === "variables"
+              ? { variables: [{ name: "answer", value: "42", variablesReference: 0 }] }
+              : {};
+    if (
+      !reject &&
+      (message.command === "launch" || message.command === "attach" || message.command === "next")
+    ) {
+      void write(
+        encode({
+          seq: nextSeq++,
+          type: "event",
+          event: "stopped",
+          body: { reason: "entry", threadId: 1, allThreadsStopped: true },
+        }),
+      );
+    }
+    void write(
+      encode({
+        seq: nextSeq++,
+        type: "response",
+        request_seq: requestSeq,
+        success: !reject,
+        command: message.command,
+        body,
+        ...(reject ? { message: "unsupported fixture target arguments" } : {}),
+      }),
+    );
     return;
   }
   if (message.command === "disconnect") {

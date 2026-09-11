@@ -1,4 +1,5 @@
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
+import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { productToolHost } from "./product-tool-host.ts";
 import { createProductSandbox } from "./sandbox-configuration.ts";
 /**
@@ -643,6 +644,12 @@ export async function runCoding(
     });
     const managedServices = createHostManagedServicePort(ownedProcessOptions);
     const languageTools = composeProductLanguageTools({
+      configuration: () =>
+        languageServiceConfiguration(
+          graph.loader.current()?.values ?? configuration.values,
+          Number(graph.loader.current()?.generation ?? generation),
+          graph.loader.current(),
+        ),
       generation,
       languageServers: createLanguageServerSupervisor(managedServices),
       debugAdapters: createDebugAdapterSupervisor(managedServices, {

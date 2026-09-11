@@ -17,6 +17,9 @@ import { validateAndNormalizeInvocations } from "../../domain/tools/index.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
 import type { DebugAdapterSupervisor } from "../debugging/debug-adapter.ts";
 import type { LanguageServerSupervisor } from "../language/language-server.ts";
+import { launchSchema } from "./product-language-tools/dap-schemas.ts";
+import { startSchema } from "./product-language-tools/lsp-schemas.ts";
+import { isClosedProductToolSchema } from "./product-tool-schema.ts";
 import { composeProductLanguageTools } from "./product-tools-language.ts";
 
 function unused(): never {
@@ -162,8 +165,8 @@ describe("composeProductLanguageTools", () => {
       debugAdapters: fakeDap(),
     });
 
-    expect(tools.toolNames).toHaveLength(59);
-    expect(new Set(tools.toolNames).size).toBe(59);
+    expect(tools.toolNames).toHaveLength(61);
+    expect(new Set(tools.toolNames).size).toBe(61);
     expect(tools.toolNames).toEqual(
       expect.arrayContaining([
         "lsp_open_document",
@@ -180,6 +183,7 @@ describe("composeProductLanguageTools", () => {
         readonly additionalProperties?: boolean;
       };
       expect(schema.additionalProperties).toBe(false);
+      expect(isClosedProductToolSchema(schema)).toBe(true);
     }
   });
 
@@ -194,7 +198,7 @@ describe("composeProductLanguageTools", () => {
     expect(launch).not.toBeNull();
     expect(start).not.toBeNull();
     expect(
-      launch?.manifest.inputSchema.safeParse({
+      launchSchema.safeParse({
         serviceId: "dap-1",
         generation: 1,
         configuration: { program: "dist/falryn", stopOnEntry: true },
@@ -204,14 +208,14 @@ describe("composeProductLanguageTools", () => {
     let nested: unknown = "value";
     for (let depth = 0; depth < 10; depth += 1) nested = { child: nested };
     expect(
-      launch?.manifest.inputSchema.safeParse({
+      launchSchema.safeParse({
         serviceId: "dap-1",
         generation: 1,
         configuration: { nested },
       }).success,
     ).toBe(false);
     expect(
-      start?.manifest.inputSchema.safeParse({
+      startSchema.safeParse({
         serviceId: "lsp-1",
         workspaceRoot: "/work",
         serverName: "typescript",

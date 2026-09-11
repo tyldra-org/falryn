@@ -523,6 +523,7 @@ export function createDebugTransport(
       command === "launch"
         ? { ...configuration, ...(noDebug === undefined ? {} : { noDebug }) }
         : configuration;
+    if (signal?.aborted) return err({ kind: "debug-adapter", code: "cancelled" });
     const response = await sendRequest(
       adapter,
       command,
@@ -531,7 +532,9 @@ export function createDebugTransport(
       signal,
     );
     if (!response.ok) {
-      return response;
+      // A lost response cannot authorize another launch of the same target.
+      adapter.session.mode = mode;
+      return err(fail(adapter, "target-start-uncertain"));
     }
     if (!response.value.success) {
       return err({ kind: "debug-adapter", code: "unsupported" });

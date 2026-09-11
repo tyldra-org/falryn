@@ -72,6 +72,7 @@ import {
 } from "../../integrations/index.ts";
 import type { GlobalOptions } from "../options.ts";
 import { AGENT_CONFIGURATION_KEYS } from "./agent-configuration.ts";
+import { LANGUAGE_SERVICE_CONFIGURATION_KEYS } from "./language-service-configuration.ts";
 import { MODEL_CONFIGURATION_KEYS } from "./model-configuration.ts";
 import { loadPackageConfiguration } from "./package-configuration.ts";
 import { PROVIDER_CONNECTION_KEYS } from "./provider-configuration.ts";
@@ -99,6 +100,7 @@ export const PRODUCT_CONFIGURATION_KEYS = [
   ...PROVIDER_CONNECTION_KEYS,
   ...MODEL_CONFIGURATION_KEYS,
   ...AGENT_CONFIGURATION_KEYS,
+  ...LANGUAGE_SERVICE_CONFIGURATION_KEYS,
 ] as const;
 
 export type Services = {

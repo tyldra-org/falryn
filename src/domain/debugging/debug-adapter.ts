@@ -56,6 +56,7 @@ export const DEBUG_ADAPTER_FAILURE_REASONS = [
   "stale-stopped-generation",
   "target-exited",
   "detach-uncertain",
+  "target-start-uncertain",
   "already-disconnecting",
   "confirmation-refused",
   "confirmation-mismatch",
@@ -584,6 +585,8 @@ export function describeDebugAdapterFailure(reason: DebugAdapterFailureReason): 
       return "debug target has exited";
     case "detach-uncertain":
       return "debug adapter detach could not be confirmed";
+    case "target-start-uncertain":
+      return "debug target launch or attach could not be confirmed; inspect before recovery";
     case "already-disconnecting":
       return "debug adapter is already disconnecting";
     case "confirmation-refused":

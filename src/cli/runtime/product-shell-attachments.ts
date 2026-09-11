@@ -1,5 +1,6 @@
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
 import type { ConfigurationValues } from "../../domain/configuration/index.ts";
+import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { productToolHost } from "./product-tool-host.ts";
 import { createProductSandbox } from "./sandbox-configuration.ts";
 /**
@@ -301,6 +302,12 @@ export async function composeProductShellAttachments(
       workspaceRoot === null
         ? null
         : composeProductLanguageTools({
+            configuration: () =>
+              languageServiceConfiguration(
+                ports.configurationValues?.() ?? {},
+                Number(ports.modelConfigurationGeneration?.() ?? generation),
+                ports.sandboxConfiguration?.(),
+              ),
             generation,
             languageServers: createLanguageServerSupervisor(managedServices),
             debugAdapters: createDebugAdapterSupervisor(managedServices, {

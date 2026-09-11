@@ -16,6 +16,7 @@ import {
 import type { EffectiveExecutionPolicy } from "../../domain/sessions/index.ts";
 import type { ToolRegistry } from "../../domain/tools/index.ts";
 import type { WorkIntent } from "../../providers/index.ts";
+import { languageToolPrerequisites } from "../tools/product-language-tools/disclosure.ts";
 import {
   isClosedProductToolSchema,
   measureProductToolSchema,
@@ -83,6 +84,10 @@ export function createProductOpportunityPlan(
     throw new Error("opportunity planner generations do not match");
   }
   const task = options.task ?? "";
+  const preferredCapabilityIds = [
+    ...(options.preferredCapabilityIds ?? []),
+    ...languageToolPrerequisites(task, tools),
+  ];
   const taskFingerprint = createHash("sha256").update(task).digest("hex").slice(0, 24);
   return planCapabilityOpportunities({
     task,
@@ -111,9 +116,7 @@ export function createProductOpportunityPlan(
       };
     }),
     intentFamilies: productOpportunityIntentFamilies(options.intent),
-    ...(options.preferredCapabilityIds === undefined
-      ? {}
-      : { preferredCapabilityIds: options.preferredCapabilityIds }),
+    preferredCapabilityIds,
     ...(options.selectionLimit === undefined ? {} : { selectionLimit: options.selectionLimit }),
     ...(options.schemaTokenBudget === undefined
       ? {}

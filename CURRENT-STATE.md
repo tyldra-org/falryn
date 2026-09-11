@@ -1297,12 +1297,34 @@ remain active when the human-facing control is off.
 
 ## Language and debugger tools
 
-The product registry contains 30 LSP operations and 29 DAP operations. Each
-operation has its own closed root input schema. Protocol-specific capability
-and launch configuration maps are recursive depth-, item-, key-, string-, and
-byte-bounded extension values rather than an arbitrary request escape. Unknown
-root fields, invalid identities, stale generations, and malformed ranges are
-rejected before transport.
+The product registry contains 30 LSP operations, 29 DAP operations, and two
+configuration discovery operations. All 61 input schemas pass recursive model
+eligibility. Language/debugger tasks select startup prerequisites within the
+existing disclosure count and token budgets; restricted execution profiles
+still deny consequential operations.
+
+User configuration at `tools.languageServices` owns `languageServers` and
+`debugAdapters`. Only the user layer may set this sensitive key. Each service
+names its exact canonical `workspaceRoot`, `serviceId`, executable, arguments,
+environment, initialization options, and optional existing supervisor limits.
+A debug adapter also declares `targets`, each with an `id`, `kind` of `launch`
+or `attach`, bounded `configuration`, and optional launch-only `noDebug`.
+Services are not installed or started by discovery. Missing executables fail
+at the existing managed-process boundary. Configuration uses the existing
+256-item and 256 KiB protocol bounds; no runtime budget is increased.
+
+`lsp_configurations` and `dap_configurations` disclose workspace-matching
+service identities and configuration digests without executable options or
+protocol configuration values. `lsp_start`, `lsp_restart`, and `dap_start`
+resolve those references immediately before dispatch. Debug launch/attach also
+requires an exact configured target reference. Changed configuration refuses a
+stale reference; unreadable configuration refuses discovery and use. Shutdown
+and disconnect remain available for their owned generation during that failure.
+
+Initialization and target options retain the recursive depth-, item-, key-,
+string-, and byte-bounded protocol extension validators. Models cannot supply
+those maps as startup authority. Unknown model fields, invalid identities,
+stale generations, and malformed ranges are rejected before transport.
 
 The LSP surface covers server lifecycle, document synchronization, navigation,
 symbols, completion and signature help, diagnostics, formatting, rename, code
@@ -1310,7 +1332,11 @@ actions, and call/type hierarchies. An operation that depends on an optional
 server capability checks the initialized and dynamically registered capability
 set before sending a request. Formatting, range formatting, rename, and code
 actions return Falryn patch proposals with document-version preconditions;
-language servers do not apply those edits directly.
+language servers do not apply those edits directly. Hierarchy traversal takes
+an `itemRef` retained from the matching call/type preparation response, bound
+to the service and open-document generation. Opaque extension data stays with
+the retained item. Retention is bounded to 512 items and 256 KiB; evicted or
+stale references require preparation again.
 
 After a completed product mutation, Falryn compares every tracked open document
 with current workspace bytes, sends a bounded full synchronization only for
@@ -1326,13 +1352,25 @@ session-artifact capture. Optional requests check negotiated adapter
 capabilities before transport. Watch/hover evaluation is classified as an
 observation while REPL evaluation is interactive; the derived effect is the
 one used by policy, confirmation, scheduling, deduplication, and execution.
+Concurrent LSP observations recheck document and service generations before
+returning results. State-changing operations refuse a competing operation on
+the same service; DAP observations also recheck stopped-state generation.
+A lost launch/attach response marks the adapter failed with
+`target-start-uncertain` and returns an uncertain gateway outcome. It cannot
+start another target before explicit recovery.
+
+Fresh-session deterministic protocol-peer scenarios exercise discovery through
+the provider, gateway, both headless and terminal product hosts, negotiated
+LSP hover/definition and hierarchy traversal, DAP launch/attach and stopped
+stack inspection, and owned process shutdown. These process scenarios are
+qualified on the POSIX test lanes; Windows remains explicitly skipped.
 
 These descriptors are composed into the same production registry and runner as
 workspace, process, Git, and memory tools. A provider can execute only the
 strict subset selected into its immutable attempt disclosure, and every such
 call passes through the unified policy, confirmation, hooks, scheduler,
 capture, journal, and projection gateway. Registration alone does not imply
-that all 59 schemas are placed in every prompt.
+that all 61 schemas are placed in every prompt.
 
 ## Scoped work-item records
 
