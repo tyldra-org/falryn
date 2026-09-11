@@ -678,13 +678,7 @@ export function createWorkflowExecution(options: {
             ) ||
             current.nodes.some((node) => ["failed", "cancelled", "timed-out"].includes(node.state));
           let output = null;
-          if (
-            !uncertain &&
-            !waiting &&
-            !incomplete &&
-            !failed &&
-            current.nodes.every((node) => node.state === "completed")
-          ) {
+          if (!uncertain && !waiting && !incomplete && !failed) {
             const values = await results(
               current,
               stop,

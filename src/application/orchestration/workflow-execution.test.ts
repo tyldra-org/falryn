@@ -534,3 +534,33 @@ test("empty maps complete without effects; duplicate item identities fail before
     }
   }
 });
+
+test("a settled join can publish declared output after a conditional branch is skipped", async () => {
+  const f = await workflowFixture();
+  try {
+    const base = simpleWorkflow();
+    const definition = {
+      ...base,
+      nodes: [
+        { ...base.nodes[0], when: { value: { from: "literal", value: false }, equals: true } },
+        {
+          key: "join",
+          kind: "join",
+          policy: "settled",
+          dependencies: ["read"],
+          resultPath: ["nodes", 0, "state"],
+          resultSchema: { type: "string", enum: ["skipped"] },
+        },
+      ],
+      outputs: { branch: { from: "node", node: "join" } },
+    };
+    taskValue(await f.execution.admit({ handle, definition, arguments: {} }, f.host, signal()));
+    const result = taskValue(await f.execution.drive(handle, f.host, signal()));
+    expect(result.state).toBe("completed");
+    expect(f.calls).toEqual([]);
+    if (!result.output) throw new Error("Missing declared join output");
+    expect(await f.artifacts.read(result.output, signal())).toEqual({ branch: "skipped" });
+  } finally {
+    await f.close();
+  }
+});
