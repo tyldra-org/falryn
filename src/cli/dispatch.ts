@@ -551,6 +551,7 @@ async function launchShell(
                 };
               }),
               rehydrateExtensions: productArtifactSession.rehydrateExtensions,
+              publishNativePackages: productArtifactSession.publishNativePackages,
               eventStore: productArtifactSession.eventStore,
               clock: graph.clock,
               fileSystem: graph.fileSystem,

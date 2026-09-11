@@ -5,6 +5,7 @@ import { sandboxReceiptSchema } from "../security/sandbox.ts";
 import { digestSchema, identityText } from "./identity.ts";
 
 export const PACKAGE_HEALTH_PROTOCOL = "falryn-package-health/1";
+export const PACKAGE_TOOL_PROTOCOL = "falryn-package-tool/1";
 export const PACKAGE_HEALTH_LIMITS = {
   frames: 8,
   frameBytes: 16_384,
@@ -29,7 +30,7 @@ export const packageHealthRequestSchema = z.strictObject({
 export type PackageHealthRequest = z.infer<typeof packageHealthRequestSchema>;
 
 export const packageHealthBindingSchema = z.strictObject({
-  protocol: z.literal(PACKAGE_HEALTH_PROTOCOL),
+  protocol: z.enum([PACKAGE_HEALTH_PROTOCOL, PACKAGE_TOOL_PROTOCOL]),
   attempt: z.string().uuid(),
   package: digestSchema,
   contribution: digestSchema,
@@ -37,15 +38,31 @@ export const packageHealthBindingSchema = z.strictObject({
 });
 export type PackageHealthBinding = z.infer<typeof packageHealthBindingSchema>;
 export const packageHealthFrameSchema = packageHealthBindingSchema.extend({
+  protocol: z.literal(PACKAGE_HEALTH_PROTOCOL),
   id: z.int().min(1).max(4),
   method: z.enum(["initialize", "health", "shutdown"]),
   result: z.literal("ok"),
+});
+export const packageToolFrameSchema = packageHealthBindingSchema.extend({
+  protocol: z.literal(PACKAGE_TOOL_PROTOCOL),
+  id: z.int().min(1).max(3),
+  method: z.enum(["initialize", "invoke", "shutdown"]),
+  result: z.union([z.literal("ok"), z.record(z.string(), z.json())]),
 });
 
 export const packageHealthResultSchema = z.strictObject({
   version: z.literal(1),
   binding: packageHealthBindingSchema,
-  state: z.enum(["starting", "running", "healthy", "failed", "uncertain", "recovered"]),
+  state: z.enum([
+    "starting",
+    "running",
+    "healthy",
+    "completed",
+    "failed",
+    "uncertain",
+    "recovered",
+  ]),
+  value: z.record(z.string(), z.json()).optional(),
   code: identityText,
   pid: z.int().positive().nullable(),
   requests: z.int().nonnegative().max(4),

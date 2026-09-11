@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { prepareNativeCliFixture } from "./cli/commands/package-native-fixtures.ts";
 /**
  * The compiled smoke check.
  *
@@ -184,6 +186,58 @@ describe.if(built)("the standalone executable", () => {
       await packageHealthCliJourney([EXECUTABLE], await temporaryRoot(), "cancel");
     },
     30_000,
+  );
+  test.skipIf(createHostSandbox().probe().status !== "available")(
+    "native activation and model invocation survive compiled boundaries",
+    async () => {
+      const root = await temporaryRoot();
+      const fixture = await prepareNativeCliFixture([EXECUTABLE], root);
+      const binary = join(bootstrapDirectory, "native-product");
+      const build = Bun.spawnSync(
+        [
+          process.execPath,
+          "build",
+          join(import.meta.dir, "cli/runtime/native-product-fixtures.ts"),
+          "--compile",
+          "--outfile",
+          binary,
+        ],
+        { stdout: "pipe", stderr: "pipe", timeout: 30_000 },
+      );
+      expect(build.exitCode).toBe(0);
+      const child = Bun.spawnSync(
+        [
+          binary,
+          JSON.stringify({ home: root, name: fixture.name, environment: fixture.environment }),
+        ],
+        { stdout: "pipe", stderr: "pipe", timeout: 20_000 },
+      );
+      expect(child.exitCode).toBe(0);
+      const observed = z
+        .object({
+          result: z.object({ payload: z.object({ stage: z.string(), toolResults: z.number() }) }),
+          requests: z.array(z.string()),
+        })
+        .parse(JSON.parse(child.stdout.toString()));
+      expect(observed.result.payload).toMatchObject({ stage: "attempt-completed", toolResults: 1 });
+      const continuation = z
+        .object({
+          messages: z.array(
+            z.object({
+              role: z.string(),
+              parts: z.array(z.object({ text: z.string().optional() })),
+            }),
+          ),
+        })
+        .parse(JSON.parse(observed.requests[1] ?? "null"));
+      expect(
+        continuation.messages
+          .filter((message) => message.role === "tool")
+          .flatMap((message) => message.parts.map((part) => part.text ?? ""))
+          .join("\n"),
+      ).toContain('"answer":42');
+    },
+    COMPILED_BUILD_TIMEOUT_MS,
   );
   test("peer mailbox receipts and replay survive compiled command restarts", async () => {
     await peerCliJourney([EXECUTABLE], await temporaryRoot());

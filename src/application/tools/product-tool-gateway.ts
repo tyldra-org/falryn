@@ -73,6 +73,7 @@ export type ProductToolConfirmationPort = {
 export type ProductToolEffectLedger = Map<string, ToolInvocationOutcome>;
 
 export type ProductToolGatewayOptions = {
+  readonly toolHost?: import("../../domain/tools/index.ts").HostPlatform;
   readonly sandbox?: SandboxInvocationPort;
   readonly trust?: CapabilityTrustPort;
   readonly delegation?: ToolRunnerRequest["delegation"];
@@ -288,6 +289,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       }
 
       const validated = validateAndNormalizeInvocations({
+        ...(options.toolHost === undefined ? {} : { host: options.toolHost }),
         registry: options.registry,
         proposals: [
           {

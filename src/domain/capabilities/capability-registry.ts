@@ -148,6 +148,9 @@ export type CapabilityRuntimeState = {
   readonly healthReason: string | null;
   /** True only when the owning runtime has a live execution binding. */
   readonly executable: boolean;
+  /** A bound native owner may prepare a lazy resource whose health is not yet observed. */
+  readonly preparable?: boolean | undefined;
+  readonly explicitOnly?: boolean | undefined;
   readonly executionReason: string | null;
   readonly operational: CapabilityOperationalState;
 };
@@ -333,6 +336,8 @@ const documentSchema: z.ZodType<CapabilityRegistryDocument> = z
         health: z.enum(CAPABILITY_HEALTH_STATES),
         healthReason: z.string().max(MAX_CAPABILITY_REASON_LENGTH).nullable(),
         executable: z.boolean(),
+        preparable: z.boolean().optional(),
+        explicitOnly: z.boolean().optional(),
         executionReason: z.string().max(MAX_CAPABILITY_REASON_LENGTH).nullable(),
         operational: operationalSchema,
       })

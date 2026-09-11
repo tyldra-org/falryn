@@ -2,14 +2,17 @@ import { z } from "zod";
 import { adoptForeignError } from "../../application/diagnostics/index.ts";
 import type { ExtensionCatalogReport } from "../../application/extensions/catalog-report.ts";
 import { createCatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
+import { createNativeActivationRepository } from "../../data/extensions/native-activation-repository.ts";
+import { createPackageHealthRepository } from "../../data/extensions/package-health-repository.ts";
 import { ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import { catalogQuerySchema, queryExtensionCatalog } from "../../domain/extensions/catalog.ts";
 import { EXTENSION_SCOPES, identityText } from "../../domain/extensions/identity.ts";
 import { scopeRequestSchema } from "../../domain/extensions/scope-controls.ts";
-import { recoveryForEffect } from "../../domain/foundation/index.ts";
+import { configurationGeneration, recoveryForEffect } from "../../domain/foundation/index.ts";
 import { isCleanClose } from "../../domain/storage/index.ts";
 import type { CommandResultOf } from "../output/result.ts";
 import { composeExtensionCatalog } from "../runtime/extension-catalog.ts";
+import { composeNativePackages } from "../runtime/native-packages.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import { resultFor } from "./shared.ts";
 import { openSessionStore } from "./storage.ts";
@@ -51,7 +54,32 @@ export async function runExtensionCatalog(
           ? { status: "failed", code: "scope-requires-live-host" }
           : await owner.change(args.packageId, args.scope, args.request, signal);
       else {
-        const result = await owner.refresh(signal);
+        const resolved = services();
+        await resolved.loader.load({
+          configurationRoot: resolved.configurationRoot,
+          legacyConfigurationRoot: resolved.legacyConfigurationRoot,
+          workspaceRoot: null,
+          profile: null,
+          overrides: {},
+        });
+        const result =
+          opened.kind === "open"
+            ? {
+                status: "ready" as const,
+                catalog: (
+                  await composeNativePackages({
+                    services: resolved,
+                    records: createCatalogRepositories(opened.store),
+                    activations: createNativeActivationRepository(opened.store),
+                    processes: createPackageHealthRepository(opened.store),
+                    ...(args.session === undefined ? {} : { session: args.session }),
+                  }).publish(
+                    resolved.loader.current()?.generation ?? configurationGeneration.from(1),
+                    signal,
+                  )
+                ).catalog,
+              }
+            : await owner.refresh(signal);
         payload =
           result.status === "failed"
             ? result

@@ -177,6 +177,8 @@ export function createPackageLifecycle(
           priorDigest: state.current?.identityDigest ?? null,
           currentDigest: state.current?.identityDigest ?? null,
         };
+        if (request.nativeActivation || request.nativeRecovery)
+          return fail("native-package-owner-required");
         if (action === "inspect") {
           if (state.current !== null) await readVersion(state.current, signal);
           const data = store.data?.(request.packageId);

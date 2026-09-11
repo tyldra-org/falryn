@@ -83,6 +83,8 @@ export function capabilityEntryFromTool(
   entry: ToolRegistryEntry,
   executable = false,
   trustPort?: CapabilityTrustPort,
+  family?: CapabilityFamily,
+  explicitOnly = false,
 ): CapabilityRegistryEntry {
   const required = requiresEcosystemTrust(entry.manifest.source);
   const trust = required ? (trustPort?.inspect(String(entry.manifest.capabilityId)) ?? null) : null;
@@ -103,7 +105,7 @@ export function capabilityEntryFromTool(
       kind: entry.manifest.source === "mcp" ? "mcp-tool" : "tool",
       title: entry.manifest.title,
       summary: entry.manifest.description,
-      family: capabilityFamilyForTool(entry.manifest.capabilityKind, entry.manifest.name),
+      family: family ?? capabilityFamilyForTool(entry.manifest.capabilityKind, entry.manifest.name),
       effect: entry.manifest.effect,
       provenance: {
         sourceId: `${entry.manifest.source}:${entry.manifest.namespace}`,
@@ -127,8 +129,13 @@ export function capabilityEntryFromTool(
       state: {
         availability: executable ? "available" : "unavailable",
         availabilityReason: executionReason,
-        health: executable ? "healthy" : "unknown",
-        healthReason: executionReason,
+        health: executable && entry.manifest.source !== "plugin" ? "healthy" : "unknown",
+        healthReason:
+          executable && entry.manifest.source === "plugin"
+            ? "native-process-not-started"
+            : executionReason,
+        ...(entry.manifest.source === "plugin" ? { preparable: executable } : {}),
+        ...(explicitOnly ? { explicitOnly: true } : {}),
         executable,
         executionReason,
         operational: {
@@ -157,13 +164,21 @@ export function createProductCapabilityRegistry(
   contributions: readonly CapabilityRegistryEntry[] = [],
   hasBinding: (id: CapabilityId) => boolean = () => false,
   trust?: CapabilityTrustPort,
+  families?: ReadonlyMap<CapabilityId, CapabilityFamily>,
+  explicitOnly?: ReadonlySet<CapabilityId>,
 ): CapabilityRegistry {
   if (tools.generation !== generation) {
     throw new Error("tool and capability catalog generations do not match");
   }
   const created = createCapabilityRegistry(generation, [
     ...tools.entries.map((entry) =>
-      capabilityEntryFromTool(entry, hasBinding(entry.manifest.capabilityId), trust),
+      capabilityEntryFromTool(
+        entry,
+        hasBinding(entry.manifest.capabilityId),
+        trust,
+        families?.get(entry.manifest.capabilityId),
+        explicitOnly?.has(entry.manifest.capabilityId),
+      ),
     ),
     ...contributions,
   ]);
