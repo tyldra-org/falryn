@@ -230,6 +230,8 @@ export function createPackageLifecycle(
           });
         }
         if (action === "enable") return fail("activation-owner-unavailable");
+        if (action === "health") return fail("package-health-owner-required");
+        if (request.health !== undefined) return fail("unexpected-package-health-request");
         if (action === "data") return fail("package-data-owner-required");
         if (request.data !== undefined) return fail("unexpected-package-data-request");
         if (request.expectedRevision !== state.revision) return fail("stale-package-revision");

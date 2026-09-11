@@ -103,6 +103,7 @@ describe("a fresh database", () => {
       20,
       21,
       22,
+      23,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -152,6 +153,9 @@ describe("a fresh database", () => {
       "package_data_artifacts_owner",
       "package_data_operations_owner",
       "package_dependency_consumers",
+      "package_health_generation",
+      "package_health_package_pending",
+      "package_health_pending",
       "package_versions_by_owner",
       "peer_endpoint_identity",
       "peer_message_inbox",
@@ -216,6 +220,7 @@ describe("a fresh database", () => {
       20,
       21,
       22,
+      23,
     ]);
     expect(
       upgraded.read(

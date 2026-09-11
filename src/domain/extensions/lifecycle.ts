@@ -4,6 +4,7 @@ import { dependencyCandidateSchema } from "./dependencies.ts";
 import { digestSchema, identityText, packageIdentityV1Schema } from "./identity.ts";
 import { packageDataRequestSchema } from "./package-data-control.ts";
 import { type PackageDataDocument, packageDataDeclarationsSchema } from "./package-data-store.ts";
+import { packageHealthRequestSchema } from "./package-health.ts";
 import type { PackageSnapshot } from "./package-source.ts";
 
 export const PACKAGE_ACTIONS = [
@@ -16,6 +17,7 @@ export const PACKAGE_ACTIONS = [
   "uninstall",
   "recover",
   "enable",
+  "health",
 ] as const;
 export const packageRequestSchema = z.strictObject({
   packageId: identityText,
@@ -32,6 +34,7 @@ export const packageRequestSchema = z.strictObject({
     .optional(),
   confirmation: digestSchema.optional(),
   data: packageDataRequestSchema.optional(),
+  health: packageHealthRequestSchema.optional(),
 });
 export type PackageRequest = z.infer<typeof packageRequestSchema>;
 export type PackageAction = (typeof PACKAGE_ACTIONS)[number];
