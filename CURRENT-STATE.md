@@ -891,14 +891,13 @@ capability-invocation event records the normalized unavailable status and the
 same secret-free transition receipt, so replay and machine consumers do not
 have to infer degradation from a generic failed outcome.
 
-The current gateway does not append equivalent semantic invocation facts for
-proposals rejected before its main execution gates, including aborted,
-stale-generation, undisclosed, malformed, effect-ledger-reused, policy-denied,
-confirmation-denied, and pre-hook-denied proposals; GitHub issue #200 owns that
-pre-execution evidence gap. Effect-ledger lookup can also suppress an
-intentionally repeated identical non-idempotent operation without a distinct
-admitted retry or idempotency identity; #218 owns that reuse and effect-certainty
-correction.
+The gateway retains one in-process result promise per workspace/session/turn and
+invocation identity. Fresh invocations with identical arguments still execute;
+concurrent replays of the same identity share the original result, including
+uncertain outcomes. Reusing an identity with different arguments, capability,
+call identity or configuration generation is rejected. Replay rechecks current
+scope, disclosure, policy and package trust before returning retained output.
+This ledger is turn-owned process state, not crash-surviving effect recovery.
 
 The model capability brief names the preferred family, fallbacks, selected
 contributions, automation decisions, schema-token cost, negative availability,

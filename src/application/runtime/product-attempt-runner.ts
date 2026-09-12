@@ -848,7 +848,8 @@ export function createProductAttemptRunner(
       const messages: ModelMessage[] = [...input.messages];
       const assistantText: string[] = [];
       const reasoningText: string[] = [];
-      const effectLedger = new Map<string, ToolInvocationRecord["outcome"]>();
+      const effectLedger: import("../tools/product-tool-gateway.ts").ProductToolEffectLedger =
+        new Map();
       let requestSequence = 0;
       let launchedRequests = 0;
       let sentResults = 0;
