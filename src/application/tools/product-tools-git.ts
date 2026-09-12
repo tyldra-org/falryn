@@ -9,7 +9,17 @@
 import { z } from "zod";
 
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
-import type { GitPort } from "../../domain/git/index.ts";
+import {
+  GIT_DIFF_SCOPES,
+  type GitPort,
+  MAX_GIT_BLAME_LINES,
+  MAX_GIT_COMMIT_SUBJECT_LENGTH,
+  MAX_GIT_DIFF_BYTES,
+  MAX_GIT_LOG_COMMITS,
+  MAX_GIT_REF_NAME_LENGTH,
+  MAX_GIT_STAGE_PATHS,
+  MAX_GIT_STATUS_ENTRIES,
+} from "../../domain/git/index.ts";
 import type {
   ToolCatalog,
   ToolInvocationOutcome,
@@ -31,6 +41,96 @@ export const PRODUCT_GIT_TOOLS_OWNER = "#713";
 const openObject = z.record(z.string(), z.unknown()) as z.ZodType<
   Readonly<Record<string, unknown>>
 >;
+
+const gitPath = z.string().min(1);
+const gitRefName = z.string().min(1).max(MAX_GIT_REF_NAME_LENGTH);
+const gitRevision = z.string().min(1).max(MAX_GIT_REF_NAME_LENGTH);
+const expectedHead = z.string().min(1).max(MAX_GIT_REF_NAME_LENGTH);
+const gitPaths = z.array(z.string().min(1)).min(1).max(MAX_GIT_STAGE_PATHS);
+
+const emptyInput = z.object({}).strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const statusInput = z
+  .object({
+    includeIgnored: z.boolean().optional(),
+    maxEntries: z.int().min(1).max(MAX_GIT_STATUS_ENTRIES).optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const diffInput = z
+  .object({
+    scope: z.enum(GIT_DIFF_SCOPES).optional(),
+    path: gitPath.optional(),
+    maxBytes: z.int().min(1).max(MAX_GIT_DIFF_BYTES).optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const logInput = z
+  .object({
+    maxCount: z.int().min(1).max(MAX_GIT_LOG_COMMITS).optional(),
+    path: gitPath.optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const blameInput = z
+  .object({
+    path: gitPath,
+    revision: gitRevision.optional(),
+    maxLines: z.int().min(1).max(MAX_GIT_BLAME_LINES).optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const createBranchInput = z
+  .object({
+    name: gitRefName,
+    startPoint: gitRevision.optional(),
+    expectedHead: expectedHead.optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const branchNameInput = z
+  .object({
+    name: gitRefName,
+    expectedHead: expectedHead.optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const createWorktreeInput = z
+  .object({
+    path: gitPath,
+    branch: gitRefName.optional(),
+    startPoint: gitRevision.optional(),
+    detached: z.boolean().optional(),
+    expectedHead: expectedHead.optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const worktreePathInput = z
+  .object({
+    path: gitPath,
+    expectedHead: expectedHead.optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const stagePathsInput = z
+  .object({
+    paths: gitPaths,
+    expectedHead: expectedHead.optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const commitInput = z
+  .object({
+    subject: z.string().min(1).max(MAX_GIT_COMMIT_SUBJECT_LENGTH),
+    expectedHead: expectedHead.optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const syncInput = z
+  .object({
+    expectedHead: expectedHead.optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
 
 function document(
   name: string,
@@ -127,24 +227,24 @@ export function composeProductGitTools(ports: ProductGitToolPorts): ProductGitTo
           "Discover Git identity for the workspace",
           "observation",
         ),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: emptyInput, outputSchema: openObject },
       ),
     ),
     mustEntry(
       createToolRegistryEntry(
         document("git_status", "Git status", "Read Git status", "observation"),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: statusInput, outputSchema: openObject },
       ),
     ),
     mustEntry(
       createToolRegistryEntry(document("git_diff", "Git diff", "Read a Git diff", "observation"), {
-        inputSchema: openObject,
+        inputSchema: diffInput,
         outputSchema: openObject,
       }),
     ),
     mustEntry(
       createToolRegistryEntry(document("git_log", "Git log", "Read Git history", "observation"), {
-        inputSchema: openObject,
+        inputSchema: logInput,
         outputSchema: openObject,
       }),
     ),
@@ -152,7 +252,7 @@ export function composeProductGitTools(ports: ProductGitToolPorts): ProductGitTo
       createToolRegistryEntry(
         document("git_blame", "Git blame", "Blame a workspace path", "observation"),
         {
-          inputSchema: openObject,
+          inputSchema: blameInput,
           outputSchema: openObject,
         },
       ),
@@ -160,44 +260,44 @@ export function composeProductGitTools(ports: ProductGitToolPorts): ProductGitTo
     mustEntry(
       createToolRegistryEntry(
         document("git_list_worktrees", "List worktrees", "List Git worktrees", "observation"),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: emptyInput, outputSchema: openObject },
       ),
     ),
     mustEntry(
       createToolRegistryEntry(
         document("git_create_branch", "Create branch", "Create a Git branch", "mutation"),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: createBranchInput, outputSchema: openObject },
       ),
     ),
     mustEntry(
       createToolRegistryEntry(
         document("git_switch_branch", "Switch branch", "Switch the current Git branch", "mutation"),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: branchNameInput, outputSchema: openObject },
       ),
     ),
     mustEntry(
       createToolRegistryEntry(
         document("git_delete_branch", "Delete branch", "Delete a Git branch", "mutation"),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: branchNameInput, outputSchema: openObject },
       ),
     ),
     mustEntry(
       createToolRegistryEntry(
         document("git_create_worktree", "Create worktree", "Add a Git worktree", "mutation"),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: createWorktreeInput, outputSchema: openObject },
       ),
     ),
     mustEntry(
       createToolRegistryEntry(
         document("git_remove_worktree", "Remove worktree", "Remove a Git worktree", "mutation"),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: worktreePathInput, outputSchema: openObject },
       ),
     ),
     mustEntry(
       createToolRegistryEntry(
         document("git_stage", "Stage", "Stage paths into the index", "mutation"),
         {
-          inputSchema: openObject,
+          inputSchema: stagePathsInput,
           outputSchema: openObject,
         },
       ),
@@ -205,19 +305,19 @@ export function composeProductGitTools(ports: ProductGitToolPorts): ProductGitTo
     mustEntry(
       createToolRegistryEntry(
         document("git_unstage", "Unstage", "Unstage paths from the index", "mutation"),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: stagePathsInput, outputSchema: openObject },
       ),
     ),
     mustEntry(
       createToolRegistryEntry(document("git_commit", "Commit", "Create a Git commit", "mutation"), {
-        inputSchema: openObject,
+        inputSchema: commitInput,
         outputSchema: openObject,
       }),
     ),
     mustEntry(
       createToolRegistryEntry(
         document("git_sync", "Sync", "Fetch/pull/push sync for the current branch", "mutation"),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: syncInput, outputSchema: openObject },
       ),
     ),
   ];

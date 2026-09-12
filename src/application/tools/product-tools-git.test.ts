@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 
 import {
   capabilityId,
@@ -12,8 +13,16 @@ import {
   ok,
 } from "../../domain/foundation/index.ts";
 import type { GitPort } from "../../domain/git/index.ts";
+import type { ToolRegistry } from "../../domain/tools/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
+import { isClosedProductToolSchema } from "./product-tool-schema.ts";
 import { composeProductGitTools } from "./product-tools-git.ts";
+
+function inputSchema(registry: ToolRegistry, name: string) {
+  const entry = registry.resolveByName(name);
+  if (!entry) throw new Error(`missing ${name}`);
+  return entry.manifest.inputSchema;
+}
 
 function unused(): never {
   throw new Error("unexpected GitPort call");
@@ -121,5 +130,46 @@ describe("composeProductGitTools", () => {
       signal: new AbortController().signal,
     });
     expect(staged.status).toBe("completed");
+  });
+
+  test("publishes closed model-boundary schemas for every git tool", () => {
+    const tools = composeProductGitTools({
+      generation: configurationGeneration.from(0),
+      gitExecutable: "/usr/bin/git",
+      startPath: "/repo",
+      git: fakeGit({}),
+    });
+    const schema = (name: string) => inputSchema(tools.registry, name);
+
+    for (const name of tools.toolNames) {
+      expect(isClosedProductToolSchema(z.toJSONSchema(schema(name)))).toBe(true);
+    }
+
+    expect(schema("git_discover").safeParse({}).success).toBe(true);
+    expect(schema("git_discover").safeParse({ startPath: "/elsewhere" }).success).toBe(false);
+    expect(schema("git_status").safeParse({ includeIgnored: true, maxEntries: 5 }).success).toBe(
+      true,
+    );
+    expect(schema("git_status").safeParse({ maxEntries: 0 }).success).toBe(false);
+    expect(schema("git_diff").safeParse({ scope: "index", path: "a.ts" }).success).toBe(true);
+    expect(schema("git_diff").safeParse({ scope: "everything" }).success).toBe(false);
+    expect(schema("git_blame").safeParse({ path: "a.ts", revision: "HEAD" }).success).toBe(true);
+    expect(schema("git_blame").safeParse({}).success).toBe(false);
+    expect(
+      schema("git_create_branch").safeParse({ name: "feature", startPoint: "HEAD~1" }).success,
+    ).toBe(true);
+    expect(schema("git_switch_branch").safeParse({ name: "feature" }).success).toBe(true);
+    expect(schema("git_switch_branch").safeParse({}).success).toBe(false);
+    expect(schema("git_create_worktree").safeParse({ path: "../wt", detached: true }).success).toBe(
+      true,
+    );
+    expect(schema("git_remove_worktree").safeParse({}).success).toBe(false);
+    expect(schema("git_stage").safeParse({ paths: ["a.ts"] }).success).toBe(true);
+    expect(schema("git_stage").safeParse({ paths: [] }).success).toBe(false);
+    expect(schema("git_unstage").safeParse({ paths: ["a.ts"] }).success).toBe(true);
+    expect(schema("git_commit").safeParse({ subject: "msg" }).success).toBe(true);
+    expect(schema("git_commit").safeParse({}).success).toBe(false);
+    expect(schema("git_sync").safeParse({}).success).toBe(true);
+    expect(schema("git_sync").safeParse({ gitExecutable: "/tmp/git" }).success).toBe(false);
   });
 });

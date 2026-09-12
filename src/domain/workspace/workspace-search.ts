@@ -127,7 +127,7 @@ const HARD_LIMITS: Readonly<Record<WorkspaceSearchLimitName, number>> = {
   maxFileBytes: DEFAULT_SEARCH_FILE_BYTES,
 };
 
-const KINDS: readonly WorkspaceSearchKind[] = ["literal", "regex"];
+export const WORKSPACE_SEARCH_KINDS: readonly WorkspaceSearchKind[] = ["literal", "regex"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -245,7 +245,10 @@ export function parseWorkspaceSearchRequest(
     return err({ code: "malformed-glob", reason: "not-an-object" });
   }
   if (value.kind !== undefined) {
-    if (typeof value.kind !== "string" || !KINDS.includes(value.kind as WorkspaceSearchKind)) {
+    if (
+      typeof value.kind !== "string" ||
+      !WORKSPACE_SEARCH_KINDS.includes(value.kind as WorkspaceSearchKind)
+    ) {
       return err({ code: "malformed-kind" });
     }
   }

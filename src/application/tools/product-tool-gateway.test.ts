@@ -467,6 +467,157 @@ describe("createProductToolGateway", () => {
     expect(confirmations).toBe(1);
     expect(effects).toEqual(["observation", "interactive"]);
   });
+
+  test("validates strict workspace inputs before dispatch and preserves plan staleness", async () => {
+    const { fileSystem, tools, clock, journal } = setup();
+    const hooks = createToolHookRegistry(generation, []);
+    if (!hooks.ok) throw new Error(hooks.error.code);
+    let runnerCalls = 0;
+    const gateway = createProductToolGateway({
+      clock,
+      resources: createProductResources(clock),
+      registry: tools.registry,
+      runner: {
+        execute: async (request) => {
+          runnerCalls += 1;
+          return tools.runner.execute(request);
+        },
+      },
+      hooks: hooks.value,
+      journal,
+      correlation,
+      turnId: turn,
+      disclosedToolNames: new Set(["write_files", "preview_patch", "apply_patch"]),
+      confirmation: {
+        resolve: async (request) => ({
+          kind: "confirmed",
+          confirmationId: request.confirmationId,
+        }),
+      },
+      effectLedger: new Map(),
+    });
+    const call = (name: string, input: Readonly<Record<string, unknown>>, id: string) => {
+      const entry = tools.registry.resolveByName(name);
+      if (entry === null) throw new Error(`${name} is not registered`);
+      return gateway.execute({
+        invocationId: invocationId.from(id),
+        toolCallId: id,
+        toolName: name,
+        capabilityId: entry.manifest.capabilityId,
+        version: entry.manifest.version,
+        effect: entry.manifest.effect,
+        input,
+        signal: new AbortController().signal,
+      });
+    };
+
+    const written = await call(
+      "write_files",
+      {
+        targets: [
+          { kind: "create", path: "one.ts", text: "export const one = 1;\n" },
+          { kind: "create", path: "two.ts", text: "export const two = 2;\n" },
+        ],
+      },
+      "inv-write-multi",
+    );
+    expect(written.status).toBe("completed");
+    expect((await fileSystem.readText(localPath("/work/one.ts"), 1024)).ok).toBe(true);
+    expect((await fileSystem.readText(localPath("/work/two.ts"), 1024)).ok).toBe(true);
+
+    const beforeMalformed = runnerCalls;
+    const malformed = await call(
+      "write_files",
+      {
+        targets: [
+          { kind: "create", path: "three.ts", text: "export const three = 3;\n" },
+          { kind: "create", path: "four.ts" },
+        ],
+      },
+      "inv-write-malformed",
+    );
+    expect(malformed).toEqual({
+      status: "malformed",
+      reason: "malformed-input",
+      effect: "none",
+    });
+    expect(runnerCalls).toBe(beforeMalformed);
+    const orphan = await fileSystem.stat(localPath("/work/three.ts"));
+    expect(orphan.ok && orphan.value === null).toBe(true);
+
+    const preview = await call(
+      "preview_patch",
+      {
+        targets: [
+          {
+            path: "a.ts",
+            hunks: [
+              {
+                oldStart: 1,
+                oldLines: ["export const a = 1;"],
+                newLines: ["export const a = 2;"],
+              },
+            ],
+          },
+        ],
+      },
+      "inv-preview",
+    );
+    expect(preview.status).toBe("completed");
+    const previewValue =
+      preview.status === "completed" &&
+      preview.output.value !== null &&
+      typeof preview.output.value === "object"
+        ? (preview.output.value as Readonly<Record<string, unknown>>)
+        : null;
+    const planId = typeof previewValue?.planId === "string" ? previewValue.planId : null;
+    expect(planId).toMatch(/^patch-[0-9a-f]+-\d+$/u);
+
+    const applied = await call(
+      "apply_patch",
+      {
+        expectedPlanId: planId,
+        targets: [
+          {
+            path: "a.ts",
+            hunks: [
+              {
+                oldStart: 1,
+                oldLines: ["export const a = 1;"],
+                newLines: ["export const a = 2;"],
+              },
+            ],
+          },
+        ],
+      },
+      "inv-apply",
+    );
+    expect(applied.status).toBe("completed");
+    const patched = await fileSystem.readText(localPath("/work/a.ts"), 1024);
+    expect(patched.ok && patched.value).toContain("export const a = 2;");
+
+    const stale = await call(
+      "apply_patch",
+      {
+        expectedPlanId: "patch-00000000-1",
+        targets: [
+          {
+            path: "a.ts",
+            hunks: [
+              {
+                oldStart: 1,
+                oldLines: ["export const a = 1;"],
+                newLines: ["export const a = 2;"],
+              },
+            ],
+          },
+        ],
+      },
+      "inv-apply-stale",
+    );
+    expect(stale.status).toBe("failed");
+    expect(stale.status === "failed" ? stale.reason : null).toBe("stale-plan");
+  });
 });
 
 test("live gateways share manifest capacity across registry generations and workspace bindings", async () => {

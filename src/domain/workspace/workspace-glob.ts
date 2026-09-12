@@ -97,7 +97,11 @@ const HARD_LIMITS: Readonly<Record<WorkspaceDiscoveryLimitName, number>> = {
   maxDepth: HARD_MAX_WALK_DEPTH,
 };
 
-const KINDS: readonly WorkspaceDiscoveryKind[] = ["all", "file", "directory"];
+export const WORKSPACE_DISCOVERY_KINDS: readonly WorkspaceDiscoveryKind[] = [
+  "all",
+  "file",
+  "directory",
+];
 
 function globError(reason: GlobPatternErrorReason): WorkspaceDiscoveryError {
   return { code: "malformed-glob", reason };
@@ -340,7 +344,10 @@ export function parseWorkspaceDiscoveryRequest(
     return err(globError("invalid-flag"));
   }
   if (value.kinds !== undefined) {
-    if (typeof value.kinds !== "string" || !KINDS.includes(value.kinds as WorkspaceDiscoveryKind)) {
+    if (
+      typeof value.kinds !== "string" ||
+      !WORKSPACE_DISCOVERY_KINDS.includes(value.kinds as WorkspaceDiscoveryKind)
+    ) {
       return err({ code: "malformed-kinds" });
     }
   }

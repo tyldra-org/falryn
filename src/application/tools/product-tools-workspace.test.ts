@@ -3,6 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 
 import {
   capabilityId,
@@ -10,15 +11,23 @@ import {
   invocationId,
 } from "../../domain/foundation/index.ts";
 import { createStubCommandRunner } from "../../domain/process/index.ts";
+import type { ToolRegistry } from "../../domain/tools/index.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
 import {
   composeProductIndexLifecycle,
   createEphemeralProductIndexPort,
 } from "../workspace/index.ts";
+import { isClosedProductToolSchema } from "./product-tool-schema.ts";
 import { mergeProductToolBundles } from "./product-tools-merge.ts";
 import { composeProductWorkspaceTools } from "./product-tools-workspace.ts";
 
 const root = localPath("/work/project");
+
+function inputSchema(registry: ToolRegistry, name: string) {
+  const entry = registry.resolveByName(name);
+  if (!entry) throw new Error(`missing ${name}`);
+  return entry.manifest.inputSchema;
+}
 
 function toolsUnder() {
   const fileSystem = createInMemoryFileSystem({
@@ -133,6 +142,112 @@ describe("composeProductWorkspaceTools", () => {
       signal: new AbortController().signal,
     });
     expect(missing.status).toBe("failed");
+  });
+
+  test("publishes closed model-boundary schemas for mutation and discovery tools", () => {
+    const tools = toolsUnder();
+    const schema = (name: string) => inputSchema(tools.registry, name);
+
+    for (const name of [
+      "write_files",
+      "mutate_paths",
+      "discover_files",
+      "search_text",
+      "preview_patch",
+      "apply_patch",
+    ]) {
+      expect(isClosedProductToolSchema(z.toJSONSchema(schema(name)))).toBe(true);
+    }
+
+    const write = schema("write_files");
+    expect(
+      write.safeParse({ targets: [{ kind: "create", path: "a.ts", text: "x" }] }).success,
+    ).toBe(true);
+    expect(
+      write.safeParse({
+        policy: "best-effort",
+        targets: [{ kind: "replace", path: "a.ts", text: "x", expectedRevision: "rev-1" }],
+      }).success,
+    ).toBe(true);
+    expect(write.safeParse({ targets: [] }).success).toBe(false);
+    expect(write.safeParse({ targets: [{ kind: "create", path: "a.ts" }] }).success).toBe(false);
+    expect(
+      write.safeParse({ targets: [{ kind: "append", path: "a.ts", text: "x" }] }).success,
+    ).toBe(false);
+    expect(
+      write.safeParse({
+        targets: [{ kind: "create", path: "a.ts", text: "x", bogus: 1 }],
+      }).success,
+    ).toBe(false);
+    expect(
+      write.safeParse({
+        maxTargets: 0,
+        targets: [{ kind: "create", path: "a.ts", text: "x" }],
+      }).success,
+    ).toBe(false);
+
+    const mutate = schema("mutate_paths");
+    expect(mutate.safeParse({ kind: "move", source: "a.ts", destination: "b.ts" }).success).toBe(
+      true,
+    );
+    expect(mutate.safeParse({ kind: "remove", source: "a.ts" }).success).toBe(true);
+    expect(mutate.safeParse({ kind: "move", source: "a.ts" }).success).toBe(false);
+    expect(mutate.safeParse({ kind: "remove", source: "a.ts", destination: "b.ts" }).success).toBe(
+      false,
+    );
+    expect(mutate.safeParse({ kind: "rename", source: "a.ts", destination: "b.ts" }).success).toBe(
+      false,
+    );
+
+    const discover = schema("discover_files");
+    expect(discover.safeParse({ include: ["**/*.ts"] }).success).toBe(true);
+    expect(discover.safeParse({}).success).toBe(false);
+    expect(discover.safeParse({ include: [] }).success).toBe(false);
+    expect(discover.safeParse({ include: ["*"], kinds: "symlink" }).success).toBe(false);
+
+    const search = schema("search_text");
+    expect(search.safeParse({ query: "token" }).success).toBe(true);
+    expect(search.safeParse({ query: "token", kind: "regex", context: 3 }).success).toBe(true);
+    expect(search.safeParse({}).success).toBe(false);
+    expect(search.safeParse({ query: "token", kind: "fuzzy" }).success).toBe(false);
+    expect(search.safeParse({ query: "token", context: 4 }).success).toBe(false);
+    expect(search.safeParse({ query: "token", signal: "x" }).success).toBe(false);
+
+    for (const name of ["preview_patch", "apply_patch"]) {
+      const patch = schema(name);
+      expect(
+        patch.safeParse({
+          targets: [{ path: "a.ts", hunks: [{ oldStart: 1, oldLines: ["a"], newLines: ["b"] }] }],
+        }).success,
+      ).toBe(true);
+      expect(
+        patch.safeParse({
+          targets: [
+            {
+              path: "a.ts",
+              hunks: [
+                {
+                  addressDigest: `sha-256:${"0".repeat(64)}`,
+                  oldLines: [],
+                  newLines: [],
+                },
+              ],
+            },
+          ],
+        }).success,
+      ).toBe(true);
+      expect(
+        patch.safeParse({
+          targets: [{ path: "a.ts", hunks: [{ oldLines: [], newLines: [] }] }],
+        }).success,
+      ).toBe(false);
+      expect(
+        patch.safeParse({
+          expectedPlanId: "bogus",
+          targets: [{ path: "a.ts", hunks: [{ oldStart: 1, oldLines: [], newLines: [] }] }],
+        }).success,
+      ).toBe(false);
+    }
   });
 
   test("fails closed for unknown tool names", async () => {

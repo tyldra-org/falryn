@@ -1,8 +1,18 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 
 import { configurationGeneration } from "../../domain/foundation/index.ts";
 import { createStubCommandRunner } from "../../domain/process/index.ts";
 import { resolveExecutionProfile } from "../../domain/sessions/index.ts";
+import {
+  createToolRegistry,
+  createToolRegistryEntry,
+  defaultConcurrencyContract,
+  defaultProjectionContract,
+  defaultToolLimits,
+  type ToolManifestDocument,
+  type ToolRegistryEntry,
+} from "../../domain/tools/index.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
 import { createProductCapabilityRegistry } from "../capabilities/product-capability-registry.ts";
 import {
@@ -24,6 +34,30 @@ function workspaceTools() {
     commands: createStubCommandRunner(() => ({ kind: "exited", exitCode: 1, stdout: "" })),
     workspaceRoot: localPath("/work"),
   });
+}
+
+function permissiveEntry(name: string): ToolRegistryEntry {
+  const open = z.record(z.string(), z.unknown()) as z.ZodType<Readonly<Record<string, unknown>>>;
+  const document: ToolManifestDocument = {
+    namespace: "workspace",
+    name,
+    version: 1,
+    source: "builtin",
+    title: name,
+    description: "permissive fixture",
+    effect: "observation",
+    capabilityKind: "filesystem",
+    platforms: [],
+    limits: defaultToolLimits(),
+    concurrency: defaultConcurrencyContract({}),
+    resultProjection: defaultProjectionContract({}),
+  };
+  const entry = createToolRegistryEntry(document, {
+    inputSchema: open,
+    outputSchema: open,
+  });
+  if (!entry.ok) throw new Error("permissive fixture");
+  return entry.value;
 }
 
 describe("discloseProductTools", () => {
@@ -83,12 +117,12 @@ describe("discloseProductTools", () => {
     );
 
     expect(disclosure.receipt.opportunityPlan.primaryFamily).toBe("search");
-    expect(disclosure.modelTools[0]?.name).toBe("read_file");
+    expect(disclosure.modelTools[0]?.name).toBe("search_text");
     expect(
       disclosure.receipt.opportunityPlan.rejected.find((entry) => entry.name === "search_text"),
-    ).toMatchObject({ reasons: ["schema-unavailable"] });
+    ).toBeUndefined();
     expect(disclosure.receipt.opportunityPlan.selected.map((entry) => entry.name)).toContain(
-      "read_file",
+      "search_text",
     );
     expect(disclosure.receipt.opportunityPlan.taskFingerprint).toMatch(/^[a-f0-9]{24}$/u);
     expect(JSON.stringify(disclosure.receipt.opportunityPlan)).not.toContain("every reference");
@@ -111,21 +145,43 @@ describe("discloseProductTools", () => {
     expect(disclosure.receipt.opportunityPlan.selectionLimit).toBe(MAX_DISCLOSED_PRODUCT_TOOLS);
   });
 
-  test("omits permissive schemas instead of exposing a catch-all boundary", () => {
+  test("discloses the strict workspace schemas and omits only a permissive boundary", () => {
     const tools = workspaceTools();
+    const permissive = permissiveEntry("open_probe");
+    const registry = createToolRegistry(tools.registry.generation, [
+      ...tools.registry.entries,
+      permissive,
+    ]);
+    if (!registry.ok) throw new Error("registry fixture");
     const disclosure = discloseProductTools(
-      createProductCapabilityRegistry(
-        tools.registry.generation,
-        tools.registry,
-        [],
-        (id) => tools.runner.hasBinding?.(id) === true,
-      ),
-      tools.registry,
+      createProductCapabilityRegistry(registry.value.generation, registry.value, [], () => true),
+      registry.value,
     );
 
-    expect(disclosure.modelTools.map((tool) => tool.name)).not.toContain("write_files");
+    const names = disclosure.modelTools.map((tool) => tool.name);
+    for (const name of [
+      "write_files",
+      "mutate_paths",
+      "discover_files",
+      "search_text",
+      "preview_patch",
+      "apply_patch",
+    ]) {
+      expect(names).toContain(name);
+      expect(disclosure.receipt.disclosed.map((entry) => entry.name)).toContain(name);
+      expect(disclosure.receipt.opportunityPlan.selected.map((entry) => entry.name)).toContain(
+        name,
+      );
+    }
+    const write = disclosure.modelTools.find((tool) => tool.name === "write_files");
+    expect(write?.parameters).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+    });
+
+    expect(names).not.toContain("open_probe");
     expect(disclosure.receipt.omitted).toContainEqual({
-      name: "write_files",
+      name: "open_probe",
       reason: "permissive model-boundary schema",
     });
     const read = disclosure.modelTools.find((tool) => tool.name === "read_file");

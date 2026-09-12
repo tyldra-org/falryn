@@ -35,10 +35,34 @@ import {
   defaultToolLimits,
   type ToolManifestDocument,
 } from "../../domain/tools/index.ts";
-import type {
-  FileSystemPort,
-  LocalPath,
-  WorkspaceIndexPort,
+import {
+  DEFAULT_SEARCH_FILE_BYTES,
+  type FileSystemPort,
+  HARD_MAX_DISCOVERY_MATCHES,
+  HARD_MAX_MUTATION_DEPTH,
+  HARD_MAX_MUTATION_ENTRIES,
+  HARD_MAX_PATCH_HUNK_LINES,
+  HARD_MAX_PATCH_HUNKS,
+  HARD_MAX_PATCH_TARGETS,
+  HARD_MAX_SEARCH_MATCHES,
+  HARD_MAX_WALK_DEPTH,
+  HARD_MAX_WALK_ENTRIES,
+  HARD_MAX_WRITE_AGGREGATE_BYTES,
+  HARD_MAX_WRITE_BYTES,
+  HARD_MAX_WRITE_TARGETS,
+  type LocalPath,
+  MAX_GLOB_PATTERN_LENGTH,
+  MAX_GLOB_PATTERNS,
+  MAX_SEARCH_CONTEXT,
+  MAX_SEARCH_QUERY_LENGTH,
+  MAX_WRITE_REVISION_LENGTH,
+  OVERWRITE_POLICIES,
+  WORKSPACE_DISCOVERY_KINDS,
+  WORKSPACE_SEARCH_KINDS,
+  type WorkspaceIndexPort,
+  WRITE_NEWLINE_POLICIES,
+  WRITE_OPERATIONS,
+  WRITE_POLICIES,
 } from "../../domain/workspace/index.ts";
 import type { ScratchResourcePort } from "../artifacts/scratch-resources.ts";
 import { createLoomPort, type LoomPort } from "../compression/loom.ts";
@@ -70,9 +94,157 @@ const openObject = z.record(z.string(), z.unknown()) as z.ZodType<
   Readonly<Record<string, unknown>>
 >;
 
+const workspacePath = z
+  .string()
+  .min(1)
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: workspace paths reject NUL exactly as the domain parser does.
+  .regex(/^[^\x00]+$/u);
+const globPattern = z.string().min(1).max(MAX_GLOB_PATTERN_LENGTH);
+const contentDigestInput = z.string().regex(/^sha-256:[0-9a-f]{64}$/u);
+const boundedRevision = z
+  .string()
+  .min(1)
+  .max(MAX_WRITE_REVISION_LENGTH)
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: revisions reject NUL exactly as the domain parser does.
+  .regex(/^[^\x00]+$/u);
+const writePolicy = z.enum(WRITE_POLICIES);
+
 const writeFilesInput = z
   .object({
-    targets: z.array(z.record(z.string(), z.unknown())).min(1),
+    policy: writePolicy.optional(),
+    maxFileBytes: z.int().min(1).max(HARD_MAX_WRITE_BYTES).optional(),
+    maxAggregateBytes: z.int().min(1).max(HARD_MAX_WRITE_AGGREGATE_BYTES).optional(),
+    maxTargets: z.int().min(1).max(HARD_MAX_WRITE_TARGETS).optional(),
+    targets: z
+      .array(
+        z
+          .object({
+            kind: z.enum(WRITE_OPERATIONS),
+            path: workspacePath,
+            // biome-ignore lint/suspicious/noControlCharactersInRegex: write text rejects NUL exactly as the domain parser does.
+            text: z.string().regex(/^[^\x00]*$/u),
+            newline: z.enum(WRITE_NEWLINE_POLICIES).optional(),
+            expectedDigest: contentDigestInput.optional(),
+            expectedRevision: boundedRevision.optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(HARD_MAX_WRITE_TARGETS),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const mutationShared = {
+  source: workspacePath,
+  overwrite: z.enum(OVERWRITE_POLICIES).optional(),
+  recursive: z.boolean().optional(),
+  expectedPlanId: z
+    .string()
+    .regex(/^mutate-[0-9a-f]+-\d+$/u)
+    .optional(),
+  maxEntries: z.int().min(1).max(HARD_MAX_MUTATION_ENTRIES).optional(),
+  maxDepth: z.int().min(1).max(HARD_MAX_MUTATION_DEPTH).optional(),
+};
+
+const mutatePathsInput = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.enum(["move", "copy", "trash"]),
+      destination: workspacePath,
+      ...mutationShared,
+    })
+    .strict(),
+  z.object({ kind: z.literal("remove"), ...mutationShared }).strict(),
+]) as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const discoverFilesInput = z
+  .object({
+    start: workspacePath.optional(),
+    include: z.array(globPattern).min(1).max(MAX_GLOB_PATTERNS),
+    exclude: z.array(globPattern).max(MAX_GLOB_PATTERNS).optional(),
+    includeHidden: z.boolean().optional(),
+    kinds: z.enum(WORKSPACE_DISCOVERY_KINDS).optional(),
+    maxMatches: z.int().min(1).max(HARD_MAX_DISCOVERY_MATCHES).optional(),
+    maxWalkEntries: z.int().min(1).max(HARD_MAX_WALK_ENTRIES).optional(),
+    maxDepth: z.int().min(1).max(HARD_MAX_WALK_DEPTH).optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const searchTextInput = z
+  .object({
+    kind: z.enum(WORKSPACE_SEARCH_KINDS).optional(),
+    query: z.string().min(1).max(MAX_SEARCH_QUERY_LENGTH),
+    start: workspacePath.optional(),
+    caseSensitive: z.boolean().optional(),
+    includeHidden: z.boolean().optional(),
+    includeBinary: z.boolean().optional(),
+    include: z.array(globPattern).max(6).optional(),
+    exclude: z.array(globPattern).max(6).optional(),
+    maxMatches: z.int().min(1).max(HARD_MAX_SEARCH_MATCHES).optional(),
+    maxWalkEntries: z.int().min(1).max(HARD_MAX_WALK_ENTRIES).optional(),
+    maxDepth: z.int().min(1).max(HARD_MAX_WALK_DEPTH).optional(),
+    context: z.int().min(0).max(MAX_SEARCH_CONTEXT).optional(),
+    timeoutMs: z.int().min(1).max(60_000).optional(),
+    maxFileBytes: z.int().min(1).max(DEFAULT_SEARCH_FILE_BYTES).optional(),
+    ripgrepExecutable: z.string().min(1).optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+// biome-ignore lint/suspicious/noControlCharactersInRegex: patch lines reject NUL exactly as the domain parser does.
+const patchLine = z.string().regex(/^[^\n\r\x00]*$/u);
+const patchHunkId = z
+  .string()
+  .min(1)
+  .max(128)
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: hunk identities reject NUL exactly as the domain parser does.
+  .regex(/^[^\x00]+$/u);
+const patchHunkIdentity = {
+  id: patchHunkId.optional(),
+  hunkId: patchHunkId.optional(),
+  oldLines: z.array(patchLine).max(HARD_MAX_PATCH_HUNK_LINES),
+  newLines: z.array(patchLine).max(HARD_MAX_PATCH_HUNK_LINES),
+};
+const patchHunk = z.union([
+  z
+    .object({
+      ...patchHunkIdentity,
+      oldStart: z.int().min(1),
+      addressDigest: contentDigestInput.optional(),
+    })
+    .strict(),
+  z
+    .object({
+      ...patchHunkIdentity,
+      addressDigest: contentDigestInput,
+    })
+    .strict(),
+]);
+const patchPlanInput = z
+  .object({
+    policy: writePolicy.optional(),
+    expectedPlanId: z
+      .string()
+      .regex(/^patch-[0-9a-f]+-\d+$/u)
+      .optional(),
+    expectedGitHead: boundedRevision.optional(),
+    maxTargets: z.int().min(1).max(HARD_MAX_PATCH_TARGETS).optional(),
+    maxHunks: z.int().min(1).max(HARD_MAX_PATCH_HUNKS).optional(),
+    maxHunkLines: z.int().min(1).max(HARD_MAX_PATCH_HUNK_LINES).optional(),
+    maxFileBytes: z.int().min(1).max(HARD_MAX_WRITE_BYTES).optional(),
+    maxAggregateBytes: z.int().min(1).max(HARD_MAX_WRITE_AGGREGATE_BYTES).optional(),
+    targets: z
+      .array(
+        z
+          .object({
+            path: workspacePath,
+            hunks: z.array(patchHunk).min(1).max(HARD_MAX_PATCH_HUNKS),
+            expectedDigest: contentDigestInput.optional(),
+            expectedRevision: boundedRevision.optional(),
+          })
+          .strict(),
+      )
+      .min(1)
+      .max(HARD_MAX_PATCH_TARGETS),
   })
   .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
 
@@ -330,7 +502,7 @@ export function composeProductWorkspaceTools(
           "filesystem",
         ),
         {
-          inputSchema: openObject,
+          inputSchema: mutatePathsInput,
           outputSchema: openObject,
         },
       ),
@@ -345,7 +517,7 @@ export function composeProductWorkspaceTools(
           "search",
         ),
         {
-          inputSchema: openObject,
+          inputSchema: discoverFilesInput,
           outputSchema: openObject,
         },
       ),
@@ -360,7 +532,7 @@ export function composeProductWorkspaceTools(
           "search",
         ),
         {
-          inputSchema: openObject,
+          inputSchema: searchTextInput,
           outputSchema: openObject,
         },
       ),
@@ -375,7 +547,7 @@ export function composeProductWorkspaceTools(
           "filesystem",
         ),
         {
-          inputSchema: openObject,
+          inputSchema: patchPlanInput,
           outputSchema: openObject,
         },
       ),
@@ -390,7 +562,7 @@ export function composeProductWorkspaceTools(
           "filesystem",
         ),
         {
-          inputSchema: openObject,
+          inputSchema: patchPlanInput,
           outputSchema: openObject,
         },
       ),
