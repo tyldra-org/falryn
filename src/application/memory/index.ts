@@ -21,3 +21,9 @@ export type {
   ProductMemoryTurnPorts,
 } from "./product-memory-turn.ts";
 export { composeProductMemoryTurn } from "./product-memory-turn.ts";
+export type {
+  ReflectionCoverage,
+  ReflectionMetadata,
+  ReflectionResponse,
+} from "./reflection-actions.ts";
+export { createReflectionActions } from "./reflection-actions.ts";

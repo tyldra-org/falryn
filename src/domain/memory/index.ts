@@ -107,3 +107,20 @@ export {
   MEMORY_SENSITIVITIES,
   memoryScopeWorkspaceId,
 } from "./memory-record.ts";
+
+export type {
+  ReflectionAuthority,
+  ReflectionBinding,
+  ReflectionCommand,
+  ReflectionFence,
+  ReflectionRecord,
+  ReflectionRepository,
+  ReflectionResult,
+} from "./reflection.ts";
+export {
+  REFLECTION_LIMITS,
+  reflectionCommandSchema,
+  reflectionRecordSchema,
+} from "./reflection.ts";
+export type { ReflectionExport, ReflectionView } from "./reflection-export.ts";
+export { replayReflection } from "./reflection-export.ts";

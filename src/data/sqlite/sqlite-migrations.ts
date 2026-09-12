@@ -58,6 +58,7 @@ import {
 } from "../extensions/package-lifecycle-repository.ts";
 import { MIGRATION_0019, SCOPE_CONTROL_TABLES } from "../extensions/scope-control-repository.ts";
 import { MEMORY_RECORDS_TABLE, MIGRATION_0005 } from "../memory/memory-schema.ts";
+import { MIGRATION_0025, REFLECTION_REQUESTS_TABLE } from "../memory/reflection-schema.ts";
 import { AGENT_JOIN_TABLES, MIGRATION_0016 } from "../orchestration/agent-join-schema.ts";
 import { MAILBOX_TABLES, MIGRATION_0018 } from "../orchestration/mailbox-schema.ts";
 import {
@@ -119,6 +120,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0022,
   MIGRATION_0023,
   MIGRATION_0024,
+  MIGRATION_0025,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -152,6 +154,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   ...WORKFLOW_TABLES,
   PACKAGE_HEALTH_TABLE,
   ...NATIVE_ACTIVATION_TABLES,
+  REFLECTION_REQUESTS_TABLE,
 ];
 
 function issue(
