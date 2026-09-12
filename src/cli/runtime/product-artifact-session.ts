@@ -9,6 +9,7 @@ import { createLoomPort, type LoomPort } from "../../application/compression/ind
 import type { CatalogRehydration } from "../../application/extensions/catalog-rehydration.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
 import { createDurableMemoryRecords, type MemoryRecords } from "../../application/memory/index.ts";
+import { createReflectionActions } from "../../application/memory/reflection-actions.ts";
 import { type AgentJoins, createAgentJoins } from "../../application/orchestration/agent-joins.ts";
 import {
   createProcessTaskNotices,
@@ -23,6 +24,7 @@ import {
   createProcessTaskSupervisor,
   type ProcessTaskSupervisor,
 } from "../../application/orchestration/process-task-supervisor.ts";
+import type { ProductTaskResources } from "../../application/orchestration/product-resources.ts";
 import {
   createStructuredQuestions,
   type StructuredQuestions,
@@ -54,6 +56,7 @@ import {
   sqliteDatabasePath,
   type WorkspaceIndexStore,
 } from "../../data/index.ts";
+import { createReflectionRepository } from "../../data/memory/reflection-repository.ts";
 import { createAgentJoinStore } from "../../data/orchestration/agent-join-store.ts";
 import { createMailboxRepository } from "../../data/orchestration/mailbox-store.ts";
 import { createSqliteProcessTaskStore } from "../../data/orchestration/process-task-store.ts";
@@ -65,6 +68,7 @@ import {
 import { createWorkflowStore } from "../../data/orchestration/workflow-store.ts";
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import { runId } from "../../domain/foundation/index.ts";
+import type { ReflectionAuthority } from "../../domain/memory/reflection.ts";
 import type { WorkflowStore } from "../../domain/orchestration/workflow-state.ts";
 import {
   DEFAULT_BUSY_TIMEOUT_MS,
@@ -98,6 +102,10 @@ export type ProductArtifactSession = {
   readonly eventStore: DurableEventStore;
   readonly loom: LoomPort;
   readonly memoryRecords: MemoryRecords;
+  openReflection(
+    authority: ReflectionAuthority,
+    resources: ProductTaskResources,
+  ): ReturnType<typeof createReflectionActions>;
   readonly modelCatalogs: ModelCatalogGenerationRepository;
   readonly providerContinuations: ProviderContinuationStatePort;
   readonly scratch: ScratchResourcePort;
@@ -381,6 +389,9 @@ export async function openProductArtifactSession(
     eventStore,
     loom,
     memoryRecords: durableMemory.value,
+    openReflection(authority, resources) {
+      return createReflectionActions(createReflectionRepository(store), { authority, resources });
+    },
     modelCatalogs: createModelCatalogGenerationRepository(store),
     providerContinuations: createProviderContinuationStateRepository(store),
     scratch,

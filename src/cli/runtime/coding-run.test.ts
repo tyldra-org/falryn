@@ -1,3 +1,15 @@
+import {
+  reflectionAuthority,
+  reflectionBinding,
+  reflectionRecord,
+  reflectionValue,
+} from "../../application/memory/reflection.fixtures.ts";
+import { createProductResources as reflectionResources } from "../../application/orchestration/product-resources.ts";
+import {
+  sessionStarted as reflectionSessionStarted,
+  turnCompleted as reflectionTurnCompleted,
+  turnStarted as reflectionTurnStarted,
+} from "../../domain/fixtures.ts";
 import { languageStartupFixture } from "./language-startup.test-support.ts";
 /**
  * Headless `falryn run` (#708): prompt resolution, product hosting, fail-closed
@@ -1032,6 +1044,49 @@ describe("runCoding", () => {
       expect(result.outcome.kind).toBe("completed");
       expect(result.payload?.stage).toBe("attempt-completed");
     }
+  });
+
+  test("shared product state retains reflection requests without executing reflection", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const first = await openProductArtifactSession(services());
+    if (first === null) throw new Error("missing product state");
+    for (const event of [
+      reflectionSessionStarted(),
+      reflectionTurnStarted(),
+      reflectionTurnCompleted(),
+    ]) {
+      expect((await first.eventStore.append(event)).ok).toBe(true);
+    }
+    const actions = first.openReflection(
+      reflectionAuthority,
+      reflectionResources(services().clock).openTask("reflection-fixture"),
+    );
+    const request = reflectionRecord(
+      await actions.execute(
+        JSON.stringify({
+          action: "create",
+          binding: reflectionBinding,
+          range: { first: 1, last: 3 },
+          transform: "transform-1",
+          reason: "explicit",
+        }),
+      ),
+    );
+    expect(request.state).toBe("due");
+    await first.close();
+    const second = await openProductArtifactSession(services());
+    if (second === null) throw new Error("missing reopened product state");
+    const resumed = second.openReflection(
+      reflectionAuthority,
+      reflectionResources(services().clock).openTask("reflection-fixture"),
+    );
+    expect(
+      reflectionValue(
+        await resumed.execute(JSON.stringify({ action: "reconcile", after: null, limit: 10 })),
+      ),
+    ).toMatchObject({ kind: "page", items: [{ id: request.id, state: "due", epoch: 0 }] });
+    await second.close();
   });
 
   test("restores committed Loom manifests and exact artifacts after restart", async () => {

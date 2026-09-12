@@ -1162,6 +1162,27 @@ recalled before prompt composition. A new record is admitted only after the
 model attempt, terminal turn event, and durable replay all report completion;
 failed, cancelled, partial, or uncertain turns are not learned.
 
+The shared product state host also exposes an explicitly bound reflection
+persistence owner. Migration 0025 stores version-1 source-range requests,
+pending candidates, immutable prepared projections, fenced leases, publication
+coverage, and append-only invalidations. Creation verifies committed event
+identity and content digests. Publication commits candidates and coverage in
+one transaction; repeating the same publication returns its existing outcome.
+Expired leases can be inspected and explicitly taken over with a higher epoch.
+Policy, authorization, scope, source and artifact checks run again before
+returning derived text. Export/replay preserves lineage and lifecycle observations
+without a lease token or an admission operation.
+
+Coverage distinguishes the current committed event boundary from contiguous
+processed history. Recent processed ranges leave older gaps visible; an empty
+result is processed, while unavailable and unprocessed ranges stay explicit.
+The owner bounds requests, source handles, candidates, bytes, publications,
+generations and scans. Exhausted publication capacity retains partial coverage;
+a bounded coverage response marks omitted ranges pending. Source history and
+accepted memory remain separate. There is no automatic reflection worker,
+provider call, candidate review UI, or compaction consumer in this persistence
+path.
+
 ## Unified resource Read and Search
 
 Live CLI and OpenTUI turns register `read` and `search` alongside the existing
