@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 
 import { configurationGeneration } from "../../domain/foundation/index.ts";
+import { isDeferrablePlanCandidate } from "../../domain/orchestration/opportunity-plan.ts";
 import { createStubCommandRunner } from "../../domain/process/index.ts";
 import { resolveExecutionProfile } from "../../domain/sessions/index.ts";
 import {
@@ -186,6 +187,92 @@ describe("discloseProductTools", () => {
     });
     const read = disclosure.modelTools.find((tool) => tool.name === "read_file");
     expect(read?.parameters).toMatchObject({ anyOf: expect.any(Array) });
+  });
+
+  test("marks ordered plan fallbacks as deferred definitions beyond the eager bound", () => {
+    const tools = workspaceTools();
+    const disclosure = discloseProductTools(
+      createProductCapabilityRegistry(
+        tools.registry.generation,
+        tools.registry,
+        [],
+        (id) => tools.runner.hasBinding?.(id) === true,
+      ),
+      tools.registry,
+      { maximum: 3 },
+    );
+
+    const deferred = disclosure.receipt.deferred;
+    const disclosed = disclosure.receipt.disclosed;
+    expect(disclosed.length).toBeLessThanOrEqual(3);
+    expect(deferred.length).toBeGreaterThan(0);
+
+    const deferrableIds = new Set(
+      [
+        ...disclosure.receipt.opportunityPlan.fallbacks,
+        ...disclosure.receipt.opportunityPlan.rejected,
+      ]
+        .filter(isDeferrablePlanCandidate)
+        .map((entry) => entry.capabilityId),
+    );
+    const disclosedNames = new Set(disclosed.map((tool) => tool.name));
+    for (const tool of deferred) {
+      expect(deferrableIds.has(tool.capabilityId)).toBe(true);
+      expect(disclosedNames.has(tool.name)).toBe(false);
+      expect(tool.schemaDigest.startsWith("sha-256:")).toBe(true);
+    }
+
+    const deferredNames = deferred.map((tool) => tool.name);
+    expect(
+      disclosure.modelTools.filter((tool) => tool.deferred === true).map((tool) => tool.name),
+    ).toEqual(deferredNames);
+    expect(
+      disclosure.modelTools.slice(0, disclosed.length).every((tool) => tool.deferred !== true),
+    ).toBe(true);
+    expect(disclosure.promptTools.map((tool) => tool.name)).toEqual(
+      disclosed.map((tool) => tool.name),
+    );
+    expect(disclosure.receipt.omitted.some((entry) => deferredNames.includes(entry.name))).toBe(
+      false,
+    );
+    expect(disclosure.receipt.deferredSchemaBytes).toBe(
+      deferred.reduce((total, tool) => total + tool.schemaBytes, 0),
+    );
+    expect(disclosure.receipt.deferredSchemaTokensEstimated).toBeGreaterThan(0);
+  });
+
+  test("bounds deferred definitions by count, tokens, and policy", () => {
+    const tools = workspaceTools();
+    const capabilities = createProductCapabilityRegistry(
+      tools.registry.generation,
+      tools.registry,
+      [],
+      (id) => tools.runner.hasBinding?.(id) === true,
+    );
+    const counted = discloseProductTools(capabilities, tools.registry, {
+      maximum: 3,
+      deferredMaximum: 2,
+    });
+    expect(counted.receipt.deferred.length).toBe(2);
+
+    const starved = discloseProductTools(capabilities, tools.registry, {
+      maximum: 3,
+      deferredSchemaTokenBudget: 0,
+    });
+    expect(starved.receipt.deferred).toEqual([]);
+    expect(starved.receipt.deferredSchemaBytes).toBe(0);
+    const starvedDeferred = new Set(counted.receipt.deferred.map((tool) => tool.name));
+    expect(starved.receipt.omitted.filter((entry) => starvedDeferred.has(entry.name)).length).toBe(
+      starvedDeferred.size,
+    );
+
+    const ask = discloseProductTools(capabilities, tools.registry, {
+      maximum: 3,
+      executionPolicy: resolveExecutionProfile("ask", configurationGeneration.from(7)),
+    });
+    expect(ask.receipt.deferred.length).toBeGreaterThan(0);
+    expect(ask.receipt.deferred.every((tool) => tool.effect === "observation")).toBe(true);
+    expect(ask.receipt.deferred.map((tool) => tool.name)).not.toContain("apply_patch");
   });
 
   test("makes profile restrictions inspectable while keeping eligible reads", () => {

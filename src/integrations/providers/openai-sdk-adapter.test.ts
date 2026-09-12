@@ -544,6 +544,52 @@ describe("createOpenAiSdkAdapter", () => {
     });
   });
 
+  test("omits deferred definitions on a transport without native loading", async () => {
+    let body: Record<string, unknown> | null = null;
+    const adapter = createOpenAiSdkAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.example.test/v1",
+      resolveApiKey: async () => "sk-test",
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return sseResponse(['data: {"choices":[{"delta":{},"finish_reason":"stop"}]}\n\n']);
+      },
+    });
+    const events = await collect(
+      adapter,
+      undefined,
+      request({
+        tools: [
+          {
+            name: "read_file",
+            description: "Read a file.",
+            parameters: { type: "object", additionalProperties: false },
+          },
+          {
+            name: "search_text",
+            description: "Search text.",
+            parameters: { type: "object", additionalProperties: false },
+            deferred: true,
+          },
+        ],
+      }),
+    );
+
+    expect(body).toMatchObject({
+      tools: [{ type: "function", function: { name: "read_file" } }],
+    });
+    expect(JSON.stringify(body)).not.toContain("search_text");
+    const metadata = events
+      .filter((item) => item.kind === "provider-metadata")
+      .map((item) => (item.kind === "provider-metadata" ? item.entries : {}));
+    expect(metadata).toContainEqual(
+      expect.objectContaining({
+        toolDeferral: "unsupported-transport-omitted",
+        deferredToolCount: "1",
+      }),
+    );
+  });
+
   test("never puts the API key into failure messages", async () => {
     const secret = "sk-super-secret-value";
     const adapter = createOpenAiSdkAdapter({

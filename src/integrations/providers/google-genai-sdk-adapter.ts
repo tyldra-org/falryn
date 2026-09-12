@@ -389,6 +389,19 @@ export function createGoogleGenAiSdkAdapter(
       let cacheWriteInputTokens: number | undefined;
       try {
         let translated = toGoogleMessages(request.messages, retainedForRequest);
+        const deferredCount = request.tools.filter((tool) => tool.deferred === true).length;
+        if (deferredCount > 0) {
+          yield {
+            kind: "provider-metadata",
+            requestId: request.requestId,
+            modelAttemptId: attempt,
+            sequence: next(),
+            entries: {
+              toolDeferral: "unsupported-transport-omitted",
+              deferredToolCount: String(deferredCount),
+            },
+          };
+        }
         const tools = toTools(request.tools);
         const level = thinkingLevel(request.reasoningControl);
         let cachedContent: string | undefined;

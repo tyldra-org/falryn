@@ -48,6 +48,7 @@ function setup(
     script: { kind: "abortable", hangUntilAbort: true },
   }),
   wrapRunner: (base: ToolRunnerPort) => ToolRunnerPort = (base) => base,
+  disclosureOptions: Parameters<typeof discloseProductTools>[2] = {},
 ) {
   const correlation = {
     workspaceId: workspaceId.from("workspace-attempt-product"),
@@ -87,6 +88,7 @@ function setup(
       (id) => tools.runner.hasBinding?.(id) === true,
     ),
     tools.registry,
+    disclosureOptions,
   );
   return {
     adapter,
@@ -163,11 +165,22 @@ async function start(setupResult: ReturnType<typeof setup>, id: string) {
 function disclosureInput(product: ReturnType<typeof setup>) {
   return {
     catalogGeneration: product.disclosure.receipt.catalogGeneration,
-    toolNames: product.disclosure.receipt.disclosed.map((tool) => tool.name),
+    toolNames: [
+      ...product.disclosure.receipt.disclosed.map((tool) => tool.name),
+      ...product.disclosure.receipt.deferred.map((tool) => tool.name),
+    ],
     discoveryHandle: product.disclosure.receipt.discoveryHandle,
     opportunityPlan: product.disclosure.receipt.opportunityPlan,
     families: product.disclosure.receipt.families,
     tools: product.disclosure.receipt.disclosed.map((tool) => ({
+      name: tool.name,
+      capabilityId: tool.capabilityId,
+      version: tool.version,
+      schemaDigest: tool.schemaDigest,
+      schemaBytes: tool.schemaBytes,
+      schemaTokensEstimated: tool.schemaTokensEstimated,
+    })),
+    deferred: product.disclosure.receipt.deferred.map((tool) => ({
       name: tool.name,
       capabilityId: tool.capabilityId,
       version: tool.version,
@@ -893,6 +906,211 @@ describe("createProductAttemptRunner", () => {
     });
 
     expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("executes a deferred tool call admitted under the same generation", async () => {
+    let deferredName = "";
+    const requests: ModelRequest[] = [];
+    const adapter = createDeterministicProviderAdapter({
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "deferred-call",
+              name: deferredName,
+              argumentFragments: ['{"query":"needle"}'],
+            }
+          : { kind: "text", text: "deferred call served" },
+      onRequest: (request) => {
+        requests.push(request);
+      },
+    });
+    const product = setup(adapter, undefined, { maximum: 3 });
+    const deferred = product.disclosure.receipt.deferred.find(
+      (tool) => tool.name === "search_text",
+    );
+    if (deferred === undefined) throw new Error("missing deferred search_text");
+    deferredName = deferred.name;
+    const turn = await start(product, "turn-attempt-deferred");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-deferred"),
+        fallbackPosition: 0,
+        providerKey: adapter.identity.providerId,
+        modelKey: String(adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "find needle" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: disclosureInput(product),
+      },
+    });
+
+    expect(result.fact.kind).toBe("completed");
+    expect(result.output?.toolResults).toBe(1);
+    expect(requests).toHaveLength(2);
+    const flagged = requests[0]?.tools.filter((tool) => tool.deferred === true);
+    expect(flagged?.map((tool) => tool.name)).toEqual(
+      product.disclosure.receipt.deferred.map((tool) => tool.name),
+    );
+    const toolMessage = requests[1]?.messages.find((message) => message.role === "tool");
+    const toolText = toolMessage?.parts
+      .map((part) => (part.kind === "text" ? part.text : ""))
+      .join("");
+    expect(toolText).not.toContain("tool-not-disclosed");
+    expect(toolText).toContain('"completed"');
+  });
+
+  test("rejects a deferred descriptor outside the bound opportunity plan", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+      undefined,
+      { maximum: 3 },
+    );
+    const turn = await start(product, "turn-attempt-deferred-plan");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const disclosure = disclosureInput(product);
+    const eager = disclosure.tools[0];
+    const firstDeferred = disclosure.deferred[0];
+    if (eager === undefined || firstDeferred === undefined) {
+      throw new Error("missing disclosure fixture");
+    }
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-deferred-plan"),
+        fallbackPosition: 0,
+        providerKey: product.adapter.identity.providerId,
+        modelKey: String(product.adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+        tools: product.disclosure.modelTools,
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: {
+          ...disclosure,
+          deferred: [{ ...firstDeferred, capabilityId: eager.capabilityId }],
+        },
+      },
+    });
+
+    expect(result.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+    expect(providerRequests).toBe(0);
+  });
+
+  test("rejects a stale deferred descriptor and an unflagged deferred definition", async () => {
+    let providerRequests = 0;
+    const product = setup(
+      createDeterministicProviderAdapter({
+        onRequest: () => {
+          providerRequests += 1;
+        },
+      }),
+      undefined,
+      { maximum: 3 },
+    );
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) {
+      throw new Error(runner.error.code);
+    }
+    const disclosure = disclosureInput(product);
+    const firstDeferred = disclosure.deferred[0];
+    if (firstDeferred === undefined) throw new Error("missing deferred fixture");
+
+    const run = async (
+      id: string,
+      modelInput: {
+        tools: typeof product.disclosure.modelTools;
+        disclosure: typeof disclosure;
+      },
+    ) =>
+      runner.value.run({
+        turnId: await start(product, id),
+        identity: {
+          attemptNumber: 1,
+          modelAttemptId: modelAttemptId.from(id),
+          fallbackPosition: 0,
+          providerKey: product.adapter.identity.providerId,
+          modelKey: String(product.adapter.supportedModels[0]),
+        },
+        receipt: receipt(product),
+        boundConfigurationGeneration: generation,
+        configurationGeneration: generation,
+        signal: new AbortController().signal,
+        modelInput: {
+          messages: [{ role: "user", parts: [{ kind: "text", text: "hello" }] }],
+          output: { kind: "text" },
+          budgets: {},
+          ...modelInput,
+        },
+      });
+
+    const stale = await run("turn-attempt-deferred-stale", {
+      tools: product.disclosure.modelTools,
+      disclosure: {
+        ...disclosure,
+        deferred: [
+          {
+            ...firstDeferred,
+            schemaDigest: `sha-256:${"0".repeat(64)}`,
+          },
+          ...disclosure.deferred.slice(1),
+        ],
+      },
+    });
+    expect(stale.fact).toMatchObject({
+      kind: "failed",
+      category: "invalid-request",
+      retryable: false,
+      effect: "none",
+    });
+
+    const unflagged = product.disclosure.modelTools.map((tool) =>
+      tool.deferred === true ? { ...tool, deferred: false } : tool,
+    );
+    const missing = await run("turn-attempt-deferred-unflagged", {
+      tools: unflagged,
+      disclosure,
+    });
+    expect(missing.fact).toMatchObject({
       kind: "failed",
       category: "invalid-request",
       retryable: false,

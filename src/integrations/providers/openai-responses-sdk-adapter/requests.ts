@@ -1,7 +1,7 @@
 import type {
-  FunctionTool,
   ResponseCreateParamsStreaming,
   ResponseInput,
+  Tool,
 } from "openai/resources/responses/responses";
 
 import type { OpenAiResponsesTransportCompatibilityDeclaration } from "../../../providers/configuration/transport-compatibility.ts";
@@ -29,16 +29,22 @@ function rejectImageParts(messages: readonly ModelMessage[]): void {
 function toTools(
   tools: readonly ModelToolDefinition[],
   compatibility: OpenAiResponsesTransportCompatibilityDeclaration,
-): FunctionTool[] | undefined {
-  return tools.length === 0
-    ? undefined
-    : tools.map((tool) => ({
-        type: "function",
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters,
-        strict: compatibility.strictToolSchemas,
-      }));
+): Tool[] | undefined {
+  if (tools.length === 0) {
+    return undefined;
+  }
+  const translated: Tool[] = tools.map((tool) => ({
+    type: "function",
+    name: tool.name,
+    description: tool.description,
+    parameters: tool.parameters,
+    strict: compatibility.strictToolSchemas,
+    ...(tool.deferred === true ? { defer_loading: true } : {}),
+  }));
+  if (tools.some((tool) => tool.deferred === true)) {
+    translated.push({ type: "tool_search", execution: "server" });
+  }
+  return translated;
 }
 
 function reasoningEffort(

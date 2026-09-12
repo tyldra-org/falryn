@@ -205,10 +205,13 @@ function toTools(
   tools: readonly ModelToolDefinition[],
   compatibility: OpenAiChatTransportCompatibilityDeclaration,
 ): OpenAI.ChatCompletionTool[] | undefined {
-  if (tools.length === 0) {
+  // Chat Completions has no deferred-definition transport; deferred tools stay
+  // omitted so the wire matches ordinary bounded disclosure.
+  const eager = tools.filter((tool) => tool.deferred !== true);
+  if (eager.length === 0) {
     return undefined;
   }
-  return tools.map((tool) => ({
+  return eager.map((tool) => ({
     type: "function",
     function: {
       name: tool.name,
@@ -444,6 +447,20 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
           ),
         };
         return;
+      }
+
+      const deferredCount = request.tools.filter((tool) => tool.deferred === true).length;
+      if (deferredCount > 0) {
+        yield {
+          kind: "provider-metadata",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          entries: {
+            toolDeferral: "unsupported-transport-omitted",
+            deferredToolCount: String(deferredCount),
+          },
+        };
       }
 
       let body: OpenAI.ChatCompletionCreateParamsStreaming;

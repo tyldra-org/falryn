@@ -60,6 +60,14 @@ export type ModelToolDefinition = {
   readonly description: string;
   /** JSON Schema object for arguments; validated as structure, not executed. */
   readonly parameters: Readonly<Record<string, unknown>>;
+  /**
+   * When true, a supporting transport may withhold this definition from the
+   * model's initial context and serve it through provider-native deferred
+   * loading (tool search). Transports without that mechanism must omit the
+   * definition from the wire entirely; the definition stays authorized either
+   * way and every eventual call re-enters the unified gateway.
+   */
+  readonly deferred?: boolean;
 };
 
 export type OutputContract =

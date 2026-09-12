@@ -278,6 +278,23 @@ export function createOpenAiResponsesSdkAdapter(
       let refusal = false;
       let malformedToolIdentity = false;
       let unsupportedOutput = false;
+      const deferredToolNames = new Set(
+        request.tools.filter((tool) => tool.deferred === true).map((tool) => tool.name),
+      );
+      let toolSearchCalls = 0;
+      const loadedDeferredTools = new Set<string>();
+      if (deferredToolNames.size > 0) {
+        yield {
+          kind: "provider-metadata",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          entries: {
+            toolDeferral: "openai-tool-search",
+            deferredToolCount: String(deferredToolNames.size),
+          },
+        };
+      }
 
       const stateFor = (itemId: string): ToolCallState => {
         const current = toolCalls.get(itemId);
@@ -498,6 +515,50 @@ export function createOpenAiResponsesSdkAdapter(
                 };
                 break;
               }
+              if (item.type === "tool_search_call") {
+                toolSearchCalls += 1;
+                yield {
+                  kind: "provider-metadata",
+                  requestId: request.requestId,
+                  modelAttemptId: attempt,
+                  sequence: next(),
+                  entries: {
+                    itemId: item.id ?? "",
+                    itemType: item.type,
+                    execution: item.execution ?? "server",
+                  },
+                };
+                break;
+              }
+              if (item.type === "tool_search_output") {
+                for (const loaded of item.tools) {
+                  if (loaded.type === "function" && deferredToolNames.has(loaded.name)) {
+                    loadedDeferredTools.add(loaded.name);
+                  }
+                }
+                yield {
+                  kind: "provider-metadata",
+                  requestId: request.requestId,
+                  modelAttemptId: attempt,
+                  sequence: next(),
+                  entries: {
+                    itemId: item.id,
+                    itemType: item.type,
+                    deferredToolsLoaded: [...loadedDeferredTools].join(","),
+                  },
+                };
+                break;
+              }
+              if (item.type === "additional_tools") {
+                yield {
+                  kind: "provider-metadata",
+                  requestId: request.requestId,
+                  modelAttemptId: attempt,
+                  sequence: next(),
+                  entries: { itemId: item.id ?? "", itemType: item.type },
+                };
+                break;
+              }
               if (item.type !== "message") {
                 unsupportedOutput = true;
               }
@@ -603,6 +664,18 @@ export function createOpenAiResponsesSdkAdapter(
               }
               for (const state of proposed) {
                 retain(retained, state.callId, retainedValue);
+              }
+              if (toolSearchCalls > 0 || loadedDeferredTools.size > 0) {
+                yield {
+                  kind: "provider-metadata",
+                  requestId: request.requestId,
+                  modelAttemptId: attempt,
+                  sequence: next(),
+                  entries: {
+                    toolSearchCalls: String(toolSearchCalls),
+                    deferredToolsLoaded: [...loadedDeferredTools].join(","),
+                  },
+                };
               }
               yield {
                 kind: "finished",

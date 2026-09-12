@@ -370,6 +370,24 @@ export function createAnthropicSdkAdapter(
         return;
       }
 
+      const deferredToolNames = new Set(
+        request.tools.filter((tool) => tool.deferred === true).map((tool) => tool.name),
+      );
+      const loadedDeferredTools = new Set<string>();
+      let toolSearchCalls = 0;
+      if (deferredToolNames.size > 0) {
+        yield {
+          kind: "provider-metadata",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          entries: {
+            toolDeferral: "anthropic-tool-search",
+            deferredToolCount: String(deferredToolNames.size),
+          },
+        };
+      }
+
       const contentBlocks = new Map<number, ContentBlockState>();
       const toolCallIds = new Set<string>();
       const thinking: RetainedThinkingBlock[] = [];
@@ -464,6 +482,49 @@ export function createAnthropicSdkAdapter(
                   proposed: false,
                   stopped: false,
                 });
+              } else if (block.type === "server_tool_use") {
+                contentBlocks.set(event.index, {
+                  type: "server-tool",
+                  name: block.name,
+                  stopped: false,
+                });
+                if (
+                  block.name === "tool_search_tool_bm25" ||
+                  block.name === "tool_search_tool_regex"
+                ) {
+                  toolSearchCalls += 1;
+                }
+                yield {
+                  kind: "provider-metadata",
+                  requestId: request.requestId,
+                  modelAttemptId: attempt,
+                  sequence: next(),
+                  entries: { itemType: "server_tool_use", toolName: block.name },
+                };
+              } else if (block.type === "tool_search_tool_result") {
+                contentBlocks.set(event.index, {
+                  type: "server-tool",
+                  name: "tool_search_tool_result",
+                  stopped: false,
+                });
+                const entries: Record<string, string> = { itemType: block.type };
+                if (block.content.type === "tool_search_tool_search_result") {
+                  for (const reference of block.content.tool_references) {
+                    if (deferredToolNames.has(reference.tool_name)) {
+                      loadedDeferredTools.add(reference.tool_name);
+                    }
+                  }
+                  entries.deferredToolsLoaded = [...loadedDeferredTools].join(",");
+                } else {
+                  entries.toolSearchError = block.content.error_code;
+                }
+                yield {
+                  kind: "provider-metadata",
+                  requestId: request.requestId,
+                  modelAttemptId: attempt,
+                  sequence: next(),
+                  entries,
+                };
               } else {
                 throw new AnthropicInputError(
                   "unsupported-capability",
@@ -530,6 +591,10 @@ export function createAnthropicSdkAdapter(
                 }
                 block.signature = event.delta.signature;
               } else if (event.delta.type === "input_json_delta") {
+                if (block.type === "server-tool") {
+                  // Provider-side search input is not a Falryn tool proposal.
+                  break;
+                }
                 if (block.type !== "tool") {
                   throw new AnthropicInputError(
                     "malformed-stream",
@@ -774,6 +839,18 @@ export function createAnthropicSdkAdapter(
       }
       for (const block of proposed) {
         retain(retained, block.id, retainedValue);
+      }
+      if (toolSearchCalls > 0 || loadedDeferredTools.size > 0) {
+        yield {
+          kind: "provider-metadata",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          entries: {
+            toolSearchCalls: String(toolSearchCalls),
+            deferredToolsLoaded: [...loadedDeferredTools].join(","),
+          },
+        };
       }
       yield {
         kind: "finished",

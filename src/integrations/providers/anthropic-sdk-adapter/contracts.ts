@@ -56,4 +56,5 @@ export type ContentBlockState =
   | { readonly type: "text"; stopped: boolean }
   | { readonly type: "thinking"; thinking: string; signature: string; stopped: boolean }
   | { readonly type: "redacted-thinking"; readonly data: string; stopped: boolean }
+  | { readonly type: "server-tool"; readonly name: string; stopped: boolean }
   | ({ readonly type: "tool" } & ToolCallState);

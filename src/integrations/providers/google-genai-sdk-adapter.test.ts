@@ -427,6 +427,48 @@ describe("createGoogleGenAiSdkAdapter", () => {
     expect(events.at(-1)?.kind).toBe("finished");
   });
 
+  test("omits deferred definitions on a transport without native loading", async () => {
+    const captured: { body: GenerateContentParameters | null } = { body: null };
+    const events = await collect(
+      {
+        resolveApiKey: async () => "google-test-key",
+        createStream: async (_apiKey, requestBody) => {
+          captured.body = requestBody;
+          return stream([response({ candidates: [{ index: 0, finishReason: "STOP" }] })]);
+        },
+      },
+      request({
+        tools: [
+          {
+            name: "read_file",
+            description: "Read a file",
+            parameters: { type: "object", additionalProperties: false },
+          },
+          {
+            name: "search_text",
+            description: "Search text",
+            parameters: { type: "object", additionalProperties: false },
+            deferred: true,
+          },
+        ],
+      }),
+    );
+
+    expect(captured.body?.config?.tools).toMatchObject([
+      { functionDeclarations: [{ name: "read_file" }] },
+    ]);
+    expect(JSON.stringify(captured.body)).not.toContain("search_text");
+    const metadata = events
+      .filter((item) => item.kind === "provider-metadata")
+      .map((item) => (item.kind === "provider-metadata" ? item.entries : {}));
+    expect(metadata).toContainEqual(
+      expect.objectContaining({
+        toolDeferral: "unsupported-transport-omitted",
+        deferredToolCount: "1",
+      }),
+    );
+  });
+
   test("fails closed for missing credentials and unresolved image handles", async () => {
     const missing = await collect({
       resolveApiKey: async () => null,

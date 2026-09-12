@@ -232,12 +232,15 @@ export function toGoogleMessages(
 }
 
 export function toTools(tools: readonly ModelToolDefinition[]): Tool[] | undefined {
-  if (tools.length === 0) {
+  // Generate Content has no deferred-definition transport; deferred tools stay
+  // omitted so the wire matches ordinary bounded disclosure.
+  const eager = tools.filter((tool) => tool.deferred !== true);
+  if (eager.length === 0) {
     return undefined;
   }
   return [
     {
-      functionDeclarations: tools.map((tool) => ({
+      functionDeclarations: eager.map((tool) => ({
         name: tool.name,
         description: tool.description,
         parametersJsonSchema: tool.parameters,

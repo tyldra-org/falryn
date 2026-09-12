@@ -18,7 +18,10 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { sealedAgentResultSchema } from "../../application/orchestration/delegation-contract.ts";
-import { MAX_DISCLOSED_PRODUCT_TOOLS } from "../../application/tools/product-tool-disclosure.ts";
+import {
+  MAX_DEFERRED_PRODUCT_TOOLS,
+  MAX_DISCLOSED_PRODUCT_TOOLS,
+} from "../../application/tools/product-tool-disclosure.ts";
 import { CONFIGURATION_FILE_NAME } from "../../config/index.ts";
 import { type ArtifactStorePort, artifactId } from "../../domain/artifacts/index.ts";
 import {
@@ -413,6 +416,84 @@ describe("runCoding", () => {
     await expect(readFile(join(seeded.primary, "notes.txt"), "utf8")).resolves.toBe(
       "hello workspace\n",
     );
+  });
+
+  test("marks bounded fallbacks as deferred and admits their calls through the gateway", async () => {
+    const seeded = await seededHome();
+    await Bun.write(join(seeded.primary, "notes.txt"), "hello deferred\n");
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const deferredArguments: Record<string, Record<string, unknown>> = {
+      read: { resources: [{ kind: "workspace", path: "notes.txt" }] },
+      search_text: { query: "needle" },
+      git_status: {},
+      list_dir: { path: "." },
+      stat_path: { path: "." },
+    };
+    const result = await runCoding(
+      services,
+      {
+        promptParts: ["Inspect the workspace and report what you find."],
+      },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+          script: (request, requestIndex) => {
+            if (requestIndex !== 0) {
+              return { kind: "text", text: "done", finishReason: "stop" };
+            }
+            const target =
+              request.tools.find(
+                (tool) => tool.deferred === true && tool.name in deferredArguments,
+              ) ?? request.tools.find((tool) => tool.deferred === true);
+            if (target === undefined) {
+              return { kind: "text", text: "no deferred tools", finishReason: "stop" };
+            }
+            return {
+              kind: "tool",
+              toolCallId: "call-deferred-e2e",
+              name: target.name,
+              argumentFragments: [JSON.stringify(deferredArguments[target.name] ?? {})],
+            };
+          },
+        }),
+        toolConfirmation: {
+          resolve: async (request) => ({
+            kind: "confirmed",
+            confirmationId: request.confirmationId,
+          }),
+        },
+        identities: {
+          sessionId: "session-run-deferred-e2e",
+          turnId: "turn-run-deferred-e2e",
+          traceId: "trace-run-deferred-e2e",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload?.toolResults).toBe(1);
+
+    const disclosed = requests[0]?.tools ?? [];
+    const flagged = disclosed.filter((tool) => tool.deferred === true);
+    expect(flagged.length).toBeGreaterThan(0);
+    expect(disclosed.length).toBeGreaterThan(flagged.length);
+    expect(
+      disclosed.slice(0, disclosed.length - flagged.length).every((tool) => tool.deferred !== true),
+    ).toBe(true);
+
+    const toolMessage = requests[1]?.messages.findLast(
+      (message) => message.role === "tool" && message.toolCallId === "call-deferred-e2e",
+    );
+    const text = toolMessage?.parts.find((part) => part.kind === "text")?.text;
+    expect(text).toBeDefined();
+    const serialized = JSON.parse(text ?? "{}") as {
+      readonly output?: { readonly status?: string; readonly reason?: string };
+    };
+    expect(serialized.output?.status).toBeDefined();
+    expect(serialized.output?.reason).not.toBe("tool-not-disclosed");
   });
 
   test("keeps matched no-tool scorecard turns on the live path without tool disclosure", async () => {
@@ -1722,7 +1803,12 @@ describe("runCoding", () => {
     });
     expect(requests).toHaveLength(2);
     expect(requests[0]?.tools.length).toBeGreaterThan(0);
-    expect(requests[0]?.tools.length).toBeLessThanOrEqual(MAX_DISCLOSED_PRODUCT_TOOLS);
+    expect(requests[0]?.tools.filter((tool) => tool.deferred !== true).length).toBeLessThanOrEqual(
+      MAX_DISCLOSED_PRODUCT_TOOLS,
+    );
+    expect(requests[0]?.tools.filter((tool) => tool.deferred === true).length).toBeLessThanOrEqual(
+      MAX_DEFERRED_PRODUCT_TOOLS,
+    );
     expect(requests[0]?.tools.some((tool) => tool.name === "peer")).toBe(true);
     expect(
       requests[1]?.messages.some(

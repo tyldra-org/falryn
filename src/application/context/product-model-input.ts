@@ -56,6 +56,7 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
     )
     .join(", ");
   const tools = disclosure.receipt.disclosed.map((tool) => tool.name).join(", ");
+  const deferredTools = disclosure.receipt.deferred.map((tool) => tool.name).join(", ");
   const otherCapabilities = disclosure.receipt.capabilityCards
     .filter((entry) => entry.kind !== "tool" && entry.kind !== "mcp-tool")
     .map((entry) => `${entry.kind}:${entry.title}`)
@@ -81,6 +82,7 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
     `Schema budget: ${plan.schemaTokensEstimated}/${plan.schemaTokenBudget} estimated tokens across ${plan.selected.length}/${plan.selectionLimit} selected slots.`,
     `Families: ${families}`,
     `Executable tools for this attempt: ${tools || "none"}`,
+    `Deferred tool definitions (loadable through the provider's tool search where supported): ${deferredTools || "none"}`,
     `Other disclosed capabilities: ${otherCapabilities || "none"}`,
     `Capability routing facts: ${routingFacts || "none"}`,
     `Registry inventory: ${disclosure.receipt.registryTotal} validated contributions in this generation.`,
@@ -151,7 +153,10 @@ export function attemptModelInputFromPrompt(
         }),
     disclosure: {
       catalogGeneration: disclosure.receipt.catalogGeneration,
-      toolNames: disclosure.receipt.disclosed.map((tool) => tool.name),
+      toolNames: [
+        ...disclosure.receipt.disclosed.map((tool) => tool.name),
+        ...disclosure.receipt.deferred.map((tool) => tool.name),
+      ],
       discoveryHandle: disclosure.receipt.discoveryHandle,
       opportunityPlan: disclosure.receipt.opportunityPlan,
       capabilityCatalog: {
@@ -188,6 +193,14 @@ export function attemptModelInputFromPrompt(
       },
       families: disclosure.receipt.families,
       tools: disclosure.receipt.disclosed.map((tool) => ({
+        name: tool.name,
+        capabilityId: tool.capabilityId,
+        version: tool.version,
+        schemaDigest: tool.schemaDigest,
+        schemaBytes: tool.schemaBytes,
+        schemaTokensEstimated: tool.schemaTokensEstimated,
+      })),
+      deferred: disclosure.receipt.deferred.map((tool) => ({
         name: tool.name,
         capabilityId: tool.capabilityId,
         version: tool.version,
