@@ -431,12 +431,12 @@ describe("runCoding", () => {
     );
   });
 
-  test("marks bounded fallbacks as deferred and admits their calls through the gateway", async () => {
+  test("uses bounded eager tools when the selected transport is not qualified for native search", async () => {
     const seeded = await seededHome();
     await Bun.write(join(seeded.primary, "notes.txt"), "hello deferred\n");
     const services = providerFor(seeded)(globalsFor(seeded));
     const requests: ModelRequest[] = [];
-    const deferredArguments: Record<string, Record<string, unknown>> = {
+    const eagerArguments: Record<string, Record<string, unknown>> = {
       read: { resources: [{ kind: "workspace", path: "notes.txt" }] },
       search_text: { query: "needle" },
       git_status: {},
@@ -457,18 +457,15 @@ describe("runCoding", () => {
             if (requestIndex !== 0) {
               return { kind: "text", text: "done", finishReason: "stop" };
             }
-            const target =
-              request.tools.find(
-                (tool) => tool.deferred === true && tool.name in deferredArguments,
-              ) ?? request.tools.find((tool) => tool.deferred === true);
+            const target = request.tools.find((tool) => tool.name in eagerArguments);
             if (target === undefined) {
-              return { kind: "text", text: "no deferred tools", finishReason: "stop" };
+              return { kind: "text", text: "no eligible tools", finishReason: "stop" };
             }
             return {
               kind: "tool",
-              toolCallId: "call-deferred-e2e",
+              toolCallId: "call-eager-e2e",
               name: target.name,
-              argumentFragments: [JSON.stringify(deferredArguments[target.name] ?? {})],
+              argumentFragments: [JSON.stringify(eagerArguments[target.name] ?? {})],
             };
           },
         }),
@@ -490,15 +487,12 @@ describe("runCoding", () => {
     expect(result.payload?.toolResults).toBe(1);
 
     const disclosed = requests[0]?.tools ?? [];
-    const flagged = disclosed.filter((tool) => tool.deferred === true);
-    expect(flagged.length).toBeGreaterThan(0);
-    expect(disclosed.length).toBeGreaterThan(flagged.length);
-    expect(
-      disclosed.slice(0, disclosed.length - flagged.length).every((tool) => tool.deferred !== true),
-    ).toBe(true);
+    expect(disclosed.length).toBeGreaterThan(0);
+    expect(disclosed.length).toBeLessThanOrEqual(MAX_DISCLOSED_PRODUCT_TOOLS);
+    expect(disclosed.every((tool) => tool.deferred !== true)).toBe(true);
 
     const toolMessage = requests[1]?.messages.findLast(
-      (message) => message.role === "tool" && message.toolCallId === "call-deferred-e2e",
+      (message) => message.role === "tool" && message.toolCallId === "call-eager-e2e",
     );
     const text = toolMessage?.parts.find((part) => part.kind === "text")?.text;
     expect(text).toBeDefined();
