@@ -19,6 +19,9 @@ application. The current command surface includes:
 | falryn provider list / add / use / configure / test / login / logout / remove | Manage local provider profiles and credentials |
 | falryn data backup / inspect / restore / diagnostics / retention / gc / reset / uninstall | Inspect, preserve, repair, retain, collect, or preview/apply confirmed removal of Falryn-owned local data |
 | falryn workspace list / show / save / load | Inspect or persist named workspace sets |
+| falryn model | Inspect and revision-safely edit model policy through the shared settings service |
+| falryn package | Inspect, install, activate, update, disable or remove governed packages and inspect their data/health |
+| falryn peer | Inspect authorized peers, exchange messages, and read delivery history |
 | falryn extension inspect / trust / scope / catalog | Inspect local declarations, confirm trust or scoped metadata preferences, and query the inert catalog |
 | falryn export / import | Preview or write a versioned local export package, or import one after verification |
 | falryn replay | Rebuild one stored session projection without repeating effects |
@@ -823,8 +826,9 @@ handles are redacted before projection. Stale results become unknown.
 
 The evaluator can derive consumer-specific snapshots for native-model, CLI,
 OpenTUI, headless, and external-host contracts. Product composition uses the
-snapshot for built-in model disclosure and diagnostics, but a public external
-host and live Extension/MCP execution are not implemented. Its read-only
+snapshot for built-in model disclosure and diagnostics. The admitted native
+package observation-tool path executes through the shared gateway; a public
+external host and live MCP execution are not implemented. Its read-only
 inspector derives tool queries, deduplicated doctor findings, and effective
 permission facts from one generation. Queries default to 32 rows and admit at
 most 256, carry a deterministic continuation handle, and reject stale
@@ -1075,7 +1079,12 @@ corrupt, unauthorized, cancelled or unavailable results. Pages contain at most
 64 events and identifies an omitted prefix. `falryn session show <id>
 --workspace-id <workspace>` exposes ordered history; `--after-sequence <n>` follows
 its cursor. Read-only replay reports its bounded history page and truncation.
-It never invokes the original provider or tool.
+It never invokes the original provider or tool. Authority is checked before
+cancellation results, and refused inline bytes are removed from the returned
+event as well as expanded text. Cancellation and authority are checked again
+after retained reads. Model tool projections carry a history identity and
+metadata without repeating the inline result; authorized history reads retain
+access to the recorded content.
 
 `/export` and the `session.export` palette command preview the active session
 through the same application action as `falryn export`. `/export write <name>`
@@ -1885,8 +1894,8 @@ This replaces the complete definitions value; preserve other entries in the file
 Reopen the shell after editing definitions. Setting `enabled` to false preserves
 the identity and saved model preference. Saving, listing and editing do not launch
 an agent. The native registry accepts admitted package definitions through the
-same codec and owner-digest checks, but package installation/publication remains
-unimplemented. Required browser, computer, MCP or instruction preparation needs
+same codec and owner-digest checks. Package installation and native observation
+tool activation are implemented; automatic package-agent preparation is not. Required browser, computer, MCP or instruction preparation needs
 its native owner; a descriptor alone does not make it ready.
 
 ## Current product-integration limits
