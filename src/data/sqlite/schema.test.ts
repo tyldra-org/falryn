@@ -1,3 +1,4 @@
+import { MIGRATION_0026 } from "../sessions/history-schema.ts";
 /**
  * Migration `0001`, checked against a real database and against the domain.
  *
@@ -106,6 +107,7 @@ describe("a fresh database", () => {
       23,
       24,
       25,
+      MIGRATION_0026.version,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -146,6 +148,8 @@ describe("a fresh database", () => {
       "artifacts_reserved",
       "extension_scope_controls_by_actor",
       "extension_scope_controls_by_authority",
+      "history_artifacts_by_stream",
+      "history_restore_points",
       "invocations_by_turn",
       "loom_manifests_by_scope",
       "memory_records_by_workspace",
@@ -226,6 +230,7 @@ describe("a fresh database", () => {
       23,
       24,
       25,
+      MIGRATION_0026.version,
     ]);
     expect(
       upgraded.read(

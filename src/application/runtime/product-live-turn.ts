@@ -1,3 +1,4 @@
+import { createSessionHistory, historyDigest } from "../sessions/session-history.ts";
 /** One application-owned live-turn path for headless and OpenTUI hosts (#787). */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -723,6 +724,74 @@ export function createProductLiveTurnExecutor(
           });
         }
 
+        const recordedInput = await createSessionHistory({
+          journal: runtime.journal,
+          correlation,
+          ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts }),
+        }).record(
+          input.turnId,
+          {
+            version: 1,
+            type: "message",
+            messageId: `${input.turnId}:user`,
+            part: 0,
+            id: `${input.turnId}:user`,
+            generation: Number(generation),
+            role: "user",
+            attemptId: null,
+            completion: "complete",
+            relations: attachments.value.map((section) => ({
+              type: "source" as const,
+              id: `source-${historyDigest(section.source).slice(8)}`,
+              generation: Number(generation),
+            })),
+          },
+          input.prompt,
+          taskResources,
+          input.signal,
+        );
+        if (!recordedInput.committed || recordedInput.evidence.availability === "unavailable")
+          return settleFailure(
+            input,
+            {
+              kind: "failed",
+              code: "history.input-unavailable",
+              message: "The admitted input could not be retained.",
+            },
+            executionPolicy,
+          );
+
+        for (const section of attachments.value) {
+          const sourceId = `source-${historyDigest(section.source).slice(8)}`;
+          const captured = await createSessionHistory({
+            journal: runtime.journal,
+            correlation,
+            ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts }),
+          }).record(
+            input.turnId,
+            {
+              version: 1,
+              type: "source",
+              id: `${input.turnId}:${sourceId}`,
+              sourceId,
+              generation: Number(generation),
+              relations: [{ type: "source", id: sourceId, generation: Number(generation) }],
+            },
+            section.content,
+            taskResources,
+            input.signal,
+          );
+          if (!captured.committed || captured.evidence.availability === "unavailable")
+            return settleFailure(
+              input,
+              {
+                kind: "failed",
+                code: "history.source-unavailable",
+                message: "Selected source evidence could not be retained.",
+              },
+              executionPolicy,
+            );
+        }
         const prepared =
           options.contextSource === undefined
             ? {

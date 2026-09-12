@@ -81,6 +81,7 @@ describe("read from cursor", () => {
         sequence.from(11),
         sequence.from(12),
         sequence.from(13),
+        sequence.from(14),
       ]);
     }
   });

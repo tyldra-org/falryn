@@ -28,7 +28,6 @@ import {
   workspaceId,
 } from "../../domain/foundation/index.ts";
 import { createStubCommandRunner } from "../../domain/process/index.ts";
-import { createInMemoryEventStore } from "../../domain/sessions/index.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
 import { createDeterministicProviderAdapter, type ModelRequest } from "../../providers/index.ts";
 import { createProductSubmissionPort } from "../../tui/composer/product-submission.ts";
@@ -336,6 +335,7 @@ test("scratch revisions use the durable owner and become unavailable on discard"
   const clock = createSystemClock();
   const runtime = composeProductAgentRuntime({
     eventStore: f.durable.eventStore,
+    historyArtifacts: f.durable.artifacts,
     clock,
     resources: createProductResources(clock),
     toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
@@ -353,6 +353,7 @@ test("scratch revisions use the durable owner and become unavailable on discard"
   if (!runtime.ok) throw new Error(runtime.error.code);
   const executor = createProductLiveTurnExecutor({
     runtime: runtime.value,
+    artifacts: f.durable.artifacts,
     clock,
     resources: f.resources,
     providerCatalog: {
@@ -499,7 +500,8 @@ test("selected file and attachment-only paste reach the real provider; stale sel
   });
   const clock = createSystemClock();
   const runtime = composeProductAgentRuntime({
-    eventStore: createInMemoryEventStore(),
+    eventStore: f.durable.eventStore,
+    historyArtifacts: f.durable.artifacts,
     clock,
     resources: createProductResources(clock),
     streamId: streamId.from("resource-turns"),
@@ -516,6 +518,7 @@ test("selected file and attachment-only paste reach the real provider; stale sel
   if (!runtime.ok) throw new Error(runtime.error.code);
   const executor = createProductLiveTurnExecutor({
     runtime: runtime.value,
+    artifacts: f.durable.artifacts,
     clock,
     resources: f.resources,
     providerCatalog: {
@@ -657,7 +660,8 @@ test("model Search result resolves through model Read in the actual gateway cont
   });
   const clock = createSystemClock();
   const runtime = composeProductAgentRuntime({
-    eventStore: createInMemoryEventStore(),
+    eventStore: f.durable.eventStore,
+    historyArtifacts: f.durable.artifacts,
     clock,
     resources: createProductResources(clock),
     streamId: streamId.from("resource-gateway"),
@@ -674,6 +678,7 @@ test("model Search result resolves through model Read in the actual gateway cont
   if (!runtime.ok) throw new Error(runtime.error.code);
   const executor = createProductLiveTurnExecutor({
     runtime: runtime.value,
+    artifacts: f.durable.artifacts,
     clock,
     resources: f.resources,
     providerCatalog: {

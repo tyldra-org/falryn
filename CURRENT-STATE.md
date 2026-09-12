@@ -1030,6 +1030,46 @@ through the recovery artifact without executing the process again. Required
 artifact-retention failure stops before provider continuation and settles the
 turn as failed with a partial effect.
 
+Semantic history uses version-1 `history.recorded` payloads within the existing
+version-2 runtime-event family. Migration 0026 indexes their artifact references.
+The journal captures admitted user messages and selected source content, public
+assistant text (including interrupted fragments), provider proposals before
+assembly, binding and reuse, policy/confirmation/hook/scheduling decisions, and
+native tool results before projection. Protected reasoning is excluded. Stable
+message, proposal and invocation identities preserve their relationships;
+checkpoint and restore-point payloads preserve supplied lineage and up to 32
+authorized artifact references without implementing automatic compaction or
+restore execution. SQLite validates those references before append. Deletion
+and expiry tombstones retire coverage even before byte cleanup; reads and export
+honor them, and GC no longer treats a retired point as a retention root.
+
+History evidence is inline up to 2 KiB or sealed as an artifact up to 4 MiB.
+Credential redaction is explicit in its fidelity. SQLite validates a retained
+reference inside the event append transaction; a lost publication boundary
+records an unavailable gap when the journal remains writable. A completed tool
+effect remains completed even if retaining its result fails. Such a result
+fails delivery and is not silently executed again by the gateway's effect ledger.
+Unreferenced sealed artifacts are GC candidates; session references retain their
+artifacts through the existing reachability owner.
+
+The shared event/artifact reader checks current authority, retention metadata,
+byte length and digest. It returns exact, redacted, reduced, missing, expired,
+corrupt, unauthorized, cancelled or unavailable results. Pages contain at most
+64 events and 64 KiB of expanded content. The live transcript caches the latest
+64 events and identifies an omitted prefix. `falryn session show <id>
+--workspace-id <workspace>` exposes ordered history; `--after-sequence <n>` follows
+its cursor. Read-only replay reports its bounded history page and truncation.
+It never invokes the original provider or tool.
+
+`/export` and the `session.export` palette command preview the active session
+through the same application action as `falryn export`. `/export write <name>`
+writes a versioned JSONL package with authorized artifact bytes; an existing
+destination is refused. Preview reports omissions, and write rechecks artifact
+policy before copying and publishing. Import installs artifacts before events
+that reference them. Cancellation after publication reports the published
+package. These surfaces do not activate a historical session executor (#953) or
+add prior history to later model turns (#952).
+
 OpenTUI's `session.new` palette action creates a new durable session before it
 switches the active transcript and submission target. A failed creation leaves
 the current session selected; concurrent duplicate actions coalesce, and active
@@ -1906,11 +1946,10 @@ the full planned dependency/source/owner order, and a timeout settles the hook
 without propagating an `AbortSignal` to stop late asynchronous work.
 GitHub issue #143 owns those hook-runtime corrections.
 
-Read, Loom, Hush, and selected process paths retain exact overflow artifacts,
-but the generic gateway can still replace an oversized result with an omission
-marker without a mandatory exact recovery artifact. GitHub issue #791 owns
-universal exact-byte admission and completeness; #207 owns lifecycle and garbage
-collection after sealing.
+The generic gateway captures its native result before projection and reports a
+failed capture independently of the observed effect. Content above the 4 MiB
+history admission bound is an explicit unavailable record. Broader artifact
+lifecycle work remains under GitHub issue #207.
 
 Image, PDF, and notebook readers exist in the application source but are not
 registered in the product tool bundle, and live provider adapters accept text

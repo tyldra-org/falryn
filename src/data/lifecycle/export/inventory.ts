@@ -1,3 +1,9 @@
+import { HISTORY_LIMITS } from "../../../domain/sessions/history.ts";
+import { createStoredHistoryReader } from "../../sessions/history-reader.ts";
+import {
+  ALL_SESSION_ARTIFACT_SEEDS,
+  historyArtifactRetirement,
+} from "../../sessions/history-schema.ts";
 /** Resolves and bounds export selections before any package write. */
 
 import {
@@ -9,7 +15,6 @@ import {
 } from "../../../domain/artifacts/index.ts";
 import {
   err,
-  MAX_STREAM_READ_LIMIT,
   ok,
   type Result,
   type Sequence,
@@ -61,15 +66,13 @@ const SELECT_SESSIONS_IN_RANGE = `SELECT session_id AS sessionId FROM ${SESSIONS
  * with no selected-session invocation is still in the package, subject to the
  * same sensitivity and availability omit rules.
  */
-const SELECT_SESSION_ARTIFACTS = `SELECT DISTINCT
-    a.artifact_id AS artifactId, a.digest AS digest, a.byte_length AS byteLength,
-    a.sensitivity AS sensitivity, a.availability AS availability
-  FROM ${ARTIFACTS_TABLE} a
-  JOIN invocations i ON i.invocation_id = a.invocation_id
-  JOIN turns t ON t.turn_id = i.turn_id
-  WHERE t.session_id = $sessionId
-  ORDER BY a.created_at, a.artifact_id
-  LIMIT $limit`;
+const SELECT_SESSION_ARTIFACTS = `SELECT seeds.artifactId AS artifactId,
+    COALESCE(a.digest, '') AS digest, COALESCE(a.byte_length, 0) AS byteLength,
+    COALESCE(a.sensitivity, 'user-content') AS sensitivity,
+    COALESCE(a.availability, 'missing') AS availability
+  FROM (${ALL_SESSION_ARTIFACT_SEEDS}) seeds
+  LEFT JOIN ${ARTIFACTS_TABLE} a ON a.artifact_id = seeds.artifactId
+  ORDER BY a.created_at, seeds.artifactId LIMIT $limit`;
 
 const SELECT_ARTIFACT_BY_ID = `SELECT
     a.artifact_id AS artifactId, a.digest AS digest, a.byte_length AS byteLength,
@@ -476,30 +479,25 @@ export async function eachEvent(
     return err({ kind: "export", code: "not-found", sessionId: session });
   }
 
+  const reader = createStoredHistoryReader(
+    options,
+    (event) => event.correlation.sessionId === session,
+    true,
+  );
   let afterSequence: Sequence | null = null;
   let seen = 0;
   for (;;) {
     if (aborted(signal)) {
       return err(cancelled);
     }
-    const page = await options.events.readFrom(
-      { streamId: record.value.streamId, afterSequence },
-      MAX_STREAM_READ_LIMIT,
+    const page = await reader.page(
+      { streamId: record.value.streamId, afterSequence, limit: HISTORY_LIMITS.page, maxBytes: 0 },
       signal,
     );
-    if (!page.ok) {
-      // An event store failure is not a record failure, and folding the two
-      // would send someone looking at the wrong table.
-      return err({
-        kind: "export",
-        code: "storage",
-        error:
-          page.error.code === "storage"
-            ? page.error.error
-            : { kind: "sqlite-store", code: "closed", operation: "read", effect: "none" },
-      });
-    }
-    for (const event of page.value) {
+    if (!page.ok) return err({ kind: "export", code: "history", reason: page.code });
+    for (const item of page.items) {
+      const event = item.event;
+      if (!event) return err({ kind: "export", code: "not-found", sessionId: session });
       const visited = await visit(event);
       if (!visited.ok) {
         return err(visited.error);
@@ -507,7 +505,7 @@ export async function eachEvent(
       seen += 1;
       afterSequence = event.sequence;
     }
-    if (page.value.length < MAX_STREAM_READ_LIMIT) {
+    if (page.next === null) {
       return ok(seen);
     }
     if (seen > MAX_EXPORTED_EVENTS) {
@@ -539,7 +537,13 @@ function readSessionArtifacts(
   for (const row of rows.value) {
     const parsed = parseReachable(row);
     if (parsed !== null) {
-      artifacts.push(parsed);
+      const retired = historyArtifactRetirement(
+        options.store,
+        String(session),
+        String(parsed.artifactId),
+      );
+      if (!retired.ok) return err(storageError(retired.error));
+      artifacts.push(retired.value ? { ...parsed, availability: "missing" } : parsed);
     }
   }
   return ok(artifacts);

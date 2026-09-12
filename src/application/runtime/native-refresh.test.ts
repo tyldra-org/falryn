@@ -61,6 +61,7 @@ for (const delegated of [false, true])
     });
     const empty = mergeProductToolBundles(generation, []);
     const ports = {
+      historyArtifacts: fixture.artifacts,
       resources: createProductResources(fixture.clock),
       eventStore: fixture.events,
       clock: fixture.clock,

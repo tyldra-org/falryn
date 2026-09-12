@@ -1,5 +1,6 @@
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
 import type { ConfigurationValues } from "../../domain/configuration/index.ts";
+import type { SessionId } from "../../domain/foundation/index.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { productToolHost } from "./product-tool-host.ts";
 import { createProductSandbox } from "./sandbox-configuration.ts";
@@ -93,6 +94,10 @@ import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  readonly exportSession?: (
+    session: SessionId,
+    resources: import("../../application/orchestration/product-resources.ts").ProductResources,
+  ) => import("../../application/sessions/session-export.ts").SessionExportControl;
   readonly configurationValues?: () => ConfigurationValues;
   readonly sandboxConfiguration?: () =>
     | import("../../domain/configuration/index.ts").ConfigurationGenerationRecord
@@ -406,6 +411,7 @@ export async function composeProductShellAttachments(
           ]);
     const composed = compose({
       eventStore: ports.eventStore,
+      ...(ports.artifacts === undefined ? {} : { historyArtifacts: ports.artifacts }),
       clock: ports.clock,
       streamId: streamId.from(`live-turn:${String(sessionId)}`),
       correlation: {
@@ -489,6 +495,7 @@ export async function composeProductShellAttachments(
     return {
       extensionCatalog,
       sessionId,
+      resources: composed.value.resources,
       producer: composed.value.attachments.turnProducer,
       peer,
       executor,
@@ -536,7 +543,14 @@ export async function composeProductShellAttachments(
     for (const listener of peerListeners) listener(notice);
   };
   let unsubscribePeer: (() => void) | null = null;
+  const exportSession = ports.exportSession;
   const submission = {
+    ...(exportSession === undefined
+      ? {}
+      : {
+          exportSession: (argument: string | null, signal: AbortSignal) =>
+            exportSession(active.sessionId, active.resources)(argument, signal),
+        }),
     subscribePeer(
       listener: (notice: import("../../domain/orchestration/peer-mailbox.ts").PeerNotice) => void,
     ) {

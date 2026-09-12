@@ -165,6 +165,21 @@ export function renderSessionShow(
       `  Started      ${safe(entry.startedAt)}`,
       `  Closed       ${entry.closedAt === null ? "(open)" : safe(entry.closedAt)}`,
       ...historicalCatalogLines(payload.extensionCatalog),
+      ...(payload.history === undefined
+        ? []
+        : !payload.history.ok
+          ? ["  History unavailable"]
+          : [
+              ...payload.history.items.map(
+                (item) =>
+                  `  ${item.event?.sequence ?? "-"} ${safe(item.event?.kind ?? "withheld")} [${item.availability}]${item.text === null ? "" : ` ${safe(item.text)}`}`,
+              ),
+              ...(payload.history.next === null
+                ? []
+                : [
+                    `  More: falryn session show ${safe(entry.sessionId)} --workspace-id ${safe(payload.workspaceId)} --after-sequence ${payload.history.next}`,
+                  ]),
+            ]),
     ],
     diagnostics: [],
   };

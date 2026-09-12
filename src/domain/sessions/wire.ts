@@ -5,6 +5,7 @@ import {
   MAX_SANDBOX_RECEIPT_BYTES,
   sandboxReceiptSchema,
 } from "../security/sandbox.ts";
+import { historyPayloadSchema } from "./history.ts";
 /**
  * The JSON representation of a runtime event, and its Zod 4 schema.
  *
@@ -355,6 +356,7 @@ const capabilityInvocationCompletedPayloadSchema: z.ZodType<CapabilityInvocation
       )
       .optional(),
     composition: compositionProvenanceSchema.optional(),
+    historyId: z.string().min(1).max(256).optional(),
     observedStatus: z
       .enum([
         "completed",
@@ -415,6 +417,12 @@ const toolIdentity = {
  * checks before this schema runs.
  */
 const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind", [
+  z.object({
+    ...envelopeSpine,
+    kind: z.literal("history.recorded"),
+    correlation: turnCorrelationSchema,
+    payload: historyPayloadSchema,
+  }),
   z.object({
     ...envelopeSpine,
     kind: z.literal("session.started"),
@@ -559,6 +567,8 @@ function outcomeToJson(outcome: TerminalOutcome): Record<string, unknown> {
 
 function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
   switch (event.kind) {
+    case "history.recorded":
+      return { ...event.payload };
     case "session.started":
       return event.payload.extensionCatalog === undefined
         ? {}
@@ -594,6 +604,7 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
         outcome: outcomeToJson(event.payload.outcome),
         ...(event.payload.admission === undefined ? {} : { admission: event.payload.admission }),
         ...(event.payload.sandbox === undefined ? {} : { sandbox: event.payload.sandbox }),
+        ...(event.payload.historyId === undefined ? {} : { historyId: event.payload.historyId }),
         ...(event.payload.observedStatus === undefined
           ? {}
           : { observedStatus: event.payload.observedStatus }),

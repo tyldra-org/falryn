@@ -30,6 +30,15 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
     availability: () => AVAILABLE,
   },
   {
+    id: "session.export",
+    title: "Export session",
+    description: "Preview a versioned session package and its artifact omissions before writing.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["export", "history", "jsonl", "package"],
+    availability: () => AVAILABLE,
+  },
+  {
     id: "compression.show",
     title: "Compression controls",
     description: "Inspect and configure Brief, Hush, and Loom in one interactive panel.",

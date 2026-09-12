@@ -182,11 +182,14 @@ function guardResources(
     if (!target || target.workspaceId !== authority.workspaceId)
       return task.refusal("authority-denied");
     const permitted =
-      target.kind === "provider"
-        ? authority.providers.some((binding) => sameChildProvider(binding, target.binding))
-        : target.capabilityGeneration === authority.capabilityGeneration &&
-          authority.capabilities.includes(target.capabilityId) &&
-          authority.effects.includes(effect);
+      target.kind === "session-history"
+        ? effect === "observation" &&
+          target.configurationGeneration === authority.configurationGeneration
+        : target.kind === "provider"
+          ? authority.providers.some((binding) => sameChildProvider(binding, target.binding))
+          : target.capabilityGeneration === authority.capabilityGeneration &&
+            authority.capabilities.includes(target.capabilityId) &&
+            authority.effects.includes(effect);
     return permitted ? task.checkAuthority(target, effect) : task.refusal("authority-denied");
   };
   return {

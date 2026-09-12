@@ -52,6 +52,14 @@ const REDACTION_RULES: readonly { readonly pattern: RegExp; readonly replace: st
     replace: `$1: ${REDACTED}`,
   },
   { pattern: /\bbearer\s+[A-Za-z0-9._~+/-]{8,}=*/gi, replace: `bearer ${REDACTED}` },
+  // Quoted JSON properties occur in pasted prompts and streamed public text.
+  {
+    pattern: new RegExp(
+      `("[A-Za-z0-9_.-]*${SECRET_NAME_SOURCE}[A-Za-z0-9_.-]*"\\s*:\\s*)"(?:\\\\.|[^"\\\\])*"`,
+      "gi",
+    ),
+    replace: `$1"${REDACTED}"`,
+  },
   // Secret-ish assignments in any of the usual spellings.
   {
     pattern: new RegExp(

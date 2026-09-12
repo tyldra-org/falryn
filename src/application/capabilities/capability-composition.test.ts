@@ -313,7 +313,7 @@ describe("capability composition", () => {
     f.taskResources.tighten({ operations: 1 });
     const result = await f.compose().execute(f.graph(), signal());
     expect(result.status).not.toBe("completed");
-    expect(f.calls).toHaveLength(1);
+    expect(f.calls).toHaveLength(0); // The shared budget is exhausted by required history before a native effect.
     expect(f.taskResources.remaining("operations")).toBe(0);
   });
 

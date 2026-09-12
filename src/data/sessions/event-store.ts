@@ -1,3 +1,4 @@
+import { historyReferences } from "../../domain/sessions/history.ts";
 /**
  * The durable `EventStorePort`.
  *
@@ -75,7 +76,7 @@ export const EVENT_STORE_PARTICIPANT_NAME = "event-store";
 const SELECT_LAST_SEQUENCE = `SELECT COALESCE(MAX(sequence), 0) AS lastSequence
   FROM ${EVENTS_TABLE} WHERE stream_id = $streamId`;
 
-const SELECT_BY_IDEMPOTENCY_KEY = `SELECT event_id AS eventId, sequence AS sequence
+const SELECT_BY_IDEMPOTENCY_KEY = `SELECT event_id AS eventId, sequence AS sequence, kind AS kind, payload AS payload
   FROM ${EVENTS_TABLE} WHERE stream_id = $streamId AND idempotency_key = $idempotencyKey`;
 
 const SELECT_EVENT_ID = `SELECT event_id AS eventId
@@ -280,7 +281,12 @@ function resolveAppend(
     if (!recordedEventId.ok || !recordedSequence.ok) {
       return { kind: "malformed-row", ...malformedRow("events.event_id") };
     }
-    if (recordedEventId.value !== event.eventId) {
+    if (
+      recordedEventId.value !== event.eventId ||
+      ((event.kind === "history.recorded" || recorded.kind === "history.recorded") &&
+        (recorded.kind !== event.kind ||
+          recorded.payload !== JSON.stringify(toStoredEvent(event).payload)))
+    ) {
       // The key was used before by a different event. Reusing it is a producer
       // defect, and overwriting silently would lose one of the two facts.
       return {
@@ -343,6 +349,23 @@ function resolveAppend(
     };
   }
 
+  for (const evidence of event.kind === "history.recorded"
+    ? historyReferences(event.payload)
+    : []) {
+    const artifact = statements.all(
+      "SELECT digest, byte_length AS byteLength, availability FROM artifacts WHERE artifact_id = $id",
+      { id: evidence.artifactId },
+    )[0];
+    if (
+      artifact?.availability !== "available" ||
+      artifact.digest !== evidence.digest ||
+      integerOf(artifact.byteLength) !== evidence.byteLength
+    )
+      return {
+        kind: "malformed-row",
+        ...malformedRow("history.evidence.artifact-reference-unavailable"),
+      };
+  }
   const stored = toStoredEvent(event);
   if (projectRecords) {
     projectStartedRecord(statements, event);
@@ -458,6 +481,43 @@ export function createSqliteEventStore(
   }
 
   return {
+    historyRetirement(stream, restorePointId) {
+      const rows = store.read(
+        `SELECT sequence, json_extract(payload, '$.payload.version') AS version, json_extract(payload, '$.payload.restorePointVersion') AS restoreVersion, json_extract(payload, '$.payload.stage') AS stage FROM events WHERE stream_id = $stream AND kind = 'history.recorded' AND json_extract(payload, '$.payload.restorePointId') = $restorePointId AND json_extract(payload, '$.payload.stage') IN ('expired', 'deleted') ORDER BY sequence DESC LIMIT 1`,
+        { stream, restorePointId },
+      );
+      if (!rows.ok) return err(eventStoreErrorFor(rows.error));
+      const row = rows.value[0];
+      if (!row) return ok(null);
+      const seq = sequence.parse(row.sequence);
+      if (
+        !seq.ok ||
+        row.version !== 1 ||
+        row.restoreVersion !== 1 ||
+        (row.stage !== "expired" && row.stage !== "deleted")
+      )
+        return err({
+          code: "codec",
+          error: {
+            kind: "invalid-envelope",
+            issues: [{ path: "history.retirement", code: "custom" }],
+          },
+        });
+      return ok({ reason: row.stage, sequence: seq.value });
+    },
+    head(stream) {
+      const rows = store.read(SELECT_LAST_SEQUENCE, { streamId: stream });
+      if (!rows.ok) return err(eventStoreErrorFor(rows.error));
+      const value = integerOf(rows.value[0]?.lastSequence);
+      if (value === 0) return ok(null);
+      const parsed = sequence.parse(value);
+      return parsed.ok
+        ? ok(parsed.value)
+        : err({
+            code: "codec",
+            error: { kind: "invalid-envelope", issues: [{ path: "sequence", code: "custom" }] },
+          });
+    },
     async append(
       event: RuntimeEvent,
       signal?: AbortSignal,

@@ -1,3 +1,4 @@
+import { sessionExportControl } from "./commands/session-export-control.ts";
 import { runTaskCommitPlan } from "./commands/task-commit-plan-commands.ts";
 import { createProductSandbox } from "./runtime/sandbox-configuration.ts";
 /**
@@ -516,6 +517,8 @@ async function launchShell(
         try {
           if (productArtifactSession !== null) {
             productAttachments = await composeProductShellAttachments({
+              exportSession: (session, resources) =>
+                sessionExportControl(() => graph, session, resources),
               configurationValues: () => graph.loader.current()?.values ?? configuration,
               sandboxConfiguration: () => graph.loader.current(),
               async resolveAgentProvider(profileId, signal) {

@@ -275,3 +275,34 @@ test("idle parents do not hold runnable slots and nested work debits the origina
   expect(parent.admit(request("late"))).toEqual({ kind: "refused", reason: "stale-parent" });
   s.root.close();
 });
+
+test("read-only children budget internal history without gaining workspace mutation authority", async () => {
+  const s = setup();
+  const child = admitted(
+    s.admission.admit(
+      request("history", { ...authority, capabilities: [], effects: ["observation"] }),
+    ),
+  );
+  const target: ChildWorkTarget = {
+    kind: "session-history",
+    workspaceId: "workspace",
+    configurationGeneration: "1",
+  };
+  expect((await child.resources.execute(work("journal", target))).kind).toBe("completed");
+  expect(s.root.remaining("requests")).toBe(2);
+  expect(
+    (await child.resources.execute(work("foreign", { ...target, workspaceId: "other" }))).receipt
+      .state,
+  ).toBe("authority-denied");
+  expect(
+    (await child.resources.execute(work("stale", { ...target, configurationGeneration: "2" })))
+      .receipt.state,
+  ).toBe("authority-denied");
+  const mutation = work("mutation", target);
+  expect(
+    (await child.resources.execute({ ...mutation, unit: { ...mutation.unit, effect: "mutation" } }))
+      .receipt.state,
+  ).toBe("authority-denied");
+  child.close();
+  s.root.close();
+});

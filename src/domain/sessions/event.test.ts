@@ -28,6 +28,7 @@ function carriesTurnIdentity(event: RuntimeEvent): boolean {
     case "workflow.changed":
     case "execution.profile.selected":
       return false;
+    case "history.recorded":
     case "turn.started":
     case "turn.completed":
     case "model.attempt.started":

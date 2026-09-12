@@ -724,6 +724,7 @@ export async function runCoding(
     const composed = composeDelegatedAgentRuntime(
       {
         eventStore: productArtifactSession.eventStore,
+        historyArtifacts: options.artifacts ?? productArtifactSession.artifacts,
         clock: graph.clock,
         streamId: streamId.from(`live-turn:${String(sessionId)}`),
         correlation: {

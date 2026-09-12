@@ -192,6 +192,7 @@ async function run(
   const repository = createMailboxRepository(f.database);
   const composed = composeDelegatedAgentRuntime(
     {
+      historyArtifacts: f.artifacts,
       eventStore: f.events,
       clock: f.clock,
       resources,

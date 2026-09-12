@@ -1,3 +1,7 @@
+import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
+import { sequence } from "../../domain/foundation/index.ts";
+import { HISTORY_LIMITS } from "../../domain/sessions/history.ts";
+import { createHistoryReader } from "./history-reader.ts";
 /**
  * Live session/turn/transcript producer (#706).
  *
@@ -43,6 +47,7 @@ import type { PersistTurnEventsOutcome, TurnEventJournal } from "../runtime/turn
 import type { SessionRuntime, SessionRuntimeError } from "./session-runtime.ts";
 
 export type SessionTurnTranscriptProducerOptions = {
+  readonly artifacts?: ArtifactStorePort;
   readonly eventStore: EventStorePort;
   readonly journal: TurnEventJournal;
   readonly sessionRuntime: SessionRuntime;
@@ -96,7 +101,12 @@ export type ProducerResult<Value> =
 export type SessionTurnTranscriptProducer = {
   readonly streamId: StreamId;
   readonly correlation: SessionCorrelation;
-  /** Ordered runtime events appended so far on this product stream. */
+  /** Most recent bounded window; older facts remain available through readHistory. */
+  readHistory(
+    afterSequence: Sequence | null,
+    signal?: AbortSignal,
+  ): ReturnType<ReturnType<typeof createHistoryReader>["page"]>;
+  historyWindow(): { readonly firstSequence: Sequence | null; readonly hasEarlier: boolean };
   events(): readonly RuntimeEvent[];
   /** Notify listeners when new events are available (after persist). */
   subscribe(listener: () => void): () => void;
@@ -140,6 +150,11 @@ export function createSessionTurnTranscriptProducer(
   const listeners = new Set<() => void>();
   let cached: RuntimeEvent[] = [];
   let knownEventIds = new Set<string>();
+  const history = createHistoryReader({
+    events: options.eventStore,
+    ...(options.artifacts ? { artifacts: options.artifacts } : {}),
+    authorize: (event) => event.correlation.sessionId === options.correlation.sessionId,
+  });
 
   function notify(): void {
     for (const listener of listeners) {
@@ -155,7 +170,8 @@ export function createSessionTurnTranscriptProducer(
     for (const event of committed) {
       knownEventIds.add(String(event.eventId));
     }
-    cached = [...cached, ...committed];
+    cached = [...cached, ...committed].slice(-HISTORY_LIMITS.page);
+    knownEventIds = new Set(cached.map((event) => String(event.eventId)));
     notify();
   });
 
@@ -173,6 +189,12 @@ export function createSessionTurnTranscriptProducer(
     streamId: options.streamId,
     correlation: options.correlation,
     events: () => cached,
+    readHistory: (afterSequence, signal) =>
+      history.page({ streamId: options.streamId, afterSequence }, signal),
+    historyWindow: () => ({
+      firstSequence: cached[0]?.sequence ?? null,
+      hasEarlier: (cached[0]?.sequence ?? 1) > 1,
+    }),
     subscribe(listener) {
       listeners.add(listener);
       return () => {
@@ -181,7 +203,13 @@ export function createSessionTurnTranscriptProducer(
     },
     async refreshFromStore() {
       const events: RuntimeEvent[] = [];
-      let afterSequence: Sequence | null = null;
+      const head = options.eventStore.head?.(options.streamId);
+      if (head && !head.ok)
+        return { ok: false, error: { code: "store-error", message: head.error.code } };
+      let afterSequence: Sequence | null =
+        head?.ok && head.value !== null && head.value > HISTORY_LIMITS.page
+          ? sequence.from(head.value - HISTORY_LIMITS.page)
+          : null;
       for (;;) {
         const page = await options.eventStore.readFrom(
           { streamId: options.streamId, afterSequence },
@@ -194,6 +222,8 @@ export function createSessionTurnTranscriptProducer(
           };
         }
         events.push(...page.value);
+        if (events.length > HISTORY_LIMITS.page)
+          events.splice(0, events.length - HISTORY_LIMITS.page);
         const tail = page.value.at(-1);
         if (tail === undefined || page.value.length < MAX_STREAM_READ_LIMIT) {
           break;

@@ -278,11 +278,19 @@ describe("createProductToolGateway", () => {
     const replay = await journal.replay();
     expect(replay.kind === "rebuilt" || replay.kind === "partial").toBe(true);
     if (replay.kind === "rebuilt" || replay.kind === "partial") {
-      expect(replay.events.map((event) => event.kind)).toEqual([
-        "capability.invocation.started",
-        "capability.invocation.completed",
-      ]);
-      const started = replay.events[0];
+      expect(
+        replay.events
+          .filter((event) => event.kind !== "history.recorded")
+          .map((event) => event.kind),
+      ).toEqual(["capability.invocation.started", "capability.invocation.completed"]);
+      expect(
+        replay.events.flatMap((event) =>
+          event.kind === "history.recorded" && event.payload.type === "gate"
+            ? [event.payload.stage]
+            : [],
+        ),
+      ).toEqual(["validation", "policy", "pre-hook", "schedule", "post-hook"]);
+      const started = replay.events.find((event) => event.kind === "capability.invocation.started");
       expect(started?.kind === "capability.invocation.started" ? started.payload : null).toEqual({
         capabilityVersion: entry.manifest.version,
         inputDigest: expect.stringMatching(/^[0-9a-f]{64}$/),

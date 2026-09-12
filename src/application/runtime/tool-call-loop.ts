@@ -69,6 +69,7 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
         input.configurationGeneration,
       );
       if (!beginExecute.ok) {
+        await options.onRefusedProposals?.(proposals, "turn-not-executable");
         return {
           kind: "turn-error",
           error: beginExecute.error,
@@ -80,6 +81,10 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
 
       while (true) {
         if (input.signal.aborted) {
+          await options.onRefusedProposals?.(
+            proposals,
+            abortAs() === "timeout" ? "timed-out" : "cancelled",
+          );
           return settleAbort({
             coordinator,
             turnId: input.turnId,
@@ -93,6 +98,7 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
         }
 
         if (iteration >= limits.maxIterations) {
+          await options.onRefusedProposals?.(proposals, "max-iterations");
           return {
             kind: "bound-exceeded",
             bound: "max-iterations",
@@ -108,6 +114,7 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
 
         const repeated = proposals.find((proposal) => seenToolCallIds.has(proposal.toolCallId));
         if (repeated !== undefined) {
+          await options.onRefusedProposals?.(proposals, "duplicate-tool-call-id");
           return settleBindFailure({
             coordinator,
             turnId: input.turnId,
@@ -132,6 +139,7 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
         });
 
         if (!bound.ok) {
+          await options.onRefusedProposals?.(proposals, bound.error.code);
           return settleBindFailure({
             coordinator,
             turnId: input.turnId,
@@ -234,6 +242,10 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
         });
 
         if (input.signal.aborted) {
+          await options.onRefusedProposals?.(
+            proposals,
+            abortAs() === "timeout" ? "timed-out" : "cancelled",
+          );
           return settleAbort({
             coordinator,
             turnId: input.turnId,

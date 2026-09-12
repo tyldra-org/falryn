@@ -99,6 +99,7 @@ export async function executeWorkflowModel(options: {
       toolRunner: tools.runner,
       capabilityRegistry: tools.capabilityRegistry,
       eventStore: ports.eventStore,
+      historyArtifacts: options.artifacts,
       clock: ports.clock,
       providerAdapter: provider.adapter,
       streamId: streamId.from(String(childSession)),

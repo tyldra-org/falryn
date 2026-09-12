@@ -142,6 +142,7 @@ async function seedExportedPackage(): Promise<{
   });
   await events.append({
     ...sessionStarted(1),
+    correlation: { ...sessionStarted(1).correlation, sessionId: SESSION },
     streamId: `stream-${SESSION}` as never,
   });
 

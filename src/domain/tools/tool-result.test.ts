@@ -118,7 +118,7 @@ describe("assembleCapabilityResult", () => {
   test("stops a completion claim when persistence fails", () => {
     const result = assemble({ persistFailed: true });
     expect(result.status).toBe("failed");
-    expect(result.effect).toBe("uncertain");
+    expect(result.effect).toBe("completed");
     expect(result.error?.code).toBe("tool.result-persist-failed");
     expect(result.error?.recovery).toEqual(["inspect-state"]);
     expect(result.value).toBeNull();

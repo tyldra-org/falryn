@@ -74,6 +74,7 @@ export type ArtifactCommandArguments =
     }
   | {
       readonly action: "show";
+      readonly afterSequence?: number | null;
       readonly artifactId: ArtifactId;
     }
   | {
@@ -97,6 +98,7 @@ export type SessionCommandArguments =
     }
   | {
       readonly action: "show";
+      readonly afterSequence?: number | null;
       readonly workspaceId: WorkspaceId;
       readonly sessionId: SessionId;
     }
@@ -141,6 +143,7 @@ export type WorkspaceCommandArguments =
     }
   | {
       readonly action: "show";
+      readonly afterSequence?: number | null;
     }
   | {
       readonly action: "save";

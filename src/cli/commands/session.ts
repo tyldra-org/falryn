@@ -1,3 +1,4 @@
+import { createHistoryReader } from "../../application/sessions/history-reader.ts";
 /** Session catalog command family. */
 
 import {
@@ -11,9 +12,9 @@ import {
   isolateWorkspaceSessions,
   queryWorkspaceSessions,
 } from "../../application/sessions/index.ts";
-import { createRecordRepositories } from "../../data/index.ts";
+import { createRecordRepositories, createSqliteEventStore } from "../../data/index.ts";
 import type { CatalogHistory } from "../../domain/extensions/catalog-history.ts";
-import type { FalrynError } from "../../domain/foundation/index.ts";
+import { type FalrynError, sequence } from "../../domain/foundation/index.ts";
 import {
   MAX_SESSION_CATALOG,
   type RecordError,
@@ -26,7 +27,7 @@ import type { SessionCommandArguments } from "../command-tree.ts";
 import type { CommandResultOf, CommandTruncation, CommandWarning } from "../output/result.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import { resultFor, workspaceResolveError } from "./shared.ts";
-import { openSessionStore } from "./storage.ts";
+import { openArtifactStore, openSessionStore } from "./storage.ts";
 
 export type SessionListPayload = {
   readonly workspaceId: string;
@@ -38,6 +39,7 @@ export type SessionListPayload = {
 };
 
 export type SessionShowPayload = {
+  readonly history?: Awaited<ReturnType<ReturnType<typeof createHistoryReader>["page"]>>;
   readonly extensionCatalog?: CatalogHistory;
   readonly workspaceId: string;
   readonly session: SessionCatalogEntry;
@@ -172,7 +174,7 @@ async function sessionShowThroughStore(
   arguments_: Extract<SessionCommandArguments, { action: "show" }>,
   signal: AbortSignal | undefined,
 ): Promise<CommandResultOf<"session.show", SessionShowPayload>> {
-  const opened = await openSessionStore(services, signal);
+  const opened = await openArtifactStore(services, signal);
   if (!opened.ok) {
     return resultFor<"session.show", SessionShowPayload>("session.show", null, opened.errors);
   }
@@ -202,8 +204,39 @@ async function sessionShowThroughStore(
     }
     const record = createRecordRepositories(opened.store).sessions.get(arguments_.sessionId);
     if (!record.ok) return sessionShowFailure(record.error);
+    const history =
+      record.value === null
+        ? undefined
+        : await createHistoryReader({
+            events: createSqliteEventStore(opened.store),
+            artifacts: opened.artifacts,
+            authorize(event, artifact) {
+              const current = createRecordRepositories(opened.store).sessions.get(
+                arguments_.sessionId,
+              );
+              return (
+                current.ok &&
+                current.value !== null &&
+                current.value.workspaceId === arguments_.workspaceId &&
+                event.correlation.sessionId === arguments_.sessionId &&
+                event.correlation.workspaceId === arguments_.workspaceId &&
+                (artifact === null ||
+                  artifact.sensitivity === "public" ||
+                  artifact.sensitivity === "user-content")
+              );
+            },
+          }).page(
+            {
+              streamId: record.value.streamId,
+              afterSequence: arguments_.afterSequence
+                ? sequence.from(arguments_.afterSequence)
+                : null,
+            },
+            signal,
+          );
     return {
       ...resultFor("session.show", {
+        ...(history === undefined ? {} : { history }),
         ...(record.value?.extensionCatalog === undefined
           ? {}
           : { extensionCatalog: record.value.extensionCatalog }),

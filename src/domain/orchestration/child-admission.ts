@@ -28,6 +28,11 @@ export const childAuthoritySchema = z
 export type ChildAuthority = Readonly<z.infer<typeof childAuthoritySchema>>;
 export type ChildWorkTarget =
   | {
+      readonly kind: "session-history";
+      readonly workspaceId: string;
+      readonly configurationGeneration: string;
+    }
+  | {
       readonly kind: "provider";
       readonly workspaceId: string;
       readonly binding: ChildProviderBinding;

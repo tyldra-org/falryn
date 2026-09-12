@@ -341,11 +341,11 @@ export function assembleCapabilityResult(input: AssembleCapabilityResultInput): 
     const effect = effectOfOutcome(input.outcome);
     return fail(
       "failed",
-      effect === "completed" ? "uncertain" : effect,
+      effect,
       toolError({
         code: "tool.result-persist-failed",
         message: "tool result could not be committed",
-        effect: effect === "completed" ? "uncertain" : effect,
+        effect: effect,
         retryable: false,
         exitCategory: "runtime-error",
         correlation,

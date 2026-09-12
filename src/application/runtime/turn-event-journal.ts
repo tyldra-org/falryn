@@ -157,6 +157,12 @@ export function createTurnEventJournal(options: TurnEventJournalOptions): TurnEv
       return { ok: true, next };
     }
 
+    if (options.eventStore.head) {
+      const head = options.eventStore.head(options.streamId);
+      if (!head.ok) return { ok: false, error: head.error };
+      next = head.value === null ? FIRST_SEQUENCE : nextSequence(head.value);
+      return { ok: true, next };
+    }
     let afterSequence: Sequence | null = null;
     let last: Sequence | null = null;
     for (;;) {
