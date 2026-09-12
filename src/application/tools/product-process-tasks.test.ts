@@ -114,9 +114,17 @@ describe("process tasks through the product gateway", () => {
         attemptId: "attempt-launch",
         effectLedger: new Map(),
       });
+      const controlFailures: unknown[] = [];
       const controls = createProductToolGateway({
         ...base,
-        taskResources: controlParent,
+        taskResources: {
+          ...controlParent,
+          async execute(work) {
+            const result = await controlParent.execute(work);
+            if (result.kind !== "completed") controlFailures.push(result);
+            return result;
+          },
+        },
         attemptId: "attempt-control",
         effectLedger: new Map(),
       });
@@ -159,7 +167,13 @@ describe("process tasks through the product gateway", () => {
         parent.close();
         expect(resources.report().scheduler.running).toBe(1);
         const inspected = processTaskReceiptSchema.parse(
-          projected(await control({ ...initial.handle, operation: "inspect" })),
+          projected(
+            await control({ ...initial.handle, operation: "inspect" }).then((result) => {
+              if (result.status !== "completed")
+                throw new Error(JSON.stringify({ result, controlFailures }));
+              return result;
+            }),
+          ),
         );
         expect(inspected.state).toBe("running");
         expect(resources.report().scheduler.running).toBe(1);

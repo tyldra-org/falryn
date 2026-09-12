@@ -1010,7 +1010,14 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     ) {
       request.captureExactOutput?.(enveloped.result.value);
     }
-    const projection = { ...enveloped.projection, history: captured.evidence };
+    const { text: _inlineText, ...evidence } =
+      captured.evidence.availability === "inline"
+        ? captured.evidence
+        : { ...captured.evidence, text: undefined };
+    const projection = {
+      ...enveloped.projection,
+      history: { ...evidence, id: `${request.invocationId}:exact-result` },
+    };
     const projected = projectedOutcome(
       enveloped.result.status,
       enveloped.result.effect,
