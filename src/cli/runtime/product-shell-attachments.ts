@@ -327,6 +327,7 @@ export async function composeProductShellAttachments(
         ? null
         : composeProductMemoryTools({
             generation,
+            workspaceId: String(workspaceId),
             ...(ports.memoryRecords === undefined ? {} : { records: ports.memoryRecords }),
           });
     const peer =

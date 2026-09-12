@@ -28,6 +28,7 @@ describe("composeProductMemoryTools", () => {
   test("registers admit and recall tools", () => {
     const tools = composeProductMemoryTools({
       generation: configurationGeneration.from(0),
+      workspaceId: "workspace-1",
     });
     expect(tools.owner).toBe(PRODUCT_MEMORY_TOOLS_OWNER);
     expect(tools.toolNames).toEqual(["memory_admit", "memory_recall"]);
@@ -36,6 +37,7 @@ describe("composeProductMemoryTools", () => {
   test("publishes closed model-boundary schemas for admit and recall", () => {
     const tools = composeProductMemoryTools({
       generation: configurationGeneration.from(0),
+      workspaceId: "workspace-1",
     });
     const schema = (name: string) => {
       const entry = tools.registry.resolveByName(name);
@@ -48,83 +50,18 @@ describe("composeProductMemoryTools", () => {
     expect(isClosedProductToolSchema(z.toJSONSchema(admit))).toBe(true);
     expect(isClosedProductToolSchema(z.toJSONSchema(recall))).toBe(true);
 
-    expect(
-      admit.safeParse({
-        record,
-        context: {
-          sourceKind: "user",
-          sourceTrust: "user-confirmed",
-          workspaceId: "workspace-1",
-        },
-      }).success,
-    ).toBe(true);
-    expect(
-      admit.safeParse({
-        record: { ...record, scope: { kind: "repository", workspaceId: "w", locator: "r" } },
-        context: {
-          sourceKind: "reflection",
-          sourceTrust: "inferred",
-          workspaceId: "workspace-1",
-        },
-      }).success,
-    ).toBe(true);
-    expect(admit.safeParse({ record }).success).toBe(false);
-    expect(
-      admit.safeParse({
-        record: { ...record, provenance: [] },
-        context: {
-          sourceKind: "user",
-          sourceTrust: "user-confirmed",
-          workspaceId: "workspace-1",
-        },
-      }).success,
-    ).toBe(false);
-    expect(
-      admit.safeParse({
-        record: { ...record, confidence: 200 },
-        context: {
-          sourceKind: "user",
-          sourceTrust: "user-confirmed",
-          workspaceId: "workspace-1",
-        },
-      }).success,
-    ).toBe(false);
-    expect(
-      admit.safeParse({
-        record: { ...record, scope: { kind: "repository", workspaceId: "w" } },
-        context: {
-          sourceKind: "user",
-          sourceTrust: "user-confirmed",
-          workspaceId: "workspace-1",
-        },
-      }).success,
-    ).toBe(false);
-    expect(
-      admit.safeParse({
-        record,
-        context: {
-          sourceKind: "user",
-          sourceTrust: "user-confirmed",
-          workspaceId: "workspace-1",
-        },
-        signal: "x",
-      }).success,
-    ).toBe(false);
-
-    expect(recall.safeParse({ workspaceId: "workspace-1" }).success).toBe(true);
-    expect(recall.safeParse({ workspaceId: "workspace-1", query: null }).success).toBe(true);
-    expect(
-      recall.safeParse({
-        workspaceId: "workspace-1",
-        destination: "sensitive",
-        maxResults: 4,
-      }).success,
-    ).toBe(true);
-    expect(recall.safeParse({}).success).toBe(false);
-    expect(recall.safeParse({ workspaceId: "workspace-1", maxResults: 0 }).success).toBe(false);
-    expect(recall.safeParse({ workspaceId: "workspace-1", destination: "secret" }).success).toBe(
+    expect(admit.safeParse({ record }).success).toBe(true);
+    expect(admit.safeParse({ record, context: { sourceTrust: "user-confirmed" } }).success).toBe(
       false,
     );
+    expect(admit.safeParse({ record: { ...record, confidence: 200 } }).success).toBe(false);
+    expect(admit.safeParse({ record: { ...record, provenance: [] } }).success).toBe(false);
+    expect(recall.safeParse({}).success).toBe(true);
+    expect(recall.safeParse({ query: null, maxResults: 4 }).success).toBe(true);
+    expect(recall.safeParse({ workspaceId: "other" }).success).toBe(false);
+    expect(recall.safeParse({ destination: "sensitive" }).success).toBe(false);
+    expect(recall.safeParse({ now: "2000-01-01" }).success).toBe(false);
+    expect(recall.safeParse({ maxResults: 0 }).success).toBe(false);
   });
 });
 
@@ -132,6 +69,7 @@ describe("composeProductMemoryTurn", () => {
   test("recalls before the prompt and admits only after a completed terminal turn", () => {
     const tools = composeProductMemoryTools({
       generation: configurationGeneration.from(0),
+      workspaceId: "workspace-1",
     });
     const turn = composeProductMemoryTurn({
       admission: tools.admission,

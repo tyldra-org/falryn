@@ -20,6 +20,7 @@ import {
   type ProviderContinuationStateKey,
 } from "../../providers/protocol/continuation-state.ts";
 import type { ProviderFailure } from "../../providers/protocol/errors.ts";
+import { MAX_TOOL_ARGUMENT_FRAGMENT_LENGTH } from "../../providers/protocol/limits.ts";
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../../providers/protocol/port.ts";
 import type { ModelRequest } from "../../providers/protocol/request.ts";
 import type { NormalizedProviderEvent, UsageUnits } from "../../providers/protocol/stream.ts";
@@ -37,9 +38,11 @@ import type {
 import {
   classifySdkError,
   failure,
+  OpenAiResponsesInputError,
   responseFailure,
 } from "./openai-responses-sdk-adapter/errors.ts";
 import { assistantToolCallIds, responseBody } from "./openai-responses-sdk-adapter/requests.ts";
+import { responsesToolSchema } from "./openai-responses-sdk-adapter/tool-schema.ts";
 import { providerDestinationId } from "./provider-destination.ts";
 import {
   resolveProviderTransportCompatibilityPlan,
@@ -272,6 +275,33 @@ export function createOpenAiResponsesSdkAdapter(
         return;
       }
 
+      const codecs = new Map(
+        compatibility.strictToolSchemas
+          ? request.tools.map((tool) => [tool.name, responsesToolSchema(tool.parameters)] as const)
+          : [],
+      );
+      const checkArguments = (json: string): void => {
+        if (json.length > MAX_TOOL_ARGUMENT_FRAGMENT_LENGTH) {
+          throw new OpenAiResponsesInputError(
+            "invalid-request",
+            "Tool arguments exceed the supported bound.",
+          );
+        }
+      };
+      const nativeArguments = (name: string, json: string): string => {
+        checkArguments(json);
+        if (!compatibility.strictToolSchemas) return json;
+        const codec = codecs.get(name);
+        if (!codec) return json;
+        let value: unknown;
+        try {
+          value = JSON.parse(json);
+        } catch {
+          return json;
+        }
+        return JSON.stringify(codec.decode(value));
+      };
+
       const toolCalls = new Map<string, ToolCallState>();
       const toolCallItems = new Map<string, string>();
       const reasoning: ResponseReasoningItem[] = [];
@@ -407,6 +437,7 @@ export function createOpenAiResponsesSdkAdapter(
               if (!state.seenAdded || state.argumentsDone || state.outputDone) {
                 malformedToolIdentity = true;
               }
+              checkArguments(state.arguments + event.delta);
               state.arguments += event.delta;
               if (state.callId !== null) {
                 state.emittedArguments += event.delta;
@@ -417,7 +448,7 @@ export function createOpenAiResponsesSdkAdapter(
                   sequence: next(),
                   toolCallId: state.callId,
                   ...(state.name === null ? {} : { name: state.name }),
-                  argumentsFragment: event.delta,
+                  argumentsFragment: compatibility.strictToolSchemas ? "" : event.delta,
                 };
               }
               break;
@@ -442,7 +473,7 @@ export function createOpenAiResponsesSdkAdapter(
                     sequence: next(),
                     toolCallId: state.callId,
                     name: event.name,
-                    argumentsFragment: event.arguments,
+                    argumentsFragment: nativeArguments(event.name, event.arguments),
                   };
                 }
                 yield {
@@ -452,7 +483,7 @@ export function createOpenAiResponsesSdkAdapter(
                   sequence: next(),
                   toolCallId: state.callId,
                   name: event.name,
-                  argumentsJson: event.arguments,
+                  argumentsJson: nativeArguments(event.name, event.arguments),
                 };
                 state.proposed = true;
               }
@@ -488,7 +519,7 @@ export function createOpenAiResponsesSdkAdapter(
                       sequence: next(),
                       toolCallId: item.call_id,
                       name: item.name,
-                      argumentsFragment: item.arguments,
+                      argumentsFragment: nativeArguments(item.name, item.arguments),
                     };
                   }
                   yield {
@@ -498,7 +529,7 @@ export function createOpenAiResponsesSdkAdapter(
                     sequence: next(),
                     toolCallId: item.call_id,
                     name: item.name,
-                    argumentsJson: item.arguments,
+                    argumentsJson: nativeArguments(item.name, item.arguments),
                   };
                   state.proposed = true;
                 }

@@ -186,7 +186,6 @@ const searchTextInput = z
     context: z.int().min(0).max(MAX_SEARCH_CONTEXT).optional(),
     timeoutMs: z.int().min(1).max(60_000).optional(),
     maxFileBytes: z.int().min(1).max(DEFAULT_SEARCH_FILE_BYTES).optional(),
-    ripgrepExecutable: z.string().min(1).optional(),
   })
   .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
 
@@ -315,6 +314,8 @@ export type ProductWorkspaceToolPorts = {
   readonly generation: ConfigurationGeneration;
   readonly fileSystem: FileSystemPort;
   readonly commands: CommandRunnerPort;
+  /** Qualified executable chosen by the host, never by model arguments. */
+  readonly ripgrepExecutable?: LocalPath;
   readonly workspaceRoot: LocalPath;
   readonly artifacts?: ArtifactStorePort;
   readonly loom?: LoomPort;
@@ -659,7 +660,11 @@ export function composeProductWorkspaceTools(
             : failed(errorCode(result.error));
         }
         case "search_text": {
-          const result = await search.search(root, request.input, request.signal);
+          const result = await search.search(
+            root,
+            { ...request.input, ripgrepExecutable: ports.ripgrepExecutable },
+            request.signal,
+          );
           return result.ok
             ? completed({
                 ...result.value,

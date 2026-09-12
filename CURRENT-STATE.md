@@ -832,6 +832,22 @@ generations. Permission changes remain owned by settings rather than the
 inspector. General catalog commands, external-host transport, and slash-command
 parsing and completion for these actions are not claimed here.
 
+Search tool arguments cannot choose an executable. Product composition may supply
+one qualified ripgrep path; otherwise search uses the bounded filesystem reader.
+Explicit memory recall binds workspace and destination sensitivity from the host.
+Model-supplied scope, clock and trust overrides are rejected. Model-authored
+admission candidates remain inferred and pass the existing admission policy;
+they cannot label themselves user-confirmed. Automatic user-request admission
+continues through its existing turn owner.
+
+Responses strict function schemas now represent optional fields with nullable
+wire slots and wrap root variants in an `input` object. Optional fields that
+also accept literal null use a `value` envelope to distinguish null from omission.
+The SDK decodes these representations before native tool assembly and re-encodes
+retained calls during continuation. Native runtime validation and exact patch
+preconditions still apply. SDK fixtures verify these contracts; no live-provider
+qualification is implied by those fixtures.
+
 The provider request contains only the disclosed tool definitions and bounded
 compact capability cards, not the whole registered catalog or implementation
 bodies. Before each provider request, the product runtime now derives one

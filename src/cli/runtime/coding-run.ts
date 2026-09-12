@@ -661,6 +661,7 @@ export async function runCoding(
     });
     const memoryTools = composeProductMemoryTools({
       generation,
+      workspaceId: String(workspaceId),
       records: productArtifactSession.memoryRecords,
     });
     const peer = await productArtifactSession.peers.open(
