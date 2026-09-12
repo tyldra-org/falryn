@@ -72,7 +72,13 @@ export type ProductToolConfirmationPort = {
   ): Promise<ProductToolConfirmationResult>;
 };
 
-export type ProductToolEffectLedger = Map<string, ToolInvocationOutcome>;
+export type ProductToolEffectLedger = Map<
+  string,
+  {
+    readonly fingerprint: string;
+    readonly outcome: Promise<ToolInvocationOutcome>;
+  }
+>;
 
 export type ProductToolGatewayOptions = {
   readonly historyArtifacts?: ArtifactStorePort;
@@ -115,24 +121,6 @@ function terminalOutcome(outcome: ToolInvocationOutcome): TerminalOutcome {
     case "unavailable":
     case "malformed":
       return { kind: "failed", effect: "none" };
-  }
-}
-
-function effectOf(outcome: ToolInvocationOutcome): EffectCertainty {
-  switch (outcome.status) {
-    case "completed":
-      return "completed";
-    case "failed":
-    case "cancelled":
-    case "timed-out":
-    case "partial":
-      return outcome.effect;
-    case "uncertain":
-      return "uncertain";
-    case "denied":
-    case "unavailable":
-    case "malformed":
-      return "none";
   }
 }
 
@@ -289,70 +277,150 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
 
   return {
     async execute(request) {
-      const task = options.taskResources ?? resources.openTask(String(options.registry.generation));
-      try {
-        const recorded = await history.record(
-          options.turnId,
-          {
-            version: 1,
-            type: "proposal",
-            stage: "bound",
-            inputDigest: historyDigest(JSON.stringify(request.input)),
-            id: `${request.invocationId}:proposed`,
-            generation: Number(options.registry.generation),
-            attemptId: options.attemptId ?? String(options.turnId),
-            proposalId: request.toolCallId,
-            invocationId: String(request.invocationId),
-            name: request.toolName,
-            catalogGeneration: Number(options.registry.generation),
-            policyGeneration: Number(options.correlation.configurationGeneration),
-            disclosureDigest: historyDigest(JSON.stringify([...options.disclosedToolNames].sort())),
-          },
-          JSON.stringify(request.input),
-          task,
-        );
-        if (!recorded.committed || recorded.evidence.availability === "unavailable")
-          return { status: "unavailable", reason: "proposal-journal-unavailable", effect: "none" };
-        const outcome = await execute(request, task);
-        const settled = await history.record(
-          options.turnId,
-          {
-            version: 1,
-            type: "result",
-            id: `${request.invocationId}:settlement`,
-            generation: Number(options.registry.generation),
-            proposalId: request.toolCallId,
-            invocationId: String(request.invocationId),
-            capabilityId: String(request.capabilityId),
-            status: outcome.status,
-            effect: outcome.effect,
-            reason: redactor.redactText(failureReason(outcome), 256),
-            relations:
-              "output" in outcome && "history" in outcome.output
-                ? [
-                    {
-                      type: "projection",
-                      id: `${request.invocationId}:exact-result`,
-                      generation: Number(options.registry.generation),
-                    },
-                  ]
-                : [],
-          },
-          "{}",
-          task,
-        );
-        if (!settled.committed)
-          return {
-            status: "failed",
-            effect: outcome.effect,
-            reason: "history-settlement-unavailable",
-          };
-        return outcome;
-      } finally {
-        if (options.taskResources === undefined) task.close();
+      const key = JSON.stringify([
+        options.correlation.workspaceId,
+        options.correlation.sessionId,
+        options.turnId,
+        request.invocationId,
+      ]);
+      const fingerprint = confirmationInputFingerprint(
+        request.capabilityId,
+        {
+          input: request.input,
+          version: request.version,
+          toolCallId: request.toolCallId,
+          catalogGeneration: options.registry.generation,
+          policyGeneration: options.correlation.configurationGeneration,
+        },
+        request.effect,
+      );
+      const prior = options.effectLedger.get(key);
+      if (prior) {
+        if (prior.fingerprint !== fingerprint)
+          return { status: "malformed", reason: "invocation-identity-conflict", effect: "none" };
+        const refusal = replayRefusal(request);
+        if (refusal) return refusal;
+        const outcome = await prior.outcome;
+        return replayRefusal(request) ?? outcome;
       }
+      // Publish ownership before the first asynchronous journal/confirmation completes.
+      const outcome = invoke(request);
+      options.effectLedger.set(key, { fingerprint, outcome });
+      return outcome;
     },
   };
+  function replayRefusal(request: ToolRunnerRequest): ToolInvocationOutcome | null {
+    if (request.signal.aborted) return { status: "cancelled", effect: "none" };
+    if (
+      options.registry.generation !== options.correlation.configurationGeneration ||
+      !options.disclosedToolNames.has(request.toolName)
+    )
+      return { status: "unavailable", reason: "replay-binding-unavailable", effect: "none" };
+    const checked = validateAndNormalizeInvocations({
+      registry: options.registry,
+      ...(options.toolHost === undefined ? {} : { host: options.toolHost }),
+      proposals: [
+        {
+          toolCallId: request.toolCallId,
+          name: request.toolName,
+          arguments: request.input,
+          version: request.version,
+        },
+      ],
+      maxQueued: 1,
+      nextInvocationId: () => request.invocationId,
+    });
+    const invocation = checked.ok ? checked.value[0] : undefined;
+    if (!invocation || invocation.entry.manifest.capabilityId !== request.capabilityId)
+      return { status: "unavailable", reason: "replay-binding-unavailable", effect: "none" };
+    const child = options.taskResources?.checkAuthority(
+      {
+        kind: "tool",
+        workspaceId: String(options.correlation.workspaceId),
+        capabilityId: String(request.capabilityId),
+        capabilityGeneration: String(options.registry.generation),
+      },
+      invocation.effect,
+    );
+    if (child) return { status: "denied", reason: child.state, effect: "none", admission: child };
+    if (
+      requiresEcosystemTrust(invocation.entry.manifest.source) &&
+      options.trust?.inspect(String(request.capabilityId))?.eligible !== true
+    )
+      return { status: "denied", reason: "ecosystem-trust-required", effect: "none" };
+    const policy = authorizeToolInvocation({
+      invocation,
+      ...(options.policy === undefined ? {} : { profile: options.policy }),
+    });
+    // The original invocation owns its confirmation. A replay cannot create another effect.
+    if (!policy.ok && policy.decision.decision !== "require-confirmation")
+      return { status: "denied", reason: "replay-policy-denied", effect: "none" };
+    return null;
+  }
+  async function invoke(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
+    const task = options.taskResources ?? resources.openTask(String(options.registry.generation));
+    try {
+      const recorded = await history.record(
+        options.turnId,
+        {
+          version: 1,
+          type: "proposal",
+          stage: "bound",
+          inputDigest: historyDigest(JSON.stringify(request.input)),
+          id: `${request.invocationId}:proposed`,
+          generation: Number(options.registry.generation),
+          attemptId: options.attemptId ?? String(options.turnId),
+          proposalId: request.toolCallId,
+          invocationId: String(request.invocationId),
+          name: request.toolName,
+          catalogGeneration: Number(options.registry.generation),
+          policyGeneration: Number(options.correlation.configurationGeneration),
+          disclosureDigest: historyDigest(JSON.stringify([...options.disclosedToolNames].sort())),
+        },
+        JSON.stringify(request.input),
+        task,
+      );
+      if (!recorded.committed || recorded.evidence.availability === "unavailable")
+        return { status: "unavailable", reason: "proposal-journal-unavailable", effect: "none" };
+      const outcome = await execute(request, task);
+      const settled = await history.record(
+        options.turnId,
+        {
+          version: 1,
+          type: "result",
+          id: `${request.invocationId}:settlement`,
+          generation: Number(options.registry.generation),
+          proposalId: request.toolCallId,
+          invocationId: String(request.invocationId),
+          capabilityId: String(request.capabilityId),
+          status: outcome.status,
+          effect: outcome.effect,
+          reason: redactor.redactText(failureReason(outcome), 256),
+          relations:
+            "output" in outcome && "history" in outcome.output
+              ? [
+                  {
+                    type: "projection",
+                    id: `${request.invocationId}:exact-result`,
+                    generation: Number(options.registry.generation),
+                  },
+                ]
+              : [],
+        },
+        "{}",
+        task,
+      );
+      if (!settled.committed)
+        return {
+          status: "failed",
+          effect: outcome.effect,
+          reason: "history-settlement-unavailable",
+        };
+      return outcome;
+    } finally {
+      if (options.taskResources === undefined) task.close();
+    }
+  }
   async function execute(
     request: ToolRunnerRequest,
     historyTask: ProductTaskResources,
@@ -396,11 +464,6 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     ) {
       return { status: "unavailable", reason: "capability-binding-mismatch", effect: "none" };
     }
-    const ledgerKey = `${options.turnId}:${confirmationInputFingerprint(
-      ready.entry.manifest.capabilityId,
-      ready.input,
-      ready.effect,
-    )}`;
     const childRefusal = options.taskResources?.checkAuthority(
       {
         kind: "tool",
@@ -417,32 +480,6 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         effect: "none",
         admission: childRefusal,
       };
-    if (ready.effect !== "observation") {
-      const prior = options.effectLedger.get(ledgerKey);
-      if (prior !== undefined) {
-        const reused = await history.record(
-          options.turnId,
-          {
-            version: 1,
-            type: "result",
-            id: `${request.invocationId}:reused`,
-            generation: Number(options.registry.generation),
-            proposalId: request.toolCallId,
-            invocationId: String(request.invocationId),
-            capabilityId: String(request.capabilityId),
-            status: "reused",
-            effect: prior.effect,
-            reason: "effect-ledger-reuse",
-            relations: [],
-          },
-          JSON.stringify(prior),
-          historyTask,
-        );
-        return reused.committed
-          ? prior
-          : { status: "failed", effect: prior.effect, reason: "reuse-history-unavailable" };
-      }
-    }
 
     if (
       requiresEcosystemTrust(ready.entry.manifest.source) &&
@@ -982,12 +1019,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         ? (enveloped.result.error?.code ?? failureReason(outcome))
         : failureReason(outcome),
     );
-    if (ready.effect !== "observation" && effectOf(projected) !== "none") {
-      options.effectLedger.set(ledgerKey, {
-        ...projected,
-        ...(sandboxReceipts === undefined ? {} : { sandbox: sandboxReceipts }),
-      });
-    }
+
     return {
       ...projected,
       ...(sandboxReceipts === undefined ? {} : { sandbox: sandboxReceipts }),

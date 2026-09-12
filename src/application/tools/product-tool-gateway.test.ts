@@ -188,6 +188,7 @@ describe("createProductToolGateway", () => {
       expect((await run("trust-approved")).status).toBe("completed");
       revokeDuringHook = true;
       expect((await run("trust-revoked-in-hook")).status).toBe("denied");
+      expect((await run("trust-approved")).status).toBe("denied");
       expect(effects).toBe(1);
       expect(capabilityEntryFromTool(entry.value, true, trust).trust?.state).toBe("revoked");
     },
@@ -397,7 +398,7 @@ describe("createProductToolGateway", () => {
       });
 
     expect((await execute("inv-write-1")).status).toBe("completed");
-    expect((await execute("inv-write-2")).status).toBe("completed");
+    expect((await execute("inv-write-1")).status).toBe("completed");
     expect(confirmations).toBe(1);
     expect(runnerCalls).toBe(1);
   });
@@ -721,4 +722,98 @@ test("live gateways share manifest capacity across registry generations and work
     expect(completions.length).toBe(1);
     expect(completions.every((event) => event.payload.admission?.acquired)).toBe(true);
   }
+});
+
+test("fresh A-B-A writes execute while concurrent replays share one invocation", async () => {
+  const { tools, fileSystem, clock, journal } = setup();
+  const hooks = createToolHookRegistry(generation, []);
+  if (!hooks.ok) throw new Error(hooks.error.code);
+  let calls = 0;
+  const gateway = createProductToolGateway({
+    clock,
+    resources: createProductResources(clock),
+    registry: tools.registry,
+    runner: {
+      execute: async (request) => {
+        calls++;
+        return tools.runner.execute(request);
+      },
+    },
+    hooks: hooks.value,
+    journal,
+    correlation,
+    turnId: turn,
+    disclosedToolNames: new Set(["write_files"]),
+    confirmation: {
+      resolve: async (request) => ({ kind: "confirmed", confirmationId: request.confirmationId }),
+    },
+    effectLedger: new Map(),
+  });
+  const entry = tools.registry.resolveByName("write_files");
+  if (!entry) throw new Error("missing write");
+  const write = (id: string, text: string) =>
+    gateway.execute({
+      invocationId: invocationId.from(id),
+      toolCallId: id,
+      toolName: "write_files",
+      capabilityId: entry.manifest.capabilityId,
+      version: entry.manifest.version,
+      effect: entry.manifest.effect,
+      input: { targets: [{ path: "a.ts", kind: "replace", text }] },
+      signal: new AbortController().signal,
+    });
+  expect((await write("a-first", "A\n")).status).toBe("completed");
+  expect((await write("b", "B\n")).status).toBe("completed");
+  const repeated = await Promise.all([write("a-last", "A\n"), write("a-last", "A\n")]);
+  expect(repeated.map((outcome) => outcome.status)).toEqual(["completed", "completed"]);
+  expect(calls).toBe(3);
+  expect(await fileSystem.readText(localPath("/work/a.ts"), 1024)).toEqual({
+    ok: true,
+    value: "A\n",
+  });
+  expect((await write("a-last", "C\n")).status).toBe("malformed");
+  expect(calls).toBe(3);
+});
+
+test("uncertain invocations are retained without repeating an effect", async () => {
+  const { tools, clock, journal } = setup();
+  const hooks = createToolHookRegistry(generation, []);
+  if (!hooks.ok) throw new Error(hooks.error.code);
+  let calls = 0;
+  const gateway = createProductToolGateway({
+    clock,
+    resources: createProductResources(clock),
+    registry: tools.registry,
+    runner: {
+      async execute() {
+        calls++;
+        throw new Error("effect may have happened");
+      },
+    },
+    hooks: hooks.value,
+    journal,
+    correlation,
+    turnId: turn,
+    disclosedToolNames: new Set(["write_files"]),
+    effectLedger: new Map(),
+    confirmation: {
+      resolve: async (request) => ({ kind: "confirmed", confirmationId: request.confirmationId }),
+    },
+  });
+  const entry = tools.registry.resolveByName("write_files");
+  if (!entry) throw new Error("missing write");
+  const request = {
+    invocationId: invocationId.from("uncertain-write"),
+    toolCallId: "uncertain-write",
+    toolName: "write_files",
+    capabilityId: entry.manifest.capabilityId,
+    version: entry.manifest.version,
+    effect: entry.manifest.effect,
+    input: { targets: [{ path: "a.ts", kind: "replace", text: "A" }] },
+    signal: new AbortController().signal,
+  };
+  const first = await gateway.execute(request);
+  expect(first.effect).toBe("uncertain");
+  expect(await gateway.execute(request)).toEqual(first);
+  expect(calls).toBe(1);
 });
