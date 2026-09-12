@@ -1186,3 +1186,111 @@ test("multiple checkpoints retain derived identity while expired original eviden
     ),
   ).toBe(true);
 });
+
+async function inlineFixture() {
+  const f = await fixture();
+  const sentinel = "private-history-inline-sentinel";
+  const saved = await f.history.record(
+    f.turn,
+    {
+      version: 1,
+      type: "message",
+      id: "reader-probe",
+      messageId: "reader-probe",
+      part: 0,
+      generation: 0,
+      role: "assistant",
+      attemptId: "attempt-reader",
+      completion: "complete",
+      relations: [],
+    },
+    sentinel,
+    f.resources,
+  );
+  expect(saved.committed).toBe(true);
+  expect(saved.evidence.availability).toBe("inline");
+  return { ...f, sentinel };
+}
+
+test("live model continuation does not repeat inline tool output inside recovery metadata", async () => {
+  const f = await fixture(false);
+  const sentinel = "unique-read-evidence-791";
+  await writeFile(join(f.home, "evidence.txt"), sentinel);
+  let message = "";
+  const result = await runCoding(
+    () => f.services,
+    { promptParts: ["Read evidence.txt with read_file"] },
+    {
+      input: createRecordingCliStreams({ stdin: null }).input,
+      identities: {
+        sessionId: "duplicate-session",
+        turnId: "duplicate-turn",
+        traceId: "duplicate-trace",
+      },
+      providerAdapter: createDeterministicProviderAdapter({
+        script: (request, index) => {
+          if (index === 0)
+            return {
+              kind: "tool",
+              toolCallId: "read-once",
+              name: "read_file",
+              argumentFragments: ['{"path":"evidence.txt"}'],
+            };
+          message = request.messages
+            .filter((item) => item.role === "tool")
+            .flatMap((item) => item.parts)
+            .filter((part) => part.kind === "text")
+            .map((part) => part.text)
+            .join("");
+          return { kind: "text", text: "Read completed", finishReason: "stop" };
+        },
+      }),
+    },
+  );
+  expect(result.outcome.kind).toBe("completed");
+  const payload = JSON.parse(message);
+  expect(JSON.stringify(payload.output.history)).not.toContain(sentinel);
+});
+
+test("history byte refusal removes inline content from the complete response", async () => {
+  const f = await inlineFixture();
+  const reader = createHistoryReader({
+    events: f.durable.eventStore,
+    artifacts: f.durable.artifacts,
+    authorize: () => true,
+    resources: f.resources,
+  });
+  const page = await reader.page({ streamId: f.stream, afterSequence: null, maxBytes: 0 });
+  expect(page.ok).toBe(true);
+  if (!page.ok) return;
+  expect(page.bytes).toBe(0);
+  expect(JSON.stringify(page)).not.toContain(f.sentinel);
+});
+
+test("cancellation during the store read must not disclose denied inline evidence", async () => {
+  const f = await inlineFixture();
+  const abort = new AbortController();
+  let authorizations = 0;
+  const { createHistoryReader: createDomainReader } = await import(
+    "../../domain/sessions/history-reader.ts"
+  );
+  const reader = createDomainReader({
+    events: {
+      ...f.durable.eventStore,
+      async readFrom(cursor, limit, signal) {
+        const result = await f.durable.eventStore.readFrom(cursor, limit, signal);
+        abort.abort();
+        return result;
+      },
+    },
+    artifacts: f.durable.artifacts,
+    digest: historyDigest,
+    authorize: () => {
+      authorizations++;
+      return false;
+    },
+  });
+  const page = await reader.page({ streamId: f.stream, afterSequence: null }, abort.signal);
+  expect(authorizations).toBeGreaterThan(0);
+  expect(JSON.stringify(page)).not.toContain(f.sentinel);
+});

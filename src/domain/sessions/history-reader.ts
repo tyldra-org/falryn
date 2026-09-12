@@ -144,7 +144,7 @@ export function createHistoryReader(options: {
     );
     if (!current?.ok)
       return {
-        event,
+        event: null,
         availability: "unavailable",
         text: null,
         reason: "restore-lineage-unavailable",
@@ -186,13 +186,29 @@ export function createHistoryReader(options: {
     signal: AbortSignal,
   ): Promise<HistoryReadItem> {
     const fail = (availability: HistoryAvailability, reason: string): HistoryReadItem => ({
-      event: availability === "unauthorized" ? null : event,
+      // Preserve authorized metadata for export, but never refused inline bytes.
+      event:
+        availability === "unauthorized"
+          ? null
+          : event.kind === "history.recorded" && event.payload.evidence.availability === "inline"
+            ? {
+                ...event,
+                payload: {
+                  ...event.payload,
+                  evidence: {
+                    availability: "unavailable",
+                    fidelity: "unknown",
+                    reason: "redacted",
+                  },
+                },
+              }
+            : event,
       availability,
       text: null,
       reason,
     });
-    if (signal.aborted) return fail("cancelled", "cancelled");
     if (!options.authorize(event, null)) return fail("unauthorized", "current-authority");
+    if (signal.aborted) return fail("cancelled", "cancelled");
     if (event.kind !== "history.recorded")
       return { event, availability: "exact", text: null, reason: null };
     const retirement = retired(event);
@@ -247,6 +263,7 @@ export function createHistoryReader(options: {
     if (!current.ok || !current.value) return fail("missing", "authority-metadata-unavailable");
     if (!options.authorize(event, current.value) || current.value.sensitivity === "restricted")
       return deniedEvidence(event, "authority-changed");
+    if (signal.aborted) return fail("cancelled", "cancelled");
     if (
       current.value.availability !== "available" ||
       String(current.value.digest) !== evidence.digest
