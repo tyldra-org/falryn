@@ -1,6 +1,9 @@
+import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import type { CapabilityRegistry } from "../../domain/capabilities/index.ts";
 import type { SandboxInvocationPort } from "../../domain/security/sandbox.ts";
 import { createCapabilityComposition } from "../capabilities/capability-composition.ts";
+import { recordProviderHistory } from "../sessions/provider-history.ts";
+import { createSessionHistory, historyDigest } from "../sessions/session-history.ts";
 /**
  * Production provider/tool continuation controller (#786).
  *
@@ -78,6 +81,7 @@ import type { TurnCoordinator } from "./turn-coordinator.ts";
 import type { TurnEventJournalPort } from "./turn-event-journal.ts";
 
 export type ProductAttemptRunnerOptions = {
+  readonly historyArtifacts?: ArtifactStorePort;
   readonly toolHost?: import("../../domain/tools/index.ts").HostPlatform;
   readonly sandbox?: SandboxInvocationPort;
   readonly takeSteering?: () => readonly { readonly id: string; readonly text: string }[];
@@ -911,6 +915,9 @@ export function createProductAttemptRunner(
         runner: options.toolRunner,
         hooks: options.hooks,
         journal: options.journal,
+        ...(options.historyArtifacts === undefined
+          ? {}
+          : { historyArtifacts: options.historyArtifacts }),
         correlation: options.correlation,
         turnId: request.turnId,
         attemptId: String(request.identity.modelAttemptId),
@@ -938,6 +945,11 @@ export function createProductAttemptRunner(
         turnId: request.turnId,
         disclosedToolNames: new Set(input.disclosure.toolNames),
       });
+      const history = createSessionHistory({
+        journal: options.journal,
+        correlation: options.correlation,
+        ...(options.historyArtifacts === undefined ? {} : { artifacts: options.historyArtifacts }),
+      });
       const consumer = createProviderStreamConsumer({
         clock: options.clock,
         coordinator: options.coordinator,
@@ -957,6 +969,7 @@ export function createProductAttemptRunner(
       }
 
       const consume = async (): Promise<ProviderStreamConsumeOutcome> => {
+        const observedProposals = new Set<string>();
         requestSequence += 1;
         const currentRequest = modelRequest(
           request,
@@ -996,6 +1009,9 @@ export function createProductAttemptRunner(
           throw new Error("resource-admission:limit-exceeded");
         }
         const amounts: ResourceAmounts = {
+          operations: 1,
+          bufferedBytes: 4 * 1024 * 1024 + 65536,
+          bufferedItems: 33,
           requests: 1,
           ...(requestSequence === 1
             ? { attempts: 1, retries: request.identity.attemptNumber > 1 ? 1 : 0 }
@@ -1061,20 +1077,38 @@ export function createProductAttemptRunner(
                 ],
               });
             }
+            const disclosureDigest = historyDigest(JSON.stringify(input.disclosure.toolNames));
+            const source = options.provider.stream(
+              {
+                ...currentRequest,
+                messages: [...messages],
+                budgets: {
+                  ...currentRequest.budgets,
+                  ...(selectedOutput === undefined ? {} : { maxOutputTokens: selectedOutput }),
+                },
+              },
+              { signal },
+            );
             const value = await consumer.consume({
               turnId: request.turnId,
               configurationGeneration: request.configurationGeneration,
-              events: options.provider.stream(
-                {
-                  ...currentRequest,
-                  messages: [...messages],
-                  budgets: {
-                    ...currentRequest.budgets,
-                    ...(selectedOutput === undefined ? {} : { maxOutputTokens: selectedOutput }),
-                  },
+              events: recordProviderHistory({
+                admittedSignal: signal,
+                onProposal(id) {
+                  if (observedProposals.size >= 128 && !observedProposals.has(id))
+                    throw new Error("history-proposal-bound");
+                  observedProposals.add(id);
                 },
-                { signal },
-              ),
+                events: source,
+                history,
+                resources: taskResources,
+                turnId: request.turnId,
+                attemptId: String(request.identity.modelAttemptId),
+                request: launchedRequests,
+                generation: Number(request.boundConfigurationGeneration),
+                catalogGeneration: Number(options.registry.generation),
+                disclosureDigest,
+              }),
               signal,
               abortAs: () => (deadline.timedOut() ? "timeout" : "cancel"),
             });
@@ -1106,6 +1140,79 @@ export function createProductAttemptRunner(
         if (admitted.kind !== "completed")
           throw new Error(`resource-admission:${admitted.receipt.state}`);
         const outcome = admitted.value;
+        if (outcome.kind !== "finished") {
+          for (const [index, proposalId] of [...observedProposals].entries()) {
+            const saved = await history.record(
+              request.turnId,
+              {
+                version: 1,
+                type: "result",
+                id: `${request.identity.modelAttemptId}:assembly-refused:${launchedRequests}:${index}`,
+                generation: Number(request.boundConfigurationGeneration),
+                proposalId,
+                invocationId: null,
+                capabilityId: null,
+                status: deadline.timedOut()
+                  ? "timed-out"
+                  : request.signal.aborted
+                    ? "cancelled"
+                    : "malformed",
+                effect: "none",
+                reason: `provider-${outcome.kind}`,
+                relations: [],
+              },
+              JSON.stringify({ outcome: outcome.kind }),
+              taskResources,
+            );
+            if (!saved.committed) throw new Error("resource-admission:history-refusal-unavailable");
+          }
+        }
+
+        if (outcome.snapshot !== null) {
+          const captured = await history.record(
+            request.turnId,
+            {
+              version: 1,
+              type: "message",
+              messageId: `${request.identity.modelAttemptId}:response:${launchedRequests}`,
+              part: 0,
+              id: `${request.identity.modelAttemptId}:response:${launchedRequests}`,
+              generation: Number(request.boundConfigurationGeneration),
+              role: "assistant",
+              attemptId: String(request.identity.modelAttemptId),
+              completion: outcome.kind === "finished" ? "complete" : "partial",
+              relations: [],
+            },
+            outcome.snapshot.text,
+            taskResources,
+          );
+          if (!captured.committed || captured.evidence.availability === "unavailable")
+            throw new Error("resource-admission:history-output-unavailable");
+          for (const [index, proposal] of outcome.snapshot.toolProposals.entries()) {
+            const capturedProposal = await history.record(
+              request.turnId,
+              {
+                version: 1,
+                type: "proposal",
+                stage: "assembled",
+                inputDigest: historyDigest(JSON.stringify(proposal)),
+                id: `${request.identity.modelAttemptId}:proposal:${launchedRequests}:${index}`,
+                generation: Number(request.boundConfigurationGeneration),
+                attemptId: String(request.identity.modelAttemptId),
+                proposalId: proposal.toolCallId,
+                invocationId: null,
+                name: proposal.name,
+                catalogGeneration: Number(options.registry.generation),
+                policyGeneration: Number(request.boundConfigurationGeneration),
+                disclosureDigest: historyDigest(JSON.stringify(input.disclosure.toolNames)),
+              },
+              JSON.stringify(proposal),
+              taskResources,
+            );
+            if (!capturedProposal.committed)
+              throw new Error("resource-admission:history-proposal-unavailable");
+          }
+        }
         if (outcome.snapshot !== null && outcome.snapshot.text.length > 0) {
           assistantText.push(outcome.snapshot.text);
         }
@@ -1150,6 +1257,35 @@ export function createProductAttemptRunner(
           coordinator: options.coordinator,
           catalog: options.registry.catalog,
           runner: composition.runner,
+          async onRefusedProposals(proposals, reason) {
+            for (const [index, proposal] of proposals.entries()) {
+              const saved = await history.record(
+                request.turnId,
+                {
+                  version: 1,
+                  type: "result",
+                  id: `${request.identity.modelAttemptId}:refused:${launchedRequests}:${index}`,
+                  generation: Number(request.boundConfigurationGeneration),
+                  proposalId: proposal.toolCallId,
+                  invocationId: null,
+                  capabilityId: null,
+                  status:
+                    reason === "cancelled"
+                      ? "cancelled"
+                      : reason === "timed-out"
+                        ? "timed-out"
+                        : "malformed",
+                  effect: "none",
+                  reason,
+                  relations: [],
+                },
+                JSON.stringify({ reason }),
+                taskResources,
+              );
+              if (!saved.committed)
+                throw new Error("resource-admission:history-refusal-unavailable");
+            }
+          },
           ...(runtimeFallbackPolicy === undefined ? {} : { fallbackPolicy: runtimeFallbackPolicy }),
         });
         const loopOutcome = await loop.run({

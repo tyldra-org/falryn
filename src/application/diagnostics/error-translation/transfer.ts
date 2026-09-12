@@ -10,6 +10,16 @@ import { fromSqliteStoreError } from "./storage.ts";
 
 export function fromExportError(error: ExportError, context: ErrorContext = {}): FalrynError {
   switch (error.code) {
+    case "history":
+      return build({
+        code: `data.export.history.${error.reason}`,
+        category: "data",
+        message: `Semantic history could not be read (${error.reason}).`,
+        retryable: false,
+        effect: "none",
+        cause: { source: "export", code: error.reason, detail: null },
+        ...context,
+      });
     case "storage":
       return fromSqliteStoreError(error.error, context);
     case "package": {
@@ -84,6 +94,17 @@ export function fromExportError(error: ExportError, context: ErrorContext = {}):
           code: error.code,
           detail: `${error.bound}:${error.requested}:${error.maximum}`,
         },
+        ...context,
+      });
+    case "artifact-policy-changed":
+      return build({
+        code: "data.export.artifact-policy-changed",
+        category: "data",
+        message:
+          "Artifact retention or sensitivity changed during export. Preview the selection again.",
+        retryable: false,
+        effect: "none",
+        cause: { source: "export", code: error.code, detail: null },
         ...context,
       });
     case "digest-mismatch":

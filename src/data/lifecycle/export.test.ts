@@ -207,6 +207,7 @@ function stageSession(
 async function appendEvent(built: Harness, sequence: number): Promise<void> {
   const appended = await built.events.append({
     ...sessionStarted(sequence),
+    correlation: { ...sessionStarted(sequence).correlation, sessionId: SESSION },
     streamId: `stream-${SESSION}` as never,
   });
   if (!appended.ok) {

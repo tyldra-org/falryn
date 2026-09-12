@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import type { CompositionProvenance } from "../capabilities/composition.ts";
 import type { CatalogHistory } from "../extensions/catalog-history.ts";
+import type { HistoryPayload } from "./history.ts";
 /**
  * Turn lifecycle facts as durable runtime events, and pure replay of those
  * events into turn views.
@@ -47,6 +49,11 @@ import type { ExecutionProfileCompletion, ExecutionProfileId } from "./execution
 
 /** One semantic fact the turn loop records. Effects are facts, never re-run. */
 export type TurnLifecycleFact =
+  | {
+      readonly kind: "history.recorded";
+      readonly correlation: TurnCorrelation;
+      readonly payload: HistoryPayload;
+    }
   | {
       readonly kind: "session.started";
       readonly correlation: SessionCorrelation;
@@ -100,6 +107,7 @@ export type TurnLifecycleFact =
       readonly outcome: TerminalOutcome;
       readonly admission?: CapabilityInvocationCompletedPayload["admission"];
       readonly sandbox?: CapabilityInvocationCompletedPayload["sandbox"];
+      readonly historyId?: string;
       readonly observedStatus?: CapabilityInvocationCompletedPayload["observedStatus"];
       readonly degradation?: CapabilityInvocationCompletedPayload["degradation"];
     };
@@ -112,6 +120,10 @@ export type TurnLifecycleFact =
  */
 export function factIdentity(fact: TurnLifecycleFact): string {
   switch (fact.kind) {
+    case "history.recorded":
+      return `history:${createHash("sha256")
+        .update(JSON.stringify([fact.correlation.sessionId, fact.payload.id]))
+        .digest("hex")}`;
     case "session.started":
       return `session:${fact.correlation.sessionId}:started`;
     case "execution.profile.selected":
@@ -163,6 +175,13 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
 
   const fact = input.fact;
   switch (fact.kind) {
+    case "history.recorded":
+      return {
+        ...spine,
+        kind: "history.recorded",
+        correlation: fact.correlation,
+        payload: fact.payload,
+      };
     case "session.started": {
       const event: SessionStartedEvent = {
         ...spine,
@@ -258,6 +277,7 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
           ...(fact.composition === undefined ? {} : { composition: fact.composition }),
           ...(fact.admission === undefined ? {} : { admission: fact.admission }),
           ...(fact.sandbox === undefined ? {} : { sandbox: fact.sandbox }),
+          ...(fact.historyId === undefined ? {} : { historyId: fact.historyId }),
           ...(fact.observedStatus === undefined ? {} : { observedStatus: fact.observedStatus }),
           ...(fact.degradation === undefined ? {} : { degradation: fact.degradation }),
         },
@@ -278,6 +298,7 @@ export type ReplayedAttempt = {
 };
 
 export type ReplayedInvocation = {
+  readonly historyId?: string;
   readonly composition?: CompositionProvenance | null;
   readonly invocationId: InvocationId;
   readonly capabilityId: CapabilityId;
@@ -329,6 +350,7 @@ type MutableAttempt = {
 };
 
 type MutableInvocation = {
+  historyId?: string;
   composition: CompositionProvenance | null;
   invocationId: InvocationId;
   capabilityId: CapabilityId;
@@ -497,10 +519,12 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
         invocation.admission = event.payload.admission ?? null;
         if (event.payload.sandbox !== undefined) invocation.sandbox = event.payload.sandbox;
         invocation.observedStatus = event.payload.observedStatus ?? null;
+        if (event.payload.historyId !== undefined) invocation.historyId = event.payload.historyId;
         invocation.degradation = event.payload.degradation ?? null;
         invocation.capabilityId = event.capabilityId;
         break;
       }
+      case "history.recorded":
       case "configuration.generation.changed":
       case "workspace.trust.reviewed":
       case "workflow.changed":
@@ -589,6 +613,7 @@ function freezeTurn(turn: MutableTurn): ReplayedTurn {
               admission: invocation.admission,
               ...(invocation.sandbox === undefined ? {} : { sandbox: invocation.sandbox }),
               observedStatus: invocation.observedStatus,
+              ...(invocation.historyId === undefined ? {} : { historyId: invocation.historyId }),
               degradation: invocation.degradation,
               ...(invocation.composition === null ? {} : { composition: invocation.composition }),
             },

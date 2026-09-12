@@ -1,6 +1,7 @@
 import type { CompositionProvenance } from "../capabilities/composition.ts";
 import type { CatalogHistory } from "../extensions/catalog-history.ts";
 import type { SandboxReceipt } from "../security/sandbox.ts";
+import type { HistoryPayload } from "./history.ts";
 /**
  * The semantic event envelope.
  *
@@ -57,6 +58,7 @@ export const EVENT_KINDS = [
   "workspace.trust.reviewed",
   "work.queue.changed",
   "workflow.changed",
+  "history.recorded",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -223,6 +225,7 @@ export type CapabilityInvocationStartedPayload = {
 };
 
 export type CapabilityInvocationCompletedPayload = TerminalPayload & {
+  readonly historyId?: string | undefined;
   readonly sandbox?: readonly SandboxReceipt[] | undefined;
   readonly composition?: CompositionProvenance | undefined;
   readonly admission?: ResourceAdmissionReceipt | undefined;
@@ -356,7 +359,10 @@ export type ProcessTaskChangedEvent = Envelope<
 
 export type WorkQueueChangedEvent = Envelope<"work.queue.changed", SessionCorrelation, WorkReceipt>;
 
+export type HistoryRecordedEvent = Envelope<"history.recorded", TurnCorrelation, HistoryPayload>;
+
 export type RuntimeEvent =
+  | HistoryRecordedEvent
   | Envelope<"workflow.changed", SessionCorrelation, WorkflowReceipt>
   | WorkQueueChangedEvent
   | Envelope<"workspace.trust.reviewed", SessionCorrelation, WorkspaceTrustEventPayload>

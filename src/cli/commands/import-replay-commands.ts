@@ -79,6 +79,7 @@ export type ImportCommandPayload = {
 };
 
 export type ReplayCommandPayload = {
+  readonly history?: import("../../domain/sessions/history-reader.ts").HistoryPage;
   readonly packageData?: readonly import("../../domain/extensions/package-data-transfer.ts").PackageDataReplay[];
   readonly extensionCatalog?: CatalogHistory;
   readonly owner: typeof IMPORT_REPLAY_OWNER;
@@ -433,6 +434,7 @@ export async function runReplay(
           : { packageData: replayed.value.packageData }),
         turnCount: replayed.value.turns.length,
         artifactCount: replayed.value.artifacts.length,
+        history: replayed.value.history,
         truncated: replayed.value.truncated,
         effectFree: true,
       });

@@ -1,8 +1,13 @@
+import { createRuntimeProjectionRedactor } from "../../application/diagnostics/redaction.ts";
+import {
+  createProductResources,
+  type ProductResources,
+} from "../../application/orchestration/product-resources.ts";
+import { createSessionExportAction } from "../../application/sessions/session-export.ts";
 import { listPackageData } from "../../data/extensions/package-data-inventory.ts";
 /** Export preview and package-writing command family. */
 
 import {
-  createRuntimeRedactor,
   fromExportError,
   fromSqliteStoreError,
   fromUnknown,
@@ -72,9 +77,10 @@ export async function runExport(
   arguments_: ExportCommandArguments,
   signal?: AbortSignal,
   onMutationStart?: () => void,
+  resources?: ProductResources,
 ): Promise<CommandResultOf<"export", ExportCommandPayload>> {
   try {
-    return await exportThroughStore(services, arguments_, signal, onMutationStart);
+    return await exportThroughStore(services, arguments_, signal, onMutationStart, resources);
   } catch (error) {
     return resultFor<"export", ExportCommandPayload>(
       "export",
@@ -91,6 +97,7 @@ async function exportThroughStore(
   arguments_: ExportCommandArguments,
   signal: AbortSignal | undefined,
   onMutationStart: (() => void) | undefined,
+  resourceOwner: ProductResources | undefined,
 ): Promise<CommandResultOf<"export", ExportCommandPayload>> {
   const { localData, clock } = services();
   const rootsToPrepare = arguments_.write
@@ -170,69 +177,78 @@ async function exportThroughStore(
       hasher: createSha256Hasher(),
       clock,
       buildIdentity: `falryn/${FALRYN_VERSION}`,
-      redactor: createRuntimeRedactor(),
+      redactor: createRuntimeProjectionRedactor(),
     };
 
-    const inventory = await resolveInventory(options, arguments_.selection, signal);
-    if (!inventory.ok) {
-      return exportFailure(arguments_, inventory.error);
-    }
-
-    if (!arguments_.write) {
-      return resultFor(
-        "export",
-        payloadFromInventory("preview", arguments_.selection, inventory.value, null),
-      );
-    }
-
     const name = arguments_.name;
-    if (name === null) {
+    if (arguments_.write && name === null)
+      return resultFor<"export", ExportCommandPayload>("export", null, [
+        fromUnknown(new Error("export write is missing a package name"), {
+          operation: "write export",
+        }),
+      ]);
+    const resources = (resourceOwner ?? createProductResources(clock)).openTask("export");
+    const action = createSessionExportAction({
+      inventory: (selection, signal) => resolveInventory(options, selection, signal),
+      write(name, selection, inventory, signal) {
+        onMutationStart?.();
+        return writePackage(
+          {
+            ...options,
+            packageData: packageDataForSessionExport(
+              listPackageData(opened.value, false, 64),
+              inventory.sessionIds,
+            ),
+          },
+          name,
+          selection,
+          inventory,
+          signal,
+        );
+      },
+    });
+    const result = await action
+      .run(
+        arguments_.write && name !== null
+          ? { mode: "write", name, selection: arguments_.selection }
+          : { mode: "preview", selection: arguments_.selection },
+        resources,
+        signal,
+      )
+      .finally(() => resources.close());
+    if (result.kind === "failed") return exportFailure(arguments_, result.error);
+    if (result.kind === "unavailable")
       return resultFor<"export", ExportCommandPayload>(
         "export",
         null,
-        [
-          fromUnknown(new Error("export write is missing a package name"), {
-            operation: "write export",
-          }),
-        ],
-        undefined,
-        MUTATION_NOT_OBSERVED,
+        [fromUnknown(new Error(result.reason), { operation: "export" })],
+        result.effect === "uncertain"
+          ? { kind: "uncertain", effect: "uncertain" }
+          : { kind: "failed", effect: "none" },
+        { intent: arguments_.write ? "mutate" : "none", observed: result.effect },
       );
-    }
-
-    onMutationStart?.();
-    const written = await writePackage(
-      {
-        ...options,
-        packageData: packageDataForSessionExport(
-          listPackageData(opened.value, false, 64),
-          inventory.value.sessionIds,
-        ),
-      },
-      name,
-      arguments_.selection,
-      inventory.value,
-      signal,
-    );
-    if (!written.ok) {
-      return exportFailure(arguments_, written.error, MUTATION_NOT_OBSERVED);
-    }
-
+    if (result.written === null)
+      return resultFor(
+        "export",
+        payloadFromInventory("preview", arguments_.selection, result.inventory, null),
+      );
+    const written = result.written;
+    if (name === null) throw new Error("written export requires a name");
     const dest = joinPath(exportsRoot as LocalPath, name);
     const bundle = {
       name,
       path: dest.ok ? dest.value : name,
-      byteLength: written.value.byteLength,
-      cancelledAfterFinalize: written.value.cancelledAfterFinalize,
+      byteLength: written.byteLength,
+      cancelledAfterFinalize: written.cancelledAfterFinalize,
     };
     const payload = payloadFromInventory(
       "written",
       arguments_.selection,
-      inventory.value,
+      result.inventory,
       bundle,
-      written.value.manifest.redactions,
+      written.manifest.redactions,
     );
-    if (written.value.cancelledAfterFinalize) {
+    if (written.cancelledAfterFinalize) {
       return resultFor(
         "export",
         payload,

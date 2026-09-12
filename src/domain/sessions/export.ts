@@ -1,4 +1,5 @@
 import { sandboxReceiptSchema } from "../security/sandbox.ts";
+import { HISTORY_LIMITS, historyEvidenceSchema } from "./history.ts";
 /**
  * The export package contract: what a package is, what it declares, and what a
  * reader must satisfy to open one.
@@ -385,6 +386,12 @@ export const EXPORT_BOUNDS = [
 export type ExportBound = (typeof EXPORT_BOUNDS)[number];
 
 export type ExportError =
+  | { readonly kind: "export"; readonly code: "history"; readonly reason: string }
+  | {
+      readonly kind: "export";
+      readonly code: "artifact-policy-changed";
+      readonly artifactId: ArtifactId;
+    }
   | { readonly kind: "export"; readonly code: "storage"; readonly error: SqliteStoreError }
   | { readonly kind: "export"; readonly code: "package"; readonly error: PackageError }
   | { readonly kind: "export"; readonly code: "bytes"; readonly error: BlobError }
@@ -621,6 +628,23 @@ function walkExportValue(
   redactor: SensitiveValueRedactor,
   redactions: ExportRedaction[],
 ): Result<unknown, ExportError> {
+  if (
+    typeof value === "object" &&
+    value !== null &&
+    "availability" in value &&
+    "fidelity" in value
+  ) {
+    const evidence = historyEvidenceSchema.safeParse(value);
+    if (evidence.success) {
+      if (evidence.data.availability !== "inline") return ok(evidence.data);
+      const rewritten = redactor.redactText(evidence.data.text, HISTORY_LIMITS.inlineBytes);
+      if (rewritten === evidence.data.text) return ok(evidence.data);
+      const recorded = recordRedaction(redactions, path);
+      return recorded.ok
+        ? ok({ availability: "unavailable", fidelity: "unknown", reason: "redacted" })
+        : recorded;
+    }
+  }
   if (typeof value === "string") {
     const rewritten = redactor.redactText(value);
     if (rewritten === value) {

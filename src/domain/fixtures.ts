@@ -337,6 +337,24 @@ export function everyEventKind(): readonly RuntimeEvent[] {
         at: 1,
       },
     },
+    {
+      ...spine({ eventId: "event-history-14", sequence: 14, idempotencyKey: "key-history-14" }),
+      kind: "history.recorded",
+      correlation: FIXTURE_TURN_CORRELATION,
+      payload: {
+        version: 1,
+        id: "message-fixture",
+        generation: 0,
+        type: "message",
+        messageId: "message-fixture",
+        part: 0,
+        role: "assistant",
+        attemptId: "attempt-fixture",
+        completion: "interrupted",
+        relations: [],
+        evidence: { availability: "unavailable", reason: "interrupted", fidelity: "unknown" },
+      },
+    },
   ];
 }
 

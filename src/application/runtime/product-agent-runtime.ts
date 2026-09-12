@@ -1,3 +1,4 @@
+import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import type { SandboxInvocationPort } from "../../domain/security/sandbox.ts";
 import type { ProductToolBundle } from "../tools/product-tools-merge.ts";
 /**
@@ -80,6 +81,7 @@ export function productAgentHost(runtime: ProductAgentRuntime): ProductAgentHost
 }
 
 export type ProductAgentRuntimePorts = {
+  readonly historyArtifacts?: ArtifactStorePort;
   readonly host?: ProductAgentHost;
   readonly sandbox?: SandboxInvocationPort;
   readonly canComplete?: NonNullable<Parameters<typeof createTurnCoordinator>[0]>["canComplete"];
@@ -293,6 +295,9 @@ export function composeProductAgentRuntime(
     ports.attemptRunner ??
     (providerAdapter !== null && toolRunner !== null && toolRegistry !== null
       ? createProductAttemptRunner({
+          ...(ports.historyArtifacts === undefined
+            ? {}
+            : { historyArtifacts: ports.historyArtifacts }),
           ...(ports.toolHost === undefined ? {} : { toolHost: ports.toolHost }),
           ...(ports.sandbox === undefined ? {} : { sandbox: ports.sandbox }),
           ...(ports.takeSteering === undefined ? {} : { takeSteering: ports.takeSteering }),
@@ -313,6 +318,7 @@ export function composeProductAgentRuntime(
   const turnProducer =
     ports.host?.attachments.turnProducer ??
     createSessionTurnTranscriptProducer({
+      ...(ports.historyArtifacts ? { artifacts: ports.historyArtifacts } : {}),
       eventStore: ports.eventStore,
       journal,
       sessionRuntime,

@@ -1,3 +1,5 @@
+import type { HistoryEvidence, HistoryReference } from "../../../domain/sessions/history.ts";
+import { historyArtifactRetirement } from "../../sessions/history-schema.ts";
 /** Streams, verifies, and finalizes versioned export packages. */
 
 import { type ContentDigest, parseArtifactRecord } from "../../../domain/artifacts/index.ts";
@@ -195,6 +197,8 @@ export async function writePackage(
     if (aborted(signal)) {
       return await abandon(cancelled);
     }
+    const authorized = currentArtifactPolicy(options, entry, selection.includeSensitive);
+    if (!authorized.ok) return await abandon(authorized.error);
     const copied = await copyArtifact(options, name, entry, budget, signal);
     if (!copied.ok) {
       return await abandon(copied.error);
@@ -261,6 +265,10 @@ export async function writePackage(
     return await abandon(cancelled);
   }
 
+  for (const entry of inventory.artifacts) {
+    const authorized = currentArtifactPolicy(options, entry, selection.includeSensitive);
+    if (!authorized.ok) return await abandon(authorized.error);
+  }
   const finalized = await options.packages.finalize(name);
   if (!finalized.ok) {
     return await abandon({ kind: "export", code: "package", error: finalized.error });
@@ -354,7 +362,51 @@ async function writeRecords(
     const events = await eachEvent(
       options,
       id,
-      (event) => writeRedacted(options, sink, { entity: "event", record: event }, redactions),
+      (event) => {
+        let record = event;
+        if (event.kind === "history.recorded") {
+          const omit = <T extends HistoryEvidence>(
+            evidence: T,
+          ): T | Extract<HistoryEvidence, { availability: "unavailable" }> => {
+            if (evidence.availability !== "retained") return evidence;
+            const omission = inventory.omissions.find(
+              (item) => item.artifactId === evidence.artifactId,
+            );
+            return omission
+              ? {
+                  availability: "unavailable",
+                  fidelity: "unknown",
+                  reason:
+                    omission.reason === "bytes-missing"
+                      ? "missing"
+                      : omission.reason === "bytes-quarantined"
+                        ? "corrupt"
+                        : "redacted",
+                  reference: {
+                    artifactId: evidence.artifactId,
+                    digest: evidence.digest,
+                    byteLength: evidence.byteLength,
+                  },
+                }
+              : evidence;
+          };
+          record = {
+            ...event,
+            payload: {
+              ...event.payload,
+              evidence: omit(event.payload.evidence),
+              ...(event.payload.references
+                ? {
+                    references: event.payload.references.map((reference: HistoryReference) =>
+                      omit(reference),
+                    ),
+                  }
+                : {}),
+            },
+          };
+        }
+        return writeRedacted(options, sink, { entity: "event", record }, redactions);
+      },
       signal,
     );
     if (!events.ok) {
@@ -686,4 +738,29 @@ async function read(
 ): Promise<Result<Uint8Array, ExportError>> {
   const bytes = await options.packages.readRange(name, offset, length, signal);
   return bytes.ok ? ok(bytes.value) : err({ kind: "export", code: "package", error: bytes.error });
+}
+
+/** Recheck current policy before copying and immediately before publication. */
+function currentArtifactPolicy(
+  options: ExportOptions,
+  entry: ExportArtifactEntry,
+  includeSensitive: boolean,
+): Result<null, ExportError> {
+  const retirement = historyArtifactRetirement(options.store, null, String(entry.artifactId));
+  if (!retirement.ok) return err(storageError(retirement.error));
+  if (retirement.value)
+    return err({ kind: "export", code: "artifact-policy-changed", artifactId: entry.artifactId });
+  const rows = options.store.read(SELECT_ARTIFACT_RECORD, { artifactId: entry.artifactId });
+  if (!rows.ok) return err(storageError(rows.error));
+  const parsed = parseArtifactRecord(rows.value[0]);
+  if (
+    !parsed.ok ||
+    parsed.value.availability !== "available" ||
+    parsed.value.sensitivity === "restricted" ||
+    (parsed.value.sensitivity === "sensitive" && !includeSensitive)
+  )
+    return err({ kind: "export", code: "artifact-policy-changed", artifactId: entry.artifactId });
+  if (parsed.value.digest !== entry.digest || parsed.value.byteLength !== entry.byteLength)
+    return err({ kind: "export", code: "digest-mismatch", artifactId: entry.artifactId });
+  return ok(null);
 }

@@ -1,3 +1,5 @@
+import type { SessionExportControl } from "../../application/sessions/session-export.ts";
+import { UNAVAILABLE_SUBMISSION } from "../composer/submission.ts";
 /**
  * The command palette's search, on a real terminal.
  *
@@ -49,12 +51,16 @@ type Session = Rendered & {
   exits(): number;
 };
 
-async function open(shape: TerminalShape = { columns: 100, rows: 24 }): Promise<Session> {
+async function open(
+  shape: TerminalShape = { columns: 100, rows: 24 },
+  exportSession?: SessionExportControl,
+): Promise<Session> {
   let exits = 0;
   const shell = await mount(
     <ShellApp
       theme={THEME}
       model={MODEL}
+      submission={{ ...UNAVAILABLE_SUBMISSION, ...(exportSession ? { exportSession } : {}) }}
       onExit={() => {
         exits += 1;
       }}
@@ -321,4 +327,51 @@ describe("the row budget it was given", () => {
     expect(lines.length).toBe(1);
     expect(lines[0] ?? "").toContain("Type to search commands.");
   });
+});
+
+test("session export uses the same shell control from the palette and slash composer", async () => {
+  const calls: (string | null)[] = [];
+  const control: SessionExportControl = async (argument) => {
+    calls.push(argument);
+    return { message: "Export preview: retained history" };
+  };
+  using shell = await open(undefined, control);
+  await shell.openPalette();
+  await shell.type("session.export");
+  await shell.press("\r");
+  expect(await shell.frame()).toContain("Export preview: retained history");
+  await shell.press("\t");
+  await shell.press("\t");
+  await shell.type("/export write example");
+  await shell.press("\r");
+  expect(await shell.frame()).toContain("Export preview: retained history");
+  expect(calls).toEqual([null, "write example"]);
+});
+
+test("Escape cancels a pending session export and settlement remains visible", async () => {
+  let cancelled = false;
+  const control: SessionExportControl = async (_argument, signal) =>
+    new Promise((resolve) => {
+      signal.addEventListener(
+        "abort",
+        () => {
+          cancelled = true;
+          resolve({ message: "Export cancelled before publication" });
+        },
+        { once: true },
+      );
+    });
+  using shell = await open(undefined, control);
+  await shell.openPalette();
+  await shell.type("session.export");
+  await shell.press("\r");
+  expect(await shell.frame()).toContain("Preparing session export");
+  await shell.press("\t");
+  await shell.press("\t");
+  await shell.type("draft typed during export");
+  await shell.press("\u001b");
+  const settled = await shell.frame();
+  expect(settled).toContain("Export cancelled before publication");
+  expect(settled).toContain("draft typed during export");
+  expect(cancelled).toBe(true);
 });

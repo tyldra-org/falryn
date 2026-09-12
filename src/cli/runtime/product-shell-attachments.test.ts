@@ -71,8 +71,10 @@ const GLOBALS: GlobalOptions = {
 };
 
 const homes: string[] = [];
+const historySessions: NonNullable<Awaited<ReturnType<typeof openProductArtifactSession>>>[] = [];
 
 afterEach(async () => {
+  for (const session of historySessions.splice(0)) await session.close();
   for (const home of homes.splice(0)) {
     await rm(home, { recursive: true, force: true });
   }
@@ -898,11 +900,15 @@ test("terminal submission preserves selected sandbox refusal in its transcript f
   });
   const model = adapter.supportedModels[0];
   if (model === undefined) throw new Error("fixture model unavailable");
+  const history = await openProductArtifactSession(services);
+  if (!history) throw new Error("history store unavailable");
+  historySessions.push(history);
   const attached = await composeProductShellAttachments({
     configurationValues: () => ({
       "tools.sandbox": { version: 1, mode: "degraded", readRoots: [], writeRoots: [] },
     }),
-    eventStore: createInMemoryEventStore(),
+    eventStore: history.eventStore,
+    artifacts: history.artifacts,
     clock,
     fileSystem: services.fileSystem,
     workspaceSet: workspace.value.set,
@@ -1017,10 +1023,14 @@ for (const kind of ["lsp", "dap"] as const) {
       const model = adapter.supportedModels[0];
       if (model === undefined) throw new Error("fixture model unavailable");
       const clock = services.clock;
+      const history = await openProductArtifactSession(services);
+      if (!history) throw new Error("history store unavailable");
+      historySessions.push(history);
       const attached = await composeProductShellAttachments({
         configurationValues: () =>
           z.record(z.string(), z.json()).parse({ "tools.languageServices": fixture.configuration }),
-        eventStore: createInMemoryEventStore(),
+        eventStore: history.eventStore,
+        artifacts: history.artifacts,
         clock,
         fileSystem: services.fileSystem,
         workspaceSet: workspace.value.set,

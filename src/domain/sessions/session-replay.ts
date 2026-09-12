@@ -97,6 +97,7 @@ export type ImportResult = {
 };
 
 export type SessionReplay = {
+  readonly history: import("./history-reader.ts").HistoryPage;
   readonly packageData?: readonly import("../extensions/package-data-transfer.ts").PackageDataReplay[];
   readonly sessionId: SessionId;
   readonly extensionCatalog?: CatalogHistory | undefined;

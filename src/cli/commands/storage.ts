@@ -32,6 +32,7 @@ type OpenedArtifactStore =
       readonly repository: ReturnType<typeof createArtifactRepository>;
       readonly provenance: ReturnType<typeof createArtifactProvenanceRepository>;
       readonly reader: ReturnType<typeof createArtifactReader>;
+      readonly artifacts: ReturnType<typeof createArtifactStore>;
     }
   | { readonly ok: false; readonly errors: readonly FalrynError[] };
 
@@ -115,6 +116,7 @@ export async function openArtifactStore(
     repository,
     provenance: createArtifactProvenanceRepository(opened.value),
     reader: createArtifactReader(artifactStore),
+    artifacts: artifactStore,
   };
 }
 

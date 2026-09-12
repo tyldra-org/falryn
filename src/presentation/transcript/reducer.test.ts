@@ -40,15 +40,16 @@ describe("what this build can produce", () => {
     }
   });
 
-  test("produces exactly five block kinds, and names them", () => {
+  test("produces exactly six fixture block kinds, and names them", () => {
     // The honest count. Eleven kinds are declared but are not emitted by the
     // closed lifecycle-event vocabulary this reducer consumes.
     const kinds = everyEventKind()
-      .map(blockFor)
+      .map((event) => blockFor(event))
       .filter((block) => block !== null)
       .map((block) => block.kind);
     expect([...new Set(kinds)].sort()).toEqual([
       "model-outcome",
+      "model-text",
       "notice",
       "tool-request",
       "tool-result",

@@ -47,7 +47,7 @@ import type { Sequence, StreamId } from "../../domain/foundation/index.ts";
  * own checks do not apply is a comment that is quietly false, and the next
  * person to change a summary will believe they were covered.
  */
-export const TRANSCRIPT_PROJECTION_GENERATION = 4;
+export const TRANSCRIPT_PROJECTION_GENERATION = 5;
 
 /** How far one stream has been folded into a transcript. */
 export type TranscriptCursor = {

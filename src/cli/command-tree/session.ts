@@ -80,7 +80,15 @@ export function sessionArgumentsFor(
   }
 
   if (command === "session.show") {
-    return { action: "show", workspaceId: parsedWorkspace.value, sessionId: parsedId.value };
+    const afterSequence = parsed["after-sequence"] ?? null;
+    if (afterSequence !== null && (!Number.isSafeInteger(afterSequence) || afterSequence < 0))
+      return "Argument after-sequence must be a whole number >= 0.";
+    return {
+      action: "show",
+      workspaceId: parsedWorkspace.value,
+      sessionId: parsedId.value,
+      afterSequence,
+    };
   }
 
   if (command === "session.resume") {

@@ -69,6 +69,15 @@ export type EventStoreError =
   | { readonly code: "storage"; readonly error: SqliteStoreError };
 
 export type EventStorePort = {
+  historyRetirement?(
+    stream: StreamId,
+    restorePointId: string,
+  ): Result<
+    { readonly reason: "expired" | "deleted"; readonly sequence: Sequence } | null,
+    EventStoreError
+  >;
+  /** Efficient durable cursor lookup without replaying payloads. */
+  head?(stream: StreamId): Result<Sequence | null, EventStoreError>;
   /**
    * Appends one event to its stream.
    *
@@ -100,8 +109,24 @@ export type EventStorePort = {
 export function createInMemoryEventStore(): EventStorePort {
   const sequencer = createStreamSequencer();
   const streams = new Map<StreamId, Uint8Array[]>();
+  const historyKeys = new Map<string, RuntimeEvent>();
 
   return {
+    historyRetirement(stream, restorePointId) {
+      for (const bytes of [...(streams.get(stream) ?? [])].reverse()) {
+        const decoded = decodeRuntimeEvent(bytes);
+        if (!decoded.ok) return err({ code: "codec", error: decoded.error });
+        const event = decoded.value;
+        if (
+          event.kind === "history.recorded" &&
+          event.payload.type === "restore-point" &&
+          event.payload.restorePointId === restorePointId &&
+          (event.payload.stage === "expired" || event.payload.stage === "deleted")
+        )
+          return ok({ reason: event.payload.stage, sequence: event.sequence });
+      }
+      return ok(null);
+    },
     async append(
       event: RuntimeEvent,
       signal?: AbortSignal,
@@ -115,6 +140,25 @@ export function createInMemoryEventStore(): EventStorePort {
         return err({ code: "codec", error: encoded.error });
       }
 
+      const key = `${event.streamId}:${event.idempotencyKey}`;
+      const prior = historyKeys.get(key);
+      if (
+        prior &&
+        (prior.kind === "history.recorded" || event.kind === "history.recorded") &&
+        (prior.kind !== event.kind ||
+          JSON.stringify(prior.payload) !== JSON.stringify(event.payload) ||
+          JSON.stringify(prior.correlation) !== JSON.stringify(event.correlation))
+      )
+        return err({
+          code: "sequence",
+          error: {
+            code: "idempotency-conflict",
+            streamId: event.streamId,
+            idempotencyKey: event.idempotencyKey,
+            recordedEventId: prior.eventId,
+            observedEventId: event.eventId,
+          },
+        });
       const decision = sequencer.append(event);
       switch (decision.kind) {
         case "rejected":
@@ -126,6 +170,7 @@ export function createInMemoryEventStore(): EventStorePort {
             cancelledAfterCommit: false,
           });
         case "appended": {
+          historyKeys.set(key, event);
           const stored = streams.get(event.streamId) ?? [];
           stored.push(encoded.value);
           streams.set(event.streamId, stored);

@@ -1,3 +1,7 @@
+import { artifactId } from "../../domain/artifacts/index.ts";
+import { HISTORY_LIMITS } from "../../domain/sessions/history.ts";
+import { createStoredHistoryReader } from "./history-reader.ts";
+import { SESSION_ARTIFACT_SEEDS } from "./history-schema.ts";
 /**
  * Import a verified package and replay it without repeating effects.
  *
@@ -16,7 +20,6 @@ import type { ExportName } from "../../domain/extensions/index.ts";
 import {
   configurationGeneration,
   err,
-  MAX_STREAM_READ_LIMIT,
   ok,
   type Result,
   type RunId,
@@ -34,7 +37,6 @@ import {
   MAX_RECORD_LIST_LIMIT,
   parseExportRecordLine,
   type RecordError,
-  type RuntimeEvent,
   type SessionFork,
   type SessionRecord,
   type SessionReplay,
@@ -134,47 +136,56 @@ export async function importPackage(
     clock: options.clock,
   });
 
-  for (const raw of new TextDecoder().decode(body.value).split("\n")) {
-    if (aborted(signal)) {
-      return err(cancelled);
-    }
-    if (raw.length === 0) {
-      continue;
-    }
-    let parsedJson: unknown;
-    try {
-      parsedJson = JSON.parse(raw);
-    } catch {
-      return err({
-        kind: "import",
-        code: "malformed-record",
-        issues: [{ path: "line", code: "invalid_json" }],
-      });
-    }
-    const line = parseExportRecordLine(parsedJson);
-    if (!line.ok) {
-      return err({ kind: "import", code: "malformed-record", issues: line.error });
-    }
-    const applied = await applyLine(
-      options,
-      artifactStore,
-      name,
-      verified.value.manifest.members,
-      line.value,
-      sessionIds,
-      signal,
-    );
-    if (!applied.ok) {
-      return err(applied.error);
-    }
-    if (line.value.entity === "event") {
-      events += 1;
-    }
-    if (line.value.entity === "artifact") {
-      artifacts += 1;
+  const lines = new TextDecoder().decode(body.value).split("\n");
+  for (const phase of ["records", "artifacts", "events"] as const) {
+    for (const raw of lines) {
+      if (aborted(signal)) {
+        return err(cancelled);
+      }
+      if (raw.length === 0) {
+        continue;
+      }
+      let parsedJson: unknown;
+      try {
+        parsedJson = JSON.parse(raw);
+      } catch {
+        return err({
+          kind: "import",
+          code: "malformed-record",
+          issues: [{ path: "line", code: "invalid_json" }],
+        });
+      }
+      const line = parseExportRecordLine(parsedJson);
+      if (!line.ok) {
+        return err({ kind: "import", code: "malformed-record", issues: line.error });
+      }
+      const belongs =
+        line.value.entity === "event"
+          ? "events"
+          : line.value.entity === "artifact"
+            ? "artifacts"
+            : "records";
+      if (belongs !== phase) continue;
+      const applied = await applyLine(
+        options,
+        artifactStore,
+        name,
+        verified.value.manifest.members,
+        line.value,
+        sessionIds,
+        signal,
+      );
+      if (!applied.ok) {
+        return err(applied.error);
+      }
+      if (line.value.entity === "event") {
+        events += 1;
+      }
+      if (line.value.entity === "artifact") {
+        artifacts += 1;
+      }
     }
   }
-
   if (sessionIds.length === 0) {
     return err({ kind: "import", code: "empty-package" });
   }
@@ -212,32 +223,20 @@ export async function replaySession(
     });
   }
 
-  const collected: RuntimeEvent[] = [];
-  let afterSequence: number | null = null;
-  for (;;) {
-    if (aborted(signal)) {
-      return err(cancelled);
-    }
-    const page = await options.events.readFrom(
-      {
-        streamId: session.value.streamId,
-        afterSequence: afterSequence === null ? null : (afterSequence as never),
-      },
-      MAX_STREAM_READ_LIMIT,
-      signal,
-    );
-    if (!page.ok) {
-      return err({ kind: "import", code: "events", error: page.error });
-    }
-    if (page.value.length === 0) {
-      break;
-    }
-    collected.push(...page.value);
-    afterSequence = page.value[page.value.length - 1]?.sequence ?? afterSequence;
-    if (page.value.length < MAX_STREAM_READ_LIMIT) {
-      break;
-    }
-  }
+  const history = await createStoredHistoryReader(
+    options,
+    (event) => event.correlation.sessionId === sessionId,
+  ).page(
+    { streamId: session.value.streamId, afterSequence: null, limit: HISTORY_LIMITS.page },
+    signal,
+  );
+  if (!history.ok)
+    return err({
+      kind: "import",
+      code: "malformed-record",
+      issues: [{ path: "history", code: history.code }],
+    });
+  const collected = history.items.flatMap((item) => (item.event ? [item.event] : []));
 
   const classified = classifyTurnReplay(collected);
   const turns = classified.kind === "empty" ? [] : classified.reduction.turns;
@@ -261,9 +260,10 @@ export async function replaySession(
       ? {}
       : { extensionCatalog: session.value.extensionCatalog }),
     turns,
-    artifacts: listed.value,
+    artifacts: listed.value.records,
     report: classified.report,
-    truncated: false,
+    history,
+    truncated: history.next !== null || listed.value.truncated,
   });
 }
 
@@ -404,30 +404,30 @@ async function applyLine(
 function listSessionArtifacts(
   options: ImportOptions,
   sessionId: SessionId,
-): Result<readonly ArtifactRecord[], ImportError> {
-  const artifacts = createArtifactRepository(options.store, options.runId);
+): Result<
+  { readonly records: readonly ArtifactRecord[]; readonly truncated: boolean },
+  ImportError
+> {
+  const repository = createArtifactRepository(options.store, options.runId);
+  const rows = options.store.read(SESSION_ARTIFACT_SEEDS, {
+    sessionId,
+    limit: MAX_ARTIFACT_LIST_LIMIT + 1,
+  });
+  if (!rows.ok)
+    return err({
+      kind: "import",
+      code: "export",
+      error: { kind: "export", code: "storage", error: rows.error },
+    });
   const listed: ArtifactRecord[] = [];
-  const turns = options.repositories.turns.listByParent(sessionId, MAX_RECORD_LIST_LIMIT);
-  if (!turns.ok) {
-    return err(fromRecord(turns.error));
+  for (const row of rows.value.slice(0, MAX_ARTIFACT_LIST_LIMIT)) {
+    const id = artifactId.parse(row.artifactId);
+    if (!id.ok) continue;
+    const found = repository.get(id.value);
+    if (!found.ok) return err({ kind: "import", code: "artifact", error: found.error });
+    if (found.value) listed.push(found.value);
   }
-  for (const turn of turns.value) {
-    const invocations = options.repositories.invocations.listByParent(
-      turn.turnId,
-      MAX_RECORD_LIST_LIMIT,
-    );
-    if (!invocations.ok) {
-      return err(fromRecord(invocations.error));
-    }
-    for (const invocation of invocations.value) {
-      const found = artifacts.listByInvocation(invocation.invocationId, MAX_ARTIFACT_LIST_LIMIT);
-      if (!found.ok) {
-        return err({ kind: "import", code: "artifact", error: found.error });
-      }
-      listed.push(...found.value);
-    }
-  }
-  return ok(listed);
+  return ok({ records: listed, truncated: rows.value.length > MAX_ARTIFACT_LIST_LIMIT });
 }
 
 async function copyArtifact(

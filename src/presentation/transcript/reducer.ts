@@ -1,4 +1,7 @@
+import { artifactId } from "../../domain/artifacts/index.ts";
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
+import type { HistoryPayload } from "../../domain/sessions/history.ts";
+import { historyReferences } from "../../domain/sessions/history.ts";
 /**
  * Events in, transcript out.
  *
@@ -105,9 +108,133 @@ export function reduceTranscript(
 ): TranscriptProjection {
   let state: CoalescedTranscript = EMPTY_TRANSCRIPT;
   const cursors = new Map<StreamId, Sequence>();
+  const first = events[0];
+  if (
+    first &&
+    first.sequence > 1 &&
+    !resumedAfter.has(first.streamId) &&
+    events.some((event) => event.kind === "history.recorded")
+  ) {
+    state = applyRevision(state, {
+      kind: "notice",
+      anchor: { of: "declared", key: `history-window:${first.streamId}` },
+      source: "runtime",
+      status: "final",
+      summary: complete("Earlier session history is outside this view."),
+      note: complete(
+        `Read ordered history with falryn session show ${first.correlation.sessionId} --workspace-id ${first.correlation.workspaceId}; follow its paging cursor.`,
+      ),
+      invocationId: null,
+      occurredAt: first.occurredAt,
+      order: 0,
+      sensitivity: "ordinary",
+      artifactIds: [],
+      renderGeneration: TRANSCRIPT_PROJECTION_GENERATION,
+    });
+  }
 
+  const history = new Map(
+    events.flatMap((event) =>
+      event.kind === "history.recorded" ? [[event.payload.id, event.payload] as const] : [],
+    ),
+  );
+  const settledTurns = new Set(
+    events.flatMap((event) => (event.kind === "turn.completed" ? [event.correlation.turnId] : [])),
+  );
+  const retiredPoints = new Set(
+    events.flatMap((event) =>
+      event.kind === "history.recorded" &&
+      event.payload.type === "restore-point" &&
+      (event.payload.stage === "expired" || event.payload.stage === "deleted")
+        ? [event.payload.restorePointId]
+        : [],
+    ),
+  );
+  const completedInvocations = new Set(
+    events.flatMap((event) =>
+      event.kind === "capability.invocation.completed" ? [String(event.invocationId)] : [],
+    ),
+  );
+  const fragments = new Map<string, Extract<RuntimeEvent, { kind: "history.recorded" }>[]>();
+  for (const event of events)
+    if (
+      event.kind === "history.recorded" &&
+      event.payload.type === "message" &&
+      event.payload.part > 0
+    ) {
+      const parts = fragments.get(event.payload.messageId) ?? [];
+      parts.push(event);
+      fragments.set(event.payload.messageId, parts);
+    }
+  const completeMessages = new Set(
+    events.flatMap((event) =>
+      event.kind === "history.recorded" &&
+      event.payload.type === "message" &&
+      event.payload.part === 0 &&
+      event.payload.evidence.availability !== "unavailable"
+        ? [event.payload.messageId]
+        : [],
+    ),
+  );
   for (const event of events) {
-    const block = blockFor(event);
+    const supersededFragment =
+      event.kind === "history.recorded" &&
+      event.payload.type === "message" &&
+      event.payload.part > 0 &&
+      completeMessages.has(event.payload.messageId);
+    const projectedResult =
+      event.kind === "history.recorded" &&
+      event.payload.type === "result" &&
+      event.payload.invocationId !== null &&
+      completedInvocations.has(event.payload.invocationId);
+    const parts =
+      event.kind === "history.recorded" &&
+      event.payload.type === "message" &&
+      event.payload.part > 0
+        ? fragments.get(event.payload.messageId)
+        : undefined;
+    const earlierFragment = parts !== undefined && parts.at(-1)?.eventId !== event.eventId;
+    let block =
+      supersededFragment || projectedResult || earlierFragment
+        ? null
+        : blockFor(
+            event,
+            event.kind === "capability.invocation.completed" && event.payload.historyId
+              ? history.get(event.payload.historyId)
+              : undefined,
+          );
+    if (parts && block?.kind === "model-text" && event.kind === "history.recorded") {
+      const complete = parts.every((part) => part.payload.evidence.availability === "inline");
+      block = {
+        ...block,
+        status: settledTurns.has(event.correlation.turnId) ? "final" : "in-progress",
+        text: complete
+          ? bound(
+              parts
+                .map((part) =>
+                  part.payload.evidence.availability === "inline" ? part.payload.evidence.text : "",
+                )
+                .join(""),
+            )
+          : omitted("Partial response; inspect retained fragments for available content."),
+        artifactIds: parts.flatMap((part) =>
+          part.payload.evidence.availability === "retained"
+            ? [artifactId.from(part.payload.evidence.artifactId)]
+            : [],
+        ),
+      };
+    }
+    if (
+      block?.kind === "notice" &&
+      event.kind === "history.recorded" &&
+      event.payload.type === "restore-point" &&
+      retiredPoints.has(event.payload.restorePointId)
+    )
+      block = {
+        ...block,
+        artifactIds: [],
+        note: omitted("Restore-point evidence is expired or deleted."),
+      };
     if (block !== null) {
       state = applyRevision(state, block);
     }
@@ -139,7 +266,7 @@ export function reduceTranscript(
  * Exhaustive. A new event kind does not compile until it has decided whether it
  * is something a user should see.
  */
-export function blockFor(event: RuntimeEvent): TranscriptBlock | null {
+export function blockFor(event: RuntimeEvent, history?: HistoryPayload): TranscriptBlock | null {
   const spine = {
     occurredAt: event.occurredAt,
     // Replaced by the fold. A producer cannot know where its block lands.
@@ -174,6 +301,51 @@ export function blockFor(event: RuntimeEvent): TranscriptBlock | null {
             : `${event.payload.task.terminal.outcome}; ${event.payload.task.terminal.reason}.`,
         ),
       };
+    case "history.recorded": {
+      const history = event.payload;
+      if (history.type === "gate") return null;
+      const evidence = history.evidence;
+      const text =
+        evidence.availability === "inline"
+          ? bound(evidence.text)
+          : omitted(
+              evidence.availability === "retained"
+                ? "Artifact referenced; availability is checked when opened."
+                : evidence.reason,
+            );
+      const common = {
+        ...spine,
+        anchor: { of: "declared" as const, key: String(event.eventId) },
+        status: "final" as const,
+        invocationId: null,
+        sensitivity:
+          evidence.availability === "retained" && evidence.sensitivity === "restricted"
+            ? ("secret" as const)
+            : evidence.availability === "retained" && evidence.sensitivity === "sensitive"
+              ? ("sensitive" as const)
+              : ("ordinary" as const),
+        artifactIds: historyReferences(history).map((reference) =>
+          artifactId.from(reference.artifactId),
+        ),
+      };
+      if (history.type === "message")
+        return {
+          ...common,
+          anchor: { of: "declared", key: `message:${history.messageId}` },
+          status: history.part === 0 ? "final" : "in-progress",
+          kind: history.role === "user" ? "user-input" : "model-text",
+          source: history.role === "user" ? "user" : "model",
+          summary: complete(`${history.role} content (${history.completion})`),
+          text,
+        };
+      return {
+        ...common,
+        kind: "notice",
+        source: "runtime",
+        summary: complete(`History ${history.type}`),
+        note: text,
+      };
+    }
     case "session.started":
       return {
         ...spine,
@@ -242,7 +414,28 @@ export function blockFor(event: RuntimeEvent): TranscriptBlock | null {
         summary: complete(`Ran ${event.capabilityId}.`),
         invocationId: event.invocationId,
         capability: event.capabilityId,
-        output: invocationResultOutput(event),
+        output:
+          history === undefined
+            ? invocationResultOutput(event)
+            : history.evidence.availability === "inline"
+              ? bound(history.evidence.text)
+              : omitted(
+                  history.evidence.availability === "retained"
+                    ? "Exact result is referenced by an artifact; availability is checked when opened."
+                    : history.evidence.reason,
+                ),
+        sensitivity:
+          history?.evidence.availability === "retained" &&
+          history.evidence.sensitivity === "restricted"
+            ? "secret"
+            : history?.evidence.availability === "retained" &&
+                history.evidence.sensitivity === "sensitive"
+              ? "sensitive"
+              : "ordinary",
+        artifactIds:
+          history?.evidence.availability === "retained"
+            ? [artifactId.from(history.evidence.artifactId)]
+            : [],
         outcome: event.payload.outcome,
       };
 

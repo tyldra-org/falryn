@@ -104,6 +104,7 @@ async function seededHome(): Promise<{
   const events = createSqliteEventStore(store);
   await events.append({
     ...sessionStarted(1),
+    correlation: { ...sessionStarted(1).correlation, sessionId: SESSION },
     streamId: "stream-s1" as never,
   });
   await store.close();

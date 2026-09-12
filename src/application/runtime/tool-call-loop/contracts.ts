@@ -103,6 +103,11 @@ export type ToolFallbackPolicy = {
 };
 
 export type ToolCallLoopOptions = {
+  /** Journal rejected proposals at the binding boundary before returning. */
+  readonly onRefusedProposals?: (
+    proposals: readonly ToolProposal[],
+    reason: string,
+  ) => Promise<void>;
   readonly coordinator: TurnCoordinator;
   readonly catalog: ToolCatalog;
   readonly runner: ToolRunnerPort;

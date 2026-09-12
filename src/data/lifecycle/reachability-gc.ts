@@ -1,3 +1,4 @@
+import { SESSION_ARTIFACT_SEEDS } from "../sessions/history-schema.ts";
 /**
  * Reachability garbage collection over durable sessions and artifacts (#725).
  *
@@ -46,7 +47,7 @@ import type {
 } from "../../domain/storage/index.ts";
 import { createArtifactProvenanceRepository } from "../artifacts/artifact-provenance-repository.ts";
 import { ARTIFACTS_TABLE } from "../artifacts/artifact-schema.ts";
-import { INVOCATIONS_TABLE, SESSIONS_TABLE, TURNS_TABLE } from "../sqlite/schema.ts";
+import { SESSIONS_TABLE } from "../sqlite/schema.ts";
 import { type ExportOptions, verifyPackage } from "./export.ts";
 
 /** Sessions one plan may examine before reporting partial. */
@@ -61,17 +62,13 @@ export const MAX_GC_EXPORT_PACKAGES = 32;
 const SELECT_SESSIONS = `SELECT session_id AS sessionId, closed_at AS closedAt, stream_id AS streamId
   FROM ${SESSIONS_TABLE} ORDER BY started_at, session_id LIMIT $limit`;
 
-const SELECT_SESSION_ARTIFACTS = `SELECT DISTINCT a.artifact_id AS artifactId
-  FROM ${ARTIFACTS_TABLE} a
-  JOIN ${INVOCATIONS_TABLE} i ON i.invocation_id = a.invocation_id
-  JOIN ${TURNS_TABLE} t ON t.turn_id = i.turn_id
-  WHERE t.session_id = $sessionId
-    AND ($includeReleased = 1 OR NOT EXISTS (
-      SELECT 1 FROM process_task_artifacts p WHERE p.artifact_id = a.artifact_id
+const SELECT_SESSION_ARTIFACTS = `SELECT seeds.artifactId AS artifactId
+  FROM (${SESSION_ARTIFACT_SEEDS}) seeds
+  WHERE ($includeReleased = 1 OR NOT EXISTS (
+      SELECT 1 FROM process_task_artifacts p WHERE p.artifact_id = seeds.artifactId
     ) OR EXISTS (
-      SELECT 1 FROM process_task_artifacts p WHERE p.artifact_id = a.artifact_id AND p.released = 0
-    ))
-  LIMIT $limit`;
+      SELECT 1 FROM process_task_artifacts p WHERE p.artifact_id = seeds.artifactId AND p.released = 0
+    )) LIMIT $limit`;
 
 const SELECT_ARTIFACTS = `SELECT artifact_id AS artifactId, digest AS digest,
   byte_length AS byteLength, availability AS availability

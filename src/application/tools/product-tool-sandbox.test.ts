@@ -1,7 +1,8 @@
-import { expect, test } from "bun:test";
+import { afterEach, expect, test } from "bun:test";
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { removeTemporaryRoots } from "../../data/fixtures.ts";
 import {
   configurationGeneration,
   createManualClock,
@@ -22,6 +23,7 @@ import { createInMemoryEventStore } from "../../domain/sessions/index.ts";
 import { createToolHookRegistry } from "../../domain/tools/index.ts";
 import { createHostProcessCapturePort } from "../../integrations/process/host-process-capture.ts";
 import { createHostSandbox } from "../../integrations/security/host-sandbox.ts";
+import { createProcessTaskFixture } from "../orchestration/process-task.fixtures.ts";
 import { createProductResources } from "../orchestration/product-resources.ts";
 import { createTurnEventJournal } from "../runtime/turn-event-journal.ts";
 import {
@@ -31,7 +33,13 @@ import {
 import { composeProductProcessTools } from "./product-tools-process.ts";
 
 const strictTest = createHostSandbox().probe().status === "available" ? test : test.skip;
-function fixture(root: string, mode: SandboxMode, confirmation?: ProductToolConfirmationPort) {
+afterEach(removeTemporaryRoots);
+async function fixture(
+  root: string,
+  mode: SandboxMode,
+  confirmation?: ProductToolConfirmationPort,
+) {
+  const retained = await createProcessTaskFixture(false);
   const generation = configurationGeneration.from(3);
   let policyGeneration = 3;
   const clock = createManualClock(instant(Date.now()));
@@ -70,6 +78,7 @@ function fixture(root: string, mode: SandboxMode, confirmation?: ProductToolConf
   const hooks = createToolHookRegistry(generation, []);
   if (!hooks.ok) throw new Error(hooks.error.code);
   const gateway = createProductToolGateway({
+    historyArtifacts: retained.artifacts,
     sandbox,
     clock,
     resources: createProductResources(clock),
@@ -92,23 +101,25 @@ function fixture(root: string, mode: SandboxMode, confirmation?: ProductToolConf
       policyGeneration += 1;
     },
     execute: (input: Record<string, unknown>) =>
-      gateway.execute({
-        invocationId: invocationId.from("sandbox-call"),
-        toolCallId: "sandbox-call",
-        toolName: "run_process",
-        capabilityId: entry.manifest.capabilityId,
-        version: 1,
-        effect: entry.manifest.effect,
-        input: { executable: process.execPath, outputMode: "raw", ...input },
-        signal: new AbortController().signal,
-      }),
+      gateway
+        .execute({
+          invocationId: invocationId.from("sandbox-call"),
+          toolCallId: "sandbox-call",
+          toolName: "run_process",
+          capabilityId: entry.manifest.capabilityId,
+          version: 1,
+          effect: entry.manifest.effect,
+          input: { executable: process.execPath, outputMode: "raw", ...input },
+          signal: new AbortController().signal,
+        })
+        .finally(() => retained.close()),
   };
 }
 
 test("live tool results and journal replay disclose the compatibility boundary", async () => {
   const root = await mkdtemp(join(tmpdir(), "falryn-sandbox-gateway-"));
   try {
-    const setup = fixture(root, "off");
+    const setup = await fixture(root, "off");
     const outcome = await setup.execute({ argv: ["-e", 'console.log("visible-output")'] });
     expect(outcome.status).toBe("completed");
     expect(outcome.sandbox?.[0]).toMatchObject({
@@ -148,9 +159,9 @@ strictTest("extra filesystem access requires a separate exact confirmation", asy
       ],
       sandboxExpansion: { readRoots: [extra], writeRoots: [] },
     };
-    expect((await fixture(root, "strict").execute(input)).status).toBe("denied");
+    expect((await (await fixture(root, "strict")).execute(input)).status).toBe("denied");
     let confirmations = 0;
-    const setup = fixture(root, "strict", {
+    const setup = await fixture(root, "strict", {
       async resolve(request) {
         confirmations += 1;
         expect(request.title).toContain("once");
@@ -178,7 +189,7 @@ strictTest("extra filesystem access requires a separate exact confirmation", asy
 strictTest("a policy change during confirmation refuses launch", async () => {
   const root = await mkdtemp(join(tmpdir(), "falryn-sandbox-freshness-"));
   try {
-    const setup = fixture(root, "strict", {
+    const setup = await fixture(root, "strict", {
       async resolve(request) {
         setup.changePolicy();
         return { kind: "confirmed", confirmationId: request.confirmationId };

@@ -5,6 +5,7 @@ import {
   reflectionValue,
 } from "../../application/memory/reflection.fixtures.ts";
 import { createProductResources as reflectionResources } from "../../application/orchestration/product-resources.ts";
+import { createHistoryReader } from "../../application/sessions/history-reader.ts";
 import {
   sessionStarted as reflectionSessionStarted,
   turnCompleted as reflectionTurnCompleted,
@@ -652,7 +653,15 @@ describe("runCoding", () => {
     const seeded = await seededHome();
     await writeFile(join(seeded.primary, "matrix.ts"), LIVE_TURN_MATRIX_CONTEXT, "utf8");
     const services = providerFor(seeded)(globalsFor(seeded));
-    const artifacts = failingArtifactStore();
+    const retained = await openProductArtifactSession(services());
+    if (!retained) throw new Error("history fixture storage unavailable");
+    const artifacts = {
+      ...retained.artifacts,
+      ingest: (input: Parameters<typeof retained.artifacts.ingest>[0], signal?: AbortSignal) =>
+        String(input.artifactId).startsWith("history-")
+          ? retained.artifacts.ingest(input, signal)
+          : failingArtifactStore().ingest(input, signal),
+    };
     const fixture = createLiveTurnMatrixFixture(artifacts, "cap-823-retention-failure");
     const result = await runCoding(
       services,
@@ -672,6 +681,7 @@ describe("runCoding", () => {
       },
     );
 
+    await retained.close();
     expect(result.outcome).toEqual({ kind: "failed", effect: "partial" });
     expect(result.payload).toMatchObject({
       stage: "attempt-failed",
@@ -696,7 +706,10 @@ describe("runCoding", () => {
     );
     expect(replayed.ok).toBe(true);
     if (replayed.ok) {
-      expect(replayed.value.map((event) => event.kind)).toEqual(LIVE_TURN_MATRIX_EVENT_KINDS);
+      expect(replayed.value.map((event) => event.kind)).toEqual([
+        ...LIVE_TURN_MATRIX_EVENT_KINDS.slice(0, -4),
+        ...LIVE_TURN_MATRIX_EVENT_KINDS.slice(-2),
+      ]);
       const terminal = replayed.value.find((event) => event.kind === "turn.completed");
       expect(terminal?.kind === "turn.completed" ? terminal.payload.outcome : null).toEqual({
         kind: "failed",
@@ -1380,14 +1393,69 @@ describe("runCoding", () => {
             .filter((node) => node.attempts > 0)
             .every((node) => node.attempts === 1),
         ).toBe(true);
+        // Historical checks and source bytes stay bound to their original revisions.
+        await writeFile(join(seeded.primary, "a.ts"), "later-source-revision\n");
+        const heads = session.eventStore.streamHeads(8);
+        if (!heads.ok) throw new Error(heads.error.code);
+        const reader = createHistoryReader({
+          events: session.eventStore,
+          artifacts: session.artifacts,
+          authorize: () => true,
+        });
+        const history = [];
+        for (const head of heads.value) {
+          let cursor = null;
+          do {
+            const page = await reader.page({
+              streamId: head.streamId,
+              afterSequence: cursor,
+              limit: 64,
+            });
+            if (!page.ok) throw new Error(page.code);
+            expect(page.items.length).toBeLessThanOrEqual(64);
+            history.push(...page.items);
+            cursor = page.next;
+          } while (cursor !== null);
+        }
+        const results = history.filter(
+          (item) =>
+            item.event?.kind === "history.recorded" &&
+            item.event.payload.type === "result" &&
+            item.event.payload.id.endsWith(":exact-result"),
+        );
+        for (const name of [
+          "search_text",
+          "read_file",
+          "preview_patch",
+          "apply_patch",
+          ...(!changed ? ["run_process"] : []),
+        ])
+          expect(
+            results.some(
+              (item) =>
+                item.event?.kind === "history.recorded" &&
+                item.event.payload.type === "result" &&
+                item.event.payload.capabilityId === `builtin:workspace/${name}@1`,
+            ),
+          ).toBe(true);
+        const retained = results.map((item) => item.text ?? "").join("\n");
+        expect(retained).toContain("old-a");
+        expect(retained).not.toContain("later-source-revision");
+        expect(
+          results.every(
+            (item) => item.availability === "exact" || item.availability === "redacted",
+          ),
+        ).toBe(true);
+        if (changed) {
+          expect(retained).toContain('"code":"conflict"');
+          expect(retained).toContain("another-writer");
+        }
       } finally {
         await session.close();
       }
       expect(requests).toHaveLength(2);
       expect(confirmations).toEqual(changed ? ["apply_patch"] : ["apply_patch", "run_process"]);
-      expect(await readFile(join(seeded.primary, "a.ts"), "utf8")).toBe(
-        changed ? "another-writer\n" : "new-a\n",
-      );
+      expect(await readFile(join(seeded.primary, "a.ts"), "utf8")).toBe("later-source-revision\n");
       expect(await readFile(join(seeded.primary, "b.ts"), "utf8")).toBe(
         changed ? "old-b\n" : "new-b\n",
       );

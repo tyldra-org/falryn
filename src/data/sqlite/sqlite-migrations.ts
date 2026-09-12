@@ -1,4 +1,5 @@
 import { MIGRATION_0022, WORKFLOW_TABLES } from "../orchestration/workflow-store.ts";
+import { MIGRATION_0026 } from "../sessions/history-schema.ts";
 /**
  * The registered migration set, and the rules a set has to satisfy to be run.
  *
@@ -121,6 +122,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0023,
   MIGRATION_0024,
   MIGRATION_0025,
+  MIGRATION_0026,
 ];
 
 /** Every product table the registered set creates, in creation order. */
