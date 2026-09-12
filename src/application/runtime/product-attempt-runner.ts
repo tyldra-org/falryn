@@ -13,6 +13,7 @@ import { createCapabilityComposition } from "../capabilities/capability-composit
 import { recordBriefDelivery } from "../../domain/compression/index.ts";
 import { assertNever, type ClockPort, deadlineAt, instant } from "../../domain/foundation/index.ts";
 import type { EffectCertainty, ModelCapabilityBrief } from "../../domain/orchestration/index.ts";
+import { isDeferrablePlanCandidate } from "../../domain/orchestration/opportunity-plan.ts";
 import type {
   ResourceAdmissionReceipt,
   ResourceAmounts,
@@ -610,6 +611,7 @@ function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistr
     }
   }
   const disclosed = input.disclosure.tools;
+  const deferred = input.disclosure.deferred ?? [];
   const opportunityPlan = input.disclosure.opportunityPlan;
   if (
     opportunityPlan !== undefined &&
@@ -621,27 +623,37 @@ function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistr
     return "opportunity plan generation or discovery identity is stale";
   }
   if (
-    input.tools.length !== disclosed.length ||
-    input.disclosure.toolNames.length !== disclosed.length
+    input.tools.length !== disclosed.length + deferred.length ||
+    input.disclosure.toolNames.length !== disclosed.length + deferred.length
   ) {
     return "capability disclosure does not match the provider tool set";
   }
   const seen = new Set<string>();
-  for (const [index, receipt] of disclosed.entries()) {
+  for (const [index, receipt] of [...disclosed, ...deferred].entries()) {
     const definition = input.tools[index];
     const disclosedName = input.disclosure.toolNames[index];
+    const isDeferred = index >= disclosed.length;
     if (
       definition === undefined ||
       definition.name !== receipt.name ||
       disclosedName !== receipt.name ||
-      seen.has(receipt.name)
+      seen.has(receipt.name) ||
+      (definition.deferred === true) !== isDeferred
     ) {
       return "capability disclosure order or identity is invalid";
     }
     seen.add(receipt.name);
     if (
       opportunityPlan !== undefined &&
-      !opportunityPlan.selected.some((candidate) => candidate.capabilityId === receipt.capabilityId)
+      !(isDeferred
+        ? [...opportunityPlan.fallbacks, ...opportunityPlan.rejected].some(
+            (candidate) =>
+              candidate.capabilityId === receipt.capabilityId &&
+              isDeferrablePlanCandidate(candidate),
+          )
+        : opportunityPlan.selected.some(
+            (candidate) => candidate.capabilityId === receipt.capabilityId,
+          ))
     ) {
       return "provider tool was not selected by the bound opportunity plan";
     }

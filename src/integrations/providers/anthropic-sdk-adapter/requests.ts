@@ -2,7 +2,7 @@ import type {
   ContentBlockParam,
   MessageParam,
   TextBlockParam,
-  Tool,
+  ToolUnion,
 } from "@anthropic-ai/sdk/resources/messages/messages";
 import type { AnthropicMessagesTransportCompatibilityDeclaration } from "../../../providers/configuration/transport-compatibility.ts";
 import type { ModelMessage, ModelToolDefinition } from "../../../providers/protocol/messages.ts";
@@ -222,14 +222,22 @@ export function toAnthropicMessages(
 export function toTools(
   tools: readonly ModelToolDefinition[],
   compatibility: AnthropicMessagesTransportCompatibilityDeclaration,
-): Tool[] | undefined {
+): ToolUnion[] | undefined {
   if (tools.length === 0) {
     return undefined;
   }
-  return tools.map((tool) => ({
+  const translated: ToolUnion[] = tools.map((tool) => ({
     name: tool.name,
     description: tool.description,
     input_schema: { ...tool.parameters, type: "object" },
     strict: compatibility.strictToolSchemas,
+    ...(tool.deferred === true ? { defer_loading: true } : {}),
   }));
+  if (tools.some((tool) => tool.deferred === true)) {
+    translated.push({
+      name: "tool_search_tool_bm25",
+      type: "tool_search_tool_bm25_20251119",
+    });
+  }
+  return translated;
 }

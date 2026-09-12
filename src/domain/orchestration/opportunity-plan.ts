@@ -252,6 +252,20 @@ function candidateScore(
   return score;
 }
 
+/**
+ * A candidate that stays authority-eligible for deferred definition loading:
+ * it passed health, policy, and schema gates but missed the eager bound on
+ * rank, family budget, or token budget. Policy-denied, unselectable, and
+ * schema-unavailable candidates are never deferrable.
+ */
+export function isDeferrablePlanCandidate(entry: OpportunityCandidateDecision): boolean {
+  return (
+    entry.decision === "fallback" ||
+    (entry.decision === "rejected" &&
+      entry.reasons.every((reason) => reason === "not-task-relevant"))
+  );
+}
+
 export function decision(
   candidate: CapabilityOpportunityCandidate,
   health: CapabilityHealthSnapshot["entries"][number],

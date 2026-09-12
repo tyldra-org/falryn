@@ -61,6 +61,8 @@ export type DelegatedRuntimeOptions = {
     | { readonly adapter: ProviderAdapterPort; readonly catalog: ModelCatalog }
     | { readonly reason: string }
   >;
+  /** Internal matched-run seam; marks composed orchestration tools explicit-only. */
+  readonly toolExposureOverride?: "none";
 };
 
 export function composeDelegatedAgentRuntime(
@@ -285,9 +287,13 @@ export function composeDelegatedAgentRuntime(
     childPorts: ProductAgentRuntimePorts,
     peer: PeerMailbox | null = null,
   ) {
-    const delegate = composeDelegationTool(generation, (request) =>
+    const delegateTool = composeDelegationTool(generation, (request) =>
       delegation.execute(request.input, request, parent),
     );
+    const delegate =
+      options.toolExposureOverride === "none"
+        ? { ...delegateTool, explicitOnly: new Set([capabilityId.from(DELEGATE_CAPABILITY)]) }
+        : delegateTool;
     const allowed = parent?.prepared.authority.capabilities;
     const ownedBase = base;
     const entries =

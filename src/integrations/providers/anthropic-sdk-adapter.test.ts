@@ -372,6 +372,125 @@ describe("createAnthropicSdkAdapter", () => {
     expect(events.at(-1)?.kind).toBe("finished");
   });
 
+  test("defers authorized definitions through tool search and records loads", async () => {
+    const captured: { body: MessageCreateParamsStreaming | null } = { body: null };
+    const events = await collect(
+      {
+        resolveApiKey: async () => "sk-ant-test",
+        createStream: async (_apiKey, requestBody) => {
+          captured.body = requestBody;
+          return stream([
+            anthropicEvent({
+              type: "message_start",
+              message: { usage: { input_tokens: 8, output_tokens: 0 } },
+            }),
+            anthropicEvent({
+              type: "content_block_start",
+              index: 0,
+              content_block: {
+                type: "server_tool_use",
+                id: "srv-1",
+                name: "tool_search_tool_bm25",
+                input: {},
+                caller: { type: "direct" },
+              },
+            }),
+            anthropicEvent({
+              type: "content_block_delta",
+              index: 0,
+              delta: { type: "input_json_delta", partial_json: '{"query":"search"}' },
+            }),
+            anthropicEvent({ type: "content_block_stop", index: 0 }),
+            anthropicEvent({
+              type: "content_block_start",
+              index: 1,
+              content_block: {
+                type: "tool_search_tool_result",
+                tool_use_id: "srv-1",
+                content: {
+                  type: "tool_search_tool_search_result",
+                  tool_references: [{ type: "tool_reference", tool_name: "search_text" }],
+                },
+              },
+            }),
+            anthropicEvent({ type: "content_block_stop", index: 1 }),
+            anthropicEvent({
+              type: "content_block_start",
+              index: 2,
+              content_block: {
+                type: "tool_use",
+                id: "toolu-1",
+                name: "search_text",
+                input: { query: "needle" },
+              },
+            }),
+            anthropicEvent({ type: "content_block_stop", index: 2 }),
+            anthropicEvent({
+              type: "message_delta",
+              delta: { stop_reason: "tool_use" },
+              usage: { output_tokens: 4 },
+            }),
+            anthropicEvent({ type: "message_stop" }),
+          ]);
+        },
+      },
+      request({
+        tools: [
+          {
+            name: "read_file",
+            description: "Read a file",
+            parameters: { type: "object", properties: { path: { type: "string" } } },
+          },
+          {
+            name: "search_text",
+            description: "Search text",
+            parameters: { type: "object", additionalProperties: false },
+            deferred: true,
+          },
+        ],
+      }),
+    );
+
+    expect(captured.body?.tools).toMatchObject([
+      { name: "read_file", strict: true },
+      { name: "search_text", strict: true, defer_loading: true },
+      { name: "tool_search_tool_bm25", type: "tool_search_tool_bm25_20251119" },
+    ]);
+    const metadata = events
+      .filter((item) => item.kind === "provider-metadata")
+      .map((item) => (item.kind === "provider-metadata" ? item.entries : {}));
+    expect(metadata).toContainEqual(
+      expect.objectContaining({
+        toolDeferral: "anthropic-tool-search",
+        deferredToolCount: "1",
+      }),
+    );
+    expect(metadata).toContainEqual(
+      expect.objectContaining({
+        itemType: "server_tool_use",
+        toolName: "tool_search_tool_bm25",
+      }),
+    );
+    expect(metadata).toContainEqual(
+      expect.objectContaining({
+        itemType: "tool_search_tool_result",
+        deferredToolsLoaded: "search_text",
+      }),
+    );
+    expect(metadata).toContainEqual(
+      expect.objectContaining({
+        toolSearchCalls: "1",
+        deferredToolsLoaded: "search_text",
+      }),
+    );
+    expect(events.find((item) => item.kind === "tool-proposal")).toMatchObject({
+      toolCallId: "toolu-1",
+      name: "search_text",
+      argumentsJson: '{"query":"needle"}',
+    });
+    expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "tool_use" });
+  });
+
   test("fails closed for missing credentials and unresolved image handles", async () => {
     const missing = await collect({
       resolveApiKey: async () => null,

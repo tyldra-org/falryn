@@ -28,6 +28,7 @@ import {
 import type { PromptToolInput } from "../../domain/context/index.ts";
 import type { CapabilityId, ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type { EffectClass, ModelCapabilityBrief } from "../../domain/orchestration/index.ts";
+import { isDeferrablePlanCandidate } from "../../domain/orchestration/opportunity-plan.ts";
 import type { EffectiveExecutionPolicy } from "../../domain/sessions/index.ts";
 import { resolveExecutionProfile } from "../../domain/sessions/index.ts";
 import type { ToolCapabilityKind, ToolRegistry } from "../../domain/tools/index.ts";
@@ -40,6 +41,14 @@ export { measureProductToolSchema } from "./product-tool-schema.ts";
 export const PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION = 1;
 /** Hard schema-count guard; profile ordering, not a per-mode quota, selects below it. */
 export const MAX_DISCLOSED_PRODUCT_TOOLS = 24;
+/**
+ * Hard deferred-definition guard for provider-native tool search (#842).
+ * Deferred definitions travel in the request but stay out of model context
+ * until a supporting transport loads them; unsupported transports omit them.
+ */
+export const MAX_DEFERRED_PRODUCT_TOOLS = 24;
+/** Estimated-token bound for deferred definition bytes, matching eager disclosure. */
+export const DEFERRED_PRODUCT_TOOL_SCHEMA_TOKEN_BUDGET = 12_000;
 
 export const MODEL_CAPABILITY_FAMILIES = CAPABILITY_FAMILIES;
 
@@ -78,9 +87,17 @@ export type CapabilityDisclosureReceipt = {
   readonly registryTotal: number;
   readonly registryCounts: Readonly<Record<string, number>>;
   readonly disclosed: readonly DisclosedProductTool[];
+  /**
+   * Authorized definitions beyond the eager bound, marked `deferred` in
+   * `modelTools` so a supporting transport can serve them through native tool
+   * search. Drawn only from the bound opportunity plan's ordered fallbacks.
+   */
+  readonly deferred: readonly DisclosedProductTool[];
   readonly omitted: readonly { readonly name: string; readonly reason: string }[];
   readonly schemaBytes: number;
   readonly schemaTokensEstimated: number;
+  readonly deferredSchemaBytes: number;
+  readonly deferredSchemaTokensEstimated: number;
   readonly discoveryHandle: string;
 };
 
@@ -99,6 +116,8 @@ export type ProductToolDisclosureOptions = {
   readonly intent?: WorkIntent;
   readonly preferredCapabilityIds?: readonly CapabilityId[];
   readonly schemaTokenBudget?: number;
+  readonly deferredMaximum?: number;
+  readonly deferredSchemaTokenBudget?: number;
 };
 
 const RAW_PROTOCOL_ESCAPES = new Set(["run_process", "run_shell"]);
@@ -234,6 +253,48 @@ export function discloseProductTools(
     selected.push({ entry, parameters });
   }
 
+  const deferredMaximum = Math.min(
+    MAX_DEFERRED_PRODUCT_TOOLS,
+    Math.max(
+      0,
+      Number.isFinite(options.deferredMaximum)
+        ? Math.trunc(options.deferredMaximum as number)
+        : MAX_DEFERRED_PRODUCT_TOOLS,
+    ),
+  );
+  const deferredSchemaTokenBudget = Math.max(
+    0,
+    Number.isFinite(options.deferredSchemaTokenBudget)
+      ? Math.trunc(options.deferredSchemaTokenBudget as number)
+      : DEFERRED_PRODUCT_TOOL_SCHEMA_TOKEN_BUDGET,
+  );
+  const deferred: {
+    entry: ToolRegistry["entries"][number];
+    parameters: Readonly<Record<string, unknown>>;
+  }[] = [];
+  let deferredSchemaTokens = 0;
+  for (const planned of [...opportunityPlan.fallbacks, ...opportunityPlan.rejected]) {
+    if (deferred.length >= deferredMaximum) {
+      break;
+    }
+    if (!isDeferrablePlanCandidate(planned)) continue;
+    if (planned.kind !== "tool" && planned.kind !== "mcp-tool") continue;
+    const entry = registry.resolveByCapabilityId(planned.capabilityId);
+    if (entry === null || omittedNames.has(entry.manifest.name)) continue;
+    if (policyOmissionReason(entry, executionPolicy) !== null) continue;
+    const capabilityHealth = healthById.get(entry.manifest.capabilityId);
+    if (capabilityHealth === undefined || !capabilityHealth.selectable) continue;
+    const parameters = jsonSchemaFor(entry.manifest.inputSchema);
+    if (!isClosedProductToolSchema(parameters)) continue;
+    const measured = measureProductToolSchema(parameters);
+    if (deferredSchemaTokens + measured.tokensEstimated > deferredSchemaTokenBudget) {
+      continue;
+    }
+    deferred.push({ entry, parameters });
+    deferredSchemaTokens += measured.tokensEstimated;
+    omittedNames.add(entry.manifest.name);
+  }
+
   for (const entry of registry.entries) {
     const name = entry.manifest.name;
     if (
@@ -269,12 +330,26 @@ export function discloseProductTools(
     required: false,
     available: true,
   }));
-  const modelTools: ModelToolDefinition[] = selected.map(({ entry, parameters }) => ({
-    name: entry.manifest.name,
-    description: entry.manifest.description,
+  const modelTools: ModelToolDefinition[] = [
+    ...selected.map(({ entry, parameters }) => ({
+      name: entry.manifest.name,
+      description: entry.manifest.description,
+      parameters,
+    })),
+    ...deferred.map(({ entry, parameters }) => ({
+      name: entry.manifest.name,
+      description: entry.manifest.description,
+      parameters,
+      deferred: true,
+    })),
+  ];
+  const descriptorFor = ({
+    entry,
     parameters,
-  }));
-  const disclosed = selected.map(({ entry, parameters }) => {
+  }: {
+    entry: ToolRegistry["entries"][number];
+    parameters: Readonly<Record<string, unknown>>;
+  }): DisclosedProductTool => {
     const measured = measureProductToolSchema(parameters);
     const capability = capabilityRegistry.resolveById(entry.manifest.capabilityId);
     if (capability === null) {
@@ -291,7 +366,9 @@ export function discloseProductTools(
       schemaTokensEstimated: measured.tokensEstimated,
       lifecycle: capabilityLifecycle(capability, { disclosed: true }),
     };
-  });
+  };
+  const disclosed = selected.map(descriptorFor);
+  const deferredDescriptors = deferred.map(descriptorFor);
   const disclosedIds = new Set(disclosed.map((entry) => entry.capabilityId));
   const plannedCardIds = new Set([
     ...opportunityPlan.selected.map((entry) => entry.capabilityId),
@@ -326,7 +403,10 @@ export function discloseProductTools(
   ];
   const finalHealth = inspectCapabilityHealth(capabilityRegistry, consumer, {
     ...healthEvidence,
-    disclosed: capabilityCards.map((card) => card.capabilityId),
+    disclosed: [
+      ...capabilityCards.map((card) => card.capabilityId),
+      ...deferredDescriptors.map((tool) => tool.capabilityId),
+    ],
     selected: opportunityPlan.selected.map((entry) => entry.capabilityId),
   });
   const registryCounts = Object.fromEntries(
@@ -357,9 +437,15 @@ export function discloseProductTools(
       registryTotal: capabilityRegistry.entries.length,
       registryCounts,
       disclosed,
+      deferred: deferredDescriptors,
       omitted,
       schemaBytes: disclosed.reduce((total, tool) => total + tool.schemaBytes, 0),
       schemaTokensEstimated: disclosed.reduce(
+        (total, tool) => total + tool.schemaTokensEstimated,
+        0,
+      ),
+      deferredSchemaBytes: deferredDescriptors.reduce((total, tool) => total + tool.schemaBytes, 0),
+      deferredSchemaTokensEstimated: deferredDescriptors.reduce(
         (total, tool) => total + tool.schemaTokensEstimated,
         0,
       ),

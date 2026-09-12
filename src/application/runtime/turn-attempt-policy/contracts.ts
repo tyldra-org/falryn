@@ -107,6 +107,20 @@ export type AttemptModelInput = {
       readonly schemaBytes: number;
       readonly schemaTokensEstimated: number;
     }[];
+    /**
+     * Authorized definitions appended to `input.tools` after the eager set and
+     * marked `deferred`; supporting transports serve them through native tool
+     * search, unsupported transports omit them from the wire. Calls remain
+     * admitted under the same generation-bound disclosure.
+     */
+    readonly deferred?: readonly {
+      readonly name: string;
+      readonly capabilityId: CapabilityId;
+      readonly version: number;
+      readonly schemaDigest: string;
+      readonly schemaBytes: number;
+      readonly schemaTokensEstimated: number;
+    }[];
     readonly omitted: readonly { readonly name: string; readonly reason: string }[];
     readonly schemaBytes: number;
     readonly schemaTokensEstimated: number;

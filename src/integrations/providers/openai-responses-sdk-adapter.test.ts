@@ -354,6 +354,157 @@ describe("createOpenAiResponsesSdkAdapter", () => {
     ]);
   });
 
+  test("defers authorized definitions through server tool search and records loads", async () => {
+    let body: Record<string, unknown> | null = null;
+    const adapter = createOpenAiResponsesSdkAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.example.test/v1",
+      supportedModels: ["gpt-test"],
+      resolveApiKey: async () => "sk-test",
+      compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        const toolSearchCall = {
+          id: "tsc-1",
+          type: "tool_search_call",
+          call_id: "search-1",
+          execution: "server",
+          status: "completed",
+          arguments: { query: "search text" },
+        };
+        const toolSearchOutput = {
+          id: "tso-1",
+          type: "tool_search_output",
+          call_id: "search-1",
+          execution: "server",
+          status: "completed",
+          tools: [
+            {
+              type: "function",
+              name: "search_text",
+              description: "Search text.",
+              parameters: { type: "object", additionalProperties: false },
+              strict: true,
+              defer_loading: true,
+            },
+          ],
+        };
+        const functionCall = {
+          id: "fc-1",
+          type: "function_call",
+          call_id: "call-1",
+          name: "search_text",
+          arguments: '{"query":"needle"}',
+          status: "completed",
+        };
+        return sseResponse([
+          {
+            type: "response.output_item.added",
+            sequence_number: 1,
+            output_index: 0,
+            item: { ...toolSearchCall, status: "in_progress", arguments: {} },
+          },
+          {
+            type: "response.output_item.done",
+            sequence_number: 2,
+            output_index: 0,
+            item: toolSearchCall,
+          },
+          {
+            type: "response.output_item.done",
+            sequence_number: 3,
+            output_index: 1,
+            item: toolSearchOutput,
+          },
+          {
+            type: "response.output_item.added",
+            sequence_number: 4,
+            output_index: 2,
+            item: { ...functionCall, arguments: "", status: "in_progress" },
+          },
+          {
+            type: "response.function_call_arguments.done",
+            sequence_number: 5,
+            item_id: "fc-1",
+            output_index: 2,
+            name: "search_text",
+            arguments: '{"query":"needle"}',
+          },
+          {
+            type: "response.output_item.done",
+            sequence_number: 6,
+            output_index: 2,
+            item: functionCall,
+          },
+          {
+            type: "response.completed",
+            sequence_number: 7,
+            response: response("resp-deferred", {
+              output: [toolSearchCall, toolSearchOutput, functionCall],
+            }),
+          },
+        ]);
+      },
+    });
+
+    const events = await collect(
+      adapter,
+      request({
+        tools: [
+          {
+            name: "read_file",
+            description: "Read a file.",
+            parameters: { type: "object", additionalProperties: false },
+          },
+          {
+            name: "search_text",
+            description: "Search text.",
+            parameters: { type: "object", additionalProperties: false },
+            deferred: true,
+          },
+        ],
+      }),
+    );
+
+    expect(body).toMatchObject({
+      tools: [
+        { type: "function", name: "read_file", strict: true },
+        { type: "function", name: "search_text", strict: true, defer_loading: true },
+        { type: "tool_search", execution: "server" },
+      ],
+    });
+    const metadata = events
+      .filter((item) => item.kind === "provider-metadata")
+      .map((item) => (item.kind === "provider-metadata" ? item.entries : {}));
+    expect(metadata).toContainEqual(
+      expect.objectContaining({
+        toolDeferral: "openai-tool-search",
+        deferredToolCount: "1",
+      }),
+    );
+    expect(metadata).toContainEqual(
+      expect.objectContaining({ itemType: "tool_search_call", execution: "server" }),
+    );
+    expect(metadata).toContainEqual(
+      expect.objectContaining({
+        itemType: "tool_search_output",
+        deferredToolsLoaded: "search_text",
+      }),
+    );
+    expect(events.find((item) => item.kind === "tool-proposal")).toMatchObject({
+      toolCallId: "call-1",
+      name: "search_text",
+      argumentsJson: '{"query":"needle"}',
+    });
+    expect(metadata).toContainEqual(
+      expect.objectContaining({
+        toolSearchCalls: "1",
+        deferredToolsLoaded: "search_text",
+      }),
+    );
+    expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "tool_calls" });
+  });
+
   test("uses provider state only when the explicit plan enables it", async () => {
     const bodies: Record<string, unknown>[] = [];
     let call = 0;

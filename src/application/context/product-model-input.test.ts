@@ -225,10 +225,72 @@ function disclosure(): ProductToolDisclosure {
           lifecycle,
         },
       ],
+      deferred: [],
       omitted: [],
       schemaBytes: 48,
       schemaTokensEstimated: 12,
+      deferredSchemaBytes: 0,
+      deferredSchemaTokensEstimated: 0,
       discoveryHandle: "capability-catalog:3",
+    },
+  };
+}
+
+function disclosureWithDeferred(): ProductToolDisclosure {
+  const base = disclosure();
+  const firstDisclosed = base.receipt.disclosed[0];
+  if (firstDisclosed === undefined) {
+    throw new Error("missing disclosed descriptor");
+  }
+  const deferredId = capabilityId.from("workspace.search_text");
+  const deferredTool = {
+    name: "search_text",
+    capabilityId: deferredId,
+    version: 1,
+    effect: "observation" as const,
+    capabilityKind: "filesystem" as const,
+    schemaDigest: `sha-256:${"d".repeat(64)}`,
+    schemaBytes: 64,
+    schemaTokensEstimated: 16,
+    lifecycle: firstDisclosed.lifecycle,
+  };
+  const plan = base.receipt.opportunityPlan;
+  return {
+    ...base,
+    modelTools: [
+      ...base.modelTools,
+      {
+        name: "search_text",
+        description: "Search text",
+        parameters: { type: "object", additionalProperties: false },
+        deferred: true,
+      },
+    ],
+    receipt: {
+      ...base.receipt,
+      deferred: [deferredTool],
+      deferredSchemaBytes: 64,
+      deferredSchemaTokensEstimated: 16,
+      opportunityPlan: {
+        ...plan,
+        fallbacks: [
+          {
+            capabilityId: deferredId,
+            name: "search_text",
+            kind: "tool" as const,
+            family: "search" as const,
+            source: "builtin" as const,
+            effect: "observation" as const,
+            health: "healthy" as const,
+            decision: "fallback" as const,
+            score: 80,
+            schemaTokensEstimated: 16,
+            reasons: ["task-family" as const, "selection-limit" as const],
+            diagnosticCodes: [],
+            recoveryHandles: [],
+          },
+        ],
+      },
     },
   };
 }
@@ -297,5 +359,37 @@ describe("attemptModelInputFromPrompt", () => {
         },
       ],
     });
+  });
+
+  test("binds deferred definitions into the attempt disclosure and cache prefix", () => {
+    const input = attemptModelInputFromPrompt(
+      prompt("Be concise"),
+      disclosureWithDeferred(),
+      resolveExecutionProfile("agent", generation),
+    );
+    const eagerOnly = attemptModelInputFromPrompt(
+      prompt("Be concise"),
+      disclosure(),
+      resolveExecutionProfile("agent", generation),
+    );
+
+    expect(input.tools.map((tool) => tool.name)).toEqual(["read_file", "search_text"]);
+    expect(input.tools[1]?.deferred).toBe(true);
+    expect(input.disclosure.toolNames).toEqual(["read_file", "search_text"]);
+    expect(input.disclosure.deferred).toEqual([
+      expect.objectContaining({
+        name: "search_text",
+        capabilityId: capabilityId.from("workspace.search_text"),
+        schemaDigest: `sha-256:${"d".repeat(64)}`,
+      }),
+    ]);
+    const capabilityPart = input.messages[1]?.parts[0];
+    if (capabilityPart?.kind !== "text") throw new Error("missing capability brief");
+    expect(capabilityPart.text).toContain(
+      "Deferred tool definitions (loadable through the provider's tool search where supported): search_text",
+    );
+    expect(input.promptCache?.stablePrefixDigest).not.toBe(
+      eagerOnly.promptCache?.stablePrefixDigest,
+    );
   });
 });

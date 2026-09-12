@@ -845,7 +845,16 @@ stays ahead of visual computer use when both are relevant. Matching skill,
 workflow, MCP/plugin, delegation, background, browser, and computer opportunities
 are reported as selected, recommended, unavailable, deferred, or not needed.
 This planner does not install or execute those contributions; their owning
-runtimes remain separate.
+runtimes remain separate. Beyond the eager set, the plan's ranked-out but
+eligible candidates — its fallbacks and candidates rejected only as not
+task-relevant — are bound to the same catalog generation as deferred tool
+definitions, capped by a separate count and schema-token budget. Providers
+with native deferral receive them marked `deferred` plus a server-side tool
+search tool, and the stream records which deferred definitions the provider
+loaded; providers without it receive only the eager set with an explicit
+omission receipt. Either way a deferred call is admitted through the same
+generation-bound gateway validation as a disclosed tool; policy-denied,
+unavailable, or schema-ineligible candidates are never deferred.
 
 The opportunity plan also contains an explicit, generation-bound degradation
 graph. A fallback edge names its source and target capability, the unavailable
