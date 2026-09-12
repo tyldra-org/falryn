@@ -686,6 +686,8 @@ test.each(["artifact seal", "completion append", "partial artifact seal"])(
     let executions = 0;
     const gateway = createProductToolGateway({
       clock: f.services.clock,
+      // A partial native outcome retains occupancy; its pool belongs to this fixture.
+      taskResources: f.resources,
       journal: {
         ...f.journal,
         persist(facts, signal) {
