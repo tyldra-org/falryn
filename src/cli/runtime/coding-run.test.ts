@@ -2530,3 +2530,105 @@ test("disclosed multi-file patch preserves stale siblings and returns exact reco
     expect(JSON.stringify(applyResult)).toContain(variant === "apply" ? "applied" : "conflict");
   }
 });
+
+test("interrupted multi-file patch preserves applied bytes and supports a fresh recovery turn", async () => {
+  const seeded = await seededHome();
+  await writeFile(join(seeded.primary, "a.ts"), "old-a\n");
+  await writeFile(join(seeded.primary, "b.ts"), "old-b\n");
+  const controller = new AbortController();
+  const host = providerFor(seeded)(globalsFor(seeded))().fileSystem;
+  const writes: string[] = [];
+  const services = createServiceProvider(globalsFor(seeded), {
+    home: localPath(seeded.home),
+    platform: "darwin",
+    environment: seeded.environment,
+    currentDirectory: localPath(seeded.primary),
+    fileSystem: {
+      ...host,
+      async writeBytes(path, bytes, signal) {
+        const result = await host.writeBytes(path, bytes, signal);
+        if (result.ok && String(path).endsWith("/a.ts")) {
+          writes.push("a.ts");
+          controller.abort();
+        }
+        if (result.ok && String(path).endsWith("/b.ts")) writes.push("b.ts");
+        return result;
+      },
+    },
+  });
+  const requests: ModelRequest[] = [];
+  const interrupted = await runCoding(
+    services,
+    { promptParts: ["apply_patch to update both a.ts and b.ts in one request"] },
+    {
+      input: createRecordingCliStreams({ stdin: null }).input,
+      globals: globalsFor(seeded),
+      signal: controller.signal,
+      providerAdapter: createDeterministicProviderAdapter({
+        onRequest: (request) => requests.push(request),
+        script: () => ({
+          kind: "tool",
+          name: "apply_patch",
+          toolCallId: "interrupted-apply",
+          argumentFragments: [
+            JSON.stringify({
+              policy: "best-effort",
+              targets: ["a", "b"].map((name) => ({
+                path: `${name}.ts`,
+                hunks: [{ oldStart: 1, oldLines: [`old-${name}`], newLines: [`new-${name}`] }],
+              })),
+            }),
+          ],
+        }),
+      }),
+      toolConfirmation: {
+        resolve: async (request) => ({ kind: "confirmed", confirmationId: request.confirmationId }),
+      },
+    },
+  );
+  // Cancellation after an observed write is uncertain, never a no-effect cancellation.
+  expect(interrupted.outcome.kind, JSON.stringify(interrupted)).toBe("uncertain");
+  expect(interrupted.errors).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ retryable: false, recovery: ["inspect-state"] }),
+    ]),
+  );
+  expect(requests).toHaveLength(1);
+  expect(requests[0]?.tools.map((tool) => tool.name)).toContain("apply_patch");
+  expect(writes).toEqual(["a.ts"]);
+  expect(await readFile(join(seeded.primary, "a.ts"), "utf8")).toBe("new-a\n");
+  expect(await readFile(join(seeded.primary, "b.ts"), "utf8")).toBe("old-b\n");
+
+  const recoveryRequests: ModelRequest[] = [];
+  const recovered = await runCoding(
+    providerFor(seeded)(globalsFor(seeded)),
+    { promptParts: ["read_file to inspect a.ts and b.ts after the interrupted patch"] },
+    {
+      input: createRecordingCliStreams({ stdin: null }).input,
+      globals: globalsFor(seeded),
+      providerAdapter: createDeterministicProviderAdapter({
+        onRequest: (request) => recoveryRequests.push(request),
+        script: (_request, index) =>
+          index === 0
+            ? {
+                kind: "tool",
+                name: "read_file",
+                toolCallId: "recover-interrupted-patch",
+                argumentFragments: [
+                  JSON.stringify({
+                    targets: [{ path: "a.ts" }, { path: "b.ts" }],
+                    outputMode: "raw",
+                  }),
+                ],
+              }
+            : { kind: "text", text: "The first file changed; the second still needs work." },
+      }),
+    },
+  );
+  expect(recovered.outcome.kind).toBe("completed");
+  expect(recoveryRequests).toHaveLength(2);
+  const evidence = recoveryRequests[1]?.messages.findLast((message) => message.role === "tool");
+  expect(JSON.stringify(evidence)).toContain("new-a");
+  expect(JSON.stringify(evidence)).toContain("old-b");
+  expect(writes).toEqual(["a.ts"]);
+});
