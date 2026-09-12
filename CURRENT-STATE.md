@@ -1112,6 +1112,13 @@ belong to their dedicated runtimes; #193 exposes
 the deterministic opportunity and truthful availability without claiming those
 sibling executors.
 
+The workspace write, mutation, discovery, search, and patch descriptors, all
+fifteen `git_*` descriptors, and the explicit `memory_admit`/`memory_recall`
+descriptors carry strict, bounded, closed input schemas, so each is eligible
+for that selection. The per-attempt count and schema-token budgets still bound
+the disclosed set, and rejected or unselected descriptors continue to carry
+explicit omission receipts.
+
 ## Live context, index, and memory
 
 `falryn run` and the interactive composer open a durable index database scoped

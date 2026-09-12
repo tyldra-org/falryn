@@ -319,6 +319,102 @@ describe("runCoding", () => {
     }
   });
 
+  test("executes disclosed workspace, git, and memory tools through the live turn", async () => {
+    const seeded = await seededHome();
+    const locatedGit = Bun.which("git");
+    if (locatedGit !== null) {
+      const initialized = Bun.spawn([locatedGit, "init"], {
+        cwd: seeded.primary,
+        stdout: "pipe",
+        stderr: "pipe",
+        env: { GIT_TERMINAL_PROMPT: "0" },
+      });
+      await initialized.exited;
+    }
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const toolCalls = [
+      {
+        name: "write_files",
+        arguments: {
+          targets: [{ kind: "create", path: "notes.txt", text: "hello workspace\n" }],
+        },
+      },
+      { name: "git_status", arguments: {} },
+      { name: "memory_recall", arguments: { workspaceId: "workspace-e2e" } },
+    ] as const;
+    const result = await runCoding(
+      services,
+      {
+        promptParts: [
+          "Create notes.txt containing a hello greeting with write_files, " +
+            "then inspect the repository with git_status, " +
+            "and recall memory_recall for prior context.",
+        ],
+      },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+          script: (_request, requestIndex) => {
+            const call = toolCalls[requestIndex];
+            return call === undefined
+              ? { kind: "text", text: "done", finishReason: "stop" }
+              : {
+                  kind: "tool",
+                  toolCallId: `call-e2e-${requestIndex}`,
+                  name: call.name,
+                  argumentFragments: [JSON.stringify(call.arguments)],
+                };
+          },
+        }),
+        toolConfirmation: {
+          resolve: async (request) => ({
+            kind: "confirmed",
+            confirmationId: request.confirmationId,
+          }),
+        },
+        identities: {
+          sessionId: "session-run-tool-e2e",
+          turnId: "turn-run-tool-e2e",
+          traceId: "trace-run-tool-e2e",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload?.toolResults).toBe(3);
+
+    const disclosed = requests[0]?.tools ?? [];
+    expect(disclosed.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["write_files", "git_status", "memory_recall"]),
+    );
+    const writeSchema = disclosed.find((tool) => tool.name === "write_files");
+    expect(writeSchema?.parameters).toMatchObject({
+      type: "object",
+      additionalProperties: false,
+    });
+
+    for (const [index, call] of toolCalls.entries()) {
+      const continuation = requests[index + 1];
+      const toolMessage = continuation?.messages.findLast(
+        (message) => message.role === "tool" && message.toolCallId === `call-e2e-${index}`,
+      );
+      const text = toolMessage?.parts.find((part) => part.kind === "text")?.text;
+      expect(text, `tool result for ${call.name}`).toBeDefined();
+      const serialized = JSON.parse(text ?? "{}") as {
+        readonly output?: { readonly status?: string };
+      };
+      expect(serialized.output?.status).toBe(
+        call.name === "git_status" && locatedGit === null ? "failed" : "completed",
+      );
+    }
+    await expect(readFile(join(seeded.primary, "notes.txt"), "utf8")).resolves.toBe(
+      "hello workspace\n",
+    );
+  });
+
   test("keeps matched no-tool scorecard turns on the live path without tool disclosure", async () => {
     const seeded = await seededHome();
     const services = providerFor(seeded)(globalsFor(seeded));
@@ -748,8 +844,9 @@ describe("runCoding", () => {
     const names = requests[0]?.tools.map((tool) => tool.name) ?? [];
     expect(names).toContain("run_process");
     expect(names).toContain("lsp_diagnostics");
-    expect(names).toContain("dap_stack_trace");
-    expect(names).toContain("dap_disconnect");
+    expect(names).toContain("git_status");
+    expect(names).toContain("dap_start");
+    expect(names).toContain("dap_set_breakpoints");
     expect(names).not.toContain("apply_patch");
     expect(names).not.toContain("lsp_rename");
   });
@@ -1033,7 +1130,7 @@ describe("runCoding", () => {
             ...action,
             key: "search",
             capability: "builtin:workspace/search_text@1",
-            input: { query: literal("old-a"), path: literal(".") },
+            input: { query: literal("old-a"), start: literal(".") },
             resultPath: ["matches", 0, "logical"],
           },
           {

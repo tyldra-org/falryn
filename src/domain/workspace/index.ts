@@ -54,6 +54,7 @@ export {
   MAX_GLOB_PATTERNS,
   matchGlob,
   parseWorkspaceDiscoveryRequest,
+  WORKSPACE_DISCOVERY_KINDS,
 } from "./workspace-glob.ts";
 export type {
   IndexHitFreshness,
@@ -382,6 +383,7 @@ export {
   MAX_SEARCH_LINE_EXCERPT,
   MAX_SEARCH_QUERY_LENGTH,
   parseWorkspaceSearchRequest,
+  WORKSPACE_SEARCH_KINDS,
 } from "./workspace-search.ts";
 export type {
   BindWorkspaceSetPathOptions,

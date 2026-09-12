@@ -8,7 +8,26 @@
 
 import { z } from "zod";
 
-import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
+import { EVIDENCE_TRUSTS } from "../../domain/context/index.ts";
+import {
+  type ConfigurationGeneration,
+  MAX_IDENTIFIER_LENGTH,
+} from "../../domain/foundation/index.ts";
+import {
+  HARD_MEMORY_RECALL_MAX,
+  MAX_MEMORY_CONTENT_BYTES,
+  MAX_MEMORY_LOCATOR_BYTES,
+  MAX_MEMORY_PROVENANCE,
+  MAX_MEMORY_PROVENANCE_LOCATOR_BYTES,
+  MAX_MEMORY_RECALL_QUERY_BYTES,
+  MAX_MEMORY_SUBJECT_BYTES,
+  MAX_MEMORY_SUPERSEDES,
+  MEMORY_KINDS,
+  MEMORY_ORIGINS,
+  MEMORY_RECORD_VERSION,
+  MEMORY_SENSITIVITIES,
+  MEMORY_SOURCE_KINDS,
+} from "../../domain/memory/index.ts";
 import type {
   ToolCatalog,
   ToolInvocationOutcome,
@@ -33,6 +52,97 @@ export const PRODUCT_MEMORY_TOOLS_OWNER = "#720";
 const openObject = z.record(z.string(), z.unknown()) as z.ZodType<
   Readonly<Record<string, unknown>>
 >;
+
+const memoryIdentity = z
+  .string()
+  .min(1)
+  .max(MAX_IDENTIFIER_LENGTH)
+  .regex(/^[!-~]+$/u);
+const memoryTimestamp = z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u);
+const memoryLocator = z
+  .string()
+  .min(1)
+  .max(MAX_MEMORY_LOCATOR_BYTES)
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: memory locators reject NUL exactly as the domain codec does.
+  .regex(/^[^\x00]+$/u);
+
+const memoryScope = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("user") }).strict(),
+  z.object({ kind: z.literal("workspace"), workspaceId: memoryIdentity }).strict(),
+  z
+    .object({
+      kind: z.enum(["repository", "branch", "worktree", "agent"]),
+      workspaceId: memoryIdentity,
+      locator: memoryLocator,
+    })
+    .strict(),
+  z.object({ kind: z.enum(["provider", "collection"]), locator: memoryLocator }).strict(),
+]);
+
+const memoryProvenanceEntry = z
+  .object({
+    origin: z.enum(MEMORY_ORIGINS),
+    locator: z
+      .string()
+      .min(1)
+      .max(MAX_MEMORY_PROVENANCE_LOCATOR_BYTES)
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: provenance locators reject NUL exactly as the domain codec does.
+      .regex(/^[^\x00]+$/u),
+    eventId: memoryIdentity.optional(),
+  })
+  .strict();
+
+const memoryRecord = z
+  .object({
+    memoryId: memoryIdentity,
+    schemaVersion: z.literal(MEMORY_RECORD_VERSION).optional(),
+    generation: z.int().min(1).optional(),
+    scope: memoryScope,
+    kind: z.enum(MEMORY_KINDS),
+    subject: z.string().min(1).max(MAX_MEMORY_SUBJECT_BYTES),
+    content: z.string().min(1).max(MAX_MEMORY_CONTENT_BYTES),
+    provenance: z.array(memoryProvenanceEntry).min(1).max(MAX_MEMORY_PROVENANCE),
+    confidence: z.int().min(0).max(100),
+    sensitivity: z.enum(MEMORY_SENSITIVITIES).optional(),
+    createdAt: memoryTimestamp,
+    reviewAfter: memoryTimestamp.nullish(),
+    expiresAt: memoryTimestamp.nullish(),
+    supersedes: z.array(memoryIdentity).max(MAX_MEMORY_SUPERSEDES).optional(),
+    cancelled: z.boolean().optional(),
+  })
+  .strict();
+
+const memoryAdmitInput = z
+  .object({
+    record: memoryRecord,
+    context: z
+      .object({
+        sourceKind: z.enum(MEMORY_SOURCE_KINDS),
+        sourceTrust: z.enum(EVIDENCE_TRUSTS),
+        workspaceId: memoryIdentity,
+        priors: z.array(memoryRecord).optional(),
+        cancelled: z.boolean().optional(),
+      })
+      .strict(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
+
+const memoryRecallInput = z
+  .object({
+    workspaceId: memoryIdentity,
+    query: z
+      .string()
+      .max(MAX_MEMORY_RECALL_QUERY_BYTES)
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: recall queries reject NUL exactly as the domain parser does.
+      .regex(/^[^\x00]*$/u)
+      .nullish(),
+    destination: z.enum(MEMORY_SENSITIVITIES).optional(),
+    now: z.string().min(1).optional(),
+    maxResults: z.int().min(1).max(HARD_MEMORY_RECALL_MAX).optional(),
+    pinnedIds: z.array(memoryIdentity).optional(),
+    cancelled: z.boolean().optional(),
+  })
+  .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
 
 function document(
   name: string,
@@ -112,7 +222,7 @@ export function composeProductMemoryTools(ports: ProductMemoryToolPorts): Produc
     mustEntry(
       createToolRegistryEntry(
         document("memory_admit", "Admit memory", "Admit a memory record under policy", "mutation"),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: memoryAdmitInput, outputSchema: openObject },
       ),
     ),
     mustEntry(
@@ -123,7 +233,7 @@ export function composeProductMemoryTools(ports: ProductMemoryToolPorts): Produc
           "Recall memory records for the turn",
           "observation",
         ),
-        { inputSchema: openObject, outputSchema: openObject },
+        { inputSchema: memoryRecallInput, outputSchema: openObject },
       ),
     ),
   ];
