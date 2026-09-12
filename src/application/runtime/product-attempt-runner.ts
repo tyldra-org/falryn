@@ -1,6 +1,7 @@
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import type { CapabilityRegistry } from "../../domain/capabilities/index.ts";
 import type { SandboxInvocationPort } from "../../domain/security/sandbox.ts";
+import { supportsNativeToolSearch } from "../../providers/configuration/transport-compatibility.ts";
 import { createCapabilityComposition } from "../capabilities/capability-composition.ts";
 import { recordProviderHistory } from "../sessions/provider-history.ts";
 import { createSessionHistory, historyDigest } from "../sessions/session-history.ts";
@@ -781,7 +782,7 @@ export function createProductAttemptRunner(
 ): AttemptRunnerPort {
   return {
     async run(request) {
-      const input = request.modelInput;
+      let input = request.modelInput;
       const disclosureError = validateDisclosure(request, options.registry);
       if (disclosureError !== null || input === null) {
         return invalidAttempt(disclosureError ?? "attempt model input is required");
@@ -813,6 +814,19 @@ export function createProductAttemptRunner(
         )
       ) {
         return invalidAttempt("selected provider transport compatibility does not match the route");
+      }
+      if (
+        !supportsNativeToolSearch(
+          transportCompatibility.declaration,
+          String(request.receipt.modelId),
+        )
+      ) {
+        const tools = input.tools.filter((tool) => tool.deferred !== true);
+        input = {
+          ...input,
+          tools,
+          disclosure: { ...input.disclosure, toolNames: tools.map((tool) => tool.name) },
+        };
       }
       if (!options.provider.supportedModels.includes(request.receipt.modelId)) {
         return invalidAttempt("selected model is unavailable on the provider adapter");

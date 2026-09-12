@@ -832,6 +832,17 @@ generations. Permission changes remain owned by settings rather than the
 inspector. General catalog commands, external-host transport, and slash-command
 parsing and completion for these actions are not claimed here.
 
+Native tool search requires an exact model in the connection transport plan's
+`nativeToolSearchModels` qualification list. Missing qualification uses the
+bounded eager tool set and does not admit deferred calls. Responses and
+Anthropic retain completed search records with existing protected continuation
+state; Anthropic search arguments include streamed fragments. Replay checks
+current eligible definitions/references, count and size limits, and matching
+search results before another provider request. Unknown SDK-compatible
+endpoints do not gain native search automatically. Fixture tests cover wire
+behavior; they do not establish live billed-token savings or model-quality
+parity with eager disclosure.
+
 Search tool arguments cannot choose an executable. Product composition may supply
 one qualified ripgrep path; otherwise search uses the bounded filesystem reader.
 Explicit memory recall binds workspace and destination sensitivity from the host.
