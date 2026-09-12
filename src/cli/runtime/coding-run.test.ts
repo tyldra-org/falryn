@@ -357,7 +357,7 @@ describe("runCoding", () => {
         },
       },
       { name: "git_status", arguments: {} },
-      { name: "memory_recall", arguments: { workspaceId: "workspace-e2e" } },
+      { name: "memory_recall", arguments: {} },
     ] as const;
     const result = await runCoding(
       services,
@@ -2429,3 +2429,110 @@ for (const kind of ["lsp", "dap"] as const) {
     30_000,
   );
 }
+
+test("disclosed multi-file patch preserves stale siblings and returns exact recovery to the model", async () => {
+  for (const variant of ["apply", "stale", "malformed"] as const) {
+    const seeded = await seededHome();
+    await writeFile(join(seeded.primary, "a.ts"), "old-a\n");
+    await writeFile(join(seeded.primary, "b.ts"), "old-b\n");
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const targets = ["a", "b"].map((name) => ({
+      path: `${name}.ts`,
+      hunks: [{ oldStart: 1, oldLines: [`old-${name}`], newLines: [`new-${name}`] }],
+    }));
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (request, index) => {
+        if (index === 0)
+          return {
+            kind: "tool",
+            name: "preview_patch",
+            toolCallId: "preview",
+            argumentFragments: [JSON.stringify({ targets })],
+          };
+        if (index === 1) {
+          const message = request.messages.findLast((message) => message.role === "tool");
+          const result = JSON.parse(
+            message?.parts
+              .filter((part) => part.kind === "text")
+              .map((part) => part.text)
+              .join("") ?? "{}",
+          ) as { output?: { value?: { planId?: string } } };
+          expect(result.output?.value?.planId).toBeString();
+          return {
+            kind: "tool",
+            name: "apply_patch",
+            toolCallId: "apply",
+            argumentFragments: [
+              JSON.stringify({
+                targets:
+                  variant === "malformed"
+                    ? [targets[0], { path: "b.ts", hunks: [{ oldLines: [], newLines: [] }] }]
+                    : targets,
+                expectedPlanId: result.output?.value?.planId,
+              }),
+            ],
+          };
+        }
+        if (index === 2)
+          return {
+            kind: "tool",
+            name: "read_file",
+            toolCallId: "recover",
+            argumentFragments: [
+              JSON.stringify({ targets: [{ path: "a.ts" }, { path: "b.ts" }], outputMode: "raw" }),
+            ],
+          };
+        return { kind: "text", text: "Inspected both resulting files." };
+      },
+    });
+    const result = await runCoding(
+      services,
+      {
+        promptParts: [
+          "preview_patch then apply_patch to edit both a.ts and b.ts; read_file to verify both files",
+        ],
+      },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        toolConfirmation: {
+          async resolve(request) {
+            if (variant === "stale" && request.toolName === "apply_patch")
+              await writeFile(join(seeded.primary, "b.ts"), "concurrent-b\n");
+            return { kind: "confirmed", confirmationId: request.confirmationId };
+          },
+        },
+      },
+    );
+    if (variant === "malformed") {
+      expect(result.outcome.kind).toBe("failed");
+      expect(requests).toHaveLength(2);
+      expect(await readFile(join(seeded.primary, "a.ts"), "utf8")).toBe("old-a\n");
+      expect(await readFile(join(seeded.primary, "b.ts"), "utf8")).toBe("old-b\n");
+      continue;
+    }
+    expect(
+      result.outcome.kind,
+      JSON.stringify({ variant, outcome: result.outcome, requests: requests.length }),
+    ).toBe("completed");
+    expect(requests).toHaveLength(4);
+    expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["preview_patch", "apply_patch", "read_file"]),
+    );
+    expect(await readFile(join(seeded.primary, "a.ts"), "utf8")).toBe(
+      variant === "apply" ? "new-a\n" : "old-a\n",
+    );
+    expect(await readFile(join(seeded.primary, "b.ts"), "utf8")).toBe(
+      variant === "apply" ? "new-b\n" : variant === "stale" ? "concurrent-b\n" : "old-b\n",
+    );
+    const recovery = requests[3]?.messages.findLast((message) => message.role === "tool");
+    expect(JSON.stringify(recovery)).toContain(
+      variant === "apply" ? "new-b" : variant === "stale" ? "concurrent-b" : "old-b",
+    );
+    const applyResult = requests[2]?.messages.findLast((message) => message.role === "tool");
+    expect(JSON.stringify(applyResult)).toContain(variant === "apply" ? "applied" : "conflict");
+  }
+});

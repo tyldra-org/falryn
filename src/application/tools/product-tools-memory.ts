@@ -8,7 +8,6 @@
 
 import { z } from "zod";
 
-import { EVIDENCE_TRUSTS } from "../../domain/context/index.ts";
 import {
   type ConfigurationGeneration,
   MAX_IDENTIFIER_LENGTH,
@@ -26,7 +25,6 @@ import {
   MEMORY_ORIGINS,
   MEMORY_RECORD_VERSION,
   MEMORY_SENSITIVITIES,
-  MEMORY_SOURCE_KINDS,
 } from "../../domain/memory/index.ts";
 import type {
   ToolCatalog,
@@ -115,29 +113,17 @@ const memoryRecord = z
 const memoryAdmitInput = z
   .object({
     record: memoryRecord,
-    context: z
-      .object({
-        sourceKind: z.enum(MEMORY_SOURCE_KINDS),
-        sourceTrust: z.enum(EVIDENCE_TRUSTS),
-        workspaceId: memoryIdentity,
-        priors: z.array(memoryRecord).optional(),
-        cancelled: z.boolean().optional(),
-      })
-      .strict(),
   })
   .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
 
 const memoryRecallInput = z
   .object({
-    workspaceId: memoryIdentity,
     query: z
       .string()
       .max(MAX_MEMORY_RECALL_QUERY_BYTES)
       // biome-ignore lint/suspicious/noControlCharactersInRegex: recall queries reject NUL exactly as the domain parser does.
       .regex(/^[^\x00]*$/u)
       .nullish(),
-    destination: z.enum(MEMORY_SENSITIVITIES).optional(),
-    now: z.string().min(1).optional(),
     maxResults: z.int().min(1).max(HARD_MEMORY_RECALL_MAX).optional(),
     pinnedIds: z.array(memoryIdentity).optional(),
     cancelled: z.boolean().optional(),
@@ -195,6 +181,7 @@ function completed(value: unknown): ToolInvocationOutcome {
 
 export type ProductMemoryToolPorts = {
   readonly generation: ConfigurationGeneration;
+  readonly workspaceId: string;
   readonly records?: MemoryRecords;
   readonly admission?: MemoryAdmissionPort;
   readonly recall?: MemoryRecallPort;
@@ -249,16 +236,16 @@ export function composeProductMemoryTools(ports: ProductMemoryToolPorts): Produc
       switch (request.toolName) {
         case "memory_admit": {
           const input = request.input.record;
-          const context = request.input.context;
-          if (
-            input === null ||
-            typeof input !== "object" ||
-            context === null ||
-            typeof context !== "object"
-          ) {
+          const context = {
+            sourceKind: "reflection",
+            sourceTrust: "inferred",
+            workspaceId: ports.workspaceId,
+            priors: store.list(),
+          };
+          if (input === null || typeof input !== "object") {
             return failed("malformed-input");
           }
-          const admitted = admission.admit(input as never, context as never, request.signal);
+          const admitted = admission.admit(input, context, request.signal);
           if (!admitted.ok) {
             return failed(admitted.error.code);
           }
@@ -268,7 +255,10 @@ export function composeProductMemoryTools(ports: ProductMemoryToolPorts): Produc
           });
         }
         case "memory_recall": {
-          const recalled = recall.recall(request.input as never, request.signal);
+          const recalled = recall.recall(
+            { ...request.input, workspaceId: ports.workspaceId, destination: "user-content" },
+            request.signal,
+          );
           if (!recalled.ok) {
             return failed(recalled.error.code);
           }

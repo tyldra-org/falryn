@@ -2,12 +2,14 @@
 
 import { describe, expect, test } from "bun:test";
 import { APIConnectionTimeoutError } from "openai";
-
+import { z } from "zod";
 import { modelId, providerId } from "../../domain/foundation/index.ts";
 import { modelRequestId } from "../../providers/configuration/identity.ts";
 import { OPENAI_RESPONSES_TRANSPORT_DEFAULT } from "../../providers/configuration/transport-compatibility.ts";
 import type { ModelRequest } from "../../providers/protocol/request.ts";
 import type { NormalizedProviderEvent } from "../../providers/protocol/stream.ts";
+import { ProviderStreamAssembler } from "../../providers/protocol/stream-assembly.ts";
+import { responsesToolSchema } from "./openai-responses-sdk-adapter/tool-schema.ts";
 import { createOpenAiResponsesSdkAdapter } from "./openai-responses-sdk-adapter.ts";
 
 function request(overrides: Partial<ModelRequest> = {}): ModelRequest {
@@ -971,4 +973,90 @@ describe("createOpenAiResponsesSdkAdapter", () => {
       failure: { kind: "cancellation", retryable: false },
     });
   });
+});
+
+test("strict streamed arguments reach the assembler in native form and replay in wire form", async () => {
+  const schema = z.object({ path: z.string(), expectedRevision: z.string().optional() }).strict();
+  const parameters = z.toJSONSchema(schema);
+  const codec = responsesToolSchema(parameters);
+  const wireArguments = JSON.stringify(codec.encode({ path: "a.ts" }));
+  const bodies: Record<string, unknown>[] = [];
+  const adapter = createOpenAiResponsesSdkAdapter({
+    profileId: "fixture",
+    baseUrl: "https://api.example.test/v1",
+    supportedModels: ["gpt-test"],
+    resolveApiKey: async () => "fixture",
+    compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+    fetch: async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return sseResponse([
+        { type: "response.created", response: response("res-native") },
+        {
+          type: "response.output_item.added",
+          output_index: 0,
+          item: {
+            type: "function_call",
+            id: "fc-native",
+            call_id: "call-native",
+            name: "edit",
+            arguments: "",
+          },
+        },
+        {
+          type: "response.function_call_arguments.delta",
+          item_id: "fc-native",
+          output_index: 0,
+          delta: wireArguments,
+        },
+        {
+          type: "response.function_call_arguments.done",
+          item_id: "fc-native",
+          output_index: 0,
+          name: "edit",
+          arguments: wireArguments,
+        },
+        {
+          type: "response.output_item.done",
+          output_index: 0,
+          item: {
+            type: "function_call",
+            id: "fc-native",
+            call_id: "call-native",
+            name: "edit",
+            arguments: wireArguments,
+          },
+        },
+        { type: "response.completed", response: response("res-native") },
+      ]);
+    },
+  });
+  const tools = [{ name: "edit", description: "edit", parameters }];
+  const events = await collect(adapter, request({ tools }));
+  const assembler = new ProviderStreamAssembler();
+  let arguments_: unknown;
+  for (const event of events) {
+    const step = assembler.push(event);
+    if (step.kind === "emit" && step.snapshot.toolProposals[0])
+      arguments_ = step.snapshot.toolProposals[0].arguments;
+  }
+  expect(arguments_).toEqual({ path: "a.ts" });
+  await collect(
+    adapter,
+    request({
+      tools,
+      messages: [
+        {
+          role: "assistant",
+          parts: [],
+          toolCalls: [{ toolCallId: "call-native", name: "edit", arguments: { path: "a.ts" } }],
+        },
+        { role: "tool", toolCallId: "call-native", parts: [{ kind: "text", text: "done" }] },
+      ],
+    }),
+  );
+  expect(bodies[1]?.input).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ type: "function_call", arguments: wireArguments }),
+    ]),
+  );
 });

@@ -9,6 +9,7 @@ import type { ModelMessage, ModelToolDefinition } from "../../../providers/proto
 import type { ModelRequest } from "../../../providers/protocol/request.ts";
 import type { RetainedContinuation } from "./contracts.ts";
 import { OpenAiResponsesInputError } from "./errors.ts";
+import { responsesToolSchema } from "./tool-schema.ts";
 
 function textOf(message: ModelMessage): string {
   return message.parts
@@ -37,7 +38,9 @@ function toTools(
     type: "function",
     name: tool.name,
     description: tool.description,
-    parameters: tool.parameters,
+    parameters: compatibility.strictToolSchemas
+      ? responsesToolSchema(tool.parameters).schema
+      : tool.parameters,
     strict: compatibility.strictToolSchemas,
     ...(tool.deferred === true ? { defer_loading: true } : {}),
   }));
@@ -95,6 +98,7 @@ function toInput(
   messages: readonly ModelMessage[],
   compatibility: OpenAiResponsesTransportCompatibilityDeclaration,
   retained: ReadonlyMap<string, RetainedContinuation>,
+  tools: readonly ModelToolDefinition[],
 ): { readonly input: ResponseInput; readonly previousResponseId: string | null } {
   rejectImageParts(messages);
   const prior =
@@ -147,11 +151,16 @@ function toInput(
             }
           }
         }
+        const definition = tools.find((tool) => tool.name === call.name);
         input.push({
           type: "function_call",
           call_id: call.toolCallId,
           name: call.name,
-          arguments: JSON.stringify(call.arguments),
+          arguments: JSON.stringify(
+            compatibility.strictToolSchemas && definition
+              ? responsesToolSchema(definition.parameters).encode(call.arguments)
+              : call.arguments,
+          ),
         });
       }
       continue;
@@ -166,7 +175,7 @@ export function responseBody(
   compatibility: OpenAiResponsesTransportCompatibilityDeclaration,
   retained: ReadonlyMap<string, RetainedContinuation>,
 ): ResponseCreateParamsStreaming {
-  const translated = toInput(request.messages, compatibility, retained);
+  const translated = toInput(request.messages, compatibility, retained, request.tools);
   const tools = toTools(request.tools, compatibility);
   const effort = reasoningEffort(request.reasoningControl);
   const summary =
