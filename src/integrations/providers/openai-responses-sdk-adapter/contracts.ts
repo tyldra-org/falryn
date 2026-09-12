@@ -1,5 +1,9 @@
 import type { ClientOptions } from "openai";
-import type { ResponseReasoningItem } from "openai/resources/responses/responses";
+import type {
+  ResponseReasoningItem,
+  ResponseToolSearchCall,
+  ResponseToolSearchOutputItem,
+} from "openai/resources/responses/responses";
 
 import type {
   OpenAiResponsesTransportCompatibilityDeclaration,
@@ -42,4 +46,5 @@ export type ToolCallState = {
 export type RetainedContinuation = {
   readonly responseId: string;
   readonly reasoning: readonly ResponseReasoningItem[];
+  readonly search?: readonly (ResponseToolSearchCall | ResponseToolSearchOutputItem)[];
 };

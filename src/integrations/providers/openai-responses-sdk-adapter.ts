@@ -1,3 +1,4 @@
+import { supportsNativeToolSearch } from "../../providers/configuration/transport-compatibility.ts";
 /** Official OpenAI SDK adapter for the Responses transport. */
 
 import OpenAI from "openai";
@@ -194,6 +195,9 @@ export function createOpenAiResponsesSdkAdapter(
         return;
       }
       const compatibility = plan.declaration;
+      if (!supportsNativeToolSearch(compatibility, String(request.modelId))) {
+        request = { ...request, tools: request.tools.filter((tool) => tool.deferred !== true) };
+      }
       if (request.promptCache !== undefined && request.promptCache.mode !== "openai-routing-key") {
         yield errorEvent(
           failure(
@@ -305,6 +309,7 @@ export function createOpenAiResponsesSdkAdapter(
       const toolCalls = new Map<string, ToolCallState>();
       const toolCallItems = new Map<string, string>();
       const reasoning: ResponseReasoningItem[] = [];
+      const search: NonNullable<RetainedContinuation["search"]>[number][] = [];
       let refusal = false;
       let malformedToolIdentity = false;
       let unsupportedOutput = false;
@@ -547,6 +552,7 @@ export function createOpenAiResponsesSdkAdapter(
                 break;
               }
               if (item.type === "tool_search_call") {
+                search.push(item);
                 toolSearchCalls += 1;
                 yield {
                   kind: "provider-metadata",
@@ -562,6 +568,7 @@ export function createOpenAiResponsesSdkAdapter(
                 break;
               }
               if (item.type === "tool_search_output") {
+                search.push(item);
                 for (const loaded of item.tools) {
                   if (loaded.type === "function" && deferredToolNames.has(loaded.name)) {
                     loadedDeferredTools.add(loaded.name);
@@ -650,7 +657,18 @@ export function createOpenAiResponsesSdkAdapter(
               const retainedValue: RetainedContinuation = {
                 responseId: event.response.id,
                 reasoning: compatibility.includeEncryptedReasoning ? [...reasoning] : [],
+                search,
               };
+              if (parseRetainedContinuation(continuationStateJson(retainedValue)) === null) {
+                yield errorEvent(
+                  failure(
+                    "malformed-stream",
+                    "Invalid or oversized tool continuation state.",
+                    false,
+                  ),
+                );
+                return;
+              }
               if (options.continuationState !== undefined && proposed.length > 0) {
                 const stateJson = continuationStateJson(retainedValue);
                 if (stateJson.length > MAX_CONTINUATION_STATE_JSON_LENGTH) {

@@ -374,82 +374,87 @@ describe("createAnthropicSdkAdapter", () => {
 
   test("defers authorized definitions through tool search and records loads", async () => {
     const captured: { body: MessageCreateParamsStreaming | null } = { body: null };
-    const events = await collect(
-      {
-        resolveApiKey: async () => "sk-ant-test",
-        createStream: async (_apiKey, requestBody) => {
-          captured.body = requestBody;
-          return stream([
-            anthropicEvent({
-              type: "message_start",
-              message: { usage: { input_tokens: 8, output_tokens: 0 } },
-            }),
-            anthropicEvent({
-              type: "content_block_start",
-              index: 0,
-              content_block: {
-                type: "server_tool_use",
-                id: "srv-1",
-                name: "tool_search_tool_bm25",
-                input: {},
-                caller: { type: "direct" },
-              },
-            }),
-            anthropicEvent({
-              type: "content_block_delta",
-              index: 0,
-              delta: { type: "input_json_delta", partial_json: '{"query":"search"}' },
-            }),
-            anthropicEvent({ type: "content_block_stop", index: 0 }),
-            anthropicEvent({
-              type: "content_block_start",
-              index: 1,
-              content_block: {
-                type: "tool_search_tool_result",
-                tool_use_id: "srv-1",
-                content: {
-                  type: "tool_search_tool_search_result",
-                  tool_references: [{ type: "tool_reference", tool_name: "search_text" }],
-                },
-              },
-            }),
-            anthropicEvent({ type: "content_block_stop", index: 1 }),
-            anthropicEvent({
-              type: "content_block_start",
-              index: 2,
-              content_block: {
-                type: "tool_use",
-                id: "toolu-1",
-                name: "search_text",
-                input: { query: "needle" },
-              },
-            }),
-            anthropicEvent({ type: "content_block_stop", index: 2 }),
-            anthropicEvent({
-              type: "message_delta",
-              delta: { stop_reason: "tool_use" },
-              usage: { output_tokens: 4 },
-            }),
-            anthropicEvent({ type: "message_stop" }),
-          ]);
-        },
+    const store = continuationStore();
+    const options = {
+      compatibility: {
+        ...ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
+        nativeToolSearchModels: ["claude-test"],
       },
-      request({
-        tools: [
-          {
-            name: "read_file",
-            description: "Read a file",
-            parameters: { type: "object", properties: { path: { type: "string" } } },
-          },
-          {
-            name: "search_text",
-            description: "Search text",
-            parameters: { type: "object", additionalProperties: false },
-            deferred: true,
-          },
-        ],
-      }),
-    );
+      continuationState: store.port,
+      resolveApiKey: async () => "sk-ant-test",
+      createStream: async (_apiKey, requestBody) => {
+        captured.body = requestBody;
+        return stream([
+          anthropicEvent({
+            type: "message_start",
+            message: { usage: { input_tokens: 8, output_tokens: 0 } },
+          }),
+          anthropicEvent({
+            type: "content_block_start",
+            index: 0,
+            content_block: {
+              type: "server_tool_use",
+              id: "srv-1",
+              name: "tool_search_tool_bm25",
+              input: {},
+              caller: { type: "direct" },
+            },
+          }),
+          anthropicEvent({
+            type: "content_block_delta",
+            index: 0,
+            delta: { type: "input_json_delta", partial_json: '{"query":"search"}' },
+          }),
+          anthropicEvent({ type: "content_block_stop", index: 0 }),
+          anthropicEvent({
+            type: "content_block_start",
+            index: 1,
+            content_block: {
+              type: "tool_search_tool_result",
+              tool_use_id: "srv-1",
+              content: {
+                type: "tool_search_tool_search_result",
+                tool_references: [{ type: "tool_reference", tool_name: "search_text" }],
+              },
+            },
+          }),
+          anthropicEvent({ type: "content_block_stop", index: 1 }),
+          anthropicEvent({
+            type: "content_block_start",
+            index: 2,
+            content_block: {
+              type: "tool_use",
+              id: "toolu-1",
+              name: "search_text",
+              input: { query: "needle" },
+            },
+          }),
+          anthropicEvent({ type: "content_block_stop", index: 2 }),
+          anthropicEvent({
+            type: "message_delta",
+            delta: { stop_reason: "tool_use" },
+            usage: { output_tokens: 4 },
+          }),
+          anthropicEvent({ type: "message_stop" }),
+        ]);
+      },
+    } satisfies Omit<AnthropicSdkAdapterOptions, "profileId" | "supportedModels">;
+    const firstRequest = request({
+      tools: [
+        {
+          name: "read_file",
+          description: "Read a file",
+          parameters: { type: "object", properties: { path: { type: "string" } } },
+        },
+        {
+          name: "search_text",
+          description: "Search text",
+          parameters: { type: "object", additionalProperties: false },
+          deferred: true,
+        },
+      ],
+    });
+    const events = await collect(options, firstRequest);
 
     expect(captured.body?.tools).toMatchObject([
       { name: "read_file", strict: true },
@@ -489,6 +494,43 @@ describe("createAnthropicSdkAdapter", () => {
       argumentsJson: '{"query":"needle"}',
     });
     expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "tool_use" });
+
+    await collect(
+      options,
+      request({
+        tools: firstRequest.tools,
+        messages: [
+          { role: "user", parts: [{ kind: "text", text: "find needle" }] },
+          {
+            role: "assistant",
+            parts: [],
+            toolCalls: [
+              { toolCallId: "toolu-1", name: "search_text", arguments: { query: "needle" } },
+            ],
+          },
+          { role: "tool", toolCallId: "toolu-1", parts: [{ kind: "text", text: "found" }] },
+        ],
+      }),
+    );
+    expect(JSON.stringify(captured.body?.messages)).toContain('"type":"tool_search_tool_result"');
+    expect(JSON.stringify(captured.body?.messages)).toContain('"input":{"query":"search"}');
+    const beforeRevocation = captured.body;
+    const refused = await collect(
+      options,
+      request({
+        tools: [],
+        messages: [
+          {
+            role: "assistant",
+            parts: [],
+            toolCalls: [{ toolCallId: "toolu-1", name: "search_text", arguments: {} }],
+          },
+          { role: "tool", toolCallId: "toolu-1", parts: [{ kind: "text", text: "found" }] },
+        ],
+      }),
+    );
+    expect(refused.some((event) => event.kind === "error")).toBe(true);
+    expect(captured.body).toBe(beforeRevocation);
   });
 
   test("fails closed for missing credentials and unresolved image handles", async () => {
@@ -820,3 +862,52 @@ describe("createAnthropicSdkAdapter", () => {
     });
   });
 });
+
+test.each([false, true])(
+  "native search qualification is connection and model specific (qualified=%s)",
+  async (qualified) => {
+    let body: MessageCreateParamsStreaming | null = null;
+    const events = await collect(
+      {
+        resolveApiKey: async () => "fixture",
+        compatibility: {
+          ...ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
+          nativeToolSearchModels: qualified ? ["claude-test"] : ["different-model"],
+        },
+        createStream: async (_key, requestBody) => {
+          body = requestBody;
+          return stream([
+            anthropicEvent({
+              type: "message_start",
+              message: { usage: { input_tokens: 1, output_tokens: 0 } },
+            }),
+            anthropicEvent({
+              type: "message_delta",
+              delta: { stop_reason: "end_turn" },
+              usage: { output_tokens: 0 },
+            }),
+            anthropicEvent({ type: "message_stop" }),
+          ]);
+        },
+      },
+      request({
+        tools: [
+          {
+            name: "read_file",
+            description: "Read",
+            parameters: { type: "object", properties: {} },
+          },
+          {
+            name: "search_text",
+            description: "Search",
+            parameters: { type: "object", properties: {} },
+            deferred: true,
+          },
+        ],
+      }),
+    );
+    expect(events.some((event) => event.kind === "error")).toBe(false);
+    expect(JSON.stringify(body).includes('"name":"tool_search_tool_bm25"')).toBe(qualified);
+    expect(JSON.stringify(body).includes('"defer_loading":true')).toBe(qualified);
+  },
+);

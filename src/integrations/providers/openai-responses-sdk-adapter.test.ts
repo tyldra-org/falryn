@@ -363,7 +363,10 @@ describe("createOpenAiResponsesSdkAdapter", () => {
       baseUrl: "https://api.example.test/v1",
       supportedModels: ["gpt-test"],
       resolveApiKey: async () => "sk-test",
-      compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+      compatibility: {
+        ...OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+        nativeToolSearchModels: ["gpt-test"],
+      },
       fetch: async (_input, init) => {
         body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         const toolSearchCall = {
@@ -385,7 +388,12 @@ describe("createOpenAiResponsesSdkAdapter", () => {
               type: "function",
               name: "search_text",
               description: "Search text.",
-              parameters: { type: "object", additionalProperties: false },
+              parameters: {
+                type: "object",
+                properties: {},
+                required: [],
+                additionalProperties: false,
+              },
               strict: true,
               defer_loading: true,
             },
@@ -456,12 +464,22 @@ describe("createOpenAiResponsesSdkAdapter", () => {
           {
             name: "read_file",
             description: "Read a file.",
-            parameters: { type: "object", additionalProperties: false },
+            parameters: {
+              type: "object",
+              properties: {},
+              required: [],
+              additionalProperties: false,
+            },
           },
           {
             name: "search_text",
             description: "Search text.",
-            parameters: { type: "object", additionalProperties: false },
+            parameters: {
+              type: "object",
+              properties: {},
+              required: [],
+              additionalProperties: false,
+            },
             deferred: true,
           },
         ],
@@ -505,6 +523,55 @@ describe("createOpenAiResponsesSdkAdapter", () => {
       }),
     );
     expect(events.at(-1)).toMatchObject({ kind: "finished", finishReason: "tool_calls" });
+
+    await collect(
+      adapter,
+      request({
+        tools: [
+          {
+            name: "search_text",
+            description: "Search text.",
+            parameters: {
+              type: "object",
+              properties: {},
+              required: [],
+              additionalProperties: false,
+            },
+            deferred: true,
+          },
+        ],
+        messages: [
+          { role: "user", parts: [{ kind: "text", text: "find needle" }] },
+          {
+            role: "assistant",
+            parts: [],
+            toolCalls: [
+              { toolCallId: "call-1", name: "search_text", arguments: { query: "needle" } },
+            ],
+          },
+          { role: "tool", toolCallId: "call-1", parts: [{ kind: "text", text: "found" }] },
+        ],
+      }),
+    );
+    expect(JSON.stringify(body)).toContain('"type":"tool_search_output"');
+    expect(JSON.stringify(body)).toContain('"type":"tool_search_call"');
+    const beforeRevocation = body;
+    const refused = await collect(
+      adapter,
+      request({
+        tools: [],
+        messages: [
+          {
+            role: "assistant",
+            parts: [],
+            toolCalls: [{ toolCallId: "call-1", name: "search_text", arguments: {} }],
+          },
+          { role: "tool", toolCallId: "call-1", parts: [{ kind: "text", text: "found" }] },
+        ],
+      }),
+    );
+    expect(refused.some((event) => event.kind === "error")).toBe(true);
+    expect(body).toBe(beforeRevocation);
   });
 
   test("uses provider state only when the explicit plan enables it", async () => {
@@ -1060,3 +1127,51 @@ test("strict streamed arguments reach the assembler in native form and replay in
     ]),
   );
 });
+
+test.each([false, true])(
+  "native search requires exact model qualification (qualified=%s)",
+  async (qualified) => {
+    let body: Record<string, unknown> = {};
+    const adapter = createOpenAiResponsesSdkAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.example.test/v1",
+      supportedModels: ["gpt-test"],
+      resolveApiKey: async () => "fixture",
+      compatibility: {
+        ...OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+        nativeToolSearchModels: qualified ? ["gpt-test"] : ["different-model"],
+      },
+      fetch: async (_url, init) => {
+        body = JSON.parse(String(init?.body));
+        return sseResponse([
+          {
+            type: "response.completed",
+            sequence_number: 1,
+            response: response("qualified-fixture"),
+          },
+        ]);
+      },
+    });
+    const events = await collect(
+      adapter,
+      request({
+        tools: [
+          {
+            name: "read_file",
+            description: "Read",
+            parameters: { type: "object", properties: {}, additionalProperties: false },
+          },
+          {
+            name: "search_text",
+            description: "Search",
+            parameters: { type: "object", properties: {}, additionalProperties: false },
+            deferred: true,
+          },
+        ],
+      }),
+    );
+    expect(events.some((event) => event.kind === "error")).toBe(false);
+    expect(JSON.stringify(body.tools).includes('"type":"tool_search"')).toBe(qualified);
+    expect(JSON.stringify(body.tools).includes('"defer_loading":true')).toBe(qualified);
+  },
+);

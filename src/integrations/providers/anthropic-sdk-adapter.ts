@@ -1,3 +1,5 @@
+import { supportsNativeToolSearch } from "../../providers/configuration/transport-compatibility.ts";
+import { MAX_TOOL_ARGUMENT_FRAGMENT_LENGTH } from "../../providers/protocol/limits.ts";
 /**
  * Anthropic SDK Messages adapter.
  *
@@ -205,6 +207,9 @@ export function createAnthropicSdkAdapter(
         return;
       }
       const compatibility = plan.declaration;
+      if (!supportsNativeToolSearch(compatibility, String(request.modelId))) {
+        request = { ...request, tools: request.tools.filter((tool) => tool.deferred !== true) };
+      }
       if (request.responseDensityControl !== null && request.responseDensityControl !== undefined) {
         yield errorEvent(
           failure(
@@ -322,6 +327,26 @@ export function createAnthropicSdkAdapter(
         };
       }
 
+      for (const callId of assistantToolCallIds(request.messages)) {
+        for (const block of retainedForRequest.get(callId)?.search ?? []) {
+          if (
+            block.type === "tool_search_tool_result" &&
+            block.content.type === "tool_search_tool_search_result" &&
+            block.content.tool_references.some(
+              (reference) => !request.tools.some((tool) => tool.name === reference.tool_name),
+            )
+          ) {
+            yield errorEvent(
+              failure(
+                "invalid-request",
+                "Retained tool search references are no longer eligible.",
+                false,
+              ),
+            );
+            return;
+          }
+        }
+      }
       let apiKey: string | null;
       try {
         apiKey = await options.resolveApiKey(streamOptions.signal);
@@ -391,6 +416,7 @@ export function createAnthropicSdkAdapter(
       const contentBlocks = new Map<number, ContentBlockState>();
       const toolCallIds = new Set<string>();
       const thinking: RetainedThinkingBlock[] = [];
+      const search: NonNullable<RetainedContinuation["search"]>[number][] = [];
       let finishReason: string | null = null;
       let inputUsage = { inputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0 };
       let finalUsage: UsageUnits | null = null;
@@ -486,6 +512,13 @@ export function createAnthropicSdkAdapter(
                 contentBlocks.set(event.index, {
                   type: "server-tool",
                   name: block.name,
+                  retained: {
+                    type: "server_tool_use",
+                    id: block.id,
+                    name: block.name,
+                    input: block.input,
+                  },
+                  arguments: "",
                   stopped: false,
                 });
                 if (
@@ -502,6 +535,7 @@ export function createAnthropicSdkAdapter(
                   entries: { itemType: "server_tool_use", toolName: block.name },
                 };
               } else if (block.type === "tool_search_tool_result") {
+                search.push(block);
                 contentBlocks.set(event.index, {
                   type: "server-tool",
                   name: "tool_search_tool_result",
@@ -592,7 +626,13 @@ export function createAnthropicSdkAdapter(
                 block.signature = event.delta.signature;
               } else if (event.delta.type === "input_json_delta") {
                 if (block.type === "server-tool") {
-                  // Provider-side search input is not a Falryn tool proposal.
+                  const argumentsText = (block.arguments ?? "") + event.delta.partial_json;
+                  if (argumentsText.length > MAX_TOOL_ARGUMENT_FRAGMENT_LENGTH)
+                    throw new AnthropicInputError(
+                      "malformed-stream",
+                      "Tool search arguments exceeded the continuation bound.",
+                    );
+                  block.arguments = argumentsText;
                   break;
                 }
                 if (block.type !== "tool") {
@@ -631,7 +671,12 @@ export function createAnthropicSdkAdapter(
                 );
               }
               block.stopped = true;
-              if (block.type === "thinking") {
+              if (block.type === "server-tool" && block.retained) {
+                search.push({
+                  ...block.retained,
+                  input: block.arguments ? JSON.parse(block.arguments) : block.retained.input,
+                });
+              } else if (block.type === "thinking") {
                 if (block.signature.length === 0) {
                   throw new AnthropicInputError(
                     "malformed-stream",
@@ -794,7 +839,13 @@ export function createAnthropicSdkAdapter(
         );
         return;
       }
-      const retainedValue: RetainedContinuation = { thinking };
+      const retainedValue: RetainedContinuation = { thinking, search };
+      if (parseRetainedContinuation(continuationStateJson(retainedValue)) === null) {
+        yield errorEvent(
+          failure("malformed-stream", "Invalid or oversized tool continuation state.", false),
+        );
+        return;
+      }
       if (proposed.length > 0 && options.continuationState !== undefined) {
         const stateJson = continuationStateJson(retainedValue);
         if (stateJson.length > MAX_CONTINUATION_STATE_JSON_LENGTH) {

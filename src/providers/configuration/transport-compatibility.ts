@@ -81,6 +81,8 @@ export type OpenAiResponsesTransportCompatibilityDeclaration = {
   readonly streamObfuscation: boolean;
   readonly strictToolSchemas: boolean;
   readonly parallelToolCalls: boolean;
+  /** Exact models qualified on this connection for native deferred tool search. */
+  readonly nativeToolSearchModels?: readonly string[];
 };
 
 export const ANTHROPIC_SYSTEM_PROMPT_MODES = ["top-level-blocks"] as const;
@@ -130,6 +132,7 @@ export type AnthropicMessagesTransportCompatibilityDeclaration = {
   readonly maxOutputTokensField: AnthropicMaxOutputTokenField;
   readonly thinking: AnthropicThinkingMode;
   readonly thinkingReplay: AnthropicThinkingReplayMode;
+  readonly nativeToolSearchModels?: readonly string[];
   readonly structuredOutput: AnthropicStructuredOutputMode;
   readonly promptCachePlacement: AnthropicPromptCachePlacement;
   readonly promptCacheTtl: AnthropicPromptCacheTtl | null;
@@ -565,6 +568,9 @@ function canonicalDeclaration(
         streamObfuscation: declaration.streamObfuscation,
         strictToolSchemas: declaration.strictToolSchemas,
         parallelToolCalls: declaration.parallelToolCalls,
+        ...(declaration.nativeToolSearchModels?.length
+          ? { nativeToolSearchModels: declaration.nativeToolSearchModels }
+          : {}),
       };
     case "anthropic-messages":
       return {
@@ -574,6 +580,9 @@ function canonicalDeclaration(
         maxOutputTokensField: declaration.maxOutputTokensField,
         thinking: declaration.thinking,
         thinkingReplay: declaration.thinkingReplay,
+        ...(declaration.nativeToolSearchModels?.length
+          ? { nativeToolSearchModels: declaration.nativeToolSearchModels }
+          : {}),
         structuredOutput: declaration.structuredOutput,
         promptCachePlacement: declaration.promptCachePlacement,
         promptCacheTtl: declaration.promptCacheTtl,
@@ -671,4 +680,15 @@ export function resolveProviderTransportCompatibility(
       source: modelOverride?.source ?? null,
     }),
   };
+}
+
+/** Qualification belongs to the destination plan and exact model, never an SDK dialect alone. */
+export function supportsNativeToolSearch(
+  declaration: ProviderTransportCompatibilityDeclaration,
+  model: string,
+): boolean {
+  return (
+    (declaration.dialect === "openai-responses" || declaration.dialect === "anthropic-messages") &&
+    declaration.nativeToolSearchModels?.includes(model) === true
+  );
 }

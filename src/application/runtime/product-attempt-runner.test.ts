@@ -914,7 +914,7 @@ describe("createProductAttemptRunner", () => {
     expect(providerRequests).toBe(0);
   });
 
-  test("executes a deferred tool call admitted under the same generation", async () => {
+  test("unqualified native search keeps eager bounds and refuses an undisclosed deferred call", async () => {
     let deferredName = "";
     const requests: ModelRequest[] = [];
     const adapter = createDeterministicProviderAdapter({
@@ -965,19 +965,10 @@ describe("createProductAttemptRunner", () => {
       },
     });
 
-    expect(result.fact.kind).toBe("completed");
-    expect(result.output?.toolResults).toBe(1);
-    expect(requests).toHaveLength(2);
-    const flagged = requests[0]?.tools.filter((tool) => tool.deferred === true);
-    expect(flagged?.map((tool) => tool.name)).toEqual(
-      product.disclosure.receipt.deferred.map((tool) => tool.name),
-    );
-    const toolMessage = requests[1]?.messages.find((message) => message.role === "tool");
-    const toolText = toolMessage?.parts
-      .map((part) => (part.kind === "text" ? part.text : ""))
-      .join("");
-    expect(toolText).not.toContain("tool-not-disclosed");
-    expect(toolText).toContain('"completed"');
+    expect(result.fact.kind).toBe("failed");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.tools.some((tool) => tool.deferred === true)).toBe(false);
+    expect(requests[0]?.tools.length).toBeLessThanOrEqual(3);
   });
 
   test("rejects a deferred descriptor outside the bound opportunity plan", async () => {

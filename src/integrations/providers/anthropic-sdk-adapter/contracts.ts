@@ -3,7 +3,9 @@ import type {
   MessageCreateParamsStreaming,
   RawMessageStreamEvent,
   RedactedThinkingBlockParam,
+  ServerToolUseBlockParam,
   ThinkingBlockParam,
+  ToolSearchToolResultBlockParam,
 } from "@anthropic-ai/sdk/resources/messages/messages";
 
 import type {
@@ -50,11 +52,18 @@ export type RetainedThinkingBlock = ThinkingBlockParam | RedactedThinkingBlockPa
 
 export type RetainedContinuation = {
   readonly thinking: readonly RetainedThinkingBlock[];
+  readonly search?: readonly (ServerToolUseBlockParam | ToolSearchToolResultBlockParam)[];
 };
 
 export type ContentBlockState =
   | { readonly type: "text"; stopped: boolean }
   | { readonly type: "thinking"; thinking: string; signature: string; stopped: boolean }
   | { readonly type: "redacted-thinking"; readonly data: string; stopped: boolean }
-  | { readonly type: "server-tool"; readonly name: string; stopped: boolean }
+  | {
+      readonly type: "server-tool";
+      readonly name: string;
+      stopped: boolean;
+      retained?: ServerToolUseBlockParam;
+      arguments?: string;
+    }
   | ({ readonly type: "tool" } & ToolCallState);

@@ -73,6 +73,7 @@ export const providerTransportCompatibilityDeclarationSchema: z.ZodType<Provider
       .strictObject({
         schemaVersion: version,
         dialect: z.literal("openai-responses"),
+        nativeToolSearchModels: z.array(z.string().min(1).max(256)).max(128).default([]),
         systemMessageRole: z.enum(OPENAI_SYSTEM_MESSAGE_ROLES),
         continuation: z.enum(OPENAI_RESPONSES_CONTINUATION_MODES),
         store: z.boolean(),
@@ -113,6 +114,7 @@ export const providerTransportCompatibilityDeclarationSchema: z.ZodType<Provider
       .strictObject({
         schemaVersion: version,
         dialect: z.literal("anthropic-messages"),
+        nativeToolSearchModels: z.array(z.string().min(1).max(256)).max(128).default([]),
         systemPrompt: z
           .enum(ANTHROPIC_SYSTEM_PROMPT_MODES)
           .default(ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT.systemPrompt),

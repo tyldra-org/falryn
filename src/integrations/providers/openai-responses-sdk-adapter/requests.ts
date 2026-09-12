@@ -1,3 +1,4 @@
+import { isDeepStrictEqual } from "node:util";
 import type {
   ResponseCreateParamsStreaming,
   ResponseInput,
@@ -144,7 +145,8 @@ function toInput(
       }
       for (const call of message.toolCalls ?? []) {
         if (compatibility.continuation === "stateless") {
-          for (const item of retained.get(call.toolCallId)?.reasoning ?? []) {
+          const state = retained.get(call.toolCallId);
+          for (const item of [...(state?.reasoning ?? []), ...(state?.search ?? [])]) {
             if (!replayedReasoning.has(item.id)) {
               input.push(item);
               replayedReasoning.add(item.id);
@@ -175,6 +177,33 @@ export function responseBody(
   compatibility: OpenAiResponsesTransportCompatibilityDeclaration,
   retained: ReadonlyMap<string, RetainedContinuation>,
 ): ResponseCreateParamsStreaming {
+  for (const callId of assistantToolCallIds(request.messages)) {
+    const state = retained.get(callId);
+    for (const item of state?.search ?? []) {
+      if (
+        item.type === "tool_search_output" &&
+        item.tools.some(
+          (loaded) =>
+            loaded.type !== "function" ||
+            !request.tools.some(
+              (tool) =>
+                tool.name === loaded.name &&
+                isDeepStrictEqual(
+                  compatibility.strictToolSchemas
+                    ? responsesToolSchema(tool.parameters).schema
+                    : tool.parameters,
+                  loaded.parameters,
+                ),
+            ),
+        )
+      ) {
+        throw new OpenAiResponsesInputError(
+          "invalid-request",
+          "Retained tool search definitions are no longer eligible.",
+        );
+      }
+    }
+  }
   const translated = toInput(request.messages, compatibility, retained, request.tools);
   const tools = toTools(request.tools, compatibility);
   const effort = reasoningEffort(request.reasoningControl);

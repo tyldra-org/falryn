@@ -7,7 +7,7 @@ import type {
 import type { AnthropicMessagesTransportCompatibilityDeclaration } from "../../../providers/configuration/transport-compatibility.ts";
 import type { ModelMessage, ModelToolDefinition } from "../../../providers/protocol/messages.ts";
 import type { ModelRequest } from "../../../providers/protocol/request.ts";
-import type { RetainedContinuation, RetainedThinkingBlock } from "./contracts.ts";
+import type { RetainedContinuation } from "./contracts.ts";
 import { AnthropicInputError } from "./errors.ts";
 
 function textOf(message: ModelMessage): string {
@@ -57,10 +57,7 @@ function retainedThinkingFor(
   message: ModelMessage,
   compatibility: AnthropicMessagesTransportCompatibilityDeclaration,
   retained: ReadonlyMap<string, RetainedContinuation>,
-): readonly RetainedThinkingBlock[] {
-  if (compatibility.thinkingReplay === "none") {
-    return [];
-  }
+): readonly ContentBlockParam[] {
   const records = (message.toolCalls ?? [])
     .map((call) => retained.get(call.toolCallId))
     .filter((record): record is RetainedContinuation => record !== undefined);
@@ -74,7 +71,10 @@ function retainedThinkingFor(
       "Anthropic tool calls refer to conflicting retained thinking state.",
     );
   }
-  return records[0]?.thinking ?? [];
+  return [
+    ...(compatibility.thinkingReplay === "none" ? [] : (records[0]?.thinking ?? [])),
+    ...(records[0]?.search ?? []),
+  ];
 }
 
 export function toAnthropicMessages(

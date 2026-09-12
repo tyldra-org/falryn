@@ -163,7 +163,10 @@ describe("provider transport compatibility", () => {
     const parsed = parseProviderTransportCompatibilityDeclaration(
       ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT,
     );
-    expect(parsed).toEqual({ ok: true, value: ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT });
+    expect(parsed).toEqual({
+      ok: true,
+      value: { ...ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT, nativeToolSearchModels: [] },
+    });
 
     expect(
       parseProviderTransportCompatibilityDeclaration({
