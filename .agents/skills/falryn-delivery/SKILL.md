@@ -18,7 +18,7 @@ only when an issue, PR or delivery scope needs resolution.
 | Command | Authorized work and stopping point |
 | --- | --- |
 | Plan | Complete the issue contract and applicable planning records; stop before implementation |
-| Implement | Complete one admitted issue and prepare its PR; stop before merge |
+| Implement | Complete one admitted issue, review and verify acceptance, repair in-scope gaps, and prepare its PR; stop before merge |
 | Review | Assess the exact PR diff and report findings; no editing or posting |
 | Verify | Establish acceptance or merge readiness; only separately authorized governance reconciliation |
 | Merge | Merge and reconcile the exact verified, authorized delivery; no implementation repairs |
@@ -44,7 +44,7 @@ private access and companions. Load [falryn-roadmap](../falryn-roadmap/SKILL.md)
 only for Project-governed admission, state changes, selection or parent ordering.
 Ordinary public contributions do not require private planning access.
 
-Every Deliver includes the [completion check](references/work.md#prove-the-result).
+Both Implement and Deliver include the [completion check](references/work.md#prove-the-result).
 Check what the user could still find missing before declaring the outcome done;
 do not leave review, verification or an authorized repair for a follow-up prompt.
 
@@ -60,12 +60,14 @@ merged, partial and unavailable results. Include relevant revisions and checks;
 use the specialist review report when assessing a diff. Keep progress updates
 about findings and decisions, not stage names or unchanged polls.
 
-Deliver reports include the completion check's scope, acceptance and integration
-evidence, material gaps corrected, and unresolved implementation or verification
-gaps. When none remain, say so within the assessed scope. Do not imply that passing
-checks prove the absence of every possible defect. Separate optional enhancements
-from missing original acceptance; an unresolved required criterion means delivery
-is incomplete.
+Implement and Deliver reports include the completion check's scope, acceptance
+and integration evidence, material gaps corrected, and unresolved implementation
+or verification gaps. When none remain, say so within the assessed scope. Do not
+imply that passing checks prove the absence of every possible defect. Separate
+optional enhancements from missing original acceptance. Implement reports PR
+preparation separately from later merge and reconciliation; an intentional stop
+before merge is not an implementation gap. Unresolved required implementation or
+proof remains incomplete under either command.
 
 End command reports with one useful `Suggested next prompt: ...`, or
 `Suggested next prompt: none` with a reason when none is established. Prefer the

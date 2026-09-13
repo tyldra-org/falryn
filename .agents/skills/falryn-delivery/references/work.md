@@ -50,7 +50,12 @@ private proof may permit PR preparation, but cannot establish merge readiness.
 
 ## Prove the result
 
-Deliver includes review and acceptance verification without separate user prompts.
+Implement and Deliver include review and acceptance verification without separate
+user prompts. Implement completes this check against the current PR candidate,
+repairs in-scope gaps and stops with the prepared PR before merge. Deliver also
+verifies landing and reconciliation. Neither needs an extra prompt asking whether
+anything was missed during implementation.
+
 Use `change-review` for the complete current diff and the engineering skills for
 proof through real consumers. Manual Review remains read-only. Manual Verify
 compares acceptance and documentation evidence without implementation repairs;
@@ -72,13 +77,14 @@ audit. Apply failure, lifecycle, compatibility and documentation checks where th
 outcome requires them; the engineering skills own the detailed method.
 
 Distinguish missing original acceptance, insufficient verification and optional
-additional work. Deliver repairs known in-scope gaps, checks the correction and
-reassesses affected acceptance before continuing. Do not leave an authorized
-repair for a suggested next prompt or move missing original acceptance into a
+additional work. Implement and Deliver repair known in-scope gaps, check the
+correction and reassess affected acceptance before their respective stopping
+points. Do not leave an authorized repair for a suggested next prompt or move
+missing original acceptance into a
 follow-up issue while declaring the original complete. A missing prerequisite,
-human decision or unavailable required proof keeps the affected delivery
-incomplete; name the gap and what resolves it. Use the recovery rules below for
-acceptance discovered incomplete after merge.
+human decision or unavailable required proof keeps the affected implementation or
+delivery incomplete; name the gap and what resolves it. Use the recovery rules
+below for acceptance discovered incomplete after merge.
 
 During implementation, run focused checks, then the full validation required by
 `DEVELOPMENT.md` before review. Reuse results only when revision, dependencies,
