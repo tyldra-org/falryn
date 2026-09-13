@@ -277,8 +277,10 @@ Ordinary contributors stop at the public issue, source, checks, and pull
 request. Authenticated maintainers use
 [CONTRIBUTOR-READINESS.md](CONTRIBUTOR-READINESS.md) for repository-opening and
 governance controls. Agents use the vendored
-`.agents/skills/falryn-workflow/` bundle for exact Plan, Implement, Review,
-Verify, Merge, Deliver, Next, audit, and cross-repository rules.
+`.agents/skills/falryn-workflow/` for selected delivery and manual command
+boundaries, and `.agents/skills/falryn-roadmap/` for Next, parent ordering and
+private governance. The familiar `Command - Target: ...` syntax is unchanged.
+Ordinary questions and walkthroughs do not launch Roadmap audits.
 
 Private access adds authority. It never changes the meaning of public source or
 allows private state to leak into a public artifact.

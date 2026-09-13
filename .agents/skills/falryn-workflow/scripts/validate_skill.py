@@ -1,145 +1,108 @@
 #!/usr/bin/env python3
-"""Validate bundle structure, local links, and public content boundaries."""
+"""Validate the distributed Falryn skill pair and its local reference graph."""
 
 from __future__ import annotations
 
+import argparse
+from pathlib import Path
 import re
 import sys
-from pathlib import Path
 from urllib.parse import unquote
 
-
-ROOT = Path(__file__).resolve().parents[1]
-SKILL = ROOT / "SKILL.md"
-REFERENCES = ROOT / "references"
-LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
-HEADING_RE = re.compile(r"^#{1,6}\s+(.+?)\s*$", re.MULTILINE)
-MACHINE_PATH_RE = re.compile(r"(?:^|[`\s(])(?:/(?:Users|home)/|[A-Za-z]:\\Users\\)")
-PRIVATE_LINK_RE = re.compile(
-    r"\[[^\]]+\]\(https?://github\.com/tyldra-org/falryn-docs(?:[/)#]|$)",
-    re.IGNORECASE,
-)
-ALLOWED_ROOT_ENTRIES = {"SKILL.md", "references", "scripts"}
-IGNORED_ROOT_ENTRIES = {".gitignore"}
+BUNDLES = ('falryn-workflow', 'falryn-roadmap')
+LINK = re.compile(r'\[[^\]]+\]\(([^)]+)\)')
+HEADING = re.compile(r'^#{1,6}\s+(.+?)\s*$', re.MULTILINE)
+HOME_PATH = re.compile(r'(?:^|[`\s(])(?:/(?:Users|home)/|[A-Za-z]:\\Users\\)')
+PRIVATE_LINK = re.compile(r'https?://github\.com/tyldra-org/falryn-docs(?:[/)#]|$)', re.I)
 
 
-def slugify(heading: str) -> str:
-    heading = re.sub(r"<[^>]+>", "", heading.strip().lower())
-    heading = re.sub(r"[^\w\- ]", "", heading, flags=re.UNICODE)
-    return re.sub(r"[\s\-]+", "-", heading).strip("-")
+def slug(text: str) -> str:
+    text = re.sub(r'<[^>]+>', '', text.strip().lower())
+    text = re.sub(r'[^\w\- ]', '', text)
+    return re.sub(r'[\s\-]+', '-', text).strip('-')
 
 
-def split_target(raw_target: str) -> tuple[str, str]:
-    target = raw_target.strip()
-    target = re.split(r"\s+[\"']", target, maxsplit=1)[0]
-    path_text, separator, anchor = target.partition("#")
-    return unquote(path_text), unquote(anchor) if separator else ""
-
-
-def inside_root(path: Path) -> bool:
-    try:
-        path.relative_to(ROOT)
-        return True
-    except ValueError:
-        return False
-
-
-def validate_frontmatter(text: str, errors: list[str]) -> None:
-    if not text.startswith("---\n") or text.count("---") < 2:
-        errors.append("SKILL.md is missing closed YAML frontmatter")
-        return
-    _, frontmatter, _ = text.split("---", maxsplit=2)
-    keys = {
-        match.group(1)
-        for line in frontmatter.splitlines()
-        if (match := re.match(r"^([A-Za-z0-9_-]+):", line))
-    }
-    if keys != {"name", "description"}:
-        errors.append("SKILL.md frontmatter must contain only name and description")
-    if "name: falryn-workflow" not in frontmatter:
-        errors.append("SKILL.md name must be falryn-workflow")
+def validate(parent: Path) -> list[str]:
+    parent = parent.resolve()
+    roots = tuple(parent / name for name in BUNDLES)
+    errors = []
+    markdown = {}
+    for root in roots:
+        if root.is_symlink() or not root.is_dir():
+            errors.append(f'{root.name}: missing real skill directory')
+            continue
+        unexpected = {p.name for p in root.iterdir()} - {
+            'SKILL.md', 'references', 'scripts', '.gitignore',
+        }
+        if unexpected:
+            errors.append(f'{root.name}: unexpected entries {sorted(unexpected)}')
+        for path in root.rglob('*'):
+            if path.is_symlink() or path.name in {'.DS_Store', '__pycache__'}:
+                errors.append(f'{path.relative_to(parent)}: symlink or generated debris')
+        entry = root / 'SKILL.md'
+        if not entry.is_file() or entry.is_symlink():
+            errors.append(f'{root.name}: missing SKILL.md')
+            continue
+        files = [entry, *sorted((root / 'references').rglob('*.md'))]
+        for path in files:
+            if path.is_symlink() or any(p.is_symlink() for p in path.parents if p != parent):
+                continue
+            markdown[path] = path.read_text(encoding='utf-8')
+        body = markdown.get(entry, '')
+        front = re.match(r'\A---\n(.*?)\n---\n', body, re.S)
+        if not front:
+            errors.append(f'{root.name}: missing closed frontmatter')
+        else:
+            fields = dict(re.findall(r'^([a-z_-]+):\s*(.*)$', front[1], re.M))
+            if set(fields) != {'name', 'description'} or fields.get('name') != root.name or not fields.get('description'):
+                errors.append(f'{root.name}: invalid name/description frontmatter')
+    edges = {path: set() for path in markdown}
+    for source, body in markdown.items():
+        label = source.relative_to(parent)
+        if HOME_PATH.search(body):
+            errors.append(f'{label}: machine-specific home path')
+        for raw in LINK.findall(body):
+            if PRIVATE_LINK.search(raw):
+                errors.append(f'{label}: private repository dependency')
+            if raw.startswith(('https://', 'http://', 'mailto:')):
+                continue
+            target = re.split(r'\s+[\"\']', raw.strip(), maxsplit=1)[0]
+            name, _, anchor = target.partition('#')
+            destination = (source.parent / unquote(name)).resolve() if name else source
+            if not any(destination == root or root in destination.parents for root in roots):
+                errors.append(f'{label}: link leaves Falryn pair: {raw}')
+                continue
+            if not destination.is_file():
+                errors.append(f'{label}: missing link: {raw}')
+                continue
+            if destination in edges:
+                edges[source].add(destination)
+            if anchor and unquote(anchor) not in {slug(h) for h in HEADING.findall(destination.read_text())}:
+                errors.append(f'{label}: missing anchor: {raw}')
+    reached = set()
+    pending = [root / 'SKILL.md' for root in roots if root / 'SKILL.md' in markdown]
+    while pending:
+        path = pending.pop()
+        if path not in reached:
+            reached.add(path)
+            pending.extend(edges[path] - reached)
+    for path in markdown.keys() - reached:
+        errors.append(f'{path.relative_to(parent)}: unreachable reference')
+    return errors
 
 
 def main() -> int:
-    errors: list[str] = []
-
-    if not SKILL.is_file():
-        print(f"ERROR: missing {SKILL}")
-        return 1
-
-    root_entries = {path.name for path in ROOT.iterdir()} - IGNORED_ROOT_ENTRIES
-    unexpected = sorted(root_entries - ALLOWED_ROOT_ENTRIES)
-    if unexpected:
-        errors.append(f"unexpected root entries: {', '.join(unexpected)}")
-
-    for path in ROOT.rglob("*"):
-        relative = path.relative_to(ROOT)
-        if path.is_symlink():
-            errors.append(f"symlink is not allowed: {relative}")
-        if path.name in {".DS_Store", "__pycache__"}:
-            errors.append(f"generated debris is not allowed: {relative}")
-
-    skill_text = SKILL.read_text(encoding="utf-8")
-    validate_frontmatter(skill_text, errors)
-    reference_files = set(REFERENCES.rglob("*.md"))
-    markdown_files = [SKILL, *sorted(reference_files)]
-    links: dict[Path, set[Path]] = {path: set() for path in markdown_files}
-    for source in markdown_files:
-        text = source.read_text(encoding="utf-8")
-        relative_source = source.relative_to(ROOT)
-        if MACHINE_PATH_RE.search(text):
-            errors.append(f"{relative_source} contains a machine-specific home path")
-        if PRIVATE_LINK_RE.search(text):
-            errors.append(f"{relative_source} depends on a private repository link")
-
-        for raw_target in LINK_RE.findall(text):
-            if raw_target.startswith(("http://", "https://", "mailto:")):
-                continue
-            path_text, anchor = split_target(raw_target)
-            destination = source if not path_text else (source.parent / path_text).resolve()
-            if not inside_root(destination):
-                errors.append(f"{relative_source} links outside the bundle: {raw_target}")
-                continue
-            if not destination.is_file():
-                errors.append(f"{relative_source} links to missing {raw_target}")
-                continue
-            if destination in links:
-                links[source].add(destination)
-            if anchor:
-                headings = {
-                    slugify(heading)
-                    for heading in HEADING_RE.findall(destination.read_text(encoding="utf-8"))
-                }
-                if anchor not in headings:
-                    errors.append(f"{relative_source} links to missing anchor {raw_target}")
-
-    reachable: set[Path] = set()
-    pending = [SKILL]
-    while pending:
-        source = pending.pop()
-        if source in reachable:
-            continue
-        reachable.add(source)
-        pending.extend(links[source] - reachable)
-
-    unlinked = sorted(reference_files - reachable)
-    if unlinked:
-        errors.append(
-            "references unreachable from SKILL.md: "
-            + ", ".join(path.name for path in unlinked)
-        )
-
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--skills-root', type=Path, default=Path(__file__).resolve().parents[2])
+    args = parser.parse_args()
+    errors = validate(args.skills_root)
+    for error in errors:
+        print(f'ERROR: {error}')
     if errors:
-        for error in errors:
-            print(f"ERROR: {error}")
         return 1
-
-    print(
-        "falryn-workflow validation passed: "
-        f"{len(reference_files)} references, {len(markdown_files)} Markdown files"
-    )
+    print('Falryn skill pair validation passed: entrypoints, references, links and public boundaries')
     return 0
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())
