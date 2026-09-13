@@ -158,6 +158,7 @@ function mergeKeyFor(event: NormalizedProviderEvent): string | null {
     case "tool-call-delta":
     case "tool-proposal":
     case "usage":
+    case "processing":
     case "provider-metadata":
     case "finished":
     case "error":
@@ -176,8 +177,12 @@ function approximateByteLength(event: NormalizedProviderEvent): number {
       return Math.max(1, event.argumentsFragment.length + (event.name?.length ?? 0));
     case "tool-proposal":
       return Math.max(1, event.argumentsJson.length + event.name.length);
+    case "processing":
     case "provider-metadata":
-      return Math.max(1, JSON.stringify(event.entries).length);
+      return Math.max(
+        1,
+        JSON.stringify(event.kind === "processing" ? event.observation : event.entries).length,
+      );
     case "usage":
       return 32;
     case "request-started":

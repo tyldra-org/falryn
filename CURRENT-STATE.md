@@ -314,6 +314,28 @@ The compatibility manifest retains `gpt-4o-mini` for existing profiles, but
 fresh defaults do not select it. Compatibility facts apply only at the official
 OpenAI endpoint; unfamiliar model names and custom endpoints remain unknown.
 
+Model processing preferences use the existing `models.policy` envelope and
+revision-checked model settings actions. Optional `processing.mode` selects
+`provider-default`, `standard`, or `fast`; optional `processing.fallback` selects
+`stop` or `allow-standard`. Omitted fields inherit, finally resolving to
+provider-default/stop. The Fast supporting-model role remains independent.
+The shared product attempt path accepts a per-call preference, qualifies the
+exact provider/model/destination/operation and installed transport version,
+and captures an immutable binding before admission. Supporting route resolution
+does not copy main-only processing into child defaults.
+
+Qualified processing reserves the maximum applicable published price,
+including cache modifiers. Provider-default cannot establish a hard cost cap
+from ordinary-only prices without qualification covering all possible tiers.
+Local account authority and remaining budgets are checked after queueing.
+Normalized observations keep requested and actual processing separate;
+contradictory reports remain unknown. The existing journal, export and replay
+codecs preserve the binding, bounded observations and conservative usage-cost
+settlement without executing requests. Missing legacy observations remain
+unrecorded. Product fixtures verify these paths; installed provider adapters
+currently retain ordinary behavior and expose no qualified explicit Fast or
+Standard mapping through this contract. There is no `/fast` control yet.
+
 The Command Code catalog contains the 62 execution IDs currently published by
 its Provider API, with names and context limits from the model endpoint and
 text, image, and reasoning facts from Command Code's model registry. Output

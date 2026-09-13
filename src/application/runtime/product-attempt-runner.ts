@@ -1,8 +1,17 @@
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import type { CapabilityRegistry } from "../../domain/capabilities/index.ts";
 import type { SandboxInvocationPort } from "../../domain/security/sandbox.ts";
+import {
+  type ProcessingReceipt,
+  processingReceipt,
+} from "../../domain/sessions/model-processing.ts";
 import { supportsNativeToolSearch } from "../../providers/configuration/transport-compatibility.ts";
 import { createCapabilityComposition } from "../capabilities/capability-composition.ts";
+import {
+  bindModelProcessing,
+  inspectModelProcessing,
+  processingAuthorityCurrent,
+} from "../providers/model-processing.ts";
 import { recordProviderHistory } from "../sessions/provider-history.ts";
 import { createSessionHistory, historyDigest } from "../sessions/session-history.ts";
 /**
@@ -54,7 +63,10 @@ import {
   type ProductResources,
   processProductResources,
 } from "../orchestration/product-resources.ts";
-import { promptCacheStablePrefixDigest } from "../providers/provider-prompt-cache.ts";
+import {
+  processingPromptCache,
+  promptCacheStablePrefixDigest,
+} from "../providers/provider-prompt-cache.ts";
 import {
   createProviderStreamConsumer,
   type ProviderStreamConsumeOutcome,
@@ -64,7 +76,7 @@ import {
   createProductToolGateway,
   type ProductToolConfirmationPort,
 } from "../tools/product-tool-gateway.ts";
-import { providerCostMaximum, roleResourceLimits } from "./provider-resource-admission.ts";
+import { processingCostMaximum, roleResourceLimits } from "./provider-resource-admission.ts";
 import {
   createToolCallLoop,
   type ToolCallLoopOutcome,
@@ -841,6 +853,18 @@ export function createProductAttemptRunner(
         );
       }
 
+      const processing = structuredClone(
+        inspectModelProcessing({
+          adapter: options.provider,
+          route: request.receipt,
+          ...(request.resourceCapability?.pricing === undefined
+            ? {}
+            : { pricing: request.resourceCapability.pricing }),
+        }),
+      );
+      if (!processing.eligible) return invalidAttempt(processing.reason ?? "processing-ineligible");
+      const processingReceipts: ProcessingReceipt[] = [];
+
       const taskResources =
         request.taskResources ??
         (options.resources ?? processProductResources).openTask(
@@ -1001,11 +1025,7 @@ export function createProductAttemptRunner(
         const outputRemaining = taskResources.remaining("outputTokens");
         const selectedOutput =
           outputMaximum === undefined ? undefined : Math.min(outputMaximum, outputRemaining);
-        const costMaximum = providerCostMaximum(
-          request.resourceCapability?.pricing,
-          inputMaximum,
-          selectedOutput,
-        );
+        const costMaximum = processingCostMaximum(processing.price, inputMaximum, selectedOutput);
         if (
           (request.receipt.budgets.cost !== undefined && costMaximum === null) ||
           (request.receipt.budgets.inputTokens !== undefined && inputMaximum === undefined) ||
@@ -1035,7 +1055,25 @@ export function createProductAttemptRunner(
           ...(selectedOutput === undefined ? {} : { outputTokens: selectedOutput }),
           ...(costMaximum === null ? {} : { costMicros: costMaximum }),
         };
+        const processingBinding = bindModelProcessing(
+          { ...processing, maximumCostMicros: costMaximum },
+          request.receipt,
+          Number(request.boundConfigurationGeneration),
+          {
+            owner: taskResources.id,
+            attempt: String(request.identity.modelAttemptId),
+            operation: `provider-request-${requestSequence}`,
+          },
+        );
+        const processingIndex = processingReceipts.length;
+        processingReceipts.push(
+          processingReceipt(processingBinding, String(currentRequest.requestId), []),
+        );
         const admitted = await taskResources.execute({
+          checkAdmission: () =>
+            processingAuthorityCurrent(options.provider, processingBinding)
+              ? null
+              : taskResources.refusal("stale-generation"),
           target: {
             kind: "provider",
             workspaceId: String(options.correlation.workspaceId),
@@ -1080,6 +1118,8 @@ export function createProductAttemptRunner(
             scopeId: null,
           },
           async run(signal) {
+            if (signal.aborted || !processingAuthorityCurrent(options.provider, processingBinding))
+              throw new Error("resource-admission:stale-generation");
             launchedRequests += 1;
             for (const steering of options.takeSteering?.() ?? []) {
               messages.push({
@@ -1096,6 +1136,15 @@ export function createProductAttemptRunner(
             const source = options.provider.stream(
               {
                 ...currentRequest,
+                processing: processingBinding,
+                ...(currentRequest.promptCache === undefined
+                  ? {}
+                  : {
+                      promptCache: processingPromptCache(
+                        currentRequest.promptCache,
+                        processingBinding.cachePartition,
+                      ),
+                    }),
                 messages: [...messages],
                 budgets: {
                   ...currentRequest.budgets,
@@ -1127,9 +1176,137 @@ export function createProductAttemptRunner(
               signal,
               abortAs: () => (deadline.timedOut() ? "timeout" : "cancel"),
             });
+            if (value.kind !== "finished") {
+              for (const [index, proposalId] of [...observedProposals].entries()) {
+                const saved = await history.recordWithinAdmission(
+                  request.turnId,
+                  {
+                    version: 1,
+                    type: "result",
+                    id: `${request.identity.modelAttemptId}:assembly-refused:${launchedRequests}:${index}`,
+                    generation: Number(request.boundConfigurationGeneration),
+                    proposalId,
+                    invocationId: null,
+                    capabilityId: null,
+                    status: deadline.timedOut()
+                      ? "timed-out"
+                      : request.signal.aborted
+                        ? "cancelled"
+                        : "malformed",
+                    effect: "none",
+                    reason: `provider-${value.kind}`,
+                    relations: [],
+                  },
+                  JSON.stringify({ outcome: value.kind }),
+                  AbortSignal.timeout(30_000),
+                );
+                if (!saved.committed)
+                  throw new Error("resource-admission:history-refusal-unavailable");
+              }
+            }
+
+            if (value.snapshot !== null) {
+              const captured = await history.recordWithinAdmission(
+                request.turnId,
+                {
+                  version: 1,
+                  type: "message",
+                  messageId: `${request.identity.modelAttemptId}:response:${launchedRequests}`,
+                  part: 0,
+                  id: `${request.identity.modelAttemptId}:response:${launchedRequests}`,
+                  generation: Number(request.boundConfigurationGeneration),
+                  role: "assistant",
+                  attemptId: String(request.identity.modelAttemptId),
+                  completion: value.kind === "finished" ? "complete" : "partial",
+                  relations: [],
+                },
+                value.snapshot.text,
+                AbortSignal.timeout(30_000),
+              );
+              if (!captured.committed || captured.evidence.availability === "unavailable")
+                throw new Error("resource-admission:history-output-unavailable");
+              for (const [index, proposal] of value.snapshot.toolProposals.entries()) {
+                const capturedProposal = await history.recordWithinAdmission(
+                  request.turnId,
+                  {
+                    version: 1,
+                    type: "proposal",
+                    stage: "assembled",
+                    inputDigest: historyDigest(JSON.stringify(proposal)),
+                    id: `${request.identity.modelAttemptId}:proposal:${launchedRequests}:${index}`,
+                    generation: Number(request.boundConfigurationGeneration),
+                    attemptId: String(request.identity.modelAttemptId),
+                    proposalId: proposal.toolCallId,
+                    invocationId: null,
+                    name: proposal.name,
+                    catalogGeneration: Number(options.registry.generation),
+                    policyGeneration: Number(request.boundConfigurationGeneration),
+                    disclosureDigest: historyDigest(JSON.stringify(input.disclosure.toolNames)),
+                  },
+                  JSON.stringify(proposal),
+                  AbortSignal.timeout(30_000),
+                );
+                if (!capturedProposal.committed)
+                  throw new Error("resource-admission:history-proposal-unavailable");
+              }
+            }
+            const observations = (value.snapshot?.processing ?? []).map((entry) => {
+              const qualified = processing.qualification?.actualTiers.some(
+                (tier) => tier.nativeTier === entry.nativeTier && tier.mode === entry.actualMode,
+              );
+              return qualified
+                ? entry
+                : { ...entry, actualMode: "unknown" as const, nativeTier: null };
+            });
+            processingReceipts[processingIndex] = processingReceipt(
+              processingBinding,
+              String(currentRequest.requestId),
+              observations,
+            );
             const observed = value.snapshot?.usage;
+            const actualProcessing = processingReceipts[processingIndex];
+            const usageCostMaximum =
+              value.kind === "finished" &&
+              observed?.provenance === "provider-reported" &&
+              actualProcessing !== undefined &&
+              actualProcessing.actualMode !== "unknown" &&
+              actualProcessing.observations.every((entry) => entry.usageAttribution === "request")
+                ? processingCostMaximum(
+                    processing.settlementPrices[actualProcessing.actualMode],
+                    observed.inputTokens,
+                    observed.outputTokens,
+                  )
+                : null;
+            if (actualProcessing !== undefined)
+              processingReceipts[processingIndex] = {
+                ...actualProcessing,
+                usageCostMaximumMicros: usageCostMaximum,
+                settlementPrice:
+                  usageCostMaximum !== null && actualProcessing.actualMode !== "unknown"
+                    ? processing.settlementPrices[actualProcessing.actualMode]
+                    : null,
+              };
+            const settledProcessing = processingReceipts[processingIndex];
+            if (options.journal !== undefined && settledProcessing !== undefined) {
+              const persisted = await options.journal.persist(
+                [
+                  {
+                    kind: "model.processing.recorded",
+                    correlation: { ...options.correlation, turnId: request.turnId },
+                    modelAttemptId: request.identity.modelAttemptId,
+                    receipt: settledProcessing,
+                  },
+                ],
+                AbortSignal.timeout(30_000),
+              );
+              if (persisted.kind !== "persisted")
+                throw new Error("resource-admission:processing-history-unavailable");
+            }
             const actual: ResourceAmounts = {
               ...amounts,
+              ...(costMaximum !== null && usageCostMaximum !== null
+                ? { costMicros: usageCostMaximum }
+                : {}),
               ...(value.kind === "finished" &&
               observed?.provenance === "provider-reported" &&
               observed.inputTokens !== undefined &&
@@ -1155,79 +1332,6 @@ export function createProductAttemptRunner(
         if (admitted.kind !== "completed")
           throw new Error(`resource-admission:${admitted.receipt.state}`);
         const outcome = admitted.value;
-        if (outcome.kind !== "finished") {
-          for (const [index, proposalId] of [...observedProposals].entries()) {
-            const saved = await history.record(
-              request.turnId,
-              {
-                version: 1,
-                type: "result",
-                id: `${request.identity.modelAttemptId}:assembly-refused:${launchedRequests}:${index}`,
-                generation: Number(request.boundConfigurationGeneration),
-                proposalId,
-                invocationId: null,
-                capabilityId: null,
-                status: deadline.timedOut()
-                  ? "timed-out"
-                  : request.signal.aborted
-                    ? "cancelled"
-                    : "malformed",
-                effect: "none",
-                reason: `provider-${outcome.kind}`,
-                relations: [],
-              },
-              JSON.stringify({ outcome: outcome.kind }),
-              taskResources,
-            );
-            if (!saved.committed) throw new Error("resource-admission:history-refusal-unavailable");
-          }
-        }
-
-        if (outcome.snapshot !== null) {
-          const captured = await history.record(
-            request.turnId,
-            {
-              version: 1,
-              type: "message",
-              messageId: `${request.identity.modelAttemptId}:response:${launchedRequests}`,
-              part: 0,
-              id: `${request.identity.modelAttemptId}:response:${launchedRequests}`,
-              generation: Number(request.boundConfigurationGeneration),
-              role: "assistant",
-              attemptId: String(request.identity.modelAttemptId),
-              completion: outcome.kind === "finished" ? "complete" : "partial",
-              relations: [],
-            },
-            outcome.snapshot.text,
-            taskResources,
-          );
-          if (!captured.committed || captured.evidence.availability === "unavailable")
-            throw new Error("resource-admission:history-output-unavailable");
-          for (const [index, proposal] of outcome.snapshot.toolProposals.entries()) {
-            const capturedProposal = await history.record(
-              request.turnId,
-              {
-                version: 1,
-                type: "proposal",
-                stage: "assembled",
-                inputDigest: historyDigest(JSON.stringify(proposal)),
-                id: `${request.identity.modelAttemptId}:proposal:${launchedRequests}:${index}`,
-                generation: Number(request.boundConfigurationGeneration),
-                attemptId: String(request.identity.modelAttemptId),
-                proposalId: proposal.toolCallId,
-                invocationId: null,
-                name: proposal.name,
-                catalogGeneration: Number(options.registry.generation),
-                policyGeneration: Number(request.boundConfigurationGeneration),
-                disclosureDigest: historyDigest(JSON.stringify(input.disclosure.toolNames)),
-              },
-              JSON.stringify(proposal),
-              taskResources,
-            );
-            if (!capturedProposal.committed)
-              throw new Error("resource-admission:history-proposal-unavailable");
-          }
-        }
         if (outcome.snapshot !== null && outcome.snapshot.text.length > 0) {
           assistantText.push(outcome.snapshot.text);
         }
@@ -1250,6 +1354,7 @@ export function createProductAttemptRunner(
         usage: aggregateProviderUsage(usage),
         briefReceipt,
         providerMetadata: { ...providerMetadata },
+        processing: [...processingReceipts],
       });
 
       try {

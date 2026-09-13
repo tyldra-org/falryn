@@ -6,6 +6,7 @@ import {
   sandboxReceiptSchema,
 } from "../security/sandbox.ts";
 import { historyPayloadSchema } from "./history.ts";
+import { processingPreferenceSchema, processingReceiptSchema } from "./model-processing.ts";
 /**
  * The JSON representation of a runtime event, and its Zod 4 schema.
  *
@@ -222,6 +223,7 @@ const modelCapabilityBriefSchema: z.ZodType<ModelCapabilityBrief> = z
   .strict();
 
 const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
+  processingPreference: processingPreferenceSchema.optional(),
   schemaVersion: z.literal(1),
   providerId: brandedString(providerId),
   providerProfileId: z.string().min(1).optional(),
@@ -448,6 +450,18 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
     correlation: turnCorrelationSchema,
     payload: modelAttemptStartedPayloadSchema,
   }),
+  z
+    .object({
+      ...envelopeSpine,
+      ...modelIdentity,
+      kind: z.literal("model.processing.recorded"),
+      correlation: turnCorrelationSchema,
+      payload: z.strictObject({ receipt: processingReceiptSchema }),
+    })
+    .refine(
+      (event) => event.payload.receipt.binding.admission.attempt === event.modelAttemptId,
+      "Processing attempt identity mismatch.",
+    ),
   z.object({
     ...envelopeSpine,
     ...modelIdentity,
@@ -591,6 +605,8 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
       };
     case "turn.completed":
       return { outcome: outcomeToJson(event.payload.outcome) };
+    case "model.processing.recorded":
+      return { receipt: event.payload.receipt };
     case "model.attempt.completed":
       return {
         outcome: outcomeToJson(event.payload.outcome),

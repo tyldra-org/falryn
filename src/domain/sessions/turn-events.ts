@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { CompositionProvenance } from "../capabilities/composition.ts";
 import type { CatalogHistory } from "../extensions/catalog-history.ts";
 import type { HistoryPayload } from "./history.ts";
+import type { ProcessingReceipt } from "./model-processing.ts";
 /**
  * Turn lifecycle facts as durable runtime events, and pure replay of those
  * events into turn views.
@@ -49,6 +50,12 @@ import type { ExecutionProfileCompletion, ExecutionProfileId } from "./execution
 
 /** One semantic fact the turn loop records. Effects are facts, never re-run. */
 export type TurnLifecycleFact =
+  | {
+      readonly kind: "model.processing.recorded";
+      readonly correlation: TurnCorrelation;
+      readonly modelAttemptId: ModelAttemptId;
+      readonly receipt: ProcessingReceipt;
+    }
   | {
       readonly kind: "history.recorded";
       readonly correlation: TurnCorrelation;
@@ -134,6 +141,10 @@ export function factIdentity(fact: TurnLifecycleFact): string {
       return `turn:${fact.correlation.turnId}:completed`;
     case "model.attempt.started":
       return `attempt:${fact.modelAttemptId}:started`;
+    case "model.processing.recorded":
+      return `model-processing:${createHash("sha256")
+        .update(JSON.stringify([fact.modelAttemptId, fact.receipt.requestId]))
+        .digest("hex")}`;
     case "model.attempt.completed":
       return `attempt:${fact.modelAttemptId}:completed`;
     case "capability.invocation.started":
@@ -235,6 +246,14 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
       };
       return event;
     }
+    case "model.processing.recorded":
+      return {
+        ...spine,
+        kind: "model.processing.recorded",
+        modelAttemptId: fact.modelAttemptId,
+        correlation: fact.correlation,
+        payload: { receipt: fact.receipt },
+      };
     case "model.attempt.completed": {
       const event: ModelAttemptCompletedEvent = {
         ...spine,
@@ -295,6 +314,7 @@ export type ReplayedAttempt = {
   readonly completedAt: Timestamp | null;
   readonly outcome: TerminalOutcome | null;
   readonly binding: ModelAttemptBinding | null;
+  readonly processing: readonly ProcessingReceipt[] | null;
 };
 
 export type ReplayedInvocation = {
@@ -347,6 +367,7 @@ type MutableAttempt = {
   completedAt: Timestamp | null;
   outcome: TerminalOutcome | null;
   binding: ModelAttemptBinding | null;
+  processing: readonly ProcessingReceipt[] | null;
 };
 
 type MutableInvocation = {
@@ -446,12 +467,31 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             completedAt: null,
             outcome: null,
             binding: null,
+            processing: null,
           };
           turn.attempts.set(event.modelAttemptId, attempt);
           turn.attemptOrder.push(event.modelAttemptId);
         }
         attempt.startedAt = event.occurredAt;
         attempt.binding = event.payload.binding ?? null;
+        break;
+      }
+      case "model.processing.recorded": {
+        const turn = ensureTurn(turns, turnOrder, event.correlation);
+        let attempt = turn.attempts.get(event.modelAttemptId);
+        if (attempt === undefined) {
+          attempt = {
+            modelAttemptId: event.modelAttemptId,
+            startedAt: null,
+            completedAt: null,
+            outcome: null,
+            binding: null,
+            processing: null,
+          };
+          turn.attempts.set(event.modelAttemptId, attempt);
+          turn.attemptOrder.push(event.modelAttemptId);
+        }
+        attempt.processing = [...(attempt.processing ?? []), event.payload.receipt];
         break;
       }
       case "model.attempt.completed": {
@@ -464,6 +504,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             completedAt: null,
             outcome: null,
             binding: null,
+            processing: null,
           };
           turn.attempts.set(event.modelAttemptId, attempt);
           turn.attemptOrder.push(event.modelAttemptId);
@@ -596,6 +637,7 @@ function freezeTurn(turn: MutableTurn): ReplayedTurn {
               completedAt: attempt.completedAt,
               outcome: attempt.outcome,
               binding: attempt.binding,
+              processing: attempt.processing,
             },
           ];
     }),

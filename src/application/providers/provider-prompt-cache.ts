@@ -23,6 +23,16 @@ function sha256(value: string): string {
   return `sha-256:${createHash("sha256").update(value).digest("hex")}`;
 }
 
+/** Preserve the prefix; partition only when the qualified provider contract requires it. */
+export function processingPromptCache(
+  policy: PromptCachePolicy | undefined,
+  partition: "provider-default" | "standard" | "fast" | null,
+): PromptCachePolicy | undefined {
+  return policy === undefined || partition === null
+    ? policy
+    : { ...policy, key: sha256(JSON.stringify([policy.key, partition])) };
+}
+
 export function promptCacheStablePrefixDigest(
   messages: readonly ModelMessage[],
   tools: readonly ModelToolDefinition[],

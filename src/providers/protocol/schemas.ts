@@ -1,3 +1,7 @@
+import {
+  processingBindingSchema,
+  processingObservationSchema,
+} from "../../domain/sessions/model-processing.ts";
 /**
  * Zod schemas for untrusted provider-boundary JSON.
  *
@@ -146,11 +150,23 @@ export const modelRequestSchema = z
       .nullable()
       .optional(),
     responseDensityControl: z.enum(["low", "medium", "high"]).nullable().optional(),
+    processing: processingBindingSchema.optional(),
     promptCache: promptCachePolicySchema.optional(),
     metadata: requestMetadataSchema,
   })
   .strict()
   .superRefine((request, context) => {
+    if (
+      request.processing !== undefined &&
+      (request.processing.providerId !== request.providerId ||
+        request.processing.modelId !== request.modelId)
+    ) {
+      context.addIssue({
+        code: "custom",
+        path: ["processing"],
+        message: "processing-request-identity-mismatch",
+      });
+    }
     const proposed = new Set<string>();
     const pending = new Set<string>();
     request.messages.forEach((message, index) => {
@@ -240,6 +256,11 @@ export const normalizedProviderEventSchema = z.discriminatedUnion("kind", [
     argumentsJson: z.string().min(2).max(MAX_TOOL_ARGUMENT_FRAGMENT_LENGTH),
   }),
   z.object({ ...spineSchema, kind: z.literal("usage"), usage: usageSchema }),
+  z.strictObject({
+    ...spineSchema,
+    kind: z.literal("processing"),
+    observation: processingObservationSchema,
+  }),
   z.object({
     ...spineSchema,
     kind: z.literal("provider-metadata"),

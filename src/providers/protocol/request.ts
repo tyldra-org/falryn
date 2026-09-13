@@ -47,6 +47,9 @@ export type PromptCacheSeed = Pick<
 >;
 
 export type ModelRequest = {
+  readonly processing?:
+    | import("../../domain/sessions/model-processing.ts").ProcessingBinding
+    | undefined;
   readonly requestId: ModelRequestId;
   readonly providerId: ProviderId;
   readonly modelId: ModelId;

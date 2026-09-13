@@ -63,6 +63,61 @@ function fixture(definitions: readonly ModelDefinition[] = []) {
     },
   };
 }
+
+test("processing defaults use existing revision writes, preserve routes, and reset through clear", async () => {
+  const f = fixture();
+  const edit = {
+    kind: "edit",
+    expectedRevision: null,
+    edit: { kind: "processing-default", processing: { mode: "fast", fallback: "stop" } },
+  };
+  expect((await f.service.execute(edit)).kind).toBe("written");
+  expect(f.get().processing).toEqual({ mode: "fast", fallback: "stop" });
+  expect(f.get().roles).toEqual({});
+  expect(await f.service.execute(edit)).toEqual({ kind: "failed", code: "stale-settings" });
+  f.failWrite(true);
+  expect(
+    (
+      await f.service.execute({
+        ...edit,
+        expectedRevision: "revision-1",
+        edit: { kind: "processing-default" },
+      })
+    ).kind,
+  ).toBe("failed");
+  expect(f.get().processing?.mode).toBe("fast");
+  f.failWrite(false);
+  const preview = await f.service.execute({ kind: "preview-clear" });
+  if (preview.kind !== "clear-preview") throw new Error(preview.kind);
+  expect(preview.paths).toContain("processing");
+  expect(
+    (
+      await f.service.execute({
+        kind: "apply-clear",
+        paths: preview.paths,
+        expectedRevision: "revision-1",
+      })
+    ).kind,
+  ).toBe("written");
+  expect(f.get().processing).toBeUndefined();
+});
+
+test.each([null, { mode: "turbo" }, { mode: "fast", headers: {} }, { fallback: "retry" }])(
+  "strict processing settings reject %j",
+  async (processing) => {
+    const f = fixture();
+    expect(
+      (
+        await f.service.execute({
+          kind: "edit",
+          expectedRevision: null,
+          edit: { kind: "processing-default", processing },
+        })
+      ).kind,
+    ).toBe("failed");
+    expect(f.events).toEqual([]);
+  },
+);
 test("inspect and configure do not launch anything; stale edits and unsupported thinking fail", async () => {
   const f = fixture();
   const inspection = await f.service.execute({ kind: "inspect" });

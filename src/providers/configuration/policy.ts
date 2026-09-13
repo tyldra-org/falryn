@@ -67,6 +67,9 @@ export const DEFAULT_INTENT_ROLE_MAP = {
 } as const satisfies IntentRoleMap;
 
 export type ModelPolicy = {
+  readonly processing?:
+    | import("../../domain/sessions/model-processing.ts").ProcessingPreference
+    | undefined;
   readonly roles: ModelRoleRoutes;
   readonly intents: IntentRoleMap;
 };
@@ -101,6 +104,7 @@ export function roleRouteFor(
   role: ModelRole,
   option?: FastOption,
 ): RoleRoute | VisionRoleRoute | AdvisorRoleRoute | undefined {
+  const { processing: _mainProcessing, ...inheritedMain } = policy.roles.default;
   switch (role) {
     case "default":
       return policy.roles.default;
@@ -108,14 +112,14 @@ export function roleRouteFor(
       return (
         (option === undefined ? undefined : policy.roles.fast?.options?.[option]) ??
         policy.roles.fast?.default ??
-        policy.roles.default
+        inheritedMain
       );
     case "subagents":
-      return policy.roles.subagents?.default ?? policy.roles.default;
+      return policy.roles.subagents?.default ?? inheritedMain;
     case "workflows":
-      return policy.roles.workflows?.default ?? policy.roles.default;
+      return policy.roles.workflows?.default ?? inheritedMain;
     case "plan":
-      return policy.roles.plan ?? policy.roles.default;
+      return policy.roles.plan ?? inheritedMain;
     case "vision":
       return policy.roles.vision;
     case "advisor":

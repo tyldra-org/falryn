@@ -1,3 +1,4 @@
+import { resolveProcessingPreference } from "../../domain/sessions/model-processing.ts";
 /** Shared route inheritance for settings inspection and future admitted workload owners. */
 import type { RoleRoute } from "./policy.ts";
 import type { ModelPreferences } from "./policy-schema.ts";
@@ -217,7 +218,18 @@ export function resolveModelSelection(
   if (winner === undefined) throw new Error("A captured main route is required.");
   return Object.freeze({
     kind: "route",
-    route: winner.route,
+    route: snapshotRoute({
+      ...winner.route,
+      processing: resolveProcessingPreference([
+        ...chain
+          .filter(
+            (entry) =>
+              entry.source !== "main" || (target.kind === "role" && target.role === "default"),
+          )
+          .map((entry) => entry.route.processing),
+        input.preferences.processing,
+      ]),
+    }),
     source: winner.source,
     chain: Object.freeze(chain.map((entry) => Object.freeze(entry))),
     policyRevision: input.preferences.revision,
@@ -231,6 +243,9 @@ export function resolveModelSelection(
 function snapshotRoute(route: RoleRoute): RoleRoute {
   return Object.freeze({
     ...route,
+    ...(route.processing === undefined
+      ? {}
+      : { processing: Object.freeze({ ...route.processing }) }),
     budgets: Object.freeze({ ...route.budgets }),
     fallbacks: Object.freeze(route.fallbacks.map((fallback) => Object.freeze({ ...fallback }))),
   });

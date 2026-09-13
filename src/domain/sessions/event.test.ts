@@ -31,6 +31,7 @@ function carriesTurnIdentity(event: RuntimeEvent): boolean {
     case "history.recorded":
     case "turn.started":
     case "turn.completed":
+    case "model.processing.recorded":
     case "model.attempt.started":
     case "model.attempt.completed":
     case "capability.invocation.started":

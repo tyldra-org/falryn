@@ -503,6 +503,34 @@ describe("resolveModelRoute", () => {
     expect(outcome.receipt.modelId).toBe(fast);
   });
 
+  test("an explicit model change preserves workload processing inheritance without leaking main settings", () => {
+    const base = samplePolicy();
+    const policy: ModelPolicy = {
+      ...base,
+      processing: { fallback: "allow-standard" },
+      roles: { ...base.roles, default: { ...base.roles.default, processing: { mode: "fast" } } },
+    };
+    const explicit = { providerProfileId: "primary-profile", providerId: primary, modelId: fast };
+    for (const role of ["default", "subagents"] as const) {
+      const outcome = resolveModelRoute({ policy, catalogs: catalogs(), explicit, role });
+      expect(outcome.kind).toBe("selected");
+      if (outcome.kind !== "selected") throw new Error("Expected explicit route");
+      expect(outcome.receipt.modelId).toBe(fast);
+      expect(outcome.receipt.processing).toEqual({
+        mode: role === "default" ? "fast" : "provider-default",
+        fallback: "allow-standard",
+      });
+    }
+    const override = resolveModelRoute({
+      policy,
+      catalogs: catalogs(),
+      explicit,
+      processing: { mode: "standard" },
+    });
+    if (override.kind !== "selected") throw new Error("Expected explicit route");
+    expect(override.receipt.processing).toEqual({ mode: "standard", fallback: "allow-standard" });
+  });
+
   test("selects the exact profile when two profiles expose the same provider model", () => {
     const [primaryCatalog] = catalogs();
     expect(primaryCatalog).toBeDefined();

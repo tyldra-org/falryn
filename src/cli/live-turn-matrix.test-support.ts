@@ -176,6 +176,7 @@ export const LIVE_TURN_MATRIX_EVENT_KINDS: RuntimeEvent["kind"][] = [
   "history.recorded",
   "history.recorded",
   "history.recorded",
+  "model.processing.recorded",
   "capability.invocation.started",
   "history.recorded",
   "history.recorded",
@@ -191,6 +192,7 @@ export const LIVE_TURN_MATRIX_EVENT_KINDS: RuntimeEvent["kind"][] = [
   "capability.invocation.completed",
   "history.recorded",
   "history.recorded",
+  "model.processing.recorded",
   "model.attempt.completed",
   "turn.completed",
 ];

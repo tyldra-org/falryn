@@ -59,3 +59,55 @@ export function unknownModelPricing(): ModelPricing {
     tiers: [],
   };
 }
+
+import type { ProcessingPrice } from "../../domain/sessions/model-processing.ts";
+
+/** Capture only qualified charge tiers. Null coverage cannot establish a hard cap. */
+export function processingPrice(
+  pricing: ModelPricing | undefined,
+  tierIds: readonly string[] | null,
+): ProcessingPrice {
+  const unknown: ProcessingPrice = {
+    sourceUrl: pricing?.sourceUrl ?? null,
+    observedAt: pricing?.observedAt ?? null,
+    tierIds: tierIds === null ? [] : [...tierIds],
+    inputMicrosPerMillion: null,
+    outputMicrosPerMillion: null,
+  };
+  if (pricing?.kind === "free")
+    return { ...unknown, inputMicrosPerMillion: 0, outputMicrosPerMillion: 0 };
+  if (
+    pricing?.kind !== "published" ||
+    pricing.currency !== "USD" ||
+    pricing.billingMode !== "api" ||
+    tierIds === null ||
+    tierIds.length === 0
+  )
+    return unknown;
+  const tiers = tierIds.map((id) => pricing.tiers.find((tier) => tier.id === id));
+  if (tiers.some((tier) => tier === undefined)) return unknown;
+  const input: number[] = [];
+  const output: number[] = [];
+  for (const tier of tiers) {
+    if (!tier) return unknown;
+    const rates = tier.usdMicrosPerMillionTokens;
+    if (
+      Object.values(rates).some((rate) => rate === null || !Number.isSafeInteger(rate) || rate < 0)
+    )
+      return unknown;
+    if (
+      rates.input === null ||
+      rates.cachedInput === null ||
+      rates.cacheWriteInput === null ||
+      rates.output === null
+    )
+      return unknown;
+    input.push(rates.input, rates.cachedInput, rates.cacheWriteInput);
+    output.push(rates.output);
+  }
+  return {
+    ...unknown,
+    inputMicrosPerMillion: Math.max(...input),
+    outputMicrosPerMillion: Math.max(...output),
+  };
+}

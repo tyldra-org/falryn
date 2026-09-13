@@ -359,6 +359,7 @@ export function blockFor(event: RuntimeEvent, history?: HistoryPayload): Transcr
       };
 
     case "turn.started":
+    case "model.processing.recorded":
     case "model.attempt.started":
       // Scope boundaries. See this module's header for why they draw nothing.
       return null;

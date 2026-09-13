@@ -169,6 +169,7 @@ export function createModelSettingsService(store: ModelSettingsStore) {
       if (request.kind === "preview-migration")
         return previewModelPolicyMigration(request.original, preferences, request.decisions);
       const paths = [
+        ...(preferences.processing === undefined ? [] : ["processing"]),
         ...overridePaths(preferences.roles),
         ...Object.entries(preferences.intents)
           .filter(

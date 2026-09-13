@@ -378,6 +378,7 @@ function attemptBinding(
 ): ModelAttemptBinding {
   const disclosure = modelInput?.disclosure;
   return {
+    ...(receipt.processing === undefined ? {} : { processingPreference: receipt.processing }),
     schemaVersion: 1,
     providerId: receipt.providerId,
     providerProfileId: receipt.providerProfileId,
@@ -547,6 +548,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
           modelAttemptId.from(`attempt:${String(input.turnId)}:${attemptNumber}`));
       const attempts: AttemptRecord[] = [];
       const routeInput: ResolveRouteInput = {
+        ...(input.processing === undefined ? {} : { processing: input.processing }),
         policy: options.policy,
         catalogs: options.catalogs,
         ...(input.intent === undefined ? {} : { intent: input.intent }),

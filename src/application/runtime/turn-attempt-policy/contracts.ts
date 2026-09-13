@@ -148,6 +148,7 @@ export type AttemptRunnerResult = {
   readonly turn: TurnSnapshot | null;
   /** Model-facing output retained by the product entrypoint, never by retry policy. */
   readonly output?: {
+    readonly processing?: readonly import("../../../domain/sessions/model-processing.ts").ProcessingReceipt[];
     readonly admissions?: readonly ResourceAdmissionReceipt[];
     readonly text: string;
     readonly reasoning: string;
@@ -194,6 +195,7 @@ export type TurnAttemptPolicyOptions = {
 };
 
 export type RunTurnAttemptPolicyInput = {
+  readonly processing?: import("../../../domain/sessions/model-processing.ts").ProcessingPreference;
   /** A child continues on its existing ancestor allocation across retries and turns. */
   readonly taskResources?: ProductTaskResources;
   readonly turnId: TurnId;

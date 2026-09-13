@@ -1,3 +1,4 @@
+import type { ProcessingQualification } from "./processing.ts";
 /** Versioned provider wire-compatibility declarations and immutable plans. */
 
 import type { ModelId } from "../../domain/foundation/identity.ts";
@@ -39,6 +40,7 @@ export type OpenAiAssistantAfterToolResultMode =
 
 export type OpenAiChatTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
+  readonly processingQualifications?: readonly ProcessingQualification[];
   readonly dialect: "openai-chat-completions";
   readonly systemMessageRole: OpenAiSystemMessageRole;
   readonly maxOutputTokensField: OpenAiMaxOutputTokenField;
@@ -69,6 +71,7 @@ export type OpenAiResponsesServiceTier = (typeof OPENAI_RESPONSES_SERVICE_TIERS)
 /** Exact request, continuation, retention, and stream policy for Responses. */
 export type OpenAiResponsesTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
+  readonly processingQualifications?: readonly ProcessingQualification[];
   readonly dialect: "openai-responses";
   readonly systemMessageRole: OpenAiSystemMessageRole;
   readonly continuation: OpenAiResponsesContinuationMode;
@@ -127,6 +130,7 @@ export type AnthropicInputEncoding = (typeof ANTHROPIC_INPUT_ENCODINGS)[number];
 /** Exact request, continuation, cache, and stream policy for Anthropic Messages. */
 export type AnthropicMessagesTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
+  readonly processingQualifications?: readonly ProcessingQualification[];
   readonly dialect: "anthropic-messages";
   readonly systemPrompt: AnthropicSystemPromptMode;
   readonly maxOutputTokensField: AnthropicMaxOutputTokenField;
@@ -190,6 +194,7 @@ export type GoogleApiVersionMode = (typeof GOOGLE_API_VERSION_MODES)[number];
 /** Exact request, continuation, cache-reference, and stream policy for Generate Content. */
 export type GoogleGenerateContentTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
+  readonly processingQualifications?: readonly ProcessingQualification[];
   readonly dialect: "google-generate-content";
   readonly systemInstruction: GoogleSystemInstructionMode;
   readonly roleMapping: GoogleRoleMapping;
@@ -210,21 +215,25 @@ export type GoogleGenerateContentTransportCompatibilityDeclaration = {
 
 export type CommandCodeTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
+  readonly processingQualifications?: readonly ProcessingQualification[];
   readonly dialect: "command-code-router";
 };
 
 export type DeterministicTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
+  readonly processingQualifications?: readonly ProcessingQualification[];
   readonly dialect: "deterministic";
 };
 
 type OpenAiCodexUnavailableTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
+  readonly processingQualifications?: readonly ProcessingQualification[];
   readonly dialect: "openai-codex-unavailable";
 };
 
 export type CustomUnavailableTransportCompatibilityDeclaration = {
   readonly schemaVersion: typeof PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION;
+  readonly processingQualifications?: readonly ProcessingQualification[];
   readonly dialect: "custom-unavailable";
 };
 
@@ -499,7 +508,12 @@ function resolution(
         ? "destination-profile"
         : "adapter-default";
   return {
-    declaration: canonicalDeclaration(declaration),
+    declaration: {
+      ...canonicalDeclaration(declaration),
+      ...(!declaration.processingQualifications?.length
+        ? {}
+        : { processingQualifications: declaration.processingQualifications }),
+    },
     provenance,
     receipt: {
       schemaVersion: PROVIDER_TRANSPORT_COMPATIBILITY_SCHEMA_VERSION,

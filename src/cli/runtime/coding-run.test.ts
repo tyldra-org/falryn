@@ -701,7 +701,7 @@ describe("runCoding", () => {
     expect(replayed.ok).toBe(true);
     if (replayed.ok) {
       expect(replayed.value.map((event) => event.kind)).toEqual([
-        ...LIVE_TURN_MATRIX_EVENT_KINDS.slice(0, -4),
+        ...LIVE_TURN_MATRIX_EVENT_KINDS.slice(0, -5),
         ...LIVE_TURN_MATRIX_EVENT_KINDS.slice(-2),
       ]);
       const terminal = replayed.value.find((event) => event.kind === "turn.completed");
