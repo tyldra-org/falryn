@@ -71,11 +71,13 @@ Resolve the suggested object through [delivery target resolution](#resolve-a-del
 Prefer the existing PR selector when continuing that PR, the issue selector
 when selecting work without an active PR, and the docs-qualified form for a
 docs-owned target. The input object does not select a manual stage. Resume a valid
-interrupted chain with its exact parent-chain selector. For a new chain, prefer
-`Deliver - Target: Parent chain #N` when the user's requested scope is that
-parent outcome, or a broad Roadmap request and the audit establish a coherent
-remaining child sequence owned by the authenticated account. Do not widen an
-explicit single-issue request into a chain. A parent link alone is not enough:
+interrupted chain with its exact parent-chain selector. Broad Roadmap Next
+requests use [Next's one-issue selection](next.md#routing), retaining the
+generated order and the requested owner and scope. For a new chain, prefer
+`Deliver - Target: Parent chain #N` only when the user asks for chain delivery
+within that parent. Do not widen a broad one-issue Next
+recommendation or an explicit single-issue request into a chain. A parent link
+alone is not enough:
 verify the native hierarchy, remaining scope, ownership, and ordering first.
 Use that child's issue or existing PR form when only its delivery is established.
 

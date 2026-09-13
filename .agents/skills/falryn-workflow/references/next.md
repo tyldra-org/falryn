@@ -18,15 +18,63 @@ Do not list, infer, or approximate private candidates from public issue numbers,
 
 ## Routing
 
-If the audit emits any diagnostic, report it and produce no sequence. Otherwise:
+If the audit emits any diagnostic, report it and produce no sequence. Otherwise,
+recommend exactly one next issue using its generated `deliverySequence` position.
 
-1. resume one valid active delivery or interrupted parent chain first;
-2. select the first actionable entry in the generated dependency-safe sequence;
-3. prefer Deliver for both Ready and Needs Planning work; Deliver plans the selected issue before implementation when needed, so an unchecked Ready checklist alone is not a reason to suggest manual Plan;
-4. route Needs Decision to its named human decision owner and do not suggest Plan or Deliver until the decision is recorded;
-5. route a parent through its selected actionable child;
-6. respect the sole assignee and name another owner rather than taking over; and
-7. use Falryn Docs-qualified selectors only for private docs-owned work.
+### Resolve the selection scope
+
+`Next - Target: Falryn Roadmap` and an unqualified Roadmap "what next?" select
+across the whole generated list. A previously discussed blocked issue does not
+silently restrict that request to its prerequisites. When the user explicitly
+asks for work within an issue, parent, or target release, retain that scope and
+use the same generated order among its eligible entries. Identify any required
+prerequisite outside that scope instead of silently changing the target.
+
+Resume a valid active delivery or interrupted parent chain only when it is
+established as the work being continued in this task. Assignment, In Progress
+status, or parent-continuation liveness alone does not establish that intent.
+For a broad Next request with several active candidates, use generated order.
+
+### Select one owned, actionable entry
+
+Resolve "my issues" to the authenticated maintainer identity. Walk the generated
+list in its existing order, joining each entry to that generation's issue and
+Project facts. Keep the original position when filtering; never sort again by
+issue number, update time, assignment count, or a preferred topic.
+
+- Consider open leaf issues in the requested scope whose sole assignee is that
+  maintainer. Skip another owner's independent work without taking it over.
+- Exclude an issue while any native prerequisite remains open. The generated
+  list is a delivery order, not a claim that all listed work can start now.
+  An earlier position does not mean its prerequisite has already completed.
+- At the first owned, unblocked entry, use Deliver for Ready or Needs Planning.
+  Needs Planning enters Deliver's planning stage; it does not justify choosing
+  a later Ready issue. If that entry Needs Decision, name its decision owner
+  and stop rather than bypassing the decision with a later recommendation.
+- Recheck the selected issue's live state, owner, blockers and closing PRs.
+  Changed routing facts require a fresh audit before selecting again. A verified
+  open delivery PR uses its PR selector; otherwise use the issue selector.
+  Qualify private docs-owned issues and PRs with `Docs`.
+
+An assigned backlog does not require the user to choose from a menu. Return one
+issue, its original sequence position and why it is actionable. A broad Next
+request defaults to one leaf delivery, not a new parent chain. A parent filter
+still selects one child; suggest a new chain only when the user asks for chain
+delivery.
+If no owned entry can proceed, name the blocking owner, decision or scope
+constraint and return `Suggested next prompt: none`.
+
+### Routing examples
+
+| Observed request and generated list | Result |
+| --- | --- |
+| Broad Next; several assigned Ready leaves | Choose the first unblocked owned leaf in generated order. |
+| First entry belongs to another owner; second is owned and unblocked | Choose the second entry and retain its original position. |
+| Earlier owned entry is blocked; a later owned entry is unblocked | Choose the later entry; do not treat list order as completed dependency work. |
+| First owned, unblocked entry Needs Planning; next is Ready | Choose the first entry with Deliver. |
+| Several parents are In Progress; no delivery is being continued in this task | Choose one leaf from the generated list. |
+| Prior discussion followed a blocked issue; user now asks broad Roadmap Next | Select across the whole list, not only that issue's prerequisite chain. |
+| User explicitly asks for one target's next work | Filter to that scope without reordering or silently expanding it. |
 
 ## Continuation
 
