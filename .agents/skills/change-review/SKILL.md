@@ -6,8 +6,8 @@ description: Review a local diff, branch or pull request for consequential defec
 # Change review
 
 Own the reasoning about a change and its evidence. Use the relevant stack skill
-for language or framework correctness, `gh-cli` for GitHub evidence and submission,
-and `git-workflow` for local Git mutations. General engineering guidance informs
+for language or framework correctness, `github-operations` for GitHub evidence and submission,
+and `git-operations` for local Git mutations. General engineering guidance informs
 design judgment; this skill adds revision-specific assessment.
 
 ## Establish the requested assessment

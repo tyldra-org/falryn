@@ -6,7 +6,7 @@ description: Select one next Falryn Roadmap issue or maintain authenticated Proj
 # Falryn Roadmap
 
 This skill owns work selection and private planning state. The repository auditors
-own deterministic validity and order. [falryn-workflow](../falryn-workflow/SKILL.md)
+own deterministic validity and order. [falryn-delivery](../falryn-delivery/SKILL.md)
 owns delivery of the selected outcome. An audit or recommendation never starts it.
 
 ## Select work with Next
@@ -58,14 +58,14 @@ readiness, permission to act or completed acceptance.
 
 ## Continue known work
 
-A user continuing a known delivery keeps that target through falryn-workflow.
+A user continuing a known delivery keeps that target through falryn-delivery.
 In Progress status and parent activity alone do not establish continuation intent.
 Several assigned or active issues in broad Next still use the generated order.
 
 Parent selection uses the same audited order within the parent. A parent outcome
 is not a branch. A one-child request does not become a chain. An explicitly
 requested chain settles each child before selecting again. Follow
-[delivery's parent rules](../falryn-workflow/references/work.md#parent-outcomes).
+[delivery's parent rules](../falryn-delivery/references/work.md#parent-outcomes).
 
 ## Maintain the Roadmap
 
@@ -78,7 +78,7 @@ Keep private Project values, issue bodies and snapshots out of public artifacts.
 Missing authority makes only the dependent operation unavailable. Do not guess
 private order or impose Project fields on ordinary contributions.
 
-For skill maintenance, validate this pair with the sibling falryn-workflow
+For skill maintenance, validate this pair with the sibling falryn-delivery
 validator and run `python3 -B scripts/test_select_next.py --falryn-root
 <verified-falryn-checkout>`. Install both Falryn skills together; the delivery
 skill owns the distribution procedure.

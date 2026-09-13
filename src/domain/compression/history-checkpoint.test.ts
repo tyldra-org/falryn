@@ -46,7 +46,7 @@ const requiredItems = [
   {
     id: "evt-skill",
     kind: "skill-instruction",
-    text: "Always load git-workflow before mutating git.",
+    text: "Always load git-operations before mutating git.",
   },
 ];
 
@@ -87,7 +87,7 @@ describe("checkpointHistory", () => {
     expect(result.value.preserved.map((item) => item.kind)).toContain("correction");
     expect(result.value.preserved.some((item) => item.kind === "skill-instruction")).toBe(true);
     const skill = result.value.preserved.find((item) => item.kind === "skill-instruction");
-    expect(skill?.text).toBe("Always load git-workflow before mutating git.");
+    expect(skill?.text).toBe("Always load git-operations before mutating git.");
     expect(result.value.folded?.selectedStrategy).toBe("compact-model");
     expect(result.value.folded?.claimsExact).toBe(false);
     expect(result.value.folded?.text).toBe("folded narration");
@@ -99,7 +99,7 @@ describe("checkpointHistory", () => {
   test("does not fold skill instruction bodies into the summary", () => {
     const port: CompactModelPort = {
       compact(request) {
-        expect(request.text).not.toContain("Always load git-workflow");
+        expect(request.text).not.toContain("Always load git-operations");
         return ok({ kind: "extractive", text: "narration only" });
       },
     };
@@ -120,7 +120,7 @@ describe("checkpointHistory", () => {
       return;
     }
     expect(result.value.folded?.text).toBe("narration only");
-    expect(result.value.preserved.some((item) => item.text.includes("git-workflow"))).toBe(true);
+    expect(result.value.preserved.some((item) => item.text.includes("git-operations"))).toBe(true);
   });
 });
 
