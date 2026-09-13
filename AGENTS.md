@@ -49,7 +49,7 @@ option values in public handoffs.
 | Mutating Git work | git-operations |
 | GitHub issues, pull requests, Actions, Projects, or merge state | github-operations |
 | Local diff, branch, or pull-request review | change-review plus the relevant stack skill |
-| Falryn Plan, Implement, Review, Verify, Merge, Deliver, or workflow maintenance | falryn-delivery |
+| Falryn Plan, Implement, Review, Verify, Merge, Deliver, or workflow maintenance | falryn-work |
 | Next, new Roadmap work selection, parent sequencing, or private Project governance | falryn-roadmap |
 
 Load `software-engineering-discipline` only from the global installation at
@@ -62,7 +62,7 @@ human-contributor prerequisite.
 For the other skills, use the vendored bundle appropriate to the checkout.
 Each `SKILL.md` is a compact router; load only the deep reference that owns the
 task. The five portable vendored skills must not acquire Falryn product
-strategy. The two Falryn-specific skills separate delivery (`falryn-delivery`)
+strategy. The two Falryn-specific skills separate delivery (`falryn-work`)
 from private selection and governance (`falryn-roadmap`). Ordinary questions,
 greetings and walkthroughs do not trigger Roadmap selection or audits. Private
 Falryn Docs and Roadmap authority is an authenticated

@@ -1,9 +1,9 @@
 ---
-name: falryn-delivery
+name: falryn-work
 description: Complete or assess a selected Falryn issue, PR, or documentation outcome using Deliver or the manual Plan, Implement, Review, Verify, and Merge commands. Also maintain Falryn workflow guidance.
 ---
 
-# Falryn delivery
+# Falryn work
 
 Keep the user's outcome, scope and stopping point explicit. Continue from the
 work that actually remains. Source, issue acceptance and observed results decide

@@ -9,7 +9,7 @@ import re
 import sys
 from urllib.parse import unquote
 
-BUNDLES = ('falryn-delivery', 'falryn-roadmap')
+BUNDLES = ('falryn-work', 'falryn-roadmap')
 LINK = re.compile(r'\[[^\]]+\]\(([^)]+)\)')
 HEADING = re.compile(r'^#{1,6}\s+(.+?)\s*$', re.MULTILINE)
 HOME_PATH = re.compile(r'(?:^|[`\s(])(?:/(?:Users|home)/|[A-Za-z]:\\Users\\)')

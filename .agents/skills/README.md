@@ -10,7 +10,7 @@ work can use them without a personal installation or private documentation.
 | Evidence-backed change assessment | `change-review` |
 | TypeScript engineering | `typescript-engineering` |
 | Terminal UI engineering | `opentui-engineering` |
-| Selected Falryn work and manual command boundaries | [falryn-delivery](falryn-delivery/SKILL.md) |
+| Selected Falryn work and manual command boundaries | [falryn-work](falryn-work/SKILL.md) |
 | Next, parent ordering and private Project governance | [falryn-roadmap](falryn-roadmap/SKILL.md) |
 
 The portable skills contain no Falryn strategy or repository policy. Git and
@@ -34,7 +34,7 @@ copying. The OpenTUI React reference uses the TypeScript React guide, so distrib
 those compatible bundles together. Keep command names stable when ownership
 changes; a skill update must not grant new publication or merge authority.
 
-`falryn-delivery` owns the existing Plan, Implement, Review, Verify, Merge and
+`falryn-work` owns the existing Plan, Implement, Review, Verify, Merge and
 Deliver command meanings. `falryn-roadmap` owns Next and uses the repository's
 canonical auditors. Private access is required only for the facts and operations
 that depend on it. No skill or successful check grants additional authority.
@@ -42,8 +42,8 @@ that depend on it. No skill or successful check grants additional authority.
 Validate the Falryn pair with:
 
 ```sh
-python3 -B .agents/skills/falryn-delivery/scripts/validate_skill.py
-python3 -B .agents/skills/falryn-delivery/scripts/test_validate_skill.py
+python3 -B .agents/skills/falryn-work/scripts/validate_skill.py
+python3 -B .agents/skills/falryn-work/scripts/test_validate_skill.py
 python3 -B .agents/skills/falryn-roadmap/scripts/test_select_next.py --falryn-root .
 ```
 
