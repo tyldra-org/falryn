@@ -22,7 +22,7 @@ only when an issue, PR or delivery scope needs resolution.
 | Review | Assess the exact PR diff and report findings; no editing or posting |
 | Verify | Establish acceptance or merge readiness; only separately authorized governance reconciliation |
 | Merge | Merge and reconcile the exact verified, authorized delivery; no implementation repairs |
-| Deliver | Complete the selected outcome, including in-scope repairs, PRs, required companions, merge and reconciliation |
+| Deliver | Complete the selected outcome, including implementation, review for gaps, acceptance verification, in-scope repairs, PRs, required companions, merge and reconciliation |
 | Next | Route selection to [falryn-roadmap](../falryn-roadmap/SKILL.md); it starts no delivery |
 
 A question, greeting, walkthrough or ordinary edit keeps its ordinary scope.
@@ -33,8 +33,8 @@ or infer permission to publish. "What should I work on next?" requests selection
 Read applicable `AGENTS.md`, `DEVELOPMENT.md` and the selected issue or PR.
 Use `software-engineering-discipline` for engineering judgment, stack skills for
 implementation, `change-review` for assessment, `git-operations` for Git and
-`github-operations` for GitHub. Reuse unchanged instructions. This skill owns only Falryn
-coordination; it does not repeat those skills' procedures.
+`github-operations` for GitHub. Reuse unchanged instructions. This skill owns
+only Falryn coordination; it does not repeat those skills' procedures.
 
 ## Do the remaining work
 
@@ -43,6 +43,10 @@ recovery. Use [documentation](references/documentation.md) for canonical owners,
 private access and companions. Load [falryn-roadmap](../falryn-roadmap/SKILL.md)
 only for Project-governed admission, state changes, selection or parent ordering.
 Ordinary public contributions do not require private planning access.
+
+Every Deliver includes the [completion check](references/work.md#prove-the-result).
+Check what the user could still find missing before declaring the outcome done;
+do not leave review, verification or an authorized repair for a follow-up prompt.
 
 The user's request supplies authority. A useful suggestion does not grant it.
 Do not ask again for the same authorized work. Refresh changed evidence and
@@ -55,6 +59,13 @@ Report what finished, what proves it and what remains. Distinguish local, pushed
 merged, partial and unavailable results. Include relevant revisions and checks;
 use the specialist review report when assessing a diff. Keep progress updates
 about findings and decisions, not stage names or unchanged polls.
+
+Deliver reports include the completion check's scope, acceptance and integration
+evidence, material gaps corrected, and unresolved implementation or verification
+gaps. When none remain, say so within the assessed scope. Do not imply that passing
+checks prove the absence of every possible defect. Separate optional enhancements
+from missing original acceptance; an unresolved required criterion means delivery
+is incomplete.
 
 End command reports with one useful `Suggested next prompt: ...`, or
 `Suggested next prompt: none` with a reason when none is established. Prefer the

@@ -50,12 +50,35 @@ private proof may permit PR preparation, but cannot establish merge readiness.
 
 ## Prove the result
 
-Review uses `change-review` against the complete current diff, including callers,
-contracts, state and failure paths. It reports findings without editing, posting
-or approving. Verify compares actual evidence with every acceptance criterion
-and the documentation obligation. Green CI or child closure alone is insufficient.
-Neither command permits implementation repairs. Verify changes governance only
-when the user separately authorized that reconciliation.
+Deliver includes review and acceptance verification without separate user prompts.
+Use `change-review` for the complete current diff and the engineering skills for
+proof through real consumers. Manual Review remains read-only. Manual Verify
+compares acceptance and documentation evidence without implementation repairs;
+it changes governance only when that reconciliation was separately authorized.
+
+Start the completion check from the original issue outcome, every acceptance
+criterion and the applicable contracts, not just changed files, a PR checklist
+or the implementation summary. Account for each promised result with its owning
+implementation, actual product or documentation consumer and relevant evidence.
+Inspect what could have been omitted as well as what changed. A helper that works
+in isolation, a mocked integration, green CI, or a closed issue cannot by itself
+prove the promised behavior reaches its consumer.
+
+For related changes within the selected delivery, check their interacting
+contracts on the integrated revision. Separate passing PRs do not prove that
+their combined behavior works. Follow relevant dependencies and consumers, but
+do not expand into unrelated assigned issues, sibling delivery or a repository-wide
+audit. Apply failure, lifecycle, compatibility and documentation checks where the
+outcome requires them; the engineering skills own the detailed method.
+
+Distinguish missing original acceptance, insufficient verification and optional
+additional work. Deliver repairs known in-scope gaps, checks the correction and
+reassesses affected acceptance before continuing. Do not leave an authorized
+repair for a suggested next prompt or move missing original acceptance into a
+follow-up issue while declaring the original complete. A missing prerequisite,
+human decision or unavailable required proof keeps the affected delivery
+incomplete; name the gap and what resolves it. Use the recovery rules below for
+acceptance discovered incomplete after merge.
 
 During implementation, run focused checks, then the full validation required by
 `DEVELOPMENT.md` before review. Reuse results only when revision, dependencies,
@@ -69,8 +92,9 @@ be read when relied on; cached conclusions cannot replace them. Do not execute
 untrusted PR code in a privileged maintainer checkout.
 
 Batch independent reads with stable inputs. Keep one writer per checkout,
-dependent effects sequential and sibling delivery serial. Use the github-operations CI
-waiter instead of busy polling. Do not create work merely to stay active.
+dependent effects sequential and sibling delivery serial. Use the
+github-operations CI waiter instead of busy polling. Do not create work merely
+to stay active.
 
 ## Merge and reconcile
 
@@ -91,8 +115,11 @@ result, revalidate the application, then merge the application last. A docs-only
 outcome merges its own PR. Use the reviewed PR title as subject and an empty body
 unless the preview includes one useful short issue-reference footer.
 
-Verify resulting commits and actual issue closure. Reconcile applicable Project,
-parent and documentation state without declaring incomplete acceptance Done.
+Verify that the resulting commits contain the assessed changes and preserve the
+acceptance and integration proof. Refresh evidence affected by landing before
+the final completion report; reuse unchanged proof rather than repeating the
+entire review or test suite. Verify actual issue closure. Reconcile applicable
+Project, parent and documentation state without declaring incomplete acceptance Done.
 Run affected Roadmap audits. Safely synchronize eligible clean default checkouts
 through git-operations; preserve dirty, detached, divergent or locked checkouts.
 Report merge SHAs and recovery through a new revert PR. Branch deletion and
