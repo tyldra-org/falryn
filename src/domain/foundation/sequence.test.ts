@@ -19,7 +19,7 @@ describe("monotonic sequencing within a stream", () => {
       expect(sequencer.append(event)).toEqual({ kind: "appended", sequence: event.sequence });
     }
     expect(sequencer.lastSequence(FIXTURE_STREAM)).toBe(sequence.from(15));
-    expect(sequencer.expectedSequence(FIXTURE_STREAM)).toBe(sequence.from(15));
+    expect(sequencer.expectedSequence(FIXTURE_STREAM)).toBe(sequence.from(16));
   });
 
   test("requires a stream to begin at the first sequence", () => {
