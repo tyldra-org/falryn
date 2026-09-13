@@ -1,3 +1,7 @@
+import {
+  type ProcessingPreference,
+  resolveProcessingPreference,
+} from "../../domain/sessions/model-processing.ts";
 /**
  * Intent → role routing, catalog compatibility, and ordered non-recursive fallback.
  *
@@ -73,6 +77,7 @@ export type RouteSelectionReason =
   | "fallback";
 
 export type RoutingReceipt = {
+  readonly processing?: ProcessingPreference;
   readonly role: ModelRole;
   readonly intent: WorkIntent | null;
   readonly selectionReason: RouteSelectionReason;
@@ -127,6 +132,7 @@ export type RoutingOutcome =
     };
 
 export type ResolveRouteInput = {
+  readonly processing?: ProcessingPreference;
   readonly policy: ModelPolicy;
   readonly catalogs: readonly RoutedCatalogEntry[];
   /** Prefer explicit role when set; otherwise map from intent (default coding). */
@@ -416,6 +422,13 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         role,
         intent,
         selectionReason: "explicit-selection",
+        processing: resolveProcessingPreference([
+          input.processing,
+          roleRouteFor(input.policy, role, input.fastOption ?? fastOptionForIntent(intent))
+            ?.processing,
+          role === "fast" ? input.policy.roles.fast?.default?.processing : undefined,
+          input.policy.processing,
+        ]),
         requiredCapabilities: required,
         providerId: input.explicit.providerId,
         providerProfileId: found.entry.profileId,
@@ -539,6 +552,12 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         role,
         intent,
         selectionReason,
+        processing: resolveProcessingPreference([
+          input.processing,
+          route.processing,
+          role === "fast" ? input.policy.roles.fast?.default?.processing : undefined,
+          input.policy.processing,
+        ]),
         requiredCapabilities: required,
         providerId: candidate.providerId,
         providerProfileId: candidate.providerProfileId,

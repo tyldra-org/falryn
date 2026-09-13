@@ -1,3 +1,7 @@
+import {
+  type ProcessingObservation,
+  processingObservationSchema,
+} from "../../domain/sessions/model-processing.ts";
 /**
  * Assembles and validates a provider stream attempt.
  *
@@ -37,6 +41,7 @@ export type AssembledToolProposal = {
 };
 
 export type StreamAssemblySnapshot = {
+  readonly processing?: readonly ProcessingObservation[];
   readonly text: string;
   readonly reasoning: string;
   readonly toolProposals: readonly AssembledToolProposal[];
@@ -117,6 +122,7 @@ function parseToolArguments(argumentsJson: string):
  * terminal step the assembler rejects further pushes.
  */
 export class ProviderStreamAssembler {
+  private readonly processing: ProcessingObservation[] = [];
   private expectedSequence = 1;
   private started = false;
   private closed = false;
@@ -139,6 +145,7 @@ export class ProviderStreamAssembler {
       usage: this.usage,
       finishReason: this.finishReason,
       providerMetadata: { ...this.providerMetadata },
+      processing: [...this.processing],
       diagnostics: [...this.diagnostics],
     };
   }
@@ -205,6 +212,17 @@ export class ProviderStreamAssembler {
         this.usage = event.usage;
         return { kind: "emit", event, snapshot: this.snapshot() };
 
+      case "processing": {
+        const parsed = processingObservationSchema.safeParse(event.observation);
+        if (!parsed.success || this.processing.length >= 8)
+          return this.terminate(
+            event,
+            failure("malformed-stream", "invalid or excessive processing observations"),
+            { code: "invalid-processing", path: "processing" },
+          );
+        this.processing.push(parsed.data);
+        return { kind: "emit", event, snapshot: this.snapshot() };
+      }
       case "provider-metadata":
         Object.assign(this.providerMetadata, event.entries);
         return { kind: "emit", event, snapshot: this.snapshot() };

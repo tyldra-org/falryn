@@ -33,6 +33,7 @@ import type {
   ExecutionProfileSelectedEvent,
   ModelAttemptCompletedEvent,
   ModelAttemptStartedEvent,
+  ModelProcessingRecordedEvent,
   ProcessTaskChangedEvent,
   RuntimeEvent,
   SessionCorrelation,
@@ -153,6 +154,55 @@ export function modelAttemptCompleted(
     modelAttemptId: modelAttemptId.from("attempt-fixture"),
     correlation: FIXTURE_TURN_CORRELATION,
     payload: { outcome },
+  };
+}
+
+export function modelProcessingRecorded(position = 15): ModelProcessingRecordedEvent {
+  return {
+    ...spine({
+      eventId: `event-processing-${position}`,
+      sequence: position,
+      idempotencyKey: `key-processing-${position}`,
+    }),
+    kind: "model.processing.recorded",
+    modelAttemptId: modelAttemptId.from("attempt-fixture"),
+    correlation: FIXTURE_TURN_CORRELATION,
+    payload: {
+      receipt: {
+        binding: {
+          schemaVersion: 1,
+          providerId: "provider-fixture",
+          accountId: "account-fixture",
+          destinationId: "destination-fixture",
+          modelId: "model-fixture",
+          operation: "fixture",
+          transportCompatibilityId: "transport-fixture",
+          adapterGeneration: null,
+          accountGeneration: null,
+          catalogGeneration: 1,
+          configurationGeneration: 0,
+          preference: { mode: "provider-default", fallback: "stop" },
+          resolvedMode: "provider-default",
+          nativeParameters: null,
+          price: {
+            sourceUrl: null,
+            observedAt: null,
+            tierIds: [],
+            inputMicrosPerMillion: null,
+            outputMicrosPerMillion: null,
+          },
+          maximumCostMicros: null,
+          admission: { owner: "task-fixture", attempt: "attempt-fixture", operation: "request-1" },
+          cachePartition: null,
+        },
+        requestId: "request-fixture",
+        observations: [],
+        actualMode: "unknown",
+        status: "unrecorded",
+        usageCostMaximumMicros: null,
+        settlementPrice: null,
+      },
+    },
   };
 }
 
@@ -355,6 +405,7 @@ export function everyEventKind(): readonly RuntimeEvent[] {
         evidence: { availability: "unavailable", reason: "interrupted", fidelity: "unknown" },
       },
     },
+    modelProcessingRecorded(15),
   ];
 }
 

@@ -57,6 +57,14 @@ export type ProviderAdapterPort = {
   /** Exact immutable translation plan for one supported model. */
   transportCompatibilityFor(modelId: ModelId): ProviderTransportCompatibilityPlan | null;
   /** Optional adapter-owned facts used when no product catalog was supplied. */
+  /** Exact implemented mappings, distinct from catalog support. */
+  readonly processingTransportVersion?: string;
+  readonly processingModes?: readonly ("provider-default" | "standard" | "fast")[];
+  /** Synchronous local authority check, repeated after queue admission. */
+  processingAuthority?(
+    modelId: ModelId,
+    mode: "provider-default" | "standard" | "fast",
+  ): import("../configuration/processing.ts").ProcessingAuthority;
   readonly modelCapabilities?: readonly ModelCapability[] | undefined;
   stream(
     request: ModelRequest,

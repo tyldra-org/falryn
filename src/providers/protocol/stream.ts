@@ -50,6 +50,10 @@ export type UsageUnits = {
 };
 
 export type NormalizedProviderEvent =
+  | (ProviderEventSpine & {
+      readonly kind: "processing";
+      readonly observation: import("../../domain/sessions/model-processing.ts").ProcessingObservation;
+    })
   | (ProviderEventSpine & { readonly kind: "request-started" })
   | (ProviderEventSpine & { readonly kind: "text-delta"; readonly text: string })
   | (ProviderEventSpine & { readonly kind: "reasoning-delta"; readonly text: string })

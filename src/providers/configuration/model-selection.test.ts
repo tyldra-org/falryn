@@ -19,6 +19,58 @@ import { editModelPreferences } from "./settings-actions.ts";
 const route = (modelId: string) =>
   roleRouteBaseSchema.parse({ providerProfileId: "account", providerId: "test", modelId });
 const main = route("main");
+
+test("processing inherits per field and supporting roles never copy transient main speed", () => {
+  const preferences = modelPreferencesSchema.parse({
+    ...EMPTY_MODEL_PREFERENCES,
+    processing: { mode: "standard", fallback: "allow-standard" },
+  });
+  const speedMain = { ...main, processing: { mode: "fast" as const } };
+  for (const target of [
+    { kind: "role", role: "default" },
+    { kind: "role", role: "subagents" },
+    { kind: "role", role: "workflows" },
+    { kind: "fast", option: "research" },
+  ] as const) {
+    const selected = resolveModelSelection({
+      preferences,
+      main: speedMain,
+      configurationGeneration: 1,
+      definitions: [],
+      target,
+    });
+    if (selected.kind !== "route") throw new Error(selected.kind);
+    expect(selected.route.modelId).toBe(main.modelId);
+    expect(selected.route.processing).toEqual({
+      mode: target.kind === "role" && target.role === "default" ? "fast" : "standard",
+      fallback: "allow-standard",
+    });
+  }
+  const selected = resolveModelSelection({
+    preferences,
+    main: speedMain,
+    configurationGeneration: 1,
+    definitions: [],
+    target: { kind: "agent", id: "user:agent" },
+    authorizedOverride: { ...route("different"), processing: { fallback: "stop" } },
+  });
+  if (selected.kind !== "route") throw new Error(selected.kind);
+  expect(String(selected.route.modelId)).toBe("different");
+  expect(selected.route.processing).toEqual({ mode: "standard", fallback: "stop" });
+  expect(Object.isFrozen(selected.route.processing)).toBe(true);
+});
+
+test("old policy omission stays inherited and an old strict reader rejects new required semantics", () => {
+  const old = modelPreferencesSchema.parse(EMPTY_MODEL_PREFERENCES);
+  expect(old.processing).toBeUndefined();
+  const oldReader = modelPreferencesSchema.omit({ processing: true });
+  expect(oldReader.safeParse({ ...old, processing: { mode: "fast" } }).success).toBe(false);
+  expect(
+    roleRouteBaseSchema
+      .omit({ processing: true })
+      .safeParse({ ...main, processing: { mode: "fast" } }).success,
+  ).toBe(false);
+});
 const agent: AgentModelDefinition = {
   kind: "agent",
   id: "builtin:explorer",

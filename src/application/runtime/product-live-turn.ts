@@ -56,6 +56,8 @@ import type { ProductAgentRuntime } from "./product-agent-runtime.ts";
 import { createTurnAttemptPolicy } from "./turn-attempt-policy.ts";
 
 export type ProductLiveTurnInput = {
+  /** Authorized per-call preference; never copied into delegated work or saved settings. */
+  readonly processing?: import("../../domain/sessions/model-processing.ts").ProcessingPreference;
   /** Trusted host admission; no prompt or saved agent definition can manufacture this handle. */
   readonly childAdmission?: AdmittedChild;
   readonly prompt: string;
@@ -73,6 +75,7 @@ export type ProductLiveTurnInput = {
 };
 
 export type ProductLiveTurnResult = {
+  readonly processing?: readonly import("../../domain/sessions/model-processing.ts").ProcessingReceipt[];
   readonly kind: "completed" | "unavailable" | "failed";
   readonly code: string;
   readonly message: string;
@@ -228,6 +231,7 @@ export function productModelPolicy(
       ? configured
       : undefined;
   return {
+    ...(preferences?.processing === undefined ? {} : { processing: preferences.processing }),
     roles: {
       ...preferences?.roles,
       default: {
@@ -239,6 +243,7 @@ export function productModelPolicy(
           (executionPolicy?.reasoning === "balanced" ? "balanced" : "provider-default"),
         fallbacks: saved?.fallbacks ?? [],
         budgets: saved?.budgets ?? {},
+        ...(saved?.processing === undefined ? {} : { processing: saved.processing }),
       },
     },
     intents: preferences?.intents ?? DEFAULT_INTENT_ROLE_MAP,
@@ -1018,6 +1023,7 @@ export function createProductLiveTurnExecutor(
           persistTurnLifecycle: false,
         });
         const attempted = await attemptPolicy.run({
+          ...(input.processing === undefined ? {} : { processing: input.processing }),
           taskResources,
           turnId: input.turnId,
           configurationGeneration: generation,
@@ -1133,6 +1139,7 @@ export function createProductLiveTurnExecutor(
           planArtifactId,
           briefReceipt,
           providerUsage,
+          processing: attempted.attempts.flatMap((attempt) => attempt.output?.processing ?? []),
           providerRequests,
         });
       } finally {

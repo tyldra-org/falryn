@@ -269,6 +269,7 @@ describe("reads", () => {
       sequence.from(12),
       sequence.from(13),
       sequence.from(14),
+      sequence.from(15),
     ]);
     await store.close();
   });

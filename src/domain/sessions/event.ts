@@ -59,6 +59,7 @@ export const EVENT_KINDS = [
   "work.queue.changed",
   "workflow.changed",
   "history.recorded",
+  "model.processing.recorded",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -111,6 +112,7 @@ export type TerminalPayload = {
  * schema while keeping the semantic journal bounded.
  */
 export type ModelAttemptBinding = {
+  readonly processingPreference?: import("./model-processing.ts").ProcessingPreference | undefined;
   readonly schemaVersion: 1;
   readonly providerId: ProviderId;
   /** Absent only on events written before exact provider-profile binding shipped. */
@@ -307,9 +309,13 @@ export type ModelAttemptCompletedEvent = Envelope<
   "model.attempt.completed",
   TurnCorrelation,
   TerminalPayload & { readonly admissions?: readonly ResourceAdmissionReceipt[] | undefined }
-> & {
-  readonly modelAttemptId: ModelAttemptId;
-};
+> & { readonly modelAttemptId: ModelAttemptId };
+
+export type ModelProcessingRecordedEvent = Envelope<
+  "model.processing.recorded",
+  TurnCorrelation,
+  { readonly receipt: import("./model-processing.ts").ProcessingReceipt }
+> & { readonly modelAttemptId: ModelAttemptId };
 
 export type CapabilityInvocationStartedEvent = Envelope<
   "capability.invocation.started",
@@ -371,18 +377,26 @@ export type RuntimeEvent =
   | TurnCompletedEvent
   | ModelAttemptStartedEvent
   | ModelAttemptCompletedEvent
+  | ModelProcessingRecordedEvent
   | CapabilityInvocationStartedEvent
   | CapabilityInvocationCompletedEvent
   | ConfigurationGenerationChangedEvent
   | ExecutionProfileSelectedEvent
   | ProcessTaskChangedEvent;
 
-export type ModelEvent = ModelAttemptStartedEvent | ModelAttemptCompletedEvent;
+export type ModelEvent =
+  | ModelAttemptStartedEvent
+  | ModelAttemptCompletedEvent
+  | ModelProcessingRecordedEvent;
 
 export type ToolEvent = CapabilityInvocationStartedEvent | CapabilityInvocationCompletedEvent;
 
 export function isModelEvent(event: RuntimeEvent): event is ModelEvent {
-  return event.kind === "model.attempt.started" || event.kind === "model.attempt.completed";
+  return (
+    event.kind === "model.attempt.started" ||
+    event.kind === "model.attempt.completed" ||
+    event.kind === "model.processing.recorded"
+  );
 }
 
 export function isToolEvent(event: RuntimeEvent): event is ToolEvent {

@@ -1,5 +1,6 @@
 /** Typed edits used by every settings surface; one selected override per edit. */
 import { z } from "zod";
+import { processingPreferenceSchema } from "../../domain/sessions/model-processing.ts";
 import type { ModelSelectionTarget } from "./model-selection.ts";
 import {
   contributionIdentitySchema,
@@ -23,6 +24,10 @@ export const modelSelectionTargetSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 export const modelSettingsEditSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("processing-default"),
+    processing: processingPreferenceSchema.optional(),
+  }),
   z.strictObject({
     kind: z.literal("configure"),
     target: modelSelectionTargetSchema,
@@ -67,19 +72,23 @@ export function editModelPreferences(
 ): ModelPreferences {
   const candidate = structuredClone(preferences);
   const path =
-    edit.kind === "membership"
-      ? ["roles", "subagents", "agents", edit.id, "preset"]
-      : edit.kind === "use"
-        ? ["roles", "fast", "use", edit.option]
-        : modelPreferencePath(edit.target);
-  const value =
-    edit.kind === "configure"
-      ? edit.route
+    edit.kind === "processing-default"
+      ? ["processing"]
       : edit.kind === "membership"
-        ? (edit.preset ?? undefined)
+        ? ["roles", "subagents", "agents", edit.id, "preset"]
         : edit.kind === "use"
-          ? edit.use
-          : undefined;
+          ? ["roles", "fast", "use", edit.option]
+          : modelPreferencePath(edit.target);
+  const value =
+    edit.kind === "processing-default"
+      ? edit.processing
+      : edit.kind === "configure"
+        ? edit.route
+        : edit.kind === "membership"
+          ? (edit.preset ?? undefined)
+          : edit.kind === "use"
+            ? edit.use
+            : undefined;
   assignPreference(candidate, path, value);
   const resetTarget =
     edit.kind === "reset"

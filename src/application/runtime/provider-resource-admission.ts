@@ -1,7 +1,32 @@
 /** Integer admission estimates are maxima, not authoritative billing observations. */
 import type { ResourceAmounts } from "../../domain/orchestration/resource-admission.ts";
+import type { ProcessingPrice } from "../../domain/sessions/model-processing.ts";
 import type { ModelPricing } from "../../providers/catalog/model-pricing.ts";
 import type { RoleBudgets } from "../../providers/configuration/policy.ts";
+
+export function processingCostMaximum(
+  price: ProcessingPrice,
+  input: number | undefined,
+  output: number | undefined,
+): number | null {
+  const inputRate = price.inputMicrosPerMillion;
+  const outputRate = price.outputMicrosPerMillion;
+  if (inputRate === 0 && outputRate === 0) return 0;
+  if (
+    inputRate === null ||
+    outputRate === null ||
+    input === undefined ||
+    output === undefined ||
+    ![input, output, inputRate, outputRate].every(
+      (value) => Number.isSafeInteger(value) && value >= 0,
+    )
+  )
+    return null;
+  const cost =
+    (BigInt(input) * BigInt(inputRate) + BigInt(output) * BigInt(outputRate) + 999_999n) /
+    1_000_000n;
+  return cost > BigInt(Number.MAX_SAFE_INTEGER) ? null : Number(cost);
+}
 export function roleResourceLimits(budgets: RoleBudgets): ResourceAmounts {
   return {
     ...(budgets.attempts === undefined ? {} : { attempts: budgets.attempts }),

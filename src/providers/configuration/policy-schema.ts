@@ -3,9 +3,9 @@
  */
 
 import { z } from "zod";
-
 import { brandedString } from "../../domain/foundation/branded-schema.ts";
 import { modelId, providerId } from "../../domain/foundation/identity.ts";
+import { processingPreferenceSchema } from "../../domain/sessions/model-processing.ts";
 import { DEFAULT_INTENT_ROLE_MAP, type ModelPolicy, REASONING_EFFORTS } from "./policy.ts";
 import { FAST_OPTIONS, MODEL_ROLES, SUBAGENT_PRESETS, WORK_INTENTS } from "./roles.ts";
 
@@ -36,6 +36,7 @@ export const roleRouteBaseSchema = z
     providerProfileId: z.string().min(1).max(4_096),
     providerId: providerIdSchema,
     modelId: modelIdSchema,
+    processing: processingPreferenceSchema.optional(),
     reasoning: z.enum(REASONING_EFFORTS).default("provider-default"),
     fallbacks: z.array(fallbackTargetSchema).max(16).readonly().default([]),
     budgets: budgetsSchema,
@@ -164,6 +165,7 @@ export const modelRoleSettingsSchema = z.strictObject({
 export const modelPreferencesSchema = z.strictObject({
   schemaVersion: z.literal(MODEL_POLICY_SCHEMA_VERSION),
   revision: z.number().int().nonnegative(),
+  processing: processingPreferenceSchema.optional(),
   roles: modelRoleSettingsSchema,
   intents: intentMapSchema,
 });
@@ -175,6 +177,7 @@ export const EMPTY_MODEL_PREFERENCES: ModelPreferences = {
   intents: DEFAULT_INTENT_ROLE_MAP,
 };
 const modelPolicySchema = z.strictObject({
+  processing: processingPreferenceSchema.optional(),
   roles: modelRoleSettingsSchema.extend({ default: roleRouteBaseSchema }),
   intents: intentMapSchema,
 });
@@ -184,7 +187,11 @@ export function bindModelPreferences(
   preferences: ModelPreferences,
   main: ModelPolicy["roles"]["default"],
 ): ModelPolicy {
-  return { roles: { ...preferences.roles, default: main }, intents: preferences.intents };
+  return {
+    ...(preferences.processing === undefined ? {} : { processing: preferences.processing }),
+    roles: { ...preferences.roles, default: main },
+    intents: preferences.intents,
+  };
 }
 
 export type ModelPolicyParseError = {
