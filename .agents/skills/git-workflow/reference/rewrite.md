@@ -1,6 +1,10 @@
 # rewrite
 
-History surgery: amend, squash, reword, reorder, rebase, filter. Everything here rewrites SHAs. Confirm the exact outcome before touching history, then create a backup and verify by tree hash. Publishing a rewritten ref requires a second confirmation bound to the exact remote lease.
+Amend, squash, reword, reorder, rebase and filter change commit identities. Apply
+[authorization and preservation](../SKILL.md#authorization-and-preservation),
+record a recoverable backup and choose the content check appropriate to the base.
+Local rewriting and publication are distinct effects; verify that the request
+covers each before performing it. Existing authority need not be requested twice.
 
 ## Commit messages during rewrites
 
@@ -13,13 +17,13 @@ complete message changes.
 
 ## Gate
 
-Before touching history, answer three questions out loud:
+Before rewriting, establish the following facts:
 
-1. **Is it pushed?** `git log <remote>/<branch>..<branch> --oneline` lists commits absent from the resolved remote-tracking branch. Both published and unpublished rewrites require confirmation; the published case also requires ownership and force-push review.
+1. **Is it pushed?** `git log <remote>/<branch>..<branch> --oneline` lists commits absent from the resolved remote-tracking branch. Determine which commits are shared and whether the authorized outcome includes rewriting them. Published history also needs ownership and publication checks.
 2. **Is anyone else on it?** A published branch with other people's work on it is not yours to rewrite. Use `git revert` or a follow-up commit instead.
 3. **Is the intended outcome unambiguous?** "Clean this up" is not an instruction. `reset --soft`, `reset --hard`, `revert`, and `rebase --onto` all "get rid of a commit" and only one is right. Confirm the outcome, not the command.
 
-If any answer is no or unclear, stop and ask.
+Resolve missing facts through inspection. Ask only when intent or authority remains unclear; an unpushed branch is not itself a blocker.
 
 ## Always, first
 
@@ -30,7 +34,7 @@ git rev-parse HEAD                          # record the SHA in your summary
 
 ## Amend the tip
 
-Prefer an unpushed tip, after explicit amend confirmation. Amending a published owned feature-branch tip also requires coordination and a separately authorized leased force-push.
+Prefer an unpushed tip when amending is within scope. Publishing an amended shared tip also requires appropriate coordination and authority for the leased force-push.
 
 ```bash
 git add <files>
@@ -41,7 +45,7 @@ git commit --amend -F <reviewed-message-file>      # replace the full message
 Inspect `git log -1 --format=%B` afterward. A changed subject does not authorize
 stripping an existing body or trailers.
 
-Amending changes the SHA. If the commit is pushed, landing the amend requires a force-push; confirm that separately.
+Amending changes the SHA. Before publishing, inspect both the lease and the content being uploaded; local amend authority alone does not authorize publication.
 
 ## Squash, reword, reorder
 
@@ -64,15 +68,15 @@ git rebase --onto <sha>^ <sha> <branch>
 ```
 
 `reset --soft` keeps everything staged. `reset --mixed` (default) unstages.
-`reset --hard` **discards the working tree** and needs its own confirmation and
-a backup ref, always.
+`reset --hard` discards working-tree edits. It requires scope covering that loss;
+a backup ref cannot preserve uncommitted files. Do not use it for a message-only rewrite.
 
 Rewording a non-tip commit needs both a sequence editor and a commit-message
 editor. In a non-interactive host, proceed only with reviewed portable helper
 scripts for both; do not embed platform-specific `sed -i` syntax or leave Git
 waiting for an editor.
 
-Prefer `fixup` commits during work and one confirmed autosquash at the end:
+When the chosen workflow includes autosquash, fixup commits can defer the rewrite:
 
 ```bash
 git commit --fixup <sha>
@@ -135,7 +139,7 @@ git filter-repo --invert-paths --path <path>          # preferred
 
 ## Publishing a rewrite
 
-Read the remote ref directly immediately before the confirmation and push. Record that SHA as `<expected-old-sha>` and stop if it differs from the reviewed value:
+Read the remote ref directly immediately before publishing. Record that SHA as `<expected-old-sha>` and stop if it differs from the reviewed value:
 
 ```bash
 git ls-remote --refs <remote> refs/heads/<branch>
@@ -160,7 +164,7 @@ After publishing, state in the summary:
 
   This matters most when the unpushed commits were unpushed on purpose.
 
-Delete the backup ref only after the user confirms the outcome.
+Retain the backup until recovery is no longer needed and its deletion is authorized.
 
 ## Never rewrite
 

@@ -45,7 +45,7 @@ git diff --cached
 git commit -F <reviewed-message-file>
 ```
 
-`--no-commit` permits inspection before the commit but still changes the index and working tree. Stop on conflicts. Reverting a merge requires choosing the mainline parent and has future re-merge consequences; read [merge.md](merge.md#reverting-a-merge).
+`--no-commit` permits inspection before the commit but still changes the index and working tree. Resolve conflicts through [sync.md](sync.md#conflicts). Reverting a merge requires choosing the mainline parent and has future re-merge consequences; read [merge.md](merge.md#reverting-a-merge).
 
 ## Reset
 
@@ -69,7 +69,7 @@ git clean -ndX                # ignored files only
 git clean -ndx                # untracked and ignored files
 ```
 
-Review every path, then obtain confirmation for that exact class. Do not add `-x`, `-d`, nested-repository force flags, or interactive answers after approval without re-previewing. Prefer moving valuable outputs to a reviewed temporary location when practical.
+Review every path and establish authority for that exact class before discarding it. Do not add `-x`, `-d`, nested-repository force flags, or interactive answers after approval without re-previewing. Prefer moving valuable outputs to a reviewed temporary location when practical.
 
 ## Stash
 
@@ -91,7 +91,7 @@ git stash show -p stash@{<n>}
 git stash apply stash@{<n>}
 ```
 
-Prefer `apply` first so the stash remains if restoration conflicts or verification fails. Stop on conflicts. Drop the exact stash only after the restored state is verified and its removal is authorized. Never use `stash clear` as cleanup without inspecting every entry.
+Prefer `apply` first so the stash remains if restoration conflicts or verification fails. Resolve conflicts through [sync.md](sync.md#conflicts). Drop the exact stash only after the restored state is verified and its removal is authorized. Never use `stash clear` as cleanup without inspecting every entry.
 
 ## Verify
 

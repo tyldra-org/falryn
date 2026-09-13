@@ -3,15 +3,12 @@
 Prove state transitions and lifecycle behavior before depending on visual
 snapshots.
 
-## Test in layers
+## Choose the terminal evidence
 
-1. Test domain state and commands without OpenTUI.
-2. Use the installed test renderer for component composition, frames, spans,
-   input, focus, selection, scrolling, and resize.
-3. Use a real pseudo-terminal for terminal modes, signals, raw input, cursor
-   behavior, and restoration.
-4. Test the compiled artifact when native resources or packaged path discovery
-   are involved.
+Use pure tests for domain commands, the installed test renderer for cells and
+interaction, a pseudo-terminal for actual terminal modes and restoration, and
+the compiled artifact for packaged resource resolution. Choose the levels the
+change needs. They are not four mandatory stages for every UI edit.
 
 Every renderer test owns cleanup in a guaranteed finalization path. Repeated
 mount, unmount, suspend, resume, and shutdown tests catch leaks that a single
@@ -30,38 +27,50 @@ keymap precedence, paste parsing, or mouse hit testing.
 
 One test should own the renderer, binding root, input, frame, and cleanup. Use
 the binding-aware test helper so framework updates and teardown follow the
-binding contract. This React example matches the 0.5.10 entry point. Confirm it
-against the installed release:
+binding contract. This example illustrates the test shape; supply the application
+fixture and check helpers against the installed binding:
 
 ```tsx
 import { testRender } from "@opentui/react/test-utils";
 import { expect, test } from "bun:test";
+import { act } from "react";
 
 test("Escape closes the focused dialog", async () => {
   const setup = await testRender(<App initialDialog="help" />, {
     width: 80,
     height: 24,
+    kittyKeyboard: true,
   });
 
   try {
     await setup.renderOnce();
     expect(setup.captureCharFrame()).toContain("Keyboard shortcuts");
 
-    setup.mockInput.pressEscape();
+    await act(async () => {
+      setup.mockInput.pressEscape();
+    });
     await setup.renderOnce();
 
     const frame = setup.captureCharFrame();
     expect(frame).not.toContain("Keyboard shortcuts");
     expect(frame).toContain("Workspace");
   } finally {
-    setup.renderer.destroy();
+    await act(async () => {
+      setup.renderer.destroy();
+    });
   }
 });
 ```
 
+The explicit keyboard protocol makes Escape unambiguous for this interaction
+test. Test legacy Escape disambiguation separately with the parser's clock and
+timing contract; one immediate frame is not proof that deferred input settled.
+
 Core tests use `createTestRenderer()` from `@opentui/core/testing`. Solid tests
 use `testRender()` from `@opentui/solid`. Destroying the returned renderer
-unmounts or disposes the binding root.
+unmounts or disposes the binding root. Flush the binding's scheduled cleanup before
+asserting that subscriptions have been released; a synchronous destroy call alone
+may return before React passive cleanup finishes.
 
 For resize behavior, drive the renderer instead of calling the layout selector
 alone. Keep a separate pure test for the selector's exact breakpoints:
@@ -106,18 +115,5 @@ Keep production logs and captured values bounded, and redact secrets before they
 enter the overlay. For rendering stalls, inspect scheduler state, frame counts,
 cell updates, memory, and the debug overlay before changing frame cadence.
 
-## Review checks
-
-- Pure state and command tests cover outcomes without renderer timing.
-- Renderer tests drive supported input, resize, focus, and frame boundaries.
-- React and Solid tests use their binding-aware `testRender()` entry points.
-- Every test unmounts its framework root and destroys its renderer after
-  failure.
-- Frame assertions use fixed dimensions and the smallest meaningful region.
-- Pseudo-terminal tests own terminal modes, signals, cursor state, and
-  restoration.
-- Packaged tests start the produced artifact rather than a source entrypoint.
-- Performance claims include a metric, workload, environment, and comparison.
-- Time-sensitive tests use a manual clock instead of wall-clock sleeps.
-- Console and rendering diagnostics remain usable without corrupting the live
-  terminal region or exposing sensitive values.
+Use the task's review format to report the observed terminal behavior and gaps.
+Keep package/runtime and terminal conditions with evidence that depends on them.

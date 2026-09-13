@@ -1,70 +1,39 @@
-# React binding
+# React terminal binding
 
-Use the React binding when React owns the terminal component tree. Create one
-React root per renderer ownership boundary and let reconciliation own component
-identity and renderable updates.
+React owns component identity and renderable reconciliation. OpenTUI owns terminal
+cells, focus, input protocols, renderer scheduling and terminal restoration. Verify
+the installed binding's public exports before crossing that boundary.
 
-## Keep render pure
+## Project state into terminal components
 
-Render functions derive output from props, state, and context. Put external
-subscriptions, timers, and retained resources in effects with complete cleanup.
-Use stable keys for logical identity and refs only for documented imperative
-operations.
+Use the [React guidance](../../typescript-best-practices/references/react.md) for
+hooks, subscriptions, stale completion and state identity. Keep those rules in one
+owner. An external feed must display the new store's snapshot when its prop changes,
+even if that store has not emitted an event yet.
 
-Keep a subscription and its cleanup in the component that owns it:
+Do not assume browser DOM, CSS, event bubbling, hydration or accessibility behavior.
+Use OpenTUI's intrinsic component, layout and focus contracts. Ref operations must
+be supported by the binding; mutating framework-owned renderables directly can
+bypass reconciliation.
 
-```tsx
-import { useEffect, useState, type ReactNode } from "react";
+React may own transient focus, viewport and selection state. Durable domain facts
+remain with their application owner. Keep keymap registrations and retained effects
+within a lifetime that releases them on replacement and unmount.
 
-type JobStatusValue = { readonly label: string };
-type JobFeed = {
-  readonly current: () => JobStatusValue;
-  readonly subscribe: (listener: (value: JobStatusValue) => void) => () => void;
-};
+## Own the root lifetime
 
-function JobStatus({ jobs }: { readonly jobs: JobFeed }): ReactNode {
-  const [status, setStatus] = useState(() => jobs.current());
+Use one React root per renderer ownership boundary. The application renderer owner
+coordinates root unmount and renderer destruction on success and failure. Binding
+helpers may already couple these operations; inspect that contract before adding a
+second teardown path. Use the supported binding-aware test helper for tests.
 
-  useEffect(() => jobs.subscribe(setStatus), [jobs]);
+Do not run another reconciler over the same tree during migration. Transfer one
+tree owner, update consumers and remove the previous adapters.
 
-  return <text>{status.label}</text>;
-}
-```
+## Prove terminal integration
 
-This pattern requires `subscribe` to return its unsubscribe function. If the
-source uses another contract, return an explicit cleanup callback from the
-effect.
-
-## Respect terminal semantics
-
-Do not assume browser DOM, CSS, event bubbling, hydration, or accessibility
-behavior. OpenTUI intrinsic components, layout rules, event contracts, focus,
-and terminal capabilities are the authority.
-
-Keep framework state separate from domain state. React may own focus, viewport,
-selection, and transient interaction. It should project domain facts rather
-than becoming their only storage location.
-
-Avoid mirrored state for derived values. Do not suppress effect dependency
-diagnostics without proving the replacement invariant. When async work depends
-on props or state, cancel it or prevent stale completion from updating the
-current tree.
-
-## Root lifecycle
-
-The renderer owner creates the React root, renders the application, and unmounts
-the root before destroying the renderer. Repeated mount, unmount, failure, and
-shutdown paths must release the same resources.
-
-Do not run React and another reconciler over the same tree as a migration
-strategy. Move one ownership boundary, update its callers and tests, then remove
-the old root and adapters.
-
-## Review checks
-
-- One React root owns each reconciled tree.
-- Render functions have no hidden I/O or mutation.
-- Every retained effect returns cleanup.
-- Keys represent domain identity rather than array position or layout.
-- Refs use supported imperative operations and do not bypass reconciliation.
-- Root unmount happens before renderer destruction.
+Exercise prop changes, input/focus changes and repeated mount/unmount through the
+binding. Assert the resulting terminal frame and relevant application effect.
+Check released subscriptions and keymap layers after teardown; a correct frame
+does not prove cleanup. Use [testing and debugging](testing-and-debugging.md) for
+the renderer, pseudo-terminal and packaged proof boundaries.

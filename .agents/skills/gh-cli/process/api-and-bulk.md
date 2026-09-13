@@ -73,7 +73,7 @@ For a body replacement:
 5. re-read and compare the remote body;
 6. restore the retained body immediately when authorized if verification fails.
 
-Follow [Remote body and metadata safety](../SKILL.md#remote-body-and-metadata-safety).
+Follow [the mutation procedure](../SKILL.md#apply-one-understood-effect).
 
 Do not create helper scripts containing tokens. Temporary files must contain only nonsecret payloads and should use a narrowly scoped temporary directory.
 

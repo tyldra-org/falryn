@@ -19,47 +19,9 @@ domain facts into a UI model that owns focus, viewport, expansion, selection,
 and transient rendering state. Keep commands distinct from key bindings so the
 same behavior can be tested or exposed through another interface.
 
-Do not maintain parallel booleans for coupled lifecycle states. Use one explicit
-state model for starting, active, suspended, cancelling, failed, and closed
-behavior when those distinctions affect cleanup or input.
-
-For example, keep impossible lifecycle combinations out of the type:
-
-```ts
-type UiState =
-  | { readonly kind: "starting" }
-  | { readonly kind: "active"; readonly selection: string | null }
-  | { readonly kind: "suspended"; readonly selection: string | null }
-  | { readonly kind: "closing" }
-  | { readonly kind: "failed"; readonly message: string }
-  | { readonly kind: "closed" };
-
-type UiEvent =
-  | { readonly type: "ready" }
-  | { readonly type: "select"; readonly id: string }
-  | { readonly type: "suspend" }
-  | { readonly type: "resume" }
-  | { readonly type: "close" }
-  | { readonly type: "fail"; readonly message: string };
-
-function update(state: UiState, event: UiEvent): UiState {
-  if (event.type === "fail") return { kind: "failed", message: event.message };
-  if (event.type === "close") return { kind: "closing" };
-  if (state.kind === "starting" && event.type === "ready") {
-    return { kind: "active", selection: null };
-  }
-  if (state.kind === "active" && event.type === "select") {
-    return { ...state, selection: event.id };
-  }
-  if (state.kind === "active" && event.type === "suspend") {
-    return { kind: "suspended", selection: state.selection };
-  }
-  if (state.kind === "suspended" && event.type === "resume") {
-    return { kind: "active", selection: state.selection };
-  }
-  return state;
-}
-```
+Model starting, active, suspended and closing states only when they change
+input or cleanup behavior. General state-model design belongs to engineering and
+TypeScript guidance; here the important boundary is who currently owns the terminal.
 
 ## Own the lifecycle once
 

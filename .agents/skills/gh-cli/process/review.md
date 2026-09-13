@@ -14,7 +14,10 @@ gh pr checks <n> --repo <owner/repo>
 
 Record repository, base SHA, head SHA, and every changed path. A later head SHA is a new revision and does not inherit the old review.
 
-Treat the PR head and its content as untrusted. Do not check out or execute it in a privileged maintainer environment merely to review it. Begin with API and diff inspection. If isolated execution is explicitly authorized, re-resolve the exact head SHA before running anything and distinguish observed CI from locally reproduced evidence.
+Treat the PR head and its content as untrusted. Do not check out or execute it in a privileged maintainer environment merely to review it. Begin with API and diff inspection. If a suitable isolated environment and the task scope permit execution,
+re-resolve the exact head SHA before running anything. Distinguish observed CI
+from locally reproduced evidence; a worktree alone does not remove credentials
+or isolate execution.
 
 For multiple repositories or dependent PRs, acquire every companion revision and declared landing order through [delivery.md](delivery.md). "No findings" applies only to the exact reviewed set.
 

@@ -1,61 +1,32 @@
 ---
 name: opentui-best-practices
-description: OpenTUI Core, React, Solid, Keymap, and first-party package engineering for renderer lifecycle, rendering, layout, input, focus, animation, scrollback, testing, debugging, extensions, runtime support, and packaging. Use for OpenTUI implementation or review; consult installed-version documentation for exact APIs.
+description: Implement and assess OpenTUI rendering, input, framework bindings, terminal lifecycle and packaging. Use installed exports and version-matched documentation for exact APIs.
 ---
 
-# OpenTUI best practices
+# OpenTUI engineering
 
-Use this skill to choose the structure and proof of an OpenTUI change. Installed
-package exports and version-matched official documentation own exact API names,
-props, events, defaults, and package entrypoints. This bundle owns engineering
-judgment and does not duplicate an API manual.
+Own terminal rendering, input, renderer lifetime and packaged runtime behavior.
+TypeScript guidance owns language and module correctness; general engineering
+guidance owns domain design; `change-review` owns review method and reporting.
+Keep application policy outside this portable skill.
 
-This bundle was last audited on 2026-09-03 against OpenTUI 0.5.10 for Core,
-React, Solid, and Keymap. Treat that as a maintenance marker. Resolve the
-installed compatible package set and current official docs before using an
-exact API.
+## Identify the terminal contract
 
-The references include original TypeScript and TSX patterns. Treat them as
-design examples, not as a compatibility promise. Confirm imports, component
-names, props, and event fields against the installed OpenTUI version before
-using them.
+Resolve installed OpenTUI packages, compatible bindings, published exports,
+runtime, screen mode and validation tools. Use source types and version-matched
+official documentation for API details. A package version recorded in a skill
+is not proof that its examples work in the current checkout.
 
-## Working method
+Identify the changed terminal behavior and the owner of its renderer, framework
+root, focus, input registrations and native resources. Domain state reaches the
+UI through explicit projections. Keep rendering and keystroke work bounded.
 
-1. Resolve the installed OpenTUI packages, versions, public entry points,
-   runtime, binding, terminal modes, and validation commands.
-2. Identify who owns the renderer, framework root, input, focus, subscriptions,
-   native resources, and shutdown.
-3. Keep domain behavior independent of OpenTUI and project it into explicit UI
-   state.
-4. Model input, focus, resize, scrolling, loading, cancellation, and failure as
-   observable state transitions.
-5. Keep rendering and keystroke handling bounded. Move blocking or streaming
-   work behind cancellable owners.
-6. Prove behavior with the test renderer first, then use real-terminal or
-   packaged smoke tests only for behavior a headless renderer cannot establish.
+One visible lifetime must restore terminal state after normal exit, failure,
+cancellation and repeated startup. Framework reconciliation owns its renderables;
+do not mutate them through a competing owner. Terminal cells, focus and output
+modes need terminal evidence, not assumptions from browser CSS or DOM behavior.
 
-## Invariants
-
-1. One visible lifecycle owns renderer creation, framework mounting, cleanup,
-   and terminal restoration.
-2. Framework-owned renderables are changed through their framework contract,
-   not mutated behind the reconciler.
-3. Layout follows measured terminal cells and constraints, never guessed browser
-   CSS behavior or one fixed terminal size.
-4. Input resolves intent before effects run. Focus and keymap precedence are
-   deterministic and testable.
-5. Empty, loading, unavailable, cancelled, and failed states remain visible.
-6. Packaged applications resolve every native asset and entrypoint without
-   relying on source-tree paths.
-7. Imports use published package entry points. Runtime-only, framework-only,
-   and Bun-only modules never leak into incompatible paths.
-8. Screen mode, external output, scrollback, and console ownership are chosen
-   together so output cannot corrupt the live region.
-9. Every live-rendering request, timeline, recorder, plugin registration, and
-   keymap layer has a matching release path.
-
-## Routing
+## Choose the owning reference
 
 | Concern | Read |
 | --- | --- |
@@ -74,21 +45,21 @@ using them.
 | Native assets, Tree-sitter, workers, media, SSH, standalone builds, or deployment | [Packaging and runtime resources](references/packaging-and-runtime-resources.md) |
 | Plugins, custom renderables, registration, compatibility, or extension cleanup | [Extensions and plugins](references/extensions-and-plugins.md) |
 
-Load one primary reference. Add another only when the task crosses a separate
-lifecycle, interaction, or distribution boundary. Pair this skill with the
-repository's change-review process for review reasoning.
+Load one primary reference, plus another for a distinct interaction, binding or
+distribution risk. Ordinary layout work does not need every extension, media,
+animation or package guide.
 
-## Completion check
+## Verify what the user experiences
 
-- Do source types and version-matched documentation support every API used?
-- Do the runtime, package entry points, framework peers, and native artifacts
-  match the installed OpenTUI release?
-- Can one owner restore the terminal and release every resource after success,
-  failure, cancellation, and repeated mount or shutdown?
-- Do narrow, wide, resized, focused, and unavailable states behave explicitly?
-- Do optional terminal services preserve the same outcome when a capability or
-  permission is absent?
-- Do tests prove state and interaction before relying on frame snapshots?
-- Do keymap layers, animation registration, and scrollback writers release their
-  owners without leaving hidden input or live-render state?
-- Does the packaged artifact work without development-only paths or resources?
+Use a test renderer for state, cells, layout and interaction. Exercise relevant
+resize, focus, cancellation and unavailable-capability cases. Frame snapshots
+alone do not prove which command ran or whether resources were released.
+
+Use a real terminal for behavior the headless renderer cannot establish, such as
+terminal restoration or actual capability fallback. Use the packaged executable
+for native asset and entrypoint resolution. Keep those proof levels separate and
+run the repository's required checks. A pure domain change need not acquire a
+terminal smoke test just because its caller eventually renders text.
+
+Report observed behavior, package/runtime versions when relevant, and material
+gaps through the task's existing report. Avoid a second universal checklist.

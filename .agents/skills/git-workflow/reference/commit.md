@@ -1,144 +1,71 @@
-# commit
+# Stage and commit
 
-Stage one logical unit, verify it, commit it. Subject rules in [conventions.md](conventions.md).
+Commit one coherent unit using repository conventions and the active autocommit
+policy. A completed feature with its tests is one unit; file count alone does
+not justify splitting it. [Conventions](conventions.md) owns naming and messages.
 
-Follow the active repository and user policy for automatic commits. A commit policy does not authorize a push, rewrite, merge, tag, or deletion.
+## Prepare the index
 
-## Boundaries
-
-Commit at clean logical boundaries:
-
-- a finished task or unit of work
-- a working feature, fix, refactor, doc, test, or chore
-- a self-contained set of related changes
-- before switching to unrelated work
-- before a handoff or pause after meaningful completed work
-
-**One commit, one reason to exist.** The test: can you write a specific subject without "and"? If not, split.
-
-**Don't split for its own sake.** A rename touching 40 files is one commit. A feature and its tests are one commit unless the repo says otherwise. Granularity tracks *reasons to change*, not file count.
-
-Checkpoint commits on an unlanded branch are fine; `chore(<scope>): checkpoint <what>`, not `wip`. Flag them so they get squashed before landing ([rewrite.md](rewrite.md)).
-
-## Commit message
-
-Follow the effective subject, body, trailer, and signing policy in
-[conventions.md](conventions.md). For a reviewed subject-only message:
-
-```bash
-git commit -m "type(scope): summary"
-```
-
-When a body or trailers are required, materialize and inspect the complete
-message before using `git commit -F <reviewed-message-file>`.
-
-## Procedure
-
-### 1. Confirm where you are
+Inspect status, the working diff and the existing staged diff. Separate intended
+changes from unrelated edits before choosing paths. A dirty checkout is workable
+when ownership and overlap are clear; the index may contain someone else's work.
+Do not commit it accidentally. Use a separate checkout or resolve overlapping
+ownership when the intended commit cannot be isolated safely.
 
 ```bash
 git status --short --branch
+git diff -- <paths>
+git diff --cached
 ```
 
-- **On the default branch?** In GitHub flow or git flow, branch first ([branch.md](branch.md)). In trunk-based, this is correct. Know which model the repo uses.
-- **Detached HEAD you didn't create?** Stop and report.
-- **Mid-rebase / mid-merge?** Finish or abort that first, with the user.
+Follow the repository's branch policy. Inspect a detached HEAD or ongoing Git
+operation before committing; do not switch away from recoverable work.
 
-### 2. Read the change
+Stage explicit paths or reviewed hunks. A scoped directory is appropriate only
+when all changes under it belong to the unit. Re-read the complete staged diff:
 
 ```bash
-git diff -- <files>
-git diff --cached -- <files>   # when anything is already staged
+git add -- <paths>
+git diff --cached --check
+git diff --cached
 ```
 
-The actual diff, not `--stat`. You're about to attest these changes are one unit; you can't attest to what you haven't read.
+Stage only intended content. Secrets, private files and incidental tool output
+must not enter the commit. An empty index needs no ordinary commit.
 
-Scan for: secrets, debug prints, commented-out code, absolute local paths, large binaries, unrelated formatting churn.
+## Validate and record
 
-### 3. Stage
-
-Prefer explicit paths. They are the only form that cannot expand beyond the names supplied:
+Use focused checks while working and the repository's required final checks.
+Follow repository message, trailer and signing requirements. Prepare multiline
+messages in a file; avoid an editor that cannot run in this environment.
 
 ```bash
-git add path/to/file path/to/other-file
+git commit -m "<reviewed subject>"
+git commit -F <reviewed-message-file>
 ```
 
-Scoped pathspecs are fine when the scope *is* the unit:
+These are alternatives, not two consecutive commits. Use the first only when the
+complete required message is a subject. Do not disable signing or hooks.
 
-```bash
-git add -A -- packages/auth/
-git add -p                          # interactive, when one file holds two changes
-```
+If a hook fails, inspect its exit status and changes, repair an in-scope defect,
+validate and retry. If it edits files, do not assume the commit succeeded. Inspect
+`HEAD`, status and the index to learn what happened, then review those edits before
+restaging. Never retry unchanged or bypass a hook to obtain a commit.
 
-Bare `git add .` / `git add -A` at repo root is acceptable **only** after reading `git status --short` and confirming every listed path belongs. In practice that's rare; on a tree with several things in flight it's how unrelated work gets swept into a commit that claims to be about one thing.
+Verify the resulting SHA, complete message, committed paths and remaining work.
+Report skipped checks. Preserve unrelated staged content throughout.
 
-Leave unrelated changes unstaged. Never fold them in "since they were there".
+## Generated files and history
 
-### 4. Verify the staged set
+Keep tracked generated output and lockfiles with the source change that owns them.
+Follow repository policy for untracked build output and large binaries; a filename
+alone does not decide whether an artifact belongs in Git.
 
-```bash
-git diff --cached --stat
-```
+Amending is a rewrite. Follow [rewrite](rewrite.md), including authority, backup,
+message preservation and content verification. A follow-up commit usually avoids
+rewriting an already shared revision. A commit policy alone does not authorize
+amend, publication or deletion.
 
-Every staged path belongs to the unit. If one doesn't: `git restore --staged <path>`.
-
-**Nothing staged?** Stop. Do not create an empty commit. Report that there was nothing to commit.
-
-### 5. Validate
-
-Run focused validation for the changed files when practical; the adjacent test, the linter on the touched package, the type checker. Not the whole suite unless the change is broad.
-
-If validation is skipped, say so explicitly in the summary. Silence reads as "it passed".
-
-### 6. Write the subject
-
-Inspect the diff and recent history first:
-
-```bash
-git diff --cached --stat
-git diff --cached --name-only
-git log --pretty=%s -n 20
-```
-
-Follow [conventions.md](conventions.md). The repo's established type and scope style wins over the defaults there.
-
-### 7. Commit
-
-Use `git commit -m "type(scope): summary"` only when the effective policy is
-subject-only. Otherwise use the previously reviewed complete message. In a
-non-interactive host, do not invoke an editor that can block unexpectedly.
-
-If the repo signs (`commit.gpgsign`, a signing key, or signed commits in `git log --show-signature -1`), keep signing. Never `--no-gpg-sign`.
-
-### 8. Hook outcomes
-
-- **Hook fails** → stop, quote the shortest decisive line. Never `--no-verify`. Never retry unchanged.
-- **Hook modifies files** (formatter, import sorter) → the commit succeeded but the tree moved. Re-check `git status`, then either amend (unpushed tip only) or make a follow-up `style` commit.
-
-## Generated artifacts and lockfiles
-
-Treat a tracked lockfile as source and commit it with the dependency change that produced it. If repository policy deliberately omits a lockfile for that package type, do not introduce one. A dependency change that leaves an expected lockfile stale is incomplete.
-
-**Generated output.** Build artifacts, exported media, and tool output directories usually belong in `.gitignore`, not in a commit. When output is tracked, such as committed docs, checked-in fixtures, or generated API clients, keep it in the same commit as the source that produced it.
-
-Binaries and large generated assets are worth confirming before they go in; they're permanent, every clone pays for them forever, and `.gitignore` is usually the right answer instead.
-
-## Amending
-
-Amend only when it is the unpushed tip and the user explicitly confirms the rewrite. Otherwise make a new commit. See [rewrite.md](rewrite.md).
-
-```bash
-git commit --amend --no-edit                       # preserve the exact message
-git commit --amend -F <reviewed-message-file>      # replace the full message
-```
-
-Do not use `-m` to reissue only the subject when the existing or required
-message contains bodies or trailers. Verify the resulting full message.
-
-## Moving uncommitted work
-
-```bash
-git stash push -m "<what>"
-```
-
-That command omits untracked files. Read [undo.md](undo.md#stash) before stashing a mixed tree, applying a stash, or dropping one. If work needs to survive, put it on a branch or in a worktree rather than leaving it in the stash indefinitely.
+For moving uncommitted work, use [branches](branch.md#switching-with-dirty-tree)
+or [worktrees](worktree.md). Stashing has its own preservation rules in
+[undo](undo.md#stash).

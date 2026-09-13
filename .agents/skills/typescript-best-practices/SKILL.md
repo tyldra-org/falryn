@@ -1,53 +1,33 @@
 ---
 name: typescript-best-practices
-description: TypeScript, JavaScript, and TSX engineering for implementation, review, debugging, compiler configuration, type-system design, runtime platforms, compiler tooling, async work, React and Next.js, package boundaries, migrations, testing, and documentation. Use for code or configuration whose correctness depends on TypeScript or its runtime ecosystem.
+description: Implement and assess TypeScript, JavaScript and TSX contracts across types, runtime behavior, compiler tooling and package boundaries. Load framework references only when that framework is involved.
 ---
 
-# TypeScript best practices
+# TypeScript engineering
 
-Use this bundle to make TypeScript code correct at both compile time and runtime.
-It contains original guidance and examples, not copied or pinned vendor docs.
-Resolve version-sensitive details against the packages installed in the target
-repository.
+Own language, type-system, compiler, module and runtime compatibility decisions.
+General engineering guidance owns architecture, ownership and change strategy;
+`change-review` owns review method and reporting. Use this skill for the parts
+whose correctness depends on TypeScript or its runtime ecosystem.
 
-This bundle was last audited on 2026-09-03 against TypeScript 7.0.2. That is a
-maintenance marker, not a compatibility promise. The project-selected compiler,
-runtime, and tool integrations remain authoritative.
+## Locate the changed contract
 
-## Start here
+Inspect the repository's package manager, scripts, compiler, runtime, relevant
+`tsconfig` and package exports. Read the lockfile or installed package when exact
+versions matter. Refresh only facts affected by dependency or configuration changes.
+Do not install a missing tool merely to inspect the project.
 
-1. Inspect repository guidance, `package.json`, the lockfile, `tsconfig*`, the
-   actual compiler binary, runtime, framework versions, and validation scripts.
-   Check separately whether tools import the `typescript` package as an API.
-2. Identify the trust boundary, domain contract, state owner, side effects,
-   cancellation path, and package boundary touched by the task.
-3. Load the one reference that owns the main risk. Load another only for a
-   distinct compiler, framework, packaging, or verification concern.
-4. Make the smallest change at the owning boundary. Preserve strictness unless
-   changing it is the explicit task.
-5. Prove compile-time behavior and runtime behavior separately.
+Choose the main risk: static type design, runtime validation, async behavior,
+resolution, declarations, compiler integration or framework behavior. Load its
+reference, adding another only for a distinct boundary. Framework guidance is
+conditional; a Bun CLI task does not need browser or Next.js instructions.
 
-## Non-negotiable rules
+Keep external values `unknown` until runtime evidence establishes their shape.
+Types preserve that evidence; they cannot validate input or prove a side effect.
+Do not silence a diagnostic through assertions or weakened options without
+resolving its cause. Keep types readable and proportional to the contract.
 
-- Keep external data `unknown` until runtime validation establishes its shape.
-- Make invalid states hard to represent, but keep types proportional and
-  readable.
-- Fix the source of a diagnostic. Do not reach first for `any`, assertions,
-  ignored errors, skipped tests, or weaker compiler options.
-- Treat cancellation, cleanup, ordering, concurrency limits, and partial effects
-  as API behavior.
-- Align TypeScript resolution, emitted JavaScript, declarations, package exports,
-  the runtime, and the bundler.
-- Do not treat `tsc` command compatibility as proof that compiler-API,
-  language-service, linter, framework, or editor integrations are compatible.
-- Choose who removes TypeScript syntax. The runtime, compiler, transpiler, and
-  test runner must agree on accepted syntax and module specifiers.
-- Verify current framework APIs and compiler flags against maintained
-  documentation for the installed version.
-- Use the repository's package manager and scripts. Do not invoke a command that
-  may install an absent tool merely to inspect the project.
-
-## Reference map
+## Choose the owning reference
 
 | Primary concern | Read |
 | --- | --- |
@@ -64,31 +44,18 @@ runtime, and tool integrations remain authoritative.
 | Runtime tests, type tests, review evidence, and failure-path proof | [Testing and review](references/testing-and-review.md) |
 | JSDoc, API contracts, examples, ADRs, and documentation maintenance | [Documentation](references/documentation.md) |
 
-## Validation ladder
+## Prove the affected contract
 
-Run only the levels relevant to the changed contract, in this order:
+Choose checks by what could break. Type fixtures test inference and rejected
+programs; runtime tests exercise values and effects. Resolution, exports and
+emission changes need an actual importing consumer. Compiler-API work needs that
+integration exercised, not just a successful `tsc` invocation. Framework behavior
+needs the owning framework's evidence.
 
-1. focused compiler diagnostics or a type test;
-2. focused runtime tests, including rejection and failure paths;
-3. repository typecheck, lint, and formatting checks;
-4. build or declaration generation for configuration, exports, or packaging;
-5. consumer-shaped install or import tests for published contracts.
+Use the repository's required final checks. Reuse unaffected results only when
+inputs and environment still match. Report the proof and material gaps through
+the task's existing reporting format, without adding another completion checklist.
 
-Report exact commands and outcomes. If a level is unavailable or skipped, state
-that directly.
-
-## Completion gate
-
-- External values are validated before domain use.
-- Types exclude the intended invalid states without concealing uncertainty.
-- Async work defines ownership, ordering, capacity, cancellation, and cleanup.
-- Runtime behavior, compiler behavior, and framework behavior were not confused.
-- Resolution, emitted files, declarations, and exports agree.
-- Handwritten declarations match runtime behavior and do not hide unknown code
-  behind broad ambient types.
-- The chosen runtime or transform owns TypeScript syntax removal, and its syntax
-  limits are tested.
-- Tools that import TypeScript's programmatic API use a compatible package and
-  do not depend on private compiler internals.
-- Tests cover success plus relevant rejection, failure, cancellation, and
-  migration paths.
+Exact APIs and version support come from installed exports and maintained
+version-matched documentation. Examples explain a contract; validate them in the
+chosen compiler/runtime before using them as implementation.

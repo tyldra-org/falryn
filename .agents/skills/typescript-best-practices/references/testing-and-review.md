@@ -1,39 +1,29 @@
-# Testing and review
+# TypeScript verification
 
-Match verification to the contract that changed. Do not treat one green tool as
-universal proof.
+Use this reference to choose evidence for a TypeScript contract. General testing
+strategy belongs to engineering guidance; defect assessment and report shape
+belong to `change-review`. Run the repository's required checks after focused proof.
 
-## Separate proof layers
+## Match the check to the claim
 
-- Compiler checks prove static compatibility for the included program.
-- Lint and formatting checks prove configured policy.
-- Runtime tests prove exercised behavior.
-- Framework builds prove selected framework contracts and bundling.
-- Declaration generation proves that types can be emitted.
-- Consumer tests prove that another project can load the shipped contract.
-- Benchmarks prove only the measured workload and environment.
+| Changed contract | Useful evidence |
+| --- | --- |
+| Inference, generics, overloads or accepted call shapes | Positive and negative compiler fixtures using the selected compiler |
+| External data or JavaScript callers | Runtime input and rejection cases, including values the type system cannot constrain |
+| Async or disposable API | Observable cancellation, rejection, ordering and cleanup through the real caller |
+| Resolution, exports or declarations | Import the built package as a separate consumer under each supported condition |
+| Compiler API, transform or language-service integration | Exercise the actual integration with its supported package and host |
+| Framework-specific behavior | Use that framework's renderer or build where it owns the behavior |
+| Performance | Compare the affected workload with the same toolchain and environment |
 
-Start focused, then widen according to the changed boundary.
+A successful typecheck does not prove runtime input safety. A runtime test does
+not prove the published declaration can be consumed. Lint and formatting establish
+configured style rules, not either of those contracts.
 
-## Test runtime behavior
+## Assert type failures deliberately
 
-For parsers, handlers, effects, and adapters, cover:
-
-- representative success;
-- malformed and structurally valid but semantically invalid input;
-- dependency failure and preserved error identity;
-- cancellation before start and during work;
-- partial startup and cleanup;
-- ordering and concurrency limits;
-- migration compatibility.
-
-Prefer observable contracts over private implementation details. A test that
-cannot fail when the intended behavior breaks is not useful evidence.
-
-## Test type contracts
-
-Use the repository's existing type-test tool or compiler fixture. Include
-positive and negative cases when inference is part of the API.
+Use the existing type-test tool or compiler fixture. Include an accepted call and
+a rejected call when both are part of the API:
 
 ```ts
 type Command =
@@ -51,32 +41,7 @@ dispatch({ kind: "open" });
 dispatch({ kind: "close", path: "/tmp/report.txt" });
 ```
 
-Keep `@ts-expect-error` next to a deliberate negative assertion. Avoid it in
-ordinary implementation code.
-
-## Review by consequence
-
-1. Identify the owning contract and its callers.
-2. Trace success, rejection, failure, cancellation, and cleanup paths.
-3. Compare static claims with runtime validation.
-4. Inspect compiler, runtime, framework, and package behavior separately.
-5. Assign severity from reachable user or system consequences.
-6. Cite exact evidence and state unverified assumptions.
-
-Useful questions include:
-
-- Can external data reach the domain through an assertion?
-- Can stale async work overwrite newer state?
-- Can a failed effect be retried safely?
-- Can editor resolution succeed while runtime resolution fails?
-- Can declarations expose a private or missing type?
-- Can a migration leave two authorities or an adapter with no deletion path?
-
-## Completion checks
-
-- Commands, versions, inputs, and outcomes are reported exactly.
-- Negative and failure paths are exercised where they carry risk.
-- Public examples compile against the supported configuration.
-- Package changes include a consumer-shaped check.
-- Performance claims include comparable measurements.
-- Skipped or unavailable validation remains explicit.
+The negative assertion must fail if the compiler stops rejecting the invalid call.
+Keep suppression next to that assertion, not in ordinary implementation to hide an
+unknown value. Compile public examples under the supported configuration before
+presenting them as working code.

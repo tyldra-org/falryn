@@ -65,7 +65,8 @@ git branch -vv | rg ': gone]'                                     # remote delet
 git for-each-ref --sort=committerdate refs/remotes/<remote> --format='%(committerdate:short) %(refname:short)' | head -20
 ```
 
-Report the list with ages. Never bulk-delete; each deletion is its own ask, and each needs the unlanded-commit check from [branch.md](branch.md#deleting).
+Report the candidates. Delete only within an authorized bounded cleanup, applying
+the preservation checks in [branch.md](branch.md#deleting) to every exact ref.
 
 ## Line endings
 

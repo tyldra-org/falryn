@@ -18,52 +18,39 @@ Derived values usually belong in render. User-triggered side effects usually
 belong in the event path that caused them. Effects synchronize with an external
 system.
 
-An effect is not defective merely because it sets state. Check whether it owns
-an asynchronous request, subscription, or other lifecycle. Protect against
-stale completion and release retained work:
+An effect may own an asynchronous request or retained resource. Cancel prior
+work and prevent stale completion after dependency changes. If data is keyed by
+an ID, keep the key with the result and avoid displaying the previous ID's data
+while the new effect has not run yet. Cancellation alone does not cover that
+rendering interval. Test both the visible state and the eventual completion.
+
+## Read external stores through their subscription contract
+
+An external store can change between rendering and subscription, or the component
+can receive a different store without that store emitting an event. Mirroring one
+initial snapshot into `useState` does not cover those transitions. Use the installed
+React subscription API when the source meets its contract:
 
 ```tsx
-import { useEffect, useState } from "react";
+import { useSyncExternalStore } from "react";
 
-type Profile = { readonly id: string; readonly name: string };
-type ProfileState =
-  | { readonly kind: "loading" }
-  | { readonly kind: "ready"; readonly profile: Profile }
-  | { readonly kind: "failed"; readonly message: string };
+type JobStatusValue = { readonly label: string };
+type JobFeed = {
+  readonly getSnapshot: () => JobStatusValue;
+  readonly subscribe: (notify: () => void) => () => void;
+};
 
-function useProfile(
-  id: string,
-  load: (id: string, signal: AbortSignal) => Promise<Profile>,
-): ProfileState {
-  const [state, setState] = useState<ProfileState>({ kind: "loading" });
-
-  useEffect(() => {
-    const controller = new AbortController();
-    setState({ kind: "loading" });
-
-    void load(id, controller.signal).then(
-      (profile) => {
-        if (!controller.signal.aborted) {
-          setState({ kind: "ready", profile });
-        }
-      },
-      (error: unknown) => {
-        if (controller.signal.aborted) return;
-        const message =
-          error instanceof Error ? error.message : "Profile request failed";
-        setState({ kind: "failed", message });
-      },
-    );
-
-    return () => controller.abort();
-  }, [id, load]);
-
-  return state;
+export function useJobStatus(jobs: JobFeed): string {
+  return useSyncExternalStore(jobs.subscribe, jobs.getSnapshot).label;
 }
 ```
 
-The transport must honor `AbortSignal`. The aborted check also prevents an old
-completion from replacing current state after a dependency changes.
+Keep the functions stable for each store and callable without a method receiver.
+`getSnapshot` must return the same immutable snapshot while data is unchanged;
+replace it when data changes and notify subscribers. `subscribe` returns cleanup.
+Use the documented server-snapshot contract if the host renders on the server.
+See React's [external-store contract](https://react.dev/reference/react/useSyncExternalStore).
+Test source replacement, notification, the render/subscription boundary and cleanup.
 
 ## Preserve state semantics
 

@@ -6,7 +6,9 @@ Find the commit that introduced a regression. Bisect moves `HEAD` and a test scr
 
 - A **reliable** reproduction. Bisect on a flaky signal produces a confidently wrong answer. Run the check three times on the known-bad commit before starting.
 - A known-good commit. A tag, a release, "it worked last Friday" (`git log --before=<date> -1 --format=%H`).
-- A clean working tree. Stash or commit first ([commit.md](commit.md#moving-uncommitted-work)).
+- A clean working tree for the bisect. Preserve unrelated work in its current
+  checkout and use an isolated worktree when needed, following
+  [branch preservation](branch.md#switching-with-dirty-tree).
 
 ## Manual
 

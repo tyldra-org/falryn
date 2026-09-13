@@ -19,20 +19,13 @@ Projects require the `project` scope:
 gh auth refresh --scopes project
 ```
 
-## Model a roadmap
+## Respect the planning model
 
-Prefer:
-
-```text
-Project = aggregate live roadmap
-Milestone = repository release/outcome
-Parent issue = cohesive outcome
-Native subissue = independently reviewable slice
-Checklist = below-PR task detail
-PR = implementation and validation record
-```
-
-Use fields for dimensions that cut across repositories: Status, Priority, Iteration, Team, Size, Risk, or Target date. Avoid reproducing issue hierarchy or milestones as labels.
+Read the repository or organization's planning contract before changing fields
+or relationships. This CLI skill does not choose adoption, readiness, release
+scheduling or priority policy. Milestones, native hierarchy and Project fields
+are distinct records; do not substitute one merely because it looks similar.
+Resolve field names, IDs, types and option order from the actual Project.
 
 Enable built-in Parent issue and Sub-issue progress fields when hierarchy visibility matters. Views are projections over the same items, not separate plans.
 
@@ -111,7 +104,9 @@ Use built-in Project workflows for deterministic state transitions such as auto-
 
 Before enabling automation, test a narrow example and check for loops, cross-repository scope, archived-item behavior, and whether manual states will be overwritten.
 
-**Automation is not completion proof.** After merge or close, verify issue state, Project fields, and parent rollups per [issue-lifecycle.md](issue-lifecycle.md). Repair explicitly when the visible board is wrong.
+Automation is not completion proof. After an in-scope merge or close, verify
+expected effects through [issue-lifecycle.md](issue-lifecycle.md). Repair only
+fields covered by the requested reconciliation.
 
 ## Project and item lifecycle
 

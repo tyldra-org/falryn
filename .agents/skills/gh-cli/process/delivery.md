@@ -1,87 +1,46 @@
-# delivery
+# Apply an ordered PR bundle
 
-Coordinate one logical change across multiple repositories or multiple dependent pull requests.
+Use this guide when a user or repository workflow already establishes a delivery
+involving dependent PRs. The repository owns admission, acceptance and landing
+order. This guide handles GitHub effects; it does not select new work or invent
+required companion PRs.
 
-## Define the delivery bundle
+## Resolve the bundle
 
-Before changing remote state, record:
+Record the outcome, repositories, PR identities, dependencies, current base/head
+SHAs, selected merge methods and complete messages. Establish required evidence
+and expected closing or automation effects. Resolve an unsafe intermediate state
+before the first merge; cross-repository landing is not atomic.
 
-- the bundle owner and intended outcome;
-- every repository and PR in scope;
-- each repository's role, such as contract, implementation, documentation, deployment, or consumer;
-- the required landing order and why it is safe;
-- the reviewed head SHA of every PR;
-- required checks, reviews, merge method, issue-closing behavior, and release or deployment follow-up;
-- the final commit and merge messages required by each repository and
-  contributor policy, including any mandatory bodies, footers, or trailers;
-- the local checkout, if any, associated with each repository.
+Check [authorization](../SKILL.md#authorization-and-evidence) for the whole bundle.
+An authorized outcome may cover evolving revisions after renewed verification.
+An approval explicitly tied to immutable revisions does not. Added outcomes or
+uncovered effects require scope resolution, not automatic inclusion.
 
-Cross-repository delivery is sequential, not atomic. A bundle needs an order that keeps every intermediate remote state acceptable. If no safe order exists, introduce compatibility first or stop and redesign the delivery.
+## Land and verify serially
 
-## Verify before merging
+For each member in the declared order:
 
-For every PR:
+1. Establish current review and validation evidence, including assumptions affected
+   by earlier merges. Inspect live head/base, checks, reviews and rules.
+2. Execute the single [merge procedure](merge.md) with its reviewed revision and
+   complete message. It also owns queue handling and uncertain responses.
+3. Verify the actual result and any dependency effects before starting the next
+   member. Reconcile authorized issue or Project fields through
+   [issue lifecycle](issue-lifecycle.md).
 
-1. Review the complete diff and companion changes.
-2. Confirm repository, base branch, head branch, and exact head SHA.
-3. Confirm required checks, reviews, mergeability, and repository merge policy.
-4. Confirm the PR body links the owning issue and companion PRs correctly.
-5. Confirm the selected order will not leave a broken contract, deployment, or documentation state.
-6. Preview what each local checkout will need after landing.
+If a member changed, refresh affected evidence before proceeding. If the result
+is unexpected, pause dependent effects, inspect actual state and recover within
+the existing scope. Keep independent safe work possible. Never force a later merge
+to hide a partial delivery or assume rollback is authorized.
 
-A passing companion PR does not compensate for a failing or stale member. If any reviewed head SHA changes, re-review that PR and any dependent assumptions before proceeding.
+## Finish the bundle
 
-## Merge in the declared order
+Verify all required members and their integration effects. Report each merged,
+queued, pending or failed member with its relevant revision. Completion requires
+the repository's acceptance evidence, not just successful API calls.
 
-Before the first merge, obtain or revalidate one confirmation bound to the complete ordered PR set, every reviewed head SHA, each merge method, and each final message. Any changed revision or precondition invalidates the affected approval. Then merge one PR at a time using the repository-selected strategy and reviewed head SHA:
-
-For merge-commit or squash strategies, bind the reviewed message explicitly:
-
-```bash
-gh pr merge <n> --repo <owner/repo> --match-head-commit <reviewed-head-sha> \
-  --merge --subject "<reviewed subject>" --body-file <reviewed-body-file>
-```
-
-Use `--body ""` only when the effective policy requires a subject-only result.
-Replace `--merge` with `--squash` when selected. For a rebase merge, review the
-existing commit messages and invoke `--rebase`; do not claim a synthetic final
-message. Do not add `--admin`, `--auto`, or `--delete-branch` implicitly.
-
-After each merge:
-
-- re-read the PR and verify `MERGED`, the resulting commit, base branch, and merge time;
-- verify expected issue, Project, milestone, workflow, deployment, and release effects;
-- check whether the merge entered a queue or enabled deferred merging rather than completing immediately;
-- stop at the first unexpected result.
-
-Require checks and reviews to complete before each invocation by default. If a repository requires a merge queue and the command would defer or automatically land the PR, obtain explicit authorization for that behavior before proceeding.
-
-When a bundle stops partway through, report merged, pending, and failed members. Do not attempt rollback, force a later merge, or conceal the partial state.
-
-## Reconcile remote state
-
-After all merges complete, audit the bundle as one unit:
-
-- every PR is merged at the reviewed revision or an explicitly re-reviewed revision;
-- expected issues and parent rollups changed state correctly;
-- companion links remain accurate;
-- required workflows and deployments completed;
-- release notes, changelogs, and documentation describe the landed state;
-- no repository still presents the bundle as pending.
-
-Per-issue Project status, assignees, and parent/child rollups: [issue-lifecycle.md](issue-lifecycle.md). Automation may update fields on close; always verify and repair.
-
-## Synchronize local checkouts
-
-Local cleanup happens only after remote delivery succeeds. For each checkout, follow **git-workflow** → [delivery-checkout.md](../../git-workflow/reference/delivery-checkout.md).
-
-## Report
-
-Report:
-
-- bundle owner and landing order;
-- each PR URL, reviewed head SHA, merge method, and resulting commit;
-- merged, pending, failed, and skipped members;
-- remote issue, Project, workflow, deployment, and release effects;
-- each local checkout's final branch, upstream, cleanliness, and synchronization state;
-- branches intentionally retained or separately approved for deletion.
+Use [delivery checkout](../../git-workflow/reference/delivery-checkout.md) for
+eligible local synchronization. Preserve incomplete or unrelated work. Report
+remaining acceptance, automation or reconciliation gaps without inventing new
+Project policy, release steps or branch cleanup.

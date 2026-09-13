@@ -44,7 +44,7 @@ Use `--template`, `--assignee`, `--type`, and `--project` only when the reposito
 
 Current CLI versions can upload images or video with `--attach`. Validate file type, size, privacy, alt text, and whether the media itself contains secrets or personal data. Attachment upload is not atomic: an issue may be created or edited with a subset of files even when the command exits nonzero. Capture the printed URL, re-read the issue, and use the command's recovery support only after verifying the partial result.
 
-Before replacing an existing body, retain the pre-image, render and inspect the full candidate, then re-read the issue after writing. Never pipe an unchecked transform into `gh issue edit --body-file -`; follow [Remote body and metadata safety](../SKILL.md#remote-body-and-metadata-safety).
+Before replacing an existing body, retain the pre-image, render and inspect the full candidate, then re-read the issue after writing. Never pipe an unchecked transform into `gh issue edit --body-file -`; follow [the mutation procedure](../SKILL.md#apply-one-understood-effect).
 
 ## Native hierarchy and dependencies
 

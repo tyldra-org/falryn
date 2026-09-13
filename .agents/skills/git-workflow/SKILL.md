@@ -1,38 +1,65 @@
 ---
 name: git-workflow
-description: Repository-agnostic Git work for checkout state, staging, commits, branches, worktrees, remotes, synchronization, patches, merges, rebases, recovery, maintenance, and tags. Use for local Git or ref mutations, not forge records.
+description: Inspect and change Git checkouts, commits, branches, worktrees, remotes and history while preserving unrelated work. Use for Git operations; forge records belong to the matching forge skill.
 ---
 
 # Git workflow
 
-Use this skill whenever Git changes a working tree, index, object database, configuration, or ref. Add `gh-cli` only when the verified remote host is GitHub. Repository guidance overrides this generic process.
+Own local Git state and transport. Repository guidance chooses branch strategy,
+commit conventions, hooks, signing and release policy. A forge skill owns remote
+issues, reviews and PR merges. Read-only status, diff, log and blame need only the
+requested inspection, not the mutation procedure.
 
-This bundle was last audited on 2026-09-03 against upstream Git 2.55.0 and behaviorally exercised with Apple Git 2.50.1. Treat that as a maintenance marker, not a compatibility promise. The installed Git, repository format, extensions, and version-matched official documentation own exact syntax and capability.
+## Resolve the operation
 
-## Portability contract
+Identify the requested result, repository, checkout, affected paths and refs.
+Read `AGENTS.md` and relevant contribution rules. Inspect status, both diffs,
+remotes, worktree occupancy and any operation already in progress. Inspect the
+destination instead when initializing or cloning. Do not assume a remote alias,
+default branch, identity or checkout layout.
 
-This is a global skill, not a policy file for one repository or project. Discover the current repository's remote names, default and protected branches, contribution rules, commit and tag conventions, hooks, signing requirements, pull strategy, validation commands, worktree layout, and release process each time. Examples use placeholders or common names only to show command shape. They do not establish defaults. Never carry a resolved path, ref, remote, identity, credential context, or policy from one repository into another.
+Reuse unchanged context within the task. Refresh affected refs before depending
+on remote state, and re-read local state before writing. Use installed help for
+exact flags and machine formats for scripting. A remembered version audit is
+not evidence about this checkout.
+
+## Authorization and preservation
+
+The user and higher-priority repository instructions establish authority. Keep
+that authority separate from evidence that an operation is safe now. A request
+can authorize several necessary steps; do not ask again for each covered step.
+A request limited to one revision, ref or effect stays limited to that target.
+
+Rewrites, force-pushes, discards, deletions, tag moves and object expiry require
+scope that covers their effects. Inspect the exact candidate before acting; ask
+only when authority is missing or the outcome is ambiguous. One explicit cleanup
+request may cover a bounded set, but every member still needs preservation checks.
+A commit request or autocommit policy alone does not authorize publication.
+
+Preserve unrelated staged, unstaged and untracked work. Continue in non-overlapping
+paths or a separate worktree when that is safe. Do not stash, commit, reset or
+clean someone else's changes to make progress. A backup ref preserves commits,
+not uncommitted or ignored files.
 
 ## Invariants
 
-1. Resolve an existing checkout before mutating it:
-   ```bash
-   git status --short --branch
-   git remote -v
-   git worktree list
-   ```
-   For initialization or clone work, resolve and inspect the destination instead, then follow [repository-layout.md](reference/repository-layout.md).
-2. Read repository `AGENTS.md`, `CONTRIBUTING.md`, hooks, attributes, and observed conventions before choosing a flow.
-3. Resolve every branch, remote, base, and path explicitly. Do not assume `origin`, `main`, the current branch, or one checkout per repository.
-4. Inspect `git diff` and `git diff --cached`. Preserve unrelated changes and stage only intended paths; never hide them in a stash, commit, reset, or clean operation.
-5. Stop on a dirty tree you did not create, unknown worktree, detached HEAD, conflict, rejected push, failing hook, or in-progress operation. Do not auto-resolve or initialize a repository uninvited.
-6. Never bypass hooks with `--no-verify`, signing with `--no-gpg-sign`, or policy with a force flag.
-7. Never commit secrets, credential files, private keys, service-account data, or password-bearing connection strings. Treat committed secrets as leaked; rotate before any authorized history repair.
-8. Confirm before every history rewrite (`commit --amend`, rebase, squash, filter), force-push, hard reset, destructive clean, branch/tag deletion, tag move, object pruning, or other hard-to-recover ref or object change, even when commits are not published.
-9. Force-push only after creating a backup ref and only with the exact lease form `--force-with-lease=<branch>:<expected-old-sha>`. Never use bare `--force` or bare `--force-with-lease`.
-10. After mutation, re-read the affected state. Report old and new SHAs, validation, skipped work, and a safe undo path when one exists.
+- Stage only inspected, intended paths. Verify the staged diff before committing.
+- Keep hooks, signing, protection and required validation enabled. Repair an
+  in-scope hook failure and retry after validation; never bypass it.
+- Before rewriting, record old refs and a recoverable backup. Validate content
+  preservation according to whether the base changed.
+- Force-push only an authorized owned ref with an explicit lease:
+  `--force-with-lease=<branch>:<expected-old-sha>`. A changed remote requires
+  inspection and reconciliation, never blindly refreshing the lease.
+- Keep secrets out of commits, URLs, configuration and output. Exposed credentials
+  require rotation; history removal alone does not contain the exposure.
+- Inspect unknown or in-progress state before writing. Resolve conflicts from
+  the intended behavior when that work is authorized; ask for an unresolved
+  product choice rather than mechanically choosing ours or theirs.
+- If a command's result is uncertain, read the resulting state before retrying.
+  Suspected corruption or lost work routes to recovery before further mutation.
 
-## Route one primary guide
+## Choose the owning reference
 
 | Intent | Guide |
 | --- | --- |
@@ -54,42 +81,15 @@ This is a global skill, not a policy file for one repository or project. Discove
 | Create or move a Git tag | [release.md](reference/release.md) |
 | Subject, branch, and tag conventions | [conventions.md](reference/conventions.md) |
 
-Open a second guide only when the task truly crosses boundaries. After a GitHub merge, use `gh-cli` for remote issue/Project reconciliation and [delivery-checkout.md](reference/delivery-checkout.md) for local synchronization.
+Load another reference only for a distinct operation. References describe checks
+and mechanics; their authorization requirements use the scope rule above.
+`confirm` means establish the fact or applicable authority, not automatically
+request a new user response.
 
-For an uncommon porcelain or plumbing command not listed here, identify which Git layer it changes, read the installed help and current official documentation, and preserve these invariants. Do not use low-level ref or object commands merely to bypass a porcelain safety check.
+## Verify and report
 
-## Ownership boundaries
-
-| Operation | Owner |
-| --- | --- |
-| status, diff, log, blame | answer directly; no skill mutation flow needed |
-| repository setup, worktree, stage, commit, rebase, tag, push, recovery | `git-workflow` |
-| GitHub issues, PRs, checks, merge, Projects | `gh-cli` |
-| non-GitHub forge operations | the matching forge process, not `gh-cli` |
-
-A remote alias is not a forge identity. Inspect its URL. Never use `gh` against GitLab, Bitbucket, Azure Repos, or an ambiguous host.
-
-## Commit policy
-
-The fallback subject and naming guidance lives in
-[conventions.md](reference/conventions.md). Repository and active user policy
-choose message bodies, trailers, signing, and automatic commit behavior. If no
-active authoritative policy enables unprompted commits, report the clean boundary
-and suggest a subject instead. Automatic commit policy never authorizes push,
-rewrite, merge, deletion, or another separately confirmed action.
-
-## Exact syntax and compatibility
-
-Use the installed Git, not remembered flag tables:
-
-```bash
-git --version --build-options
-git help <command>
-git <command> -h
-```
-
-Prefer stable porcelain. Check help before using a recent option, and provide a supported fallback instead of silently changing semantics. Never parse human-oriented output when a documented machine format such as `--format`, `-z`, or an explicit plumbing command exists.
-
-## Evidence after mutation
-
-Re-read status, branch/upstream, and affected refs. For a commit, verify the exact staged tree and resulting SHA. For push or rewrite, verify the remote tracking state and lease result. For recovery, preserve the source evidence until the user confirms the restored result.
+Check the resulting status, index and affected refs. For changed bases, compare
+patch series and validate behavior rather than demanding equal tip trees. Report
+the result, relevant old/new SHAs, checks and any preserved or unresolved state.
+For consequential ref changes, name the available recovery path. Routine commits
+need a concise result, not a full repository inventory.

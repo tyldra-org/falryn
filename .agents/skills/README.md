@@ -13,11 +13,13 @@ work can use them without a personal installation or private documentation.
 | Selected Falryn work and manual command boundaries | [falryn-workflow](falryn-workflow/SKILL.md) |
 | Next, parent ordering and private Project governance | [falryn-roadmap](falryn-roadmap/SKILL.md) |
 
-The portable skills contain no Falryn strategy or repository policy. The Falryn
-pair coordinates their use without duplicating their procedures. Load only the
-owner needed for the request. A local question or walkthrough is not a Roadmap
-operation. The global-only `software-engineering-discipline` supplies engineering
-judgment and is not vendored or required of human contributors.
+The portable skills contain no Falryn strategy or repository policy. Git and
+GitHub skills own state changes and evidence; `change-review` owns assessment.
+TypeScript and OpenTUI add language and terminal contracts. General engineering
+judgment comes from the global-only `software-engineering-discipline`, which is
+not vendored or required of human contributors. The Falryn pair coordinates these
+owners without duplicating their procedures. Load only what the request needs.
+A local question or walkthrough is not a Roadmap operation.
 
 ## Resolve and maintain
 
@@ -25,6 +27,12 @@ Repository and user guidance precede skill defaults. These bundles are the
 checkout's authoritative copies. Falryn Docs resolves them from its verified
 sibling Falryn checkout, with installed global copies only as fallback. Keep the
 two Falryn skills at matching revisions when distributing them.
+
+Synchronize changed portable bundles with installed copies only after inspecting
+their preimages. Preserve unrelated installed files and verify byte parity after
+copying. The OpenTUI React reference uses the TypeScript React guide, so distribute
+those compatible bundles together. Keep command names stable when ownership
+changes; a skill update must not grant new publication or merge authority.
 
 `falryn-workflow` owns the existing Plan, Implement, Review, Verify, Merge and
 Deliver command meanings. `falryn-roadmap` owns Next and uses the repository's
@@ -38,6 +46,12 @@ python3 -B .agents/skills/falryn-workflow/scripts/validate_skill.py
 python3 -B .agents/skills/falryn-workflow/scripts/test_validate_skill.py
 python3 -B .agents/skills/falryn-roadmap/scripts/test_select_next.py --falryn-root .
 ```
+
+For portable skill maintenance, run the Git and GitHub bundle validators, check
+all changed reference links, and forward-test relevant requests in temporary
+fixtures. Validate changed code examples with their actual compiler or renderer.
+Packaging checks do not prove behavior, and scenario evaluation does not prove
+live GitHub effects.
 
 The selector tests use synthetic private-format records and the real repository
 auditor without querying GitHub. Structure checks prove packaging and links;

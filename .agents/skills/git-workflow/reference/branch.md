@@ -26,11 +26,11 @@ git switch -c feat/short-description <remote>/<default-branch>
 
 ## Switching with dirty tree
 
-Never force a switch over uncommitted work. Order of preference:
-
-1. Commit it (if it's a real unit).
-2. `git stash push -m "<what>"` and pop after switching.
-3. Create a linked worktree through [worktree.md](worktree.md) when both branches must stay active.
+Inspect ownership and overlap before switching. Work on disjoint paths in place
+when safe, or create a linked worktree through [worktree.md](worktree.md). Commit
+only a coherent unit covered by the active commit policy. Use a stash only when
+moving that exact work is authorized, following [undo.md](undo.md#stash).
+Never move or commit unrelated changes merely to clear the checkout.
 
 Never `git checkout -f`, `git switch --discard-changes`, or `git checkout .` to clear the way. Those delete work with no reflog entry.
 
@@ -68,22 +68,26 @@ If `git log <default>..<branch>` is non-empty, the branch has commits whose exac
 Squash- and rebase-merged branches commonly appear unmerged even when their content landed. Verify the corresponding PR is `MERGED`, identify its resulting commit, and compare the branch-introduced content with the landed result. Do not delete from ancestry checks alone.
 
 ```bash
-git branch -d <branch>              # refuses if unmerged; keep it this way
-git push <remote> --delete <branch> # separate ask
+git branch -d <branch>              # normal deletion preserves its ancestry guard
+git push <remote> --delete <branch> # requires scope covering remote deletion
 ```
 
-`git branch -D` (force) requires its own explicit approval and a backup ref first.
+Use `git branch -D` only when the requested deletion covers this verified ref
+and its loss of reachability. Preserve any needed recovery source first. Normal
+refusal is evidence to inspect, not a reason to add force automatically.
 
 Switching a safe local checkout back to the default branch after a merge is synchronization, not deletion. Follow [sync.md](sync.md#synchronize-the-default-checkout-after-merge).
 
 ## Stale branch cleanup
 
 ```bash
-git fetch --prune
-git branch -vv | grep ': gone]'     # local branches whose remote is deleted
+git fetch --prune <remote>
+git for-each-ref --format='%(refname) %(upstream:track)' refs/heads/
 ```
 
-Report the list. Never bulk-delete; each one is a separate ask.
+A cleanup request may authorize a bounded set. Inspect every exact ref and its
+work before deletion, preserve excluded refs, and report partial results. Age or
+a missing upstream alone does not establish that work landed.
 
 ## Long-lived branches
 

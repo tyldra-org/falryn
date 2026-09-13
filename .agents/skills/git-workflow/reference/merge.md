@@ -46,7 +46,9 @@ git show --remerge-diff <merge-sha>
 
 ## Conflicts
 
-Same rule as everywhere: **stop and ask**. Full procedure in [sync.md](sync.md#conflicts).
+Resolve conflicts according to [sync.md](sync.md#conflicts). Inspect both
+contracts and preserve intended behavior; ask when the resolution needs a
+decision outside the established scope.
 
 Never resolve a conflict in a merge you did not fully read. A merge conflict resolution is an invisible edit; it appears in no diff of any individual commit, only in `git show -m <merge>`. That's exactly where mistakes hide.
 

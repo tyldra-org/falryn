@@ -27,7 +27,9 @@ git diff --cached
 
 A cherry-pick copies a patch and creates new commit identity; it does not move or remove the source. A merge commit requires `-m <parent-number>`, which selects the parent whose view of the merge should be retained. Do not guess that parent.
 
-Stop on conflicts and report the current source commit plus unresolved paths. Continue, skip, quit, or abort only after the intended outcome is clear. Skipping a commit changes the requested patch set.
+On conflicts, inspect the current source commit and unresolved paths through
+[sync.md](sync.md#conflicts). Continue after an authorized, verified resolution.
+Skipping a commit changes the requested patch set.
 
 ## Revert
 
@@ -59,7 +61,8 @@ Use `--index` only when staging is intended. Do not add whitespace overrides, re
 git am <mailbox>
 ```
 
-If the series stops, inspect the current patch with `git am --show-current-patch=diff` and report it. Do not rewrite identities, skip patches, or continue after conflict without direction. `git am --abort` restores the recorded pre-apply state; say before invoking it.
+If the series stops, inspect the current patch with `git am --show-current-patch=diff` and report it. Preserve identities and the requested patch set. Resolve conflicts through
+[sync.md](sync.md#conflicts) and continue when the intended behavior is established. `git am --abort` restores the recorded pre-apply state; say before invoking it.
 
 Create a mail series from an exact reviewed range:
 

@@ -23,21 +23,9 @@ For stacked PRs, use the parent branch as base and disclose the stack and landin
 
 Follow repository templates and conventions. In a squash-merge repository, remember that the title may become the commit subject. Keep validation, risk, rationale, delivery order, issue links, and companion links in the PR body; do not copy them into a subject-only commit or merge message when repository policy forbids bodies.
 
-A useful fallback body is:
-
-```markdown
-## What
-What changed and what it enables.
-
-## Why
-The problem and owning issue.
-
-## Verification
-Commands or observed checks and their outcomes.
-
-## Risk
-Blast radius, migration, rollback, or an explicit none.
-```
+When no template applies, lead with the concrete problem and resulting behavior.
+Add validation and material limitations. A small change often needs one or two
+paragraphs; use sections only when they help the reviewer assess the work.
 
 Render the complete title and body before creation. A user's explicit request to open the named PR, including a draft, is sufficient authorization; do not ask again unless the target, visibility, or content is materially ambiguous.
 
@@ -97,6 +85,9 @@ Updating a PR branch mutates the contributor branch and can invalidate reviews o
 
 ## Landing
 
-Merge only through [merge.md](merge.md) or, for dependent PRs, [delivery.md](delivery.md). Confirmation must identify the exact reviewed target and revision, or an exact ordered bundle of reviewed revisions. Re-read head SHA, checks, reviews, rulesets, mergeability, and repository merge method immediately before invoking the merge.
+Merge only through [merge.md](merge.md) or, for dependent PRs, [delivery.md](delivery.md). Apply [authorization and evidence](../SKILL.md#authorization-and-evidence):
+preserve outcome authority while refreshing changed proof, and honor any explicit
+restriction to a particular revision or effect. Re-read head SHA, checks, reviews, rulesets, mergeability, and repository merge method immediately before invoking the merge.
 
-Do not silently enable auto-merge, administrative bypass, queueing, or branch deletion.
+Do not add deferred landing or branch deletion beyond scope, or bypass
+repository controls. Required queue behavior belongs to the merge procedure.

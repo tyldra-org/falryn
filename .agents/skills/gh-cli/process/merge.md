@@ -1,80 +1,60 @@
-# merge
+# Merge a verified PR
 
-Land a GitHub pull request. Local `git merge` is **git-workflow**.
+Use `gh pr merge` for GitHub landing; local `git merge` belongs to `git-workflow`.
+The repository chooses the method, queue requirements and completion policy.
+Apply [authorization and evidence](../SKILL.md#authorization-and-evidence).
 
-## Host
+## Establish the candidate
 
-Use **`gh pr merge`** on the GitHub repository. Resolve the repository with the project `AGENTS.md` or `gh repo view`.
-
-**Anti-pattern:** merging without `--match-head-commit` or without binding
-message fields that the selected strategy permits the command to control.
-
-## Merge a GitHub pull request
-
-The repo already has an answer. Inspect repository settings and rules, contribution guidance, recent merged PRs. Do not infer the method from history alone when GitHub enforces or queues a different method.
-
-| Intent | Strategy |
-|---|---|
-| Land a GitHub PR into its base | Repository-selected or required method |
-| Keep a small tidy PR history | squash when enabled and customary |
-| Keep a strictly linear history | rebase-merge when policy requires it |
-
-Immediately before confirmation, resolve and show the exact target. Prior authorization is valid only when it already names this PR, reviewed head SHA, method, and final message; otherwise obtain confirmation now. An ordered bundle approval is governed by [delivery.md](delivery.md).
-
-Resolve:
-
-- exact repository and PR;
-- base branch, head branch, and current head SHA;
-- required checks, reviews, mergeability, and merge queue state;
-- repository-selected merge method;
-- final message required by repository and contributor policy, including any
-  body or trailers that must be preserved;
-
-Query the current head SHA directly:
+Read the exact repository and PR, base/head SHAs, checks, reviews and unresolved
+threads, mergeability, rules and required companions. Resolve the final subject,
+body and trailers according to the chosen method and repository policy.
+Required checks and reviews must satisfy that policy before direct landing. Use
+the [CI waiter](ci.md) for pending checks; do not invoke merge as a way to bypass
+verification. A required queue follows its own verified admission conditions.
 
 ```bash
 gh pr view <n> --repo <owner/repo> \
-  --json number,url,baseRefName,headRefName,headRefOid,mergeStateStatus,statusCheckRollup
+  --json number,url,baseRefName,baseRefOid,headRefName,headRefOid,mergeStateStatus,statusCheckRollup
 ```
 
-Compare `headRefOid` with the SHA recorded by [review.md](review.md). If they differ, stop and review the new revision. Never substitute the new SHA into the merge command merely to make the lease pass.
+This command is part of acquisition; it does not include every review or ruleset.
+Use [review](review.md), [CI](ci.md) and repository settings for missing evidence.
+A changed head or base requires reassessing the complete resulting diff and
+refreshing affected checks. Never substitute a new SHA merely to pass the guard.
 
-For merge-commit and squash strategies, preview the exact final subject and
-body required by repository and contributor policy. Do not let a mutable PR
-description become the merge body by default. Use an explicit empty body only
-when the effective policy requires subject-only messages; otherwise preserve the
-reviewed body, footers, and trailers.
+An existing request covering delivery can retain authority through that refresh.
+An approval explicitly restricted to one revision or message stays restricted.
+If authority is missing, finish the concrete preview before asking for it.
 
-Bind the merge and reviewed message to the reviewed head. For a merge commit:
+## Apply the selected method
+
+Bind the reviewed head and message explicitly for a merge commit:
 
 ```bash
 gh pr merge <n> --repo <owner/repo> --match-head-commit <reviewed-head-sha> \
   --merge --subject "<reviewed subject>" --body-file <reviewed-body-file>
 ```
 
-Use `--body ""` instead of `--body-file` only for a reviewed subject-only
-message. When policy selects squash, replace `--merge` with `--squash` while
-keeping the reviewed message flags. A rebase merge synthesizes no single merge
-commit; review the existing commit messages and use `--rebase` without claiming
-that `--subject` or `--body` will rewrite them.
+Use `--squash` instead of `--merge` when selected. Use `--body ""` only when the
+complete reviewed message has no body. With `--rebase`, inspect the existing
+commit messages; do not claim a synthesized subject/body will replace them.
+Check installed help before relying on a flag or queue behavior.
 
-Do not use `--admin`, `--auto`, or `--delete-branch` unless separately
-authorized. Keep a non-empty body in a validated temporary file rather than a
-shell-interpolated multiline string.
+Immediately before invoking, re-read revision and live merge preconditions.
+A lease protects the head, not every base or policy fact. Do not bypass rules with
+`--admin`. Add `--auto` or `--delete-branch` only when the requested scope includes
+those effects. A required queue may defer landing without an explicit auto flag;
+explain that result and verify whether the user's scope covers deferred landing.
 
-Require checks and reviews to complete before invoking the merge by default. Wait through the native mechanism in [ci.md](ci.md), then re-read head SHA and required checks immediately before merge. The embedding host decides whether that waiter runs in the foreground or background.
-On a branch governed by a merge queue, `gh pr merge` can enable deferred or
-automatic landing even without an explicit `--auto` flag. Treat that as
-auto-merge: explain that the command will queue or defer the PR and obtain
-separate authorization before invoking it.
+## Verify the effect
 
-Afterward, re-read the PR and verify:
+Read the PR again. Distinguish queued or auto-merge-enabled from `MERGED`. Record
+the resulting commit and verify its base and complete message. Check the expected
+issue and workflow effects. If the response was uncertain, inspect before retrying.
 
-- state is `MERGED`, not merely queued or auto-merge-enabled;
-- resulting commit, base branch, and merge time;
-- expected checks, issue-closing effects, and downstream automation;
-- final message and required body, footers, or trailers match the reviewed
-  policy;
-- local checkout state, following **git-workflow** [sync.md](../../git-workflow/reference/sync.md#synchronize-the-default-checkout-after-merge).
-
-For coordinated PRs, use [delivery.md](delivery.md). Branch deletion remains a separate destructive action (**git-workflow**).
+Reconcile only authorized fields through [issue lifecycle](issue-lifecycle.md).
+Synchronize eligible local checkouts through
+[git-workflow](../../git-workflow/reference/delivery-checkout.md). A merge does not
+by itself authorize branch deletion or publishing a release.
+For dependent PRs, use [delivery](delivery.md).

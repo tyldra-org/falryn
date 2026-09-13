@@ -27,7 +27,7 @@ A completed waiter is only a wake signal. Before any merge, re-read exact head S
 
 ## Bounded repair
 
-Use the repository's repair budget; default to three attempts when none is defined. Each attempt must:
+Use an explicit task or repository repair budget when provided. Each attempt should:
 
 1. quote the decisive error;
 2. reproduce locally when feasible;
@@ -35,7 +35,10 @@ Use the repository's repair budget; default to three attempts when none is defin
 4. make the smallest relevant correction;
 5. validate before any authorized push.
 
-Stop when the budget is exhausted. Report each hypothesis, result, remaining blocker, and required external input. Do not broaden scope merely to obtain green status.
+Respect an explicit budget. Without one, continue while new evidence supports
+a concrete repair; stop repeating an unsuccessful approach when no new evidence
+justifies it. Report the remaining blocker or changed strategy. Do not broaden
+scope merely to obtain green status.
 
 Never:
 
