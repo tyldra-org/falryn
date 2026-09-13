@@ -1,57 +1,40 @@
 # Plan
 
-Plan completes the contract for one resolved Falryn or docs-only issue without
-implementing it. Resolve repository ownership through
-[targets and transitions](targets-and-transitions.md), then use the issue
-format required by [issue governance](issue-governance.md). A docs-only target
-requires Docs access and its repository guidance; private content stays there.
+Plan completes one issue's implementation contract. It may edit that issue and
+its native hierarchy and blockers, and reconcile planning metadata when
+Roadmap-owned. It does not implement source or documentation, create an
+implementation branch or PR, set In Progress, close the issue or merge.
 
-Apply [shared execution efficiency](execution-efficiency.md) within Plan's permissions. Reuse current evidence without omitting any required handoff fact or beginning implementation.
+## Establish the contract
 
-## Contract evidence
+Use [issue governance](issue-governance.md) for the handoff and admission rules.
+Compare the named issue, relevant native relationships and PRs with current
+source, tests, manifests and `CURRENT-STATE.md`. For docs-only work, read the
+canonical owners and source evidence needed for their claims.
 
-Read the issue, native hierarchy and blockers, repository guidance, and relevant
-PRs. For implementation claims, inspect source, tests, manifests, and
-`CURRENT-STATE.md`. For docs-only work, read affected canonical owners and the
-source evidence needed for their claims. Resolve the applicable facts:
+Resolve missing facts that the evidence can answer. Split an outcome into native
+PR-sized children when separate deliveries are needed. Preserve issue-specific
+acceptance, non-goals and ownership; do not weaken them to avoid a prerequisite.
+Classify [documentation impact](documentation-delivery.md). Read owners only
+for affected contracts and keep public handoffs independently implementable.
 
-- exact outcome, baseline, included behavior, and non-goals;
-- one PR-sized owner or native child split;
-- dependency and neighboring-owner boundaries;
-- contracts, edge cases, resource and safety limits;
-- failures, cancellation, partial and unavailable outcomes, recovery, and cleanup;
-- product composition and user-facing projections;
-- focused validation and documentation impact; and
-- a current non-empty checklist for the selected format: Contribution for a
-  public submission, Ready for a maintainer handoff. An adopted public form may
-  retain its Contribution checklist.
+## Record the result
 
-The issue body must preserve every issue-specific fact an implementer cannot
-safely infer. A public Falryn handoff cannot leave required implementation facts
-only in private documentation. Docs-only contracts remain in their private
-repository. Classify owners through [documentation delivery](documentation-delivery.md).
+For Roadmap leaves, keep Status Todo. Missing derivable facts mean Needs Planning.
+A human-owned choice means Needs Decision with the exact line
+`Decision required: @owner — question` in the owning issue. After the decision,
+return to Needs Planning until the remaining contract is verified. Mark Ready
+only when the current contract and metadata pass; an open blocker still prevents
+implementation. Use [field transitions](roadmap-fields.md) and the required
+[audits](governance-audits.md) after mutations.
 
-Plan may update the resolved issue, its native hierarchy, and blockers. For
-docs-only planning, read the affected canonical owners and required source
-evidence without editing the documentation deliverable. Plan does not create
-implementation branches or PRs, write source, set In Progress, close an issue,
-or merge anything.
+Parent contracts retain Parent readiness and their valid parent Status; planning
+a parent does not mark it Ready or start a child implementation.
 
-## Access outcomes
+Outside the Roadmap, complete the repository's public contract without inventing
+private fields or adopting the issue. Missing required private authority is an
+unavailable result for that operation, not a fabricated readiness claim.
 
-For Roadmap-owned work, reconcile metadata and mark Ready only when all required
-preconditions pass, then run [governance audits](governance-audits.md). If required
-Roadmap access is missing, report `private-roadmap-unavailable`; do not claim
-private readiness or sequence. An issue outside the Project needs only its
-repository's contract and does not require Project access or adoption.
-
-For Roadmap work, missing derivable facts mean Needs Planning. A human-owned
-choice means Needs Decision and a `Decision required: @owner — question` line in
-the owning issue. After the decision, return to Needs Planning until the contract
-is verified. Outside the Project, report the missing fact or decision without
-inventing private fields. Do not invent an answer, copy private design into a
-public issue, or begin implementation while planning.
-
-## Result
-
-Report the exact issue, edits made, observed blockers, public-contract completeness, private-authority state, and first safe action. Use [reporting](../SKILL.md#reporting).
+Report the issue changes, contract completeness, blockers, decisions and missing
+evidence through [mode reporting](targets-and-transitions.md#report-the-result).
+Inside Deliver, continue when implementation is admitted.

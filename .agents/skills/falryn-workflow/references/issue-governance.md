@@ -1,54 +1,67 @@
 # Issue governance
 
-Falryn repository issues own public discussion and contribution work. The private Roadmap owns only the maintainer's selected product-development work.
+An issue owns a reviewable outcome. Native GitHub relationships own its blockers
+and hierarchy. The private Roadmap governs only issues deliberately adopted by
+a maintainer. A formatting label or public work type does not prove adoption.
 
-## Public issue contract
+## Complete the handoff
 
-Before a contribution issue can own a non-draft pull request, its public body must identify:
+Use the repository's issue format and preserve every issue-specific fact needed
+to implement the slice:
 
-- the observed shipped baseline and exact remaining outcome;
-- included behavior, non-goals, and one PR-sized ownership boundary;
-- relevant blockers and dependencies;
-- enough scope, behavior, failure, and recovery context to review the proposed slice;
-- focused validation appropriate to the change;
-- documentation impact without requiring the implementer to read private content; and
-- a non-empty Contribution checklist whose checked facts remain current.
+- observed baseline, exact remaining outcome, scope and non-goals;
+- one PR-sized owner or native children for independent deliveries;
+- dependencies, neighboring owners, contracts and composition points;
+- applicable failure, partial, unavailable, cancellation, recovery and cleanup
+  behavior, plus explicit resource and safety limits;
+- validation through the real consumer and relevant user-facing projections;
+- documentation impact; and
+- a non-empty current checklist for the selected format.
 
-A private documentation link is never a contribution requirement. If removing access to it makes the public change ambiguous, the public contract is incomplete.
+Public PR checks accept the Contribution checklist for a public form, including
+one retained after adoption. The maintainer `roadmap` format uses Outcome,
+Completion proof, classification and a Ready checklist. It does not need a
+duplicate Contribution checklist. Do not infer completeness from headings alone.
+The label is maintainer-applied routing for public automation, not an audit.
 
-Use native GitHub blockers when they exist. Private product planning may add native hierarchy after adopting an issue, but contributors do not need to create or infer that hierarchy.
+Roadmap admission has an additional evidence requirement: the Roadmap auditor
+requires a non-empty, fully checked Ready checklist even when the adopted
+issue retains its public form. A passing public PR check cannot replace that
+audit. Keep ordinary issues outside the Project on their public checklist.
 
-## Public-only behavior
+A public Falryn issue must contain its complete implementation handoff without
+private access. Private links add context but cannot fill missing requirements.
+Docs-only contracts remain private. Resolve [documentation impact](documentation-delivery.md)
+without copying private designs into public handoffs.
 
-An agent without private Roadmap access may inspect and improve the public contribution contract and work on an explicitly authorized contribution. It may not assert Roadmap Status, Priority, Readiness, sequence position, or ownership metadata it cannot observe. A missing private connection does not block ordinary contribution work.
+## Admit implementation
 
-Ordinary contributors do not need maintainer Project access. They follow the public issue, `CONTRIBUTING.md`, source, and checks. They never assign or wait for a target release or private field.
+Require a complete, current contract, a fully checked applicable checklist, one
+open PR-sized leaf, no open native blockers and an authorized checkout or fork.
+Recheck baseline, relationships and existing delivery PRs immediately before
+starting. Green checks or board position cannot override missing acceptance.
+Resolve conflicting public and private contracts at their owning records before
+Ready or implementation; do not choose whichever version makes delivery easier.
 
-## Maintainer behavior
+For an issue outside the Roadmap, these public conditions are sufficient; do not
+require private fields or adopt it merely to enable work. For Roadmap-owned work,
+add verified membership, complete metadata, Ready, the authenticated account as
+sole assignee, and the required [governance audits](governance-audits.md). Private
+access loss cannot be used to reclassify known Roadmap work as public-only.
 
-The public `roadmap` label selects the maintainer body format for repository
-automation; only a maintainer applies this routing label. It does not prove
-private Project membership or readiness. The public bot checks Outcome,
-Completion proof, and classification. Delivery PRs require a fully checked
-Ready checklist, or the original Contribution checklist for an adopted public
-form, plus an open, unblocked leaf. Private planning requirements remain with
-the authenticated auditors below. Unlabeled issues keep the public form checks.
+An incomplete handoff needs Plan. Open blockers prevent implementation even
+when the contract is Ready. A named human choice needs a decision; blocking alone
+does not mean Needs Decision. Apply [Roadmap fields](roadmap-fields.md) when those
+states or their transitions are needed.
 
-Project membership means a maintainer deliberately adopted the issue into product development. Only then resolve its exact repository, assignee, target release, Status, Priority, Readiness, Project item, native parent and children, blockers, and linked pull requests. Keep these rules:
+## Change records safely
 
-- Todo covers planning and blocked work.
-- In Progress requires active implementation. A leaf without an open closing PR follows the private liveness limit.
-- Done requires closure and complete delivery proof.
-- Open blockers prevent implementation.
-- Ready is evidence about contract completeness, not blocker absence.
-- Needs Planning means the public contract still lacks current evidence.
-- Needs Decision requires a named maintainer decision in the public issue; it is not a generic blocked state.
-- Parent and Historical states never create implementation slots.
+Plan and authorized delivery can repair the owning contract and relationships.
+Review cannot mutate them. Verify reconciles only what the user explicitly
+authorized. Use [execution's mutation rules](execution.md#mutate-and-recover-deliberately)
+for preimages, live rechecks and verified results, then run affected audits.
 
-Use the exact option meanings and transitions in [Roadmap fields and automation](roadmap-fields.md). Newly adopted Roadmap leaves default to Todo, P2, and Needs Planning. Feature, bug, documentation, infrastructure, maintenance, and research issues may all be adopted, but their public work type never creates Roadmap membership or changes the meaning of Priority or Readiness.
-
-Run the exact repository-owned commands in [governance audits](governance-audits.md) after governance mutations. Any diagnostic suppresses routing until reconciled.
-
-## Mutation safety
-
-Before replacing a body or field, retain the exact preimage, validate the complete candidate, re-read current state, apply only to the resolved issue or Project item, and verify the result. Do not pipe fallible generated output directly into a mutation. Bulk work must be bounded, repeat-safe, and report partial results per issue.
+Done means closed with complete delivery proof. A closed PR is not a merged PR,
+child completion is not integrated parent proof, and a checked box does not
+prove runtime behavior. Use [recovery](deliver.md#recover-from-observed-state)
+when previously completed work lacks its original acceptance.

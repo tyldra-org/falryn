@@ -1,114 +1,71 @@
 ---
 name: falryn-workflow
-description: Resolve and deliver Falryn issues, pull requests, and documentation; route maintainer Roadmap work and maintain the workflow. Use for Falryn mode prompts, orientation, or workflow changes across Falryn and Falryn Docs.
+description: Run Falryn delivery modes, select the next Roadmap issue, orient users to the project, and maintain this workflow across Falryn and Falryn Docs.
 ---
 
 # Falryn workflow
 
-This bundle owns the Falryn agent workflow. Public contributions use the public
-checkout and its issue contract. Private Falryn Docs and Roadmap access add
-maintainer capabilities only where the selected operation needs them.
+Resolve the request, load its guide, and carry it to its stated finish line.
+This skill owns Falryn workflow decisions. Repository guidance owns validation;
+`git-workflow` owns Git, `gh-cli` owns GitHub, and `change-review` owns review
+reasoning. Load the relevant engineering and stack skills through `AGENTS.md`.
 
-## Start with the request
+## Choose the operation
 
-Resolve the repository, object, requested operation, and authorized scope.
-Load [targets and transitions](references/targets-and-transitions.md) for mode
-activation, selectors, continuation suggestions, and changes to those facts.
-An ordinary request stays an ordinary task; it does not acquire Project
-transitions, automatic delivery, or mode-specific reporting. Falryn greetings,
-project walkthroughs, status questions, and "what next?" use read-only Next.
+Recognize the named commands below and unmistakable natural-language equivalents.
+Accept ASCII or typographic dashes. An ordinary edit or question stays an ordinary
+task with its existing authorization. It does not start Deliver or acquire
+Project mutations. Greetings, project walkthroughs, status and "what next?"
+are read-only orientation through Next; answer the actual question as well.
 
-Read repository guidance, `DEVELOPMENT.md`, and the named issue or PR. Then read
-only evidence relevant to the requested result. Source, tests, and
-`CURRENT-STATE.md` establish implementation claims; a workflow wording edit
-does not require rediscovering unrelated product code. Reuse already-read
-instructions while their revision remains unchanged.
+Read `AGENTS.md`, `DEVELOPMENT.md`, and the named issue or PR. Reuse unchanged
+instructions. For a mode, read [target resolution](references/targets-and-transitions.md)
+and [execution rules](references/execution.md), then only the applicable guide:
 
-Load `gh-cli` for GitHub, `git-workflow` for Git mutations, `change-review` for
-review, and the relevant stack skill when its subject is affected. Apply
-[execution efficiency](references/execution-efficiency.md) once per unchanged
-revision for named modes, including Deliver chains.
+| Operation | Guide | Finish line |
+| --- | --- | --- |
+| Plan | [Plan](references/plan.md) | Issue contract and applicable planning metadata; no implementation |
+| Implement | [Implement](references/implement.md) | One complete issue prepared as a PR; no merge |
+| Review | [Assessment: Review](references/assessment.md#review) | Read-only findings on one exact PR revision |
+| Verify | [Assessment: Verify](references/assessment.md#verify) | Completion evidence or merge preview; only explicitly authorized governance reconciliation |
+| Merge | [Merge](references/merge.md) | The verified, authorized bundle merged and reconciled |
+| Deliver | [Deliver](references/deliver.md) | Remaining work through merge and reconciliation within the named scope |
+| Next | [Next](references/next.md) | One recommendation from a valid Roadmap generation; no mutation or automatic start |
 
-## Read the owner when needed
+Manual modes stop at their finish line. Deliver composes them and continues
+without asking the user to invoke each stage. The request supplies authority;
+this skill never grants additional scope, posting, release or cleanup permission.
 
-| Work | Reference |
+## Load conditional rules
+
+| Condition | Owner |
 | --- | --- |
-| `Plan - Target: ...` | [Plan](references/plan.md) |
-| `Implement - Target: ...` | [Implement](references/implement.md) |
-| `Review - Target: PR #N` or `Docs PR #N` | [Review](references/review.md) |
-| `Verify - Target: ...` | [Verify](references/verify.md) |
-| `Merge - Target: ...` | [Merge](references/merge.md) |
-| `Deliver` for an issue, PR, or docs-qualified target | [Target resolution](references/targets-and-transitions.md#resolve-a-delivery-target), then [Deliver](references/deliver.md) |
-| `Deliver` for one child or a parent chain | Deliver plus [parent delivery](references/parent-delivery.md) |
-| `Next - Target: Falryn Roadmap`, orientation, or status | [Next](references/next.md) |
-| Verified gap, closed PR, or incomplete merged work | [Corrections](references/corrections.md) |
-| Issue mutation or implementation admission | [Issue governance](references/issue-governance.md) |
-| Private docs, Project, parent routing, or companion authority | [Private authority](references/private-authority.md) |
-| Readiness, Project, liveness, or sequence claims | [Governance audits](references/governance-audits.md) |
-| Priority, Readiness, Project workflows, forms, or governance automation changes | [Roadmap fields](references/roadmap-fields.md) |
-| Documentation impact, canonical owners, or companions | [Documentation delivery](references/documentation-delivery.md) |
+| Issue creation, planning, or admission to implementation | [Issue governance](references/issue-governance.md) |
+| Private Docs or Roadmap facts are needed | [Private authority](references/private-authority.md) |
+| Documentation impact or companion PR | [Documentation delivery](references/documentation-delivery.md) |
+| Readiness, liveness, ordering or Project reconciliation claim | [Governance audits](references/governance-audits.md) |
+| Project fields, automation or governance contract change | [Roadmap fields](references/roadmap-fields.md) |
+| Explicit parent or chain delivery | [Parent delivery](references/parent-delivery.md) |
+| Closed, merged, incomplete or uncertain delivery | [Recovery](references/deliver.md#recover-from-observed-state) |
 
-Follow links when their condition applies, not as a checklist to load the whole
-bundle. Manual modes stop at their declared result. Deliver alone composes
-planning through merge and reconciliation within its resolved scope.
+Source, tests, builds and `CURRENT-STATE.md` establish what is implemented.
+The public issue owns the implementation handoff. Native relationships own
+blockers and hierarchy. Private access adds only the facts and operations that
+need it; public work must remain possible without that access.
 
-## Admission and authority
+## Maintain and distribute
 
-An incomplete implementation contract prevents implementation. Plan, including
-planning inside Deliver, may resolve derivable missing facts. Stop for a named
-human decision, conflicting ownership, or an unavailable required authority.
-Refresh stale evidence before relying on it.
+This vendored bundle is authoritative. Falryn Docs uses an identity-verified
+sibling Falryn checkout, with an installed global copy as fallback. Keep the
+five other vendored skills portable and keep private records out of this bundle.
 
-Public contributions and approved issue-free maintenance PRs may complete under
-explicit delivery authority when their public contract and documentation
-result permit it. Private Project membership is deliberate maintainer adoption;
-an issue outside the Project requires no private fields. Do not infer membership
-from the `roadmap` formatting label or impose private access on ordinary work.
+For workflow changes, use `skill-creator` and the global
+`software-engineering-discipline`. Trace callers before moving references, keep
+each decision in one owner, and exercise realistic requests across changed
+boundaries. Run `python3 scripts/validate_skill.py` from this directory. It checks
+structure, reachability, links and some public-content boundaries, not behavior.
 
-Resolve Docs and Roadmap access independently, only when needed. Next and parent
-sequencing need authenticated Roadmap authority; docs-only work needs Docs
-authority. Required unresolved private documentation impact prevents complete
-delivery. Missing access is `unavailable`, never a guessed value or an unaffected
-claim. Public issues must contain their complete implementation handoff.
-
-Re-read affected live GitHub state before mutation. Keep private document text,
-issue bodies, paths, Project fields, snapshots, credentials, and authenticated
-API responses out of public artifacts. Share only the needed delivery facts.
-
-## Reporting
-
-Report observed results at the scale of the task: exact repository and target,
-relevant revisions, authority used or unavailable, mutations and resulting state,
-checks and outcomes, documentation classification, remaining risks, and recovery.
-Distinguish merged, pending, failed, skipped, unavailable, and partial members.
-For files the user can inspect, use clickable absolute local paths in chat;
-include repository-qualified paths and durable links when public and useful.
-Never commit machine-specific paths or private report content.
-
-A completed mode or orientation ends with one copy-ready line, chosen through
-[continuation routing](references/targets-and-transitions.md#suggest-the-next-action):
-
-```text
-Suggested next prompt: Deliver - Target: Issue #123
-```
-
-Use exact observed identities. If no safe action can be established, use
-`Suggested next prompt: none` and name the prerequisite. Suggestions never
-start work or grant authority. Ordinary tasks need no mode-specific footer.
-
-## Distribution
-
-`falryn/.agents/skills/falryn-workflow/` is authoritative. Falryn Docs resolves
-it from an identity-verified sibling checkout, with an installed global copy
-only as a fallback. Public work must not depend on either private Docs or a
-global installation. Keep the other five vendored skills portable.
-
-Run `python3 scripts/validate_skill.py` from this skill directory after edits.
-It checks structure, reference reachability, local links, and public content
-boundaries. Also review realistic routing and authority scenarios; structural
-validation alone does not prove the workflow makes good decisions.
-
-When maintaining the global copy, validate the vendored bundle first, preserve
-unrelated local files, and require parity for all skill content. Live repository
-guidance, source, GitHub state, installed CLI help, and verified private
-contracts remain authoritative over remembered state.
+Validate the vendored version before syncing an installed copy. Verify its
+preimage, remove only known obsolete bundle files, preserve unrelated local
+files, and check parity for the complete maintained bundle. Report local edits,
+installation and remote delivery as separate results.

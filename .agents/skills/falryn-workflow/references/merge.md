@@ -1,40 +1,48 @@
 # Merge
 
-Merge requires a fresh passing Verify preview and authorization covering the
-exact delivery. Manual Merge uses confirmation bound to the unchanged bundle.
-Inside Deliver, use the originating request's in-scope authority and freshly
-verified revisions under [target invalidation](targets-and-transitions.md#invalidation).
-Do not ask again for authority already granted by the user. Load `gh-cli` for
-remote merge and reconciliation and `git-workflow` for local synchronization.
+Merge needs a fresh passing [Verify preview](assessment.md#verify) and user
+authorization covering the exact delivery. An explicit Merge request covering
+that preview or the originating in-scope Deliver request supplies authority.
+Do not request the same permission again. If authority is missing, finish the
+reviewable preview before asking. Load `gh-cli` for remote effects and
+`git-workflow` for local synchronization.
 
-Apply [shared execution efficiency](execution-efficiency.md) within Merge's exact authorization. Reuse unchanged reviewed source evidence, but perform every fresh pre-mutation check below.
+## Recheck before each merge
 
-## Recheck immediately before mutation
+Re-read the PR's head and base, checks, reviews and threads, rulesets,
+mergeability, settings, default branch, companion identities, merge order,
+message and relevant local checkout. Verify required private access. When a
+precondition changed, refresh the affected assessment before mutation; in-scope
+Deliver work remains authorized. An expanded bundle or changed owner needs
+resolution against the user's actual scope.
 
-Re-read every previewed pull request, head and base revision, required check, review, thread, ruleset, mergeability result, companion identity, order, final message, repository setting, default branch, and local checkout. Stop and return to Verify if any precondition changed.
+An issue outside the Roadmap has no private Project prerequisite. Required or
+unresolved private documentation impact still prevents complete merge readiness.
 
-A contribution PR whose issue is outside the Roadmap has no private Project prerequisite. If its issue is Roadmap-owned, apply the private verification and reconciliation contract. If private documentation impact is required or unresolved, private maintainer authority remains mandatory.
+## Merge the bundle
 
-## Merge order
+Squash-merge required docs companions at their reviewed heads first. Verify each
+result, refresh application preflight after companion settlement, and merge the
+application last. A docs-only delivery merges its own PR; a request scoped to a
+companion stops after that member.
 
-For an authenticated cross-repository bundle, follow [documentation delivery](documentation-delivery.md):
+Use the reviewed PR title as the squash subject. Keep the body empty unless the
+preview includes one useful short issue-reference footer. Do not copy PR prose,
+checks, risks or incremental commit messages into the squash message.
 
-1. squash-merge each required private docs companion at its reviewed head;
-2. stop on the first unexpected result and report exactly what landed;
-3. revalidate the application PR after companion settlement; and
-4. squash-merge the application PR last.
-
-Use the reviewed PR title as the subject. Keep the body empty unless the preview approved one useful short issue-reference footer. Never copy PR prose, checks, risks, or incremental commit messages into the squash message.
-
-The operations are sequential, not atomic. A partial bundle remains partial and receives no completion claim.
+The bundle is sequential, not atomic. On an unexpected or uncertain result,
+inspect what landed and report the partial state before another effect. Never
+continue with a stale or failing application merely because its docs merged.
 
 ## Reconcile
 
-After all required merges, re-read PR and issue state and close or repair the
-delivery owner as appropriate. Reconcile Project fields and run
-[governance audits](governance-audits.md) only for Roadmap-owned work. Safely
-fast-forward eligible clean default-branch checkouts. Leave dirty, detached,
-divergent, conflicted, or branch-locked checkouts untouched. Branch deletion is
-separate.
+Verify merge SHAs, issue closures and acceptance. Repair authorized governance
+state without claiming incomplete work Done. For Roadmap members, reconcile
+Project and parent state and run the required [audits](governance-audits.md).
+Verify the final documentation result and any changed `CURRENT-STATE.md` claims.
 
-Verify resulting merge SHAs and report a safe revert-through-new-PR path. Merge authorization never covers release publication, destructive cleanup, or unrelated work.
+Safely synchronize eligible clean local default checkouts through
+`git-workflow`. Leave dirty, detached, divergent, conflicted or branch-locked
+checkouts untouched and report them. Branch deletion and release publication
+remain separate actions. Report resulting SHAs and recovery through a new revert
+PR under [mode reporting](targets-and-transitions.md#report-the-result).

@@ -1,72 +1,48 @@
 # Private authority
 
-Falryn has two private maintainer authorities:
+Resolve the authority needed by the operation, independently of the user's
+permission to act. Falryn Docs and the Roadmap are separate private authorities.
 
-- the `tyldra-org/falryn-docs` repository for complete product, architecture, documentation-ownership, future-design, and docs-delivery contracts;
-- the `tyldra-org` Roadmap Project 1 for cross-repository Status, Priority, Readiness, liveness, and exact delivery sequencing.
+| Needed fact or action | Required authority |
+| --- | --- |
+| Public issue, source, review or contribution outside the Roadmap | Public checkout and repository contract |
+| Canonical private documentation, docs-only delivery or companion | `tyldra-org/falryn-docs` |
+| Roadmap fields, adoption, sequencing, liveness or parent routing | `tyldra-org` Project 1 |
+| Live maintainer audits | That Project and both canonical repositories |
 
-Their existence and identity may be named. Their contents remain private.
+A public contribution or approved issue-free maintenance PR can complete under
+explicit delivery authority when its public contract and documentation disposition
+are settled. Unavailable required private verification prevents complete delivery;
+it never means unaffected. Report the missing operation as unavailable while
+continuing independently authorized public work.
 
-## Resolve access independently
+## Verify the source of authority
 
-Documentation access and Roadmap access are separate facts. Prove each before
-use, only when the requested operation needs it. Docs access alone can support
-docs-only work outside the Project; Project access alone does not prove private
-documentation accuracy.
+For a local Docs checkout, locate the supplied path or sibling `../falryn-docs`.
+Read its `AGENTS.md`, verify it is a Git checkout with exact remote identity
+`tyldra-org/falryn-docs`, and inspect branch and revision before reading affected
+owners. A directory name alone is insufficient. Do not rewrite remotes to make
+a checkout qualify.
 
-For a local docs checkout:
+Authenticated `gh` reads of the exact private repository can replace local
+inspection when the operation allows it. Do not automatically clone private
+repositories, broaden visibility or request tokens in chat. Repository access
+does not prove Project access; verify the exact Project and required fields.
 
-1. locate an explicitly supplied checkout or the sibling `../falryn-docs` directory;
-2. read its applicable `AGENTS.md` before further inspection;
-3. confirm that it is a Git checkout and require exact remote identity `tyldra-org/falryn-docs`;
-4. inspect its current branch and revision rather than relying on remembered content; and
-5. read only the documentation owners needed for the task.
+Revalidate needed access at state-changing boundaries and after authentication,
+repository, branch or Project changes. Cached data proves its captured scope
+only. Lost access is unavailable, not continuing private authority.
 
-An unrelated directory named `falryn-docs` is not authority. Do not add, replace, or rewrite its remote to make it qualify.
+## Privacy
 
-Without a local checkout, authenticated `gh` access may read the exact private repository. Never clone it automatically, broaden visibility, request a token in chat, place a token on a command line, or persist fetched private content in Falryn.
+Private page text, issue bodies, paths, Project values, snapshots, authenticated
+responses and unpublished designs stay out of public source, issues, PRs,
+checks, logs and artifacts. Never put credentials in arguments or snapshots.
+Their required delivery classification or verified relationship may be public;
+the underlying private content is not.
 
-Roadmap access exists only when the authenticated account can read the exact organization Project and its required fields. Repository issue access does not imply Project access. A cached report is authoritative only for its recorded snapshot and scope. Use [governance audits](governance-audits.md) after proving access; use [documentation delivery](documentation-delivery.md) after resolving the canonical owners.
-
-## Access profiles
-
-### Public-only
-
-Use public Falryn source, tests, `CURRENT-STATE.md`, issue and pull-request bodies, GitHub checks, and repository guidance. This profile may:
-
-- inspect or review an explicit public issue or pull request;
-- verify the application revision and public evidence;
-- plan a public issue body without claiming private readiness; and
-- prepare an ordinary contribution under `CONTRIBUTING.md`.
-
-An explicit Deliver request may complete a public contribution or
-repository-approved issue-free maintenance PR when its public contract and
-documentation disposition are complete and no operation needs private
-authority. It must not infer private Project membership or sequence, or treat
-unavailable required docs verification as unaffected.
-
-It may not:
-
-- infer or report private Status, Priority, Readiness, ordering, or docs contents;
-- declare a cross-repository delivery bundle complete;
-- route Next or a parent chain;
-- act on a docs-only target; or
-- merge an application change whose required private documentation impact is unresolved.
-
-Return `unavailable` with the missing authority and the safe public action. Do not call the operation failed when the public evidence itself is valid.
-
-### Authenticated maintainer
-
-This profile requires the exact private authority needed by the operation. It may add private documentation-owner checks, Roadmap audit results, Project reconciliation, docs-only work, and docs-first bundle delivery.
-
-Private evidence informs the action but does not become public output automatically. Public reports state only the classification needed for delivery, such as `documentation update required`, `verified unaffected`, or `private Roadmap access unavailable`. They do not reproduce private text or planning records.
-
-## Public implementation rule
-
-A Roadmap-owned public Falryn issue is the maintainer implementation handoff. Before an authenticated maintainer marks it Ready, its body must state every issue-specific baseline, scope, boundary, failure and recovery rule, product composition point, validation requirement, and documentation impact needed to implement it. Ordinary contribution issues use the lighter public contract and require no private field.
-
-A private link may provide broader maintainer context, but it cannot replace those public facts. If the issue is incomplete, Plan updates the public issue or reports Needs Planning; if a named human choice is required, it reports Needs Decision. It never tells a public contributor to discover missing behavior in a private document.
-
-## Connection lifecycle
-
-Revalidate private authority at each state-changing boundary and after authentication, branch, repository, Project, or revision changes. Losing access changes the operation to `unavailable`; it does not preserve stale permission. Replay and exported public evidence never embed private bodies or Project snapshots.
+Keep private reports in the maintainer's conversation or a private temporary
+artifact. Local paths may appear there for navigation. Public reports use only
+the fact needed for delivery, such as a documentation classification or unavailable
+authority. Apply [snapshot handling](governance-audits.md#snapshot-handling) to
+captured audit data. Do not make a private roadmap public to bypass access.

@@ -1,6 +1,7 @@
 # Roadmap fields and automation
 
-The private Falryn Roadmap owns scheduling metadata for maintainer-selected product-development issues in the two canonical repositories. Project membership is deliberate adoption into that plan. Repository issues outside the Project are ordinary contributions or discussions and have no Roadmap field requirements. This file owns the exact field vocabulary, option descriptions, transitions, and Project automation contract. The repository auditor in `tools/governance/roadmap-governance.ts` is the executable copy of this contract.
+The private Falryn Roadmap owns scheduling metadata for maintainer-selected product-development issues in the two canonical repositories. Project membership is deliberate adoption into that plan. Repository issues outside the Project are ordinary contributions or discussions and have no Roadmap field requirements. This file owns the exact field vocabulary, option descriptions, transitions, and Project automation contract. The auditor in `tools/governance/roadmap-governance.ts` enforces this contract.
+Keep exact option names and descriptions compatible with that published auditor.
 
 ## Target release and private exceptions
 
@@ -41,7 +42,8 @@ actors cannot resolve these scopes.
 
 ## Priority
 
-Priority answers only: “How urgently should this issue be selected among work whose dependencies permit it?” It does not encode severity, readiness, blocking, progress, or issue type.
+Priority expresses selection urgency among work whose dependencies permit it.
+It does not encode severity, readiness, progress or issue type.
 
 | Option | Color | Exact description | Use |
 | --- | --- | --- | --- |
@@ -55,7 +57,8 @@ Retain the last real P0–P3 value when current work closes. `Historical` preser
 
 ## Readiness
 
-Readiness answers only: “What planning action is valid for this issue now?” It is independent of native blocker state.
+Readiness determines the next planning action. Native blockers independently
+determine whether implementation can begin.
 
 | Option | Color | Exact description | Use |
 | --- | --- | --- | --- |
@@ -100,29 +103,22 @@ Do not enable a broad `Auto-add to project` rule for repository issues. A mainta
 
 GitHub's API exposes workflow names and enabled state but not every rule and filter. The Roadmap audit therefore proves that required workflows are enabled, while a maintainer must inspect their filters and field effects after creation, field migration, or workflow editing. Public issue forms must not carry a `projects` key. Contributors neither see nor populate the private plan.
 
-## Safe field migration
+## Change the field contract safely
 
-Capture private preimages of milestones, assignments, Project fields, items,
-exceptions and the audited delivery sequence before migration. Additional
-private staging fields can be created and populated while the published
-legacy auditor remains valid. Do not retire the old authority until the
-compatible schema-versioned auditor, skill, templates and checks are published.
+Capture private preimages and the audited sequence before a migration. Deploy
+compatible schema, auditors and instructions before changing governed options
+or retiring an old authority. Staging fields may coexist while preparing the
+cutover, but normal routing must have one authority.
 
-Copy each adopted item's release without changing Status, Priority, Readiness,
-hierarchy or blockers. Transfer exact exception values into the private field.
-Preserve historical assignments and release descriptions in a private migration
-record; a repository PR's former milestone is history, not a new planned issue.
-Verify every copied value and the unchanged ordering of existing issues before
-removing repository assignments and retiring public milestone definitions.
-Clean release-planning text from active public handoffs without removing their
-scope, tests, native relationships or legitimate shipped-version evidence.
-Previously public history and external copies cannot be made private by this
-operation. Do not rewrite Git history as part of a field migration.
+Preserve assignments, historical release information, exceptions and unrelated
+fields. Verify copied values, unchanged intended ordering, view configuration,
+workflow filters and field effects. Keep exact receipts of partial writes and
+resume from observed state. Run both live audits after cutover. Never leave the
+Project on a contract rejected by the published auditor or use missing access
+as a reason to fall back to public metadata.
 
-Set Project views to show/filter/group by Target release instead of Milestone;
-verify workflow filters and field effects. Re-run both live audits and inspect
-repository milestone lists after cutover. Stop on drift or a partial write,
-retain the exact private receipts, and resume from verified state. Never fall
-back to public metadata when private access fails. Changes to existing governed
-option names or descriptions must be compatible with the published auditor
-before the live edit. Never leave the live Project on a rejected contract.
+For a move from repository milestones, preserve history privately, verify the
+Project values before retiring public assignments, and remove active public
+release-planning text without deleting implementation scope or shipped-version
+evidence. Do not rewrite Git history or claim that previously public copies
+became private.

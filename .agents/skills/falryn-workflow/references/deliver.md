@@ -1,58 +1,59 @@
 # Deliver
 
-Deliver is one controller for completing a resolved delivery, one PR-sized
-outcome at a time. Issue, PR, docs, and parent inputs use the same
-[target resolution](targets-and-transitions.md#resolve-a-delivery-target) and
-continue from observed state. It never creates separate planner, implementer,
-verifier, goal-wrapper, or parent-branch machinery.
+Deliver completes the named outcome through planning, implementation, review,
+verification, merge and reconciliation. Resolve the target once through
+[targets and transitions](targets-and-transitions.md#resolve-a-delivery-target),
+then resume from observed state. Keep one controller in the current task.
 
-## Authority
+The originating request authorizes in-scope delivery and merge at freshly
+verified revisions, including required companions when its scope covers them.
+It does not cover another owner's work, unrelated outcomes, release publication
+or destructive cleanup. Apply [private authority](private-authority.md) only to
+operations that need it.
 
-Require authenticated authority for every operation in the resolved scope.
-Roadmap-owned work and parent sequencing require private Roadmap access and
-[governance audits](governance-audits.md). Private docs work or a required docs
-companion requires Falryn Docs access and [documentation delivery](documentation-delivery.md).
-An ordinary public contribution or issue-free maintenance PR does not acquire
-private Project requirements by entering through Deliver. Unresolved private
-documentation impact still blocks complete delivery. Return `unavailable`
-before a mutation that lacks required authority, naming the missing prerequisite.
+## Complete the remaining work
 
-The originating Deliver request authorizes completion and merge only within its
-resolved scope, at freshly verified revisions, including required companions
-when that scope covers them. This applies equally to application and docs-only
-deliveries. Repairs require fresh review and verification; previous revision
-evidence cannot authorize a changed head. Missing checks, unresolved reviews,
-changed ownership, and unrelated PRs are not covered.
+| Observed state | Next step |
+| --- | --- |
+| Missing derivable contract facts | [Plan](plan.md) the same issue; retain the requested acceptance |
+| Named human decision or open prerequisite | Report the owner or prerequisite; do not implement through it |
+| Complete, unblocked issue without its full implementation | [Implement](implement.md), reusing a valid branch and PR |
+| Candidate PR exists | [Review](assessment.md#review) the complete current diff and [Verify](assessment.md#verify) the bundle |
+| In-scope defect or failed check | Repair its owner, validate the change and reassess the new revision |
+| Required CI still pending | Wait and do independent useful work; retain the same delivery |
+| Fresh passing Verify and merge preflight | [Merge](merge.md) and reconcile |
+| Target already merged | Verify completion and finish any missing reconciliation |
 
-## Efficient execution
+Read a stage guide when its work is needed. Skip already satisfied stages whose
+proof remains valid. Manual stage finish lines do not end Deliver. Follow
+[execution](execution.md) for evidence refresh, uncertain effects and bounded
+repair. Do not send separate Review, Verify or Merge prompts merely because the
+controller reached that stage.
 
-Apply [shared execution efficiency](execution-efficiency.md) throughout the existing controller loop. Deliver alone composes modes; evidence reuse never authorizes a manual mode to enter this loop. Keep bounded repairs, exact-revision verification, docs-first merge, and reconciliation unchanged.
+Preserve acceptance when a prerequisite is missing. Resolve derivable planning
+facts in the current scope; identify work outside it. A user's instruction to
+resolve prerequisites authorizes that bounded dependency work, not unrelated
+Roadmap selection. Do not silently narrow the outcome to make it deliverable.
 
-## Controller loop
+For parents, use [parent delivery](parent-delivery.md). Otherwise finish after
+this delivery and use [continuation routing](targets-and-transitions.md#suggest-the-next-action).
+Access to the Roadmap alone is not a reason to start or select more work.
 
-Load the guide for a stage when its work is needed: [Plan](plan.md),
-[Implement](implement.md), [Review](review.md), [Verify](verify.md), or
-[Merge](merge.md). Apply its evidence and validation requirements within this
-controller's authority. Manual-stage stopping points do not end Deliver, and
-an already satisfied stage needs no repeated work merely to follow the list.
+## Recover from observed state
 
-1. Resolve the exact target, owner, requested scope, existing PRs, companions, blockers, and applicable Project state. Apply assignment and readiness requirements only to work governed by them.
-2. Establish the remaining work from current evidence. Plan missing contract facts before implementation; keep Roadmap work Todo until implementation is admitted. A named human decision remains a stop condition.
-3. Reuse valid branches and PRs. Implement or repair only missing acceptance within the resolved scope; set Roadmap work In Progress when implementation begins. A docs-only outcome edits its docs owner, not application code.
-4. Review the current diff and verify the exact authorized bundle. Reuse unchanged trustworthy evidence, but refresh merge preconditions. An already complete PR proceeds to verification rather than repeating planning or implementation.
-5. Wait for required checks and resolve in-scope findings inside this controller. Do not hand the user separate Review, Verify, or Merge prompts merely because that stage has been reached.
-6. Return actionable gaps to the same owner and branch, require observable progress, then review and verify the new revision.
-7. After three repair passes without changed evidence, stop for a different strategy.
-8. Merge required docs companions first and the application last under [Merge](merge.md). A docs-only delivery merges its docs PR; a scoped companion request stops after that member.
-9. Reconcile the applicable issue, Project, parent, documentation, and safe local checkouts. Update `CURRENT-STATE.md` only when application behavior changed. Verify an already-merged target and finish missing reconciliation instead of merging again.
+These are recovery choices, not additional mutation authority. Manual Review
+stays read-only; Verify changes only explicitly authorized governance records.
 
-Do not create duplicate branches or pull requests. Use [corrections](corrections.md)
-for closed or merged work; never reopen or edit a merged PR. A distinct outcome
-receives one focused follow-up issue.
+| Observed delivery | Recovery within authorized scope |
+| --- | --- |
+| Open PR with missing acceptance | Keep the issue, branch, PR and valid companions; add focused commits |
+| PR closed without merge | Reopen only if head branch, base, scope, owner and companions remain valid; otherwise prepare a replacement |
+| Merged but incomplete original acceptance | Reopen the owning issue, reconcile stale completion, and use a fresh branch from current default |
+| Distinct new outcome | Give it one focused follow-up issue rather than expanding completed acceptance |
+| Issue-free maintenance already merged but incomplete | Establish a focused correction owner and fresh PR |
+| Uncertain or partial external effect | Read what actually landed before retrying or continuing |
 
-After a standalone delivery completes, use
-[continuation routing](targets-and-transitions.md#suggest-the-next-action).
-Use Next for requested Roadmap selection with verified authority. Access alone
-does not require finding more work; report no next action when the outcome is
-complete and no useful continuation is established. A child continues only
-within its parent rules. For parent selectors, read [parent delivery](parent-delivery.md).
+Never edit a merged PR or reuse its squash-merged branch. A prior merge does
+not prove remaining acceptance. Keep partial delivery visible, including merged
+docs with an unmerged application. Every changed candidate needs fresh review,
+verification and merge preflight.

@@ -164,6 +164,11 @@ unblocked leaf. Issues without the label use the public contribution form.
 The label selects formatting only; it neither proves private Project membership
 nor replaces the authenticated readiness and Roadmap audits.
 
+A retained Contribution checklist satisfies the public PR check's checklist
+requirement. An adopted Roadmap issue still needs the Ready checklist evidence
+enforced by the authenticated auditor. Issues outside the Project do not need
+that extra evidence.
+
 Parents collect integrated outcomes. They do not own branches or large pull
 requests. Work that needs separate review belongs in a native child issue. A
 checklist is enough for steps that cannot produce a useful pull request by
