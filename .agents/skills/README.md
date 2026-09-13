@@ -1,45 +1,58 @@
 # Vendored agent skills
 
-Falryn ships six skill bundles so a public checkout can resolve its normal repository guidance without private documentation, private Roadmap access, or a personal skill installation.
+The checkout distributes five portable skills and two Falryn skills. Public
+work can use them without a personal installation or private documentation.
 
-## Inventory
-
-| Tier | Skills | Content |
-| --- | --- | --- |
-| Portable universal | `git-workflow`, `gh-cli`, `change-review` | General Git, GitHub, and change-review guidance reusable across repositories |
-| Portable stack | `typescript-best-practices`, `opentui-best-practices` | Version-aware TypeScript and terminal-UI guidance without Falryn policy |
-| Falryn workflow | `falryn-workflow` | Complete Falryn-specific public workflow plus explicit authenticated-maintainer gates for private docs and Roadmap operations |
-
-The five portable skills must remain useful outside Falryn and must not contain Falryn, organization, maintainer-home, or repository-local policy. `falryn-workflow` is the sole project-specific exception.
-
-Each bundle has one compact `SKILL.md` router. Deep references remain only when
-they own a distinct concern. The TypeScript bundle has twelve original practice
-references, and the OpenTUI bundle has fourteen. Neither bundle contains copied
-upstream documentation.
-
-## Resolution
-
-In this checkout, apply system and user instructions first, then repository `AGENTS.md` and `CONTRIBUTING.md`, then the relevant vendored skill. A personal or global skill may add guidance only when it does not replace repository policy.
-
-The Falryn workflow resolves public source, issue, and pull-request work locally. Private Falryn Docs and Roadmap information is used only after exact authenticated maintainer access is proven. Missing private authority produces an explicit unavailable result for private-only operations; it never causes a guessed fallback.
-
-## Load gates
-
-| Skill | Load before |
+| Responsibility | Skill |
 | --- | --- |
-| `typescript-best-practices` | TypeScript, TSX, JavaScript, tests, build scripts, or `tsconfig` work |
-| `opentui-best-practices` | Terminal UI, renderer, layout, input, keymaps, or packaging work |
-| `git-workflow` | Mutating Git work: commit, branch, rebase, push, or recovery |
-| `gh-cli` | GitHub issues, pull requests, Actions, Projects, merge, or exact flags |
-| `change-review` | Reviewing a local diff, branch, or pull request; pair with `gh-cli` for GitHub state and a stack skill for changed code |
-| `falryn-workflow` | Falryn Plan, Implement, Review, Verify, Merge, Deliver, or Next modes; greetings, walkthroughs, status questions, and next-step routing |
+| Git state and mutations | `git-operations` |
+| GitHub operations | `github-operations` |
+| Evidence-backed change assessment | `change-review` |
+| TypeScript engineering | `typescript-engineering` |
+| Terminal UI engineering | `opentui-engineering` |
+| Selected Falryn work and manual command boundaries | [falryn-work](falryn-work/SKILL.md) |
+| Next, parent ordering and private Project governance | [falryn-roadmap](falryn-roadmap/SKILL.md) |
 
-`git-workflow` owns Git. `gh-cli` owns GitHub. `change-review` owns evidence-backed review reasoning. Never substitute one CLI for another.
+The portable skills contain no Falryn strategy or repository policy. Git and
+GitHub skills own state changes and evidence; `change-review` owns assessment.
+TypeScript and OpenTUI add language and terminal contracts. General engineering
+judgment comes from the global-only `software-engineering-discipline`, which is
+not vendored or required of human contributors. The Falryn pair coordinates these
+owners without duplicating their procedures. Load only what the request needs.
+A local question or walkthrough is not a Roadmap operation.
 
-## Maintenance
+## Resolve and maintain
 
-The committed bundles are authoritative for this checkout. Keep portable bundle
-changes product-neutral. Maintain `falryn-workflow` here as the public Falryn
-contract; the private companion adds maintainer-only documentation and Roadmap
-authority after access is verified. Personal or global installations are
-optional copies and never replace the committed repository guidance.
+Repository and user guidance precede skill defaults. These bundles are the
+checkout's authoritative copies. Falryn Docs resolves them from its verified
+sibling Falryn checkout, with installed global copies only as fallback. Keep the
+two Falryn skills at matching revisions when distributing them.
+
+Synchronize changed portable bundles with installed copies only after inspecting
+their preimages. Preserve unrelated installed files and verify byte parity after
+copying. The OpenTUI React reference uses the TypeScript React guide, so distribute
+those compatible bundles together. Keep command names stable when ownership
+changes; a skill update must not grant new publication or merge authority.
+
+`falryn-work` owns the existing Plan, Implement, Review, Verify, Merge and
+Deliver command meanings. `falryn-roadmap` owns Next and uses the repository's
+canonical auditors. Private access is required only for the facts and operations
+that depend on it. No skill or successful check grants additional authority.
+
+Validate the Falryn pair with:
+
+```sh
+python3 -B .agents/skills/falryn-work/scripts/validate_skill.py
+python3 -B .agents/skills/falryn-work/scripts/test_validate_skill.py
+python3 -B .agents/skills/falryn-roadmap/scripts/test_select_next.py --falryn-root .
+```
+
+For portable skill maintenance, run the Git and GitHub bundle validators, check
+all changed reference links, and forward-test relevant requests in temporary
+fixtures. Validate changed code examples with their actual compiler or renderer.
+Packaging checks do not prove behavior, and scenario evaluation does not prove
+live GitHub effects.
+
+The selector tests use synthetic private-format records and the real repository
+auditor without querying GitHub. Structure checks prove packaging and links;
+independent scenario evaluation checks command behavior and authority boundaries.

@@ -39,11 +39,11 @@ Project membership marks an issue as adopted into that plan. Only those issues
 are subject to private Status, Priority, Readiness, Target release, hierarchy,
 liveness, and sequencing checks from `bun run audit:issues` and
 `bun run audit:roadmap`, documented in the vendored
-[`governance-audits.md`](../../.agents/skills/falryn-workflow/references/governance-audits.md)
+[`audit evidence`](../../.agents/skills/falryn-roadmap/references/audits.md)
 guide. The Roadmap does not auto-add every repository issue. Its existing-item
 and subissue reconciliation workflows remain enabled. The API cannot expose every
 workflow filter or effect, so maintainers verify those settings against the
-[`roadmap-fields.md`](../../.agents/skills/falryn-workflow/references/roadmap-fields.md)
+[`Roadmap governance`](../../.agents/skills/falryn-roadmap/references/governance.md)
 contract after Project maintenance. [`CONTRIBUTOR-READINESS.md`](../../CONTRIBUTOR-READINESS.md)
 explains the public/private boundary.
 

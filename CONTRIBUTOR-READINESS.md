@@ -82,10 +82,10 @@ own reminder only when the diagnostic text changes and removes that reminder
 when the selected contract passes. It does not modify human comments.
 
 If a maintainer adopts an issue into product development, Project membership
-becomes the private ownership marker. Only then do the sole assignee, milestone,
+becomes the private ownership marker. Only then do the sole assignee, Target release,
 Status, P0-P3 Priority, Readiness, native hierarchy, liveness, and deterministic
 sequence rules apply. The maintainer workflow lives in the vendored
-[Roadmap field guide](.agents/skills/falryn-workflow/references/roadmap-fields.md).
+[Roadmap governance guide](.agents/skills/falryn-roadmap/references/governance.md).
 It must not leak into the public contribution check.
 
 Audit snapshots may contain issue bodies and private Project metadata. They stay

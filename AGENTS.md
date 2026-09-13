@@ -44,12 +44,13 @@ option values in public handoffs.
 | Work | Skill |
 | --- | --- |
 | Software design, implementation, refactoring, debugging, migrations, reliability, or performance | software-engineering-discipline (global only) |
-| TypeScript, TSX, JavaScript, tests, build scripts, or tsconfig | typescript-best-practices |
-| OpenTUI behavior, layout, input, rendering, or packaging | opentui-best-practices |
-| Mutating Git work | git-workflow |
-| GitHub issues, pull requests, Actions, Projects, or merge state | gh-cli |
+| TypeScript, TSX, JavaScript, tests, build scripts, or tsconfig | typescript-engineering |
+| OpenTUI behavior, layout, input, rendering, or packaging | opentui-engineering |
+| Mutating Git work | git-operations |
+| GitHub issues, pull requests, Actions, Projects, or merge state | github-operations |
 | Local diff, branch, or pull-request review | change-review plus the relevant stack skill |
-| Falryn Plan, Implement, Review, Verify, Merge, Deliver, Next, greetings, walkthroughs, or project-status routing | falryn-workflow |
+| Falryn Plan, Implement, Review, Verify, Merge, Deliver, or workflow maintenance | falryn-work |
+| Next, new Roadmap work selection, parent sequencing, or private Project governance | falryn-roadmap |
 
 Load `software-engineering-discipline` only from the global installation at
 `~/.agents/skills/software-engineering-discipline/SKILL.md`. Follow its
@@ -61,9 +62,10 @@ human-contributor prerequisite.
 For the other skills, use the vendored bundle appropriate to the checkout.
 Each `SKILL.md` is a compact router; load only the deep reference that owns the
 task. The five portable vendored skills must not acquire Falryn product
-strategy. `falryn-workflow` is the sole repository-specific exception and
-contains the complete public-checkout
-workflow. Private Falryn Docs and Roadmap authority is an authenticated
+strategy. The two Falryn-specific skills separate delivery (`falryn-work`)
+from private selection and governance (`falryn-roadmap`). Ordinary questions,
+greetings and walkthroughs do not trigger Roadmap selection or audits. Private
+Falryn Docs and Roadmap authority is an authenticated
 maintainer addition, never a prerequisite for ordinary public work. This
 checkout is authoritative for its vendored bundles. Global copies of those
 bundles are optional conveniences, not public-checkout dependencies.

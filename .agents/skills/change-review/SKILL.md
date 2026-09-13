@@ -1,84 +1,68 @@
 ---
 name: change-review
-description: >-
-  Review a local diff, branch, or GitHub pull request for behavior, correctness,
-  design, and blast radius. Use for code review, PR review, change walkthrough,
-  "what changed?", or "what could this break?". Read-only by default.
+description: Review a local diff, branch or pull request for consequential defects and explain changed behavior. Use for reviews and change walkthroughs; read-only unless the user separately requests repairs or posting.
 ---
 
 # Change review
 
-Review the exact revision, not an assumption about the change. This skill owns
-review reasoning and the evidence-backed report. It does not own GitHub PR
-commands or posting a review (`gh-cli`), Git porcelain (`git-workflow`), or
-stack-specific correctness (`typescript-best-practices`,
-`opentui-best-practices`, and the relevant project guidance).
+Own the reasoning about a change and its evidence. Use the relevant stack skill
+for language or framework correctness, `github-operations` for GitHub evidence and submission,
+and `git-operations` for local Git mutations. General engineering guidance informs
+design judgment; this skill adds revision-specific assessment.
 
-## Safety and scope
+## Establish the requested assessment
 
-Review is read-only by default: do not edit files, create a branch, comment,
-approve, request changes, merge, or change issue/PR metadata. Submitting a
-GitHub review is an explicit outward-facing action handled by `gh-cli` only
-after the user has seen and approved the exact text.
+A walkthrough explains changed behavior and its implications. A review seeks
+consequential defects. Neither silently turns into implementation, posting,
+approval, merging or metadata maintenance. Preserve any explicitly authorized
+additional scope without treating the review alone as that authority.
 
-Resolve one target before reviewing:
+Resolve the comparison before drawing conclusions:
 
-- **Local worktree:** staged, unstaged, and untracked changes relative to the
-  current `HEAD`.
-- **Branch:** its merge-base diff against the repository's resolved default
-  branch.
-- **GitHub PR:** the repository-qualified PR, its base SHA, current head SHA,
-  body, commits, changed files, checks, and linked work. Load `gh-cli`.
+- Local work: staged, unstaged and relevant untracked files against `HEAD`.
+- Branch: merge-base comparison with the requested or resolved target branch.
+- PR: repository, base/head SHAs, complete diff, description and linked acceptance.
 
-Never call a local branch a PR revision without checking the exact head SHA.
-Do not check out or execute an untrusted PR head in a maintainer environment
-just to review it. Inspect API/diff data first; use observed CI as execution
-evidence. Run a focused reproduction only when the user explicitly authorizes
-it in a suitable isolated environment.
+Record the revision and any inaccessible or omitted material. Do not call a local
+branch the PR head without verifying it. Read repository review requirements.
 
-## Review procedure
+## Follow behavior beyond the diff
 
-1. **State intent and revision.** Read the issue/PR description, commit list,
-   and complete diff. State what the change is meant to accomplish and record
-   the base/head revisions. If intent is genuinely unclear, say what you can
-   infer and constrain findings to observed behavior.
-2. **Inventory the full change.** List every added, modified, deleted, and
-   renamed file, grouped as core behavior, wiring/integration, tests,
-   configuration/generated artifacts, and documentation/mechanical work. Lead
-   with the group that carries behavior, not tree or alphabetical order.
-3. **Read context, not just hunks.** Read tests before the implementation when
-   present. Then trace affected symbols through real callers, data models,
-   configuration, persistence or wire formats, lifecycle/cleanup, public
-   surfaces, and documentation. Use the relevant stack skill for changed code.
-4. **Find the key safety condition.** Identify the one factual condition most
-   important to the change's safety. Follow its failure path beyond the diff
-   and test the condition against actual source and observed check evidence.
-   Mark it **proven** only with direct execution evidence; otherwise say which
-   evidence level was reached: source line, failure-path trace, or unproven.
-5. **Assess real risks.** Check correctness, security/privacy, data loss,
-   compatibility, concurrency/order, error handling, resource cleanup,
-   performance, migration/rollout, documentation, and test coverage only where
-   the diff makes each relevant. Also challenge added complexity: unnecessary
-   layers, weak type boundaries, scattered special cases, duplicate helpers,
-   and logic in the wrong owner. Prefer a simpler existing shape when one is
-   concrete; do not invent stylistic concerns.
-6. **Report high-signal findings.** A finding must identify an exact changed or
-   affected `path:line`, trigger, consequence, and focused correction. Separate
-   verified findings from risks examined and cleared. Do not praise-pad, repeat
-   the diff, or manufacture nits.
+Read the intended outcome, complete change and relevant tests. Inventory changed
+files internally, including deletions, generated output and configuration. Trace
+affected consumers, contracts, state transitions and failure paths. Use the stack
+reference that owns the actual risk instead of loading every checklist.
 
-## Report format
+Choose the critical invariants from the change. There may be one or several;
+do not manufacture a single safety question for unrelated changes. Check input
+boundaries, ordering, cleanup, compatibility, privacy and performance where the
+changed behavior makes them relevant. Challenge complexity through concrete
+consequences such as duplicate state or hidden ownership, not stylistic preference.
 
-Report, in this order:
+Distinguish direct execution, a source-based failure trace and an untested
+hypothesis. Source can establish a defect without executing it. Run a focused
+reproduction when it would resolve material uncertainty and the environment is
+suitable. A local review may include safe local checks. Untrusted code requires
+an isolated environment with no privileged credentials or effects; if that cannot
+be established within scope, report the evidence gap.
 
-1. target, repository, base/head revision, and review scope;
-2. concise changed-file inventory grouped by reviewer value;
-3. changed behavior and contract surface;
-4. the key safety condition, evidence level, and any unproven gap;
-5. findings ordered **Blocking**, **Should fix**, **Consider**;
-6. cleared risks, observed checks, documentation impact, and the cheapest
-   pre-merge validation.
+## Report for the reader
 
-For a clean review, say **No findings** and still retain the revision and
-evidence boundaries. A review is valid only for the recorded head revision;
-any new commit requires a fresh review.
+Follow an explicit user or repository format. Otherwise lead a review with
+findings ordered by consequence. Each finding needs a precise location, trigger,
+user or system impact and enough evidence to assess it. Suggest a focused
+correction without implementing it. Keep uncertain risks distinct from defects;
+do not invent findings or padding to fill severity categories.
+
+For a clean review, say "No findings" and give the scope, relevant checks and
+material gaps. Include revision identity when needed to reproduce the assessment.
+A small review can be a few sentences. Large changes may benefit from grouped
+behavior and validation notes; a full file inventory is not a mandatory report.
+
+For a walkthrough, lead with what changed and why, then explain the consequential
+paths. Do not force it into a defect report. Explain limits without implying
+that unexamined behavior was verified.
+
+A changed revision requires reassessment of the resulting diff. Reuse unaffected
+analysis and still-applicable checks, inspect new and interacting changes, and
+record the new boundary. Review evidence never authorizes a merge or submission.

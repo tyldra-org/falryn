@@ -164,6 +164,11 @@ unblocked leaf. Issues without the label use the public contribution form.
 The label selects formatting only; it neither proves private Project membership
 nor replaces the authenticated readiness and Roadmap audits.
 
+A retained Contribution checklist satisfies the public PR check's checklist
+requirement. An adopted Roadmap issue still needs the Ready checklist evidence
+enforced by the authenticated auditor. Issues outside the Project do not need
+that extra evidence.
+
 Parents collect integrated outcomes. They do not own branches or large pull
 requests. Work that needs separate review belongs in a native child issue. A
 checklist is enough for steps that cannot produce a useful pull request by
@@ -272,8 +277,10 @@ Ordinary contributors stop at the public issue, source, checks, and pull
 request. Authenticated maintainers use
 [CONTRIBUTOR-READINESS.md](CONTRIBUTOR-READINESS.md) for repository-opening and
 governance controls. Agents use the vendored
-`.agents/skills/falryn-workflow/` bundle for exact Plan, Implement, Review,
-Verify, Merge, Deliver, Next, audit, and cross-repository rules.
+`.agents/skills/falryn-work/` for selected delivery and manual command
+boundaries, and `.agents/skills/falryn-roadmap/` for Next, parent ordering and
+private governance. The familiar `Command - Target: ...` syntax is unchanged.
+Ordinary questions and walkthroughs do not launch Roadmap audits.
 
 Private access adds authority. It never changes the meaning of public source or
 allows private state to leak into a public artifact.
