@@ -449,7 +449,10 @@ function closingPullRequests(value: unknown, subject: string) {
   });
 }
 
-async function loadOpenIssueRelations(repository: string): Promise<{
+export async function loadOpenIssueRelations(
+  repository: string,
+  runQuery: (args: readonly string[]) => Promise<unknown> = runGh,
+): Promise<{
   readonly relations: ReadonlyMap<number, OpenIssueRelations>;
   readonly totalIssueCount: number;
 }> {
@@ -465,7 +468,8 @@ async function loadOpenIssueRelations(repository: string): Promise<{
           parent { number state repository { nameWithOwner } }
           subIssues(first:100) { totalCount nodes { number state repository { nameWithOwner } } }
           blockedBy(first:100) { totalCount nodes { number state repository { nameWithOwner } } }
-          closedByPullRequestsReferences(first:100) {
+          # GitHub excludes closed-unmerged PRs by default; liveness needs their state.
+          closedByPullRequestsReferences(first:100,includeClosedPrs:true) {
             totalCount
             nodes { number state isDraft updatedAt repository { nameWithOwner } }
           }
@@ -482,7 +486,7 @@ async function loadOpenIssueRelations(repository: string): Promise<{
     if (after !== null) {
       args.push("-f", `after=${after}`);
     }
-    const payload = asRecord(await runGh(args), `${repository} relationship response`);
+    const payload = asRecord(await runQuery(args), `${repository} relationship response`);
     const data = asRecord(payload.data, `${repository} relationship response.data`);
     const repositoryRecord = asRecord(data.repository, `${repository} relationship repository`);
     const allIssues = asRecord(repositoryRecord.allIssues, `${repository} all issues`);

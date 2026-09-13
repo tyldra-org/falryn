@@ -12,6 +12,7 @@ import {
 import {
   assertAllProjectIssueItemsConsumed,
   fieldValues,
+  loadOpenIssueRelations,
   parseCli,
   projectItemFromGraphQl,
 } from "./roadmap-governance-cli";
@@ -150,6 +151,115 @@ describe("roadmap governance CLI validation", () => {
     expect(() => fieldValues(value, "fieldValues")).toThrow(
       "fieldValues contains duplicate field name Status",
     );
+  });
+});
+
+describe("live closing-pull-request collection", () => {
+  test.each(["closed", "replacement", "merged"] as const)(
+    "preserves %s delivery evidence through collection and analysis",
+    async (scenario) => {
+      const closed = {
+        repository: { nameWithOwner: REPOSITORY },
+        number: 10,
+        state: "CLOSED" as const,
+        isDraft: false,
+        updatedAt: "2026-09-02T00:00:00.000Z",
+      };
+      const expected =
+        scenario === "replacement"
+          ? [closed, { ...closed, number: 11, state: "OPEN" as const, isDraft: true }]
+          : [
+              {
+                ...closed,
+                state: scenario === "merged" ? ("MERGED" as const) : ("CLOSED" as const),
+              },
+            ];
+      const queries: string[][] = [];
+      const collected = await loadOpenIssueRelations(REPOSITORY, async (args) => {
+        queries.push([...args]);
+        const query = args.find((arg) => arg.startsWith("query=")) ?? "";
+        // GitHub omits CLOSED relationships unless the caller opts in.
+        const native = expected.filter(
+          (pr) => pr.state !== "CLOSED" || /includeClosedPrs\s*:\s*true/.test(query),
+        );
+        const secondPage = args.includes("after=next-issue");
+        return {
+          data: {
+            repository: {
+              allIssues: { totalCount: 2 },
+              issues: {
+                totalCount: 2,
+                pageInfo: { hasNextPage: !secondPage, endCursor: secondPage ? null : "next-issue" },
+                nodes: [
+                  {
+                    number: secondPage ? 2 : 1,
+                    parent: null,
+                    subIssues: { totalCount: 0, nodes: [] },
+                    blockedBy: { totalCount: 0, nodes: [] },
+                    closedByPullRequestsReferences: {
+                      totalCount: secondPage ? native.length : 0,
+                      nodes: secondPage ? native : [],
+                    },
+                  },
+                ],
+              },
+            },
+          },
+        };
+      });
+      expect(queries).toHaveLength(2);
+      expect(queries[1]).toContain("after=next-issue");
+      expect(collected.totalIssueCount).toBe(2);
+      const relations = collected.relations.get(2);
+      expect(relations?.closingPullRequests.map((pr) => pr.state)).toEqual(
+        expected.map((pr) => pr.state),
+      );
+      const subject = issue({
+        number: 2,
+        body: readyBody(),
+        ...relations,
+        projectItems: [projectItem({ status: "In Progress", readiness: "Ready" })],
+      });
+      const report = analyzeRoadmapGovernance(snapshot([subject]));
+      if (scenario === "closed") {
+        expect(report.diagnostics.map((entry) => entry.code)).toEqual([
+          "in-progress-closing-pr-closed",
+        ]);
+        expect(report.deliverySequence).toEqual([]);
+      } else if (scenario === "replacement") {
+        expect(report.diagnostics).toEqual([]);
+        expect(report.liveness[0]?.kind).toBe("open-pull-request");
+      } else {
+        expect(report.liveness[0]?.detail).toBe(
+          "linked closing pull request merged while the issue remains open",
+        );
+      }
+    },
+  );
+
+  test("refuses truncated native closing relationships", async () => {
+    await expect(
+      loadOpenIssueRelations(REPOSITORY, async () => ({
+        data: {
+          repository: {
+            allIssues: { totalCount: 1 },
+            issues: {
+              totalCount: 1,
+              pageInfo: { hasNextPage: false, endCursor: null },
+              nodes: [
+                {
+                  number: 1,
+                  parent: null,
+                  subIssues: { totalCount: 0, nodes: [] },
+                  blockedBy: { totalCount: 0, nodes: [] },
+                  closedByPullRequestsReferences: { totalCount: 101, nodes: [] },
+                },
+              ],
+            },
+          },
+        },
+      })),
+    ).rejects.toThrow("closedByPullRequestsReferences");
   });
 });
 
