@@ -69,19 +69,26 @@ Inspect what could have been omitted as well as what changed. A helper that work
 in isolation, a mocked integration, green CI, or a closed issue cannot by itself
 prove the promised behavior reaches its consumer.
 
-For related changes within the selected delivery, check their interacting
-contracts on the integrated revision. Separate passing PRs do not prove that
-their combined behavior works. Follow relevant dependencies and consumers, but
-do not expand into unrelated assigned issues, sibling delivery or a repository-wide
-audit. Apply failure, lifecycle, compatibility and documentation checks where the
-outcome requires them; the engineering skills own the detailed method.
+For related changes within the selected outcome, check interacting contracts at
+identified revisions. Implement uses the current PR candidate with its declared
+base and dependency revisions. A related unmerged PR is neither assumed present
+nor required to merge merely to perform this check. If acceptance depends on
+unavailable work, report the prerequisite and unverified criterion. Integration
+testing does not expand implementation or merge authority. Deliver refreshes
+affected integration evidence against landed revisions after authorized merges.
+
+Separate passing PRs do not prove that their combined behavior works. Follow
+relevant dependencies and consumers without expanding into unrelated assigned
+issues, sibling delivery or a repository-wide audit. Apply failure, lifecycle,
+compatibility and documentation checks where the outcome requires them; the
+engineering skills own the detailed method.
 
 Distinguish missing original acceptance, insufficient verification and optional
 additional work. Implement and Deliver repair known in-scope gaps, check the
 correction and reassess affected acceptance before their respective stopping
 points. Do not leave an authorized repair for a suggested next prompt or move
-missing original acceptance into a
-follow-up issue while declaring the original complete. A missing prerequisite,
+missing original acceptance into a follow-up issue while declaring the original
+complete. A missing prerequisite,
 human decision or unavailable required proof keeps the affected implementation or
 delivery incomplete; name the gap and what resolves it. Use the recovery rules
 below for acceptance discovered incomplete after merge.
