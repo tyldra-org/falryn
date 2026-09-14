@@ -1,3 +1,4 @@
+import { checkpointControl } from "../../application/compression/checkpoint-request.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
 import type { ConfigurationValues } from "../../domain/configuration/index.ts";
 import type { SessionId } from "../../domain/foundation/index.ts";
@@ -461,6 +462,8 @@ export async function composeProductShellAttachments(
           });
     let publishedRuntime = composed.value;
     const executor = createProductLiveTurnExecutor({
+      checkpointEvents: ports.eventStore,
+      checkpointDurable: ports.artifacts !== undefined,
       ...(extensionCatalog === undefined ? {} : { extensionCatalog }),
       ...(workspaceTools?.resources == null ? {} : { resources: workspaceTools.resources }),
       ...(ports.modelConfigurationGeneration === undefined
@@ -546,6 +549,12 @@ export async function composeProductShellAttachments(
   let unsubscribePeer: (() => void) | null = null;
   const exportSession = ports.exportSession;
   const submission = {
+    compact: checkpointControl(
+      (request, signal) =>
+        active.executor.compact?.(request, signal) ??
+        Promise.resolve({ kind: "refused", reason: "compaction-unavailable", effect: "none" }),
+      () => String(active.sessionId),
+    ),
     ...(exportSession === undefined
       ? {}
       : {

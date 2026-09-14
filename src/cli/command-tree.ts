@@ -1,5 +1,6 @@
 import { modelSettingsRequestSchema } from "../application/providers/model-settings.ts";
 import { PACKAGE_ACTIONS, packageRequestSchema } from "../domain/extensions/lifecycle.ts";
+import { type CompactArguments, compactArgumentsSchema } from "./commands/compact.ts";
 /**
  * The yargs command tree, and the parse that never prints and never exits.
  *
@@ -109,6 +110,22 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           "Falryn is a local terminal coding agent. Running it with no command opens\n" +
           "the interactive shell on a capable terminal, and prints this help with a\n" +
           "reason on any run that cannot host one.",
+      )
+      .command(
+        lenientPositionals ? "compact [action] [id]" : "compact <action> <id>",
+        "Preview, apply, inspect, or select a retained history checkpoint.",
+        (group) =>
+          group
+            .positional("action", {
+              type: "string",
+              choices: ["preview", "apply", "inspect", "restore"],
+            })
+            .positional("id", { type: "string", describe: "session identity" })
+            .option("input", {
+              type: "string",
+              demandOption: !lenientPositionals,
+              describe: "JSON checkpoint request and whole-request reservation",
+            }),
       )
       .command(configCommand, "Inspect and validate effective configuration.", (group) =>
         group
@@ -840,6 +857,23 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
       };
     extensionCatalogArgs = checked.data;
   }
+  let compactArgs: CompactArguments | undefined;
+  if (command === "compact") {
+    const loaded = parsed.input === undefined ? null : await loadTaskInputFile(parsed.input);
+    if (!loaded?.ok)
+      return { kind: "invalid", message: "compact requires a readable --input JSON request." };
+    try {
+      const checked = compactArgumentsSchema.safeParse({
+        ...JSON.parse(loaded.value),
+        sessionId: parsed.id,
+      });
+      if (!checked.success || checked.data.request.action !== parsed.action)
+        return { kind: "invalid", message: "Invalid checkpoint request, reservation, or action." };
+      compactArgs = checked.data;
+    } catch {
+      return { kind: "invalid", message: "Invalid checkpoint JSON." };
+    }
+  }
   let extensionTrust: import("../application/extensions/package-trust.ts").TrustRequest | undefined;
   let packageArgs: import("./commands/package.ts").PackageArguments | undefined;
   let peerArgs: import("./commands/peer.ts").PeerArguments | undefined;
@@ -923,6 +957,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     ...(extensionTrust === undefined ? {} : { extensionTrust }),
     ...(packageArgs === undefined ? {} : { packageArgs }),
     ...(peerArgs === undefined ? {} : { peerArgs }),
+    ...(compactArgs === undefined ? {} : { compactArgs }),
     ...((command === "extension.inspect" || command === "extension.trust") &&
     parsed.path !== undefined
       ? { extensionPath: parsed.path }

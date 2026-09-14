@@ -759,6 +759,20 @@ describe("composeProductShellAttachments", () => {
     expect(JSON.stringify(scratchRequests[1])).toContain("scratch://session/");
     const scratchSessionId = scratchAttachments.transcriptFeed.events()[0]?.correlation.sessionId;
     expect(scratchSessionId).toBeDefined();
+    const compactPreview = await attachments.submission.compact?.(
+      null,
+      new AbortController().signal,
+    );
+    expect(compactPreview?.message).toContain("Checkpoint preview:");
+    const compactId = compactPreview?.message.match(/Checkpoint preview: ([a-f0-9-]+)\./u)?.[1];
+    expect(compactId).toBeDefined();
+    const compactApplied = await attachments.submission.compact?.(
+      `apply ${compactId}`,
+      new AbortController().signal,
+    );
+    expect(compactApplied?.message).toContain("Checkpoint applied:");
+    expect(fixture.captures).toBe(1);
+    expect(fixture.requests).toHaveLength(2);
     await durable.close();
 
     const reopened = await openProductArtifactSession(services);
@@ -772,7 +786,13 @@ describe("composeProductShellAttachments", () => {
     );
     expect(replayed.ok).toBe(true);
     if (replayed.ok) {
-      expect(replayed.value.map((event) => event.kind)).toEqual(LIVE_TURN_MATRIX_EVENT_KINDS);
+      expect(
+        replayed.value
+          .filter(
+            (event) => event.kind !== "history.recorded" || event.payload.type !== "checkpoint",
+          )
+          .map((event) => event.kind),
+      ).toEqual(LIVE_TURN_MATRIX_EVENT_KINDS);
       const completed = replayed.value.find(
         (event) => event.kind === "capability.invocation.completed",
       );

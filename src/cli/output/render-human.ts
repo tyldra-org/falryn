@@ -1,3 +1,4 @@
+import { checkpointMessage } from "../../application/compression/checkpoint-request.ts";
 import { extensionCatalogLines } from "../../application/extensions/catalog-report.ts";
 import { packageInspectionLines } from "../../application/extensions/inspection-report.ts";
 import { modelSettingsLines } from "../../application/providers/model-settings-format.ts";
@@ -471,6 +472,11 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
         lines: result.payload === null ? [] : modelSettingsLines(result.payload).map(safe),
         diagnostics: [],
       };
+    case "compact":
+      return {
+        lines: result.payload === null ? [] : [safe(checkpointMessage(result.payload))],
+        diagnostics: [],
+      };
     case "provider":
       return renderProviderConnections(session, result.payload);
     case "package":
@@ -604,6 +610,8 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "extension.scope":
     case "package":
     case "peer":
+      return [];
+    case "compact":
       return [];
     default:
       return assertNever(result, "unhandled command result");

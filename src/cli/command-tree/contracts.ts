@@ -214,6 +214,7 @@ export type Invocation =
       readonly extensionCatalogArgs?: import("../commands/extension-catalog.ts").ExtensionCatalogArguments;
       readonly packageArgs?: import("../commands/package.ts").PackageArguments;
       readonly peerArgs?: import("../commands/peer.ts").PeerArguments;
+      readonly compactArgs?: import("../commands/compact.ts").CompactArguments;
       readonly extensionTrust?: import("../../application/extensions/package-trust.ts").TrustRequest;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */

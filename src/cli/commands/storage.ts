@@ -1,8 +1,10 @@
-/** Read-only CLI opening boundaries for artifact and session storage. */
+/** CLI storage boundaries; artifact writes explicitly acquire the existing run owner. */
+import { randomUUID } from "node:crypto";
 
 import { createArtifactReader } from "../../application/artifacts/index.ts";
 import { fromSqliteStoreError, fromUnknown } from "../../application/diagnostics/index.ts";
 import {
+  beginRun,
   createArtifactProvenanceRepository,
   createArtifactRepository,
   createArtifactStore,
@@ -33,12 +35,14 @@ type OpenedArtifactStore =
       readonly provenance: ReturnType<typeof createArtifactProvenanceRepository>;
       readonly reader: ReturnType<typeof createArtifactReader>;
       readonly artifacts: ReturnType<typeof createArtifactStore>;
+      close(): Promise<void>;
     }
   | { readonly ok: false; readonly errors: readonly FalrynError[] };
 
 export async function openArtifactStore(
   services: ServiceProvider,
   signal: AbortSignal | undefined,
+  mode: "read" | "write" = "read",
 ): Promise<OpenedArtifactStore> {
   const { localData, clock } = services();
   const inspections = await localData.inspectRoots();
@@ -102,7 +106,25 @@ export async function openArtifactStore(
       errors: [fromSqliteStoreError(opened.error, { operation: "open local database" })],
     };
   }
-  const repository = createArtifactRepository(opened.value, runId.from("cli-artifact-read"));
+  const writer =
+    mode === "write"
+      ? beginRun({ store: opened.value, clock, runId: runId.from(`cli-artifact-${randomUUID()}`) })
+      : null;
+  if (writer && !writer.ok) {
+    await opened.value.close();
+    return {
+      ok: false,
+      errors: [
+        fromUnknown(new Error("artifact writer run unavailable"), {
+          operation: "open artifact writer",
+        }),
+      ],
+    };
+  }
+  const repository = createArtifactRepository(
+    opened.value,
+    writer?.ok ? writer.value.record.runId : runId.from("cli-artifact-read"),
+  );
   const artifactStore = createArtifactStore({
     repository,
     blobs: createHostBlobStore({ artifactsRoot, temporaryRoot }),
@@ -117,6 +139,11 @@ export async function openArtifactStore(
     provenance: createArtifactProvenanceRepository(opened.value),
     reader: createArtifactReader(artifactStore),
     artifacts: artifactStore,
+    async close() {
+      await artifactStore.quiesce();
+      if (writer?.ok) writer.value.end();
+      await opened.value.close();
+    },
   };
 }
 

@@ -10,6 +10,7 @@
  * it into text.
  */
 
+import type { CheckpointOutcome } from "../application/compression/product-checkpoint.ts";
 import type { PackageInspectionReport } from "../application/extensions/inspection-report.ts";
 import type { ModelSettingsResult } from "../application/providers/model-settings.ts";
 import type { PackageReceipt } from "../domain/extensions/lifecycle.ts";
@@ -277,6 +278,8 @@ export function stoppedResult(
       return resultFor<"package", PackageReceipt>("package", null, [], outcome, effect);
     case "peer":
       return resultFor<"peer", PeerPayload>("peer", null, [], outcome, effect);
+    case "compact":
+      return resultFor<"compact", CheckpointOutcome>("compact", null, [], outcome, effect);
     case "model":
       return resultFor<"model", ModelSettingsResult>("model", null, [], outcome, effect);
     case "extension.catalog":
@@ -323,6 +326,7 @@ export function stoppedResult(
  * text rather than a result — dispatch resolves them before any command runs.
  */
 export type RunCommandResult =
+  | CommandResultOf<"compact", CheckpointOutcome>
   | CommandResultOf<"peer", PeerPayload>
   | CommandResultOf<"package", PackageReceipt>
   | Awaited<ReturnType<typeof runConfigShow>>

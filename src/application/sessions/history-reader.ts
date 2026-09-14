@@ -9,7 +9,10 @@ import {
 } from "../orchestration/product-resources.ts";
 import { historyDigest } from "./session-history.ts";
 
-export type { HistoryAvailability, HistoryReadItem } from "../../domain/sessions/history-reader.ts";
+export type {
+  HistoryAvailability,
+  HistoryReadItem,
+} from "../../domain/sessions/history-read-result.ts";
 export function createHistoryReader(
   options: Omit<Parameters<typeof createReader>[0], "digest"> & {
     readonly resources?: ProductTaskResources;

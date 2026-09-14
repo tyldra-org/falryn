@@ -1,10 +1,12 @@
-/** Shell lifetime and cancellation for the shared session export control. */
+/** Shell lifetime and cancellation for admitted session operations. */
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { SessionExportControl } from "../../application/sessions/session-export.ts";
 import type { ShellAction } from "./shell-state.ts";
-export function useSessionExport(
-  control: SessionExportControl | undefined,
+export function useSessionOperation(
+  control:
+    | ((argument: string | null, signal: AbortSignal) => Promise<{ readonly message: string }>)
+    | undefined,
   dispatch: (action: ShellAction) => void,
+  label: string,
 ) {
   const active = useRef<AbortController | null>(null);
   const [pending, setPending] = useState(false);
@@ -19,13 +21,13 @@ export function useSessionExport(
   const run = useCallback(
     (argument: string | null) => {
       if (!control) {
-        dispatch({ kind: "notice", message: "Session export is unavailable in this shell." });
+        dispatch({ kind: "notice", message: `${label} is unavailable in this shell.` });
         return false;
       }
       if (active.current) {
         dispatch({
           kind: "notice",
-          message: "An export is running. Escape requests cancellation.",
+          message: `${label} is running. Escape requests cancellation.`,
         });
         return false;
       }
@@ -34,7 +36,7 @@ export function useSessionExport(
       setPending(true);
       dispatch({ kind: "close-overlay" });
       dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
-      dispatch({ kind: "notice", message: "Preparing session export…" });
+      dispatch({ kind: "notice", message: `Preparing ${label.toLowerCase()}…` });
       void control(argument, controller.signal)
         .then(
           (result) => {
@@ -45,7 +47,7 @@ export function useSessionExport(
             if (active.current === controller)
               dispatch({
                 kind: "notice",
-                message: "Export interrupted; inspect its destination before retrying a write.",
+                message: `${label} interrupted; inspect its receipt before retrying a write.`,
               });
           },
         )
@@ -57,7 +59,7 @@ export function useSessionExport(
         });
       return true;
     },
-    [control, dispatch],
+    [control, dispatch, label],
   );
   const cancel = useCallback(() => {
     if (!active.current) return false;

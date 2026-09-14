@@ -180,6 +180,21 @@ export const historyPayloadSchema = z.discriminatedUnion("type", [
       type: z.literal("checkpoint"),
       checkpointId: identity,
       parentCheckpointId: identity.nullable(),
+      /** Producer v1 receipts; legacy checkpoint records remain readable. */
+      publication: z
+        .object({
+          version: z.literal(1),
+          stage: z.enum(["preview", "applied", "selected"]),
+          candidateId: identity,
+          sourceHead: z.int().positive(),
+          sourceDigest: digest,
+          authorityDigest: digest,
+          sourceRecords: z.int().positive(),
+          coverage: z.literal("projection-records"),
+          expiresAt: z.int().positive(),
+        })
+        .strict()
+        .optional(),
       transform: identity,
       firstSequence: z.int().positive(),
       lastSequence: z.int().positive(),

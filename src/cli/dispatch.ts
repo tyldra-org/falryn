@@ -265,6 +265,7 @@ async function runCommand(
         : { extensionCatalogArgs: invocation.extensionCatalogArgs }),
       ...(invocation.packageArgs === undefined ? {} : { packageArgs: invocation.packageArgs }),
       ...(invocation.peerArgs === undefined ? {} : { peerArgs: invocation.peerArgs }),
+      ...(invocation.compactArgs === undefined ? {} : { compactArgs: invocation.compactArgs }),
       ...(invocation.modelArgs === undefined ? {} : { modelRequest: invocation.modelArgs }),
       ...(invocation.extensionPath === undefined
         ? {}
