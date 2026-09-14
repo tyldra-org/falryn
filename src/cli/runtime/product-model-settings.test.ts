@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createStaticEnvironment } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
-import { roleRouteBaseSchema } from "../../providers/configuration/policy-schema.ts";
+import {
+  EMPTY_MODEL_PREFERENCES,
+  roleRouteBaseSchema,
+} from "../../providers/configuration/policy-schema.ts";
 import { parseInvocation } from "../command-tree.ts";
 import { runConfigSet } from "../commands/config.ts";
 import { runModel } from "../commands/model.ts";
@@ -102,11 +105,133 @@ test("CLI and restarted product settings share atomic configuration, migration r
     const recovery = JSON.parse(await readFile(applied.backup, "utf8"));
     expect(recovery.original.original).toEqual(original);
     const latest = await restarted.execute({ kind: "inspect" });
-    expect(latest.kind === "inspection" && latest.preferences.roles.fast?.use?.memory).toBe("off");
+    expect(
+      latest.kind === "inspection" && latest.preferences.roles.fast?.use?.memory,
+    ).toBeUndefined();
+    expect(recovery.source.text).toBe(authored);
   } finally {
     await rm(home, { recursive: true, force: true });
   }
 });
+
+test.each(["current", "legacy"] as const)(
+  "explicit migration backs up exact %s source bytes and survives restart",
+  async (location) => {
+    const home = await mkdtemp(join(tmpdir(), "falryn-policy-v2-"));
+    try {
+      const services = createServiceProvider(GLOBALS, {
+        home: localPath(home),
+        platform: "darwin",
+        currentDirectory: localPath(home),
+        environment: createStaticEnvironment({ FALRYN_STATE_DIR: join(home, "state") }),
+      });
+      const graph = services();
+      const root = location === "legacy" ? graph.legacyConfigurationRoot : graph.configurationRoot;
+      if (root === null) throw new Error("Missing legacy fixture root");
+      await mkdir(root, { recursive: true });
+      const route = (modelId: string) =>
+        roleRouteBaseSchema.parse({ providerProfileId: "fixture", providerId: "test", modelId });
+      const policy = {
+        ...EMPTY_MODEL_PREFERENCES,
+        schemaVersion: 2,
+        revision: 4,
+        intents: { ...EMPTY_MODEL_PREFERENCES.intents, compression: "fast" },
+        roles: {
+          default: route("main"),
+          fast: {
+            default: route("cheap"),
+            options: { memory: route("memory"), compaction: route("retired") },
+            use: { memory: "off", compaction: "evaluated" },
+          },
+        },
+      };
+      const source = `\uFEFF// authored 🌱\r\n{\r\n "schemaVersion": 1,\r\n "diagnostics": { /* keep */ "level": "info", },\r\n "models": { "policy": ${JSON.stringify(policy)} },\r\n}\r\n`;
+      const settings = join(root, "falryn.jsonc");
+      await writeFile(settings, source);
+      const service = composeProductModelSettings(graph, GLOBALS);
+      const inspected = await service.execute({ kind: "inspect" });
+      expect(inspected.kind).toBe("inspection");
+      if (inspected.kind !== "inspection") throw new Error(JSON.stringify(inspected));
+      expect(inspected.migrationRequired).toBe(true);
+      expect(inspected.preferences.roles.default).toEqual(policy.roles.default);
+      expect(
+        inspected.rows.some(
+          (row) => row.target.kind === "fast" && String(row.target.option) === "compaction",
+        ),
+      ).toBe(false);
+      expect(
+        await service.execute({
+          kind: "edit",
+          edit: { kind: "use", option: "memory", use: "evaluated" },
+          expectedRevision: inspected.fileRevision,
+        }),
+      ).toEqual({ kind: "failed", code: "model-policy-migration-required" });
+      const preview = await service.execute({ kind: "preview-migration" });
+      if (preview.kind !== "preview") throw new Error(JSON.stringify(preview));
+      expect(preview.unresolved).toEqual([]);
+      expect(await readFile(settings, "utf8")).toBe(source);
+      const apply = {
+        kind: "apply-migration",
+        original: preview.original,
+        decisions: preview.decisions,
+        candidate: preview.candidate,
+        expectedRevision: preview.expectedRevision,
+      };
+      expect(await service.execute(apply, AbortSignal.abort())).toEqual({
+        kind: "failed",
+        code: "cancelled",
+      });
+      const write = graph.fileSystem.writeBytes;
+      graph.fileSystem.writeBytes = async (path, bytes, signal) =>
+        String(path).includes("model-policy-backups")
+          ? {
+              ok: false,
+              error: {
+                kind: "filesystem",
+                operation: "write",
+                code: "permission-denied",
+                path,
+              },
+            }
+          : write(path, bytes, signal);
+      expect(await service.execute(apply)).toEqual({ kind: "failed", code: "backup-write-failed" });
+      expect(await readFile(settings, "utf8")).toBe(source);
+      graph.fileSystem.writeBytes = write;
+      const applied = await service.execute(apply);
+      if (applied.kind !== "written" || applied.backup === null)
+        throw new Error(JSON.stringify(applied));
+      const backup = JSON.parse(await readFile(applied.backup, "utf8"));
+      expect(backup.source).toEqual({ path: settings, text: source });
+      expect(Buffer.from(backup.source.text)).toEqual(Buffer.from(source));
+      const saved = await readFile(join(graph.configurationRoot, "falryn.jsonc"), "utf8");
+      expect(saved).toContain("\uFEFF// authored 🌱\r\n");
+      expect(saved).toContain('"diagnostics": { /* keep */ "level": "info", },');
+      expect(saved).not.toContain('"compaction"');
+      const after = await composeProductModelSettings(
+        createServiceProvider(GLOBALS, {
+          home: localPath(home),
+          platform: "darwin",
+          currentDirectory: localPath(home),
+          environment: createStaticEnvironment({ FALRYN_STATE_DIR: join(home, "state") }),
+        })(),
+        GLOBALS,
+      ).execute({ kind: "inspect" });
+      expect(after.kind === "inspection" && after.migrationRequired).toBe(false);
+      expect(after.kind === "inspection" && after.preferences.roles.default).toEqual(
+        policy.roles.default,
+      );
+      expect(after.kind === "inspection" && after.preferences.roles.fast?.options?.memory).toEqual(
+        policy.roles.fast.options.memory,
+      );
+      expect(after.kind === "inspection" && after.preferences.roles.fast?.use).toEqual({
+        memory: "off",
+      });
+      expect(await service.execute(apply)).toEqual({ kind: "failed", code: "stale-settings" });
+    } finally {
+      await rm(home, { recursive: true, force: true });
+    }
+  },
+);
 
 test("a saved model policy keeps its receipt when the subsequent reload fails", async () => {
   const home = await mkdtemp(join(tmpdir(), "falryn-settings-reload-"));

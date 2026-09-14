@@ -46,7 +46,6 @@ export const FAST_OPTIONS = [
   "documents",
   "background-results",
   "memory",
-  "compaction",
   "vision-media",
 ] as const;
 export type FastOption = (typeof FAST_OPTIONS)[number];

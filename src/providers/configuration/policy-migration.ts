@@ -1,67 +1,22 @@
 /** Explicit legacy policy import. Nothing here writes or activates a policy. */
-import { z } from "zod";
 import { DEFAULT_INTENT_ROLE_MAP } from "./policy.ts";
 import {
-  advisorRoleRouteSchema,
+  LEGACY_INTENTS,
+  legacyPolicySchema,
+  previousModelPreferencesSchema,
+  storedModelPreferencesSchema,
+} from "./policy-compatibility.ts";
+import {
+  EMPTY_MODEL_PREFERENCES,
   fastRoleSettingsSchema,
+  MODEL_POLICY_SCHEMA_VERSION,
   type ModelPreferences,
   modelPreferencesSchema,
   roleRouteBaseSchema,
-  subagentRoleSettingsSchema,
-  visionRoleRouteSchema,
-  workflowRoleSettingsSchema,
 } from "./policy-schema.ts";
+import { previewPreviousModelPolicy } from "./policy-v2-migration.ts";
 import { FAST_OPTIONS } from "./roles.ts";
 
-const LEGACY_ROLES = [
-  "default",
-  "compact",
-  "vision",
-  "plan",
-  "advisor",
-  "commit",
-  "fast-read",
-  "fast-edit",
-] as const;
-const LEGACY_INTENTS = [
-  "coding",
-  "read",
-  "toolRouting",
-  "fastEdit",
-  "planning",
-  "deepReview",
-  "verification",
-  "visualUnderstanding",
-  "independentCritique",
-  "compression",
-  "memory",
-] as const;
-const legacyPolicySchema = z.strictObject({
-  schemaVersion: z.literal(1).optional(),
-  revision: z.number().int().nonnegative().optional(),
-  roles: z.strictObject({
-    default: roleRouteBaseSchema,
-    compact: roleRouteBaseSchema
-      .extend({ use: z.enum(["evaluated", "off"]).default("evaluated") })
-      .optional(),
-    "fast-read": roleRouteBaseSchema.optional(),
-    "fast-edit": roleRouteBaseSchema.optional(),
-    commit: roleRouteBaseSchema.optional(),
-    plan: roleRouteBaseSchema.optional(),
-    vision: visionRoleRouteSchema.optional(),
-    advisor: advisorRoleRouteSchema.optional(),
-    // Recognized development shape only; never accepted by the executable codec.
-    fast: fastRoleSettingsSchema
-      .extend({
-        subagents: subagentRoleSettingsSchema.optional(),
-        workflows: workflowRoleSettingsSchema.optional(),
-      })
-      .optional(),
-    subagents: subagentRoleSettingsSchema.optional(),
-    workflows: workflowRoleSettingsSchema.optional(),
-  }),
-  intents: z.partialRecord(z.enum(LEGACY_INTENTS), z.enum(LEGACY_ROLES)).optional(),
-});
 const LEGACY_DEFAULTS = {
   ...DEFAULT_INTENT_ROLE_MAP,
   read: "fast-read",
@@ -92,6 +47,9 @@ export function previewModelPolicyMigration(
   current: ModelPreferences,
   decisions: Readonly<Record<string, MigrationDecision>> = {},
 ): ModelMigrationPreview | { readonly kind: "invalid"; readonly message: string } {
+  const previous = previousModelPreferencesSchema.safeParse(original);
+  if (previous.success)
+    return previewPreviousModelPolicy(original, previous.data, current, decisions);
   const parsed = legacyPolicySchema.safeParse(original);
   if (!parsed.success)
     return {
@@ -126,7 +84,7 @@ export function previewModelPolicyMigration(
     after: current.roles.default ?? null,
     decision: null,
   });
-  for (const name of ["fast-read", "fast-edit", "commit"] as const) {
+  for (const name of ["compact", "fast-read", "fast-edit", "commit"] as const) {
     if (legacy.roles[name] !== undefined)
       changes.push({
         path: `roles.${name}`,
@@ -154,21 +112,21 @@ export function previewModelPolicyMigration(
   const oldIntents = { ...LEGACY_DEFAULTS, ...legacy.intents };
   for (const intent of LEGACY_INTENTS) {
     const role = oldIntents[intent];
-    if (intent === "compression" || intent === "memory") {
-      const option = intent === "compression" ? "compaction" : "memory";
-      if (
-        legacy.roles.compact === undefined &&
-        legacy.intents?.[intent] === undefined &&
-        (legacy.roles.fast?.options?.[option] !== undefined ||
-          legacy.roles.fast?.use?.[option] !== undefined)
-      )
-        continue;
+    if (intent === "compression" || (intent === "memory" && role === "compact")) {
+      changes.push({
+        path: `intents.${intent}`,
+        kind: "normalized",
+        before: role,
+        after: DEFAULT_INTENT_ROLE_MAP[intent],
+        decision: null,
+      });
+      continue;
+    }
+    if (intent === "memory") {
+      const option = "memory";
       const assigned = legacy.roles[role];
       const route =
-        assigned ??
-        (role === "compact" || role === "vision" || role === "advisor"
-          ? undefined
-          : legacy.roles.default);
+        assigned ?? (role === "vision" || role === "advisor" ? undefined : legacy.roles.default);
       const use =
         route === undefined || ("use" in route && route.use === "off") ? "off" : "evaluated";
       const plainRoute =
@@ -181,6 +139,7 @@ export function previewModelPolicyMigration(
               reasoning: route.reasoning,
               fallbacks: route.fallbacks,
               budgets: route.budgets,
+              processing: route.processing,
             });
       candidate.roles.fast ??= {};
       candidate.roles.fast.options ??= {};
@@ -248,18 +207,28 @@ export function previewModelPolicyMigration(
     });
   }
   if (legacy.roles.fast !== undefined) {
+    for (const [path, value] of [
+      ["roles.fast.options.compaction", legacy.roles.fast.options?.compaction],
+      ["roles.fast.use.compaction", legacy.roles.fast.use?.compaction],
+    ] as const) {
+      if (value !== undefined)
+        changes.push({ path, kind: "retired", before: value, after: null, decision: null });
+    }
     move("roles.fast.default", legacy.roles.fast.default, candidate.roles.fast?.default, () => {
       candidate.roles.fast ??= {};
       candidate.roles.fast.default = legacy.roles.fast?.default;
     });
+    const useOptions = fastRoleSettingsSchema.shape.use.unwrap().keyof().options;
     for (const option of FAST_OPTIONS) {
       const route = legacy.roles.fast.options?.[option];
-      const helper = option === "memory" || option === "compaction";
-      const use = helper ? legacy.roles.fast.use?.[option] : undefined;
+      const useOption = useOptions.find((key) => key === option);
+      const helper = useOption !== undefined;
+      const use = useOption === undefined ? undefined : legacy.roles.fast.use?.[useOption];
       if (route === undefined && use === undefined) continue;
       const path = `roles.fast.options.${option}`;
       const existingRoute = candidate.roles.fast?.options?.[option];
-      const existingUse = helper ? candidate.roles.fast?.use?.[option] : undefined;
+      const existingUse =
+        useOption === undefined ? undefined : candidate.roles.fast?.use?.[useOption];
       const incoming = helper ? { route: route ?? null, use: use ?? "off" } : route;
       const existing = helper
         ? existingRoute === undefined && existingUse === undefined
@@ -271,9 +240,9 @@ export function previewModelPolicyMigration(
         candidate.roles.fast.options ??= {};
         if (route === undefined) delete candidate.roles.fast.options[option];
         else candidate.roles.fast.options[option] = route;
-        if (helper) {
+        if (useOption !== undefined) {
           candidate.roles.fast.use ??= {};
-          candidate.roles.fast.use[option] = use ?? "off";
+          candidate.roles.fast.use[useOption] = use ?? "off";
         }
       });
     }
@@ -293,4 +262,34 @@ export function previewModelPolicyMigration(
     unresolved: [...new Set(unresolved)],
     decisions: { ...decisions },
   };
+}
+
+/** Safe read projection only. Retired selections never execute, and source bytes stay authoritative. */
+export function readStoredModelPreferences(input: unknown): ModelPreferences {
+  const current = modelPreferencesSchema.safeParse(input);
+  if (current.success) return current.data;
+  const previous = previousModelPreferencesSchema.safeParse(input);
+  if (previous.success) {
+    const { roles } = previous.data;
+    const { compaction: _route, ...options } = roles.fast?.options ?? {};
+    const { compaction: _use, ...use } = roles.fast?.use ?? {};
+    return modelPreferencesSchema.parse({
+      ...previous.data,
+      schemaVersion: MODEL_POLICY_SCHEMA_VERSION,
+      intents: { ...previous.data.intents, compression: "default" },
+      roles: {
+        ...roles,
+        fast: roles.fast === undefined ? undefined : { ...roles.fast, options, use },
+      },
+    });
+  }
+  const stored = storedModelPreferencesSchema.parse(input);
+  const seed = modelPreferencesSchema.parse({
+    ...EMPTY_MODEL_PREFERENCES,
+    revision: stored.revision ?? 0,
+    roles: { default: stored.roles.default },
+  });
+  const preview = previewModelPolicyMigration(stored, seed);
+  if (preview.kind !== "preview") throw new Error("Model policy migration is unavailable.");
+  return preview.candidate;
 }

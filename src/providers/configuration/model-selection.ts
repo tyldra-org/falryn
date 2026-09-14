@@ -168,10 +168,7 @@ export function resolveModelSelection(
         availability === "available"
           ? null
           : "The workload owner has not supplied an available runner.";
-      if (
-        (target.option === "memory" || target.option === "compaction") &&
-        roles.fast?.use?.[target.option] !== "evaluated"
-      ) {
+      if (target.option === "memory" && roles.fast?.use?.[target.option] !== "evaluated") {
         availability = "disabled";
         reason = "Model-assisted use is off; a route assignment does not enable it.";
       }

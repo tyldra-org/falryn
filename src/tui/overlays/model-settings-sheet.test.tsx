@@ -97,7 +97,9 @@ test("terminal configure writes one route using the same revision and codec as h
   await shell.frame("subagents");
   shell.setup.mockInput.pressArrow("down");
   shell.setup.mockInput.pressEnter();
-  await shell.frame("research");
+  const fastOptions = await shell.frame("research");
+  expect(fastOptions).toContain("memory");
+  expect(fastOptions).not.toContain("compaction");
   shell.setup.mockInput.pressEnter();
   await shell.frame("Configure model");
   shell.setup.mockInput.pressEnter();

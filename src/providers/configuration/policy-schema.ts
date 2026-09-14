@@ -51,7 +51,7 @@ export const advisorRoleRouteSchema = roleRouteBaseSchema.extend({
   use: z.enum(["explicit", "evaluated", "off"]).default("explicit"),
 });
 
-export const MODEL_POLICY_SCHEMA_VERSION = 2;
+export const MODEL_POLICY_SCHEMA_VERSION = 3;
 export const MAX_MODEL_DEFINITIONS = 1_000;
 export const MAX_WORKFLOW_MODEL_STEPS = 256;
 export const contributionIdentitySchema = z
@@ -98,7 +98,6 @@ export const fastRoleSettingsSchema = z.strictObject({
   use: z
     .strictObject({
       memory: z.enum(["evaluated", "off"]).optional(),
-      compaction: z.enum(["evaluated", "off"]).optional(),
     })
     .optional(),
 });
@@ -148,7 +147,7 @@ export const intentMapSchema = z
     verification: z.enum(MODEL_ROLES),
     visualUnderstanding: z.enum(MODEL_ROLES),
     independentCritique: z.enum(MODEL_ROLES),
-    compression: z.literal("fast"),
+    compression: z.literal("default"),
     memory: z.literal("fast"),
   })
   .default({ ...DEFAULT_INTENT_ROLE_MAP });

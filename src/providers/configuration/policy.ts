@@ -62,7 +62,7 @@ export const DEFAULT_INTENT_ROLE_MAP = {
   verification: "default",
   visualUnderstanding: "vision",
   independentCritique: "advisor",
-  compression: "fast",
+  compression: "default",
   memory: "fast",
 } as const satisfies IntentRoleMap;
 
@@ -89,14 +89,20 @@ export function isCompleteIntentMap(value: unknown): value is IntentRoleMap {
 }
 
 export function resolveIntentRole(policy: ModelPolicy, intent: WorkIntent): ModelRole {
-  if (intent === "coding" || intent === "read" || intent === "toolRouting" || intent === "edit")
+  if (
+    intent === "coding" ||
+    intent === "read" ||
+    intent === "toolRouting" ||
+    intent === "edit" ||
+    intent === "compression"
+  )
     return "default";
   return policy.intents[intent];
 }
 
 /** A Fast option is explicit operation context, never inferred from a model name. */
 export function fastOptionForIntent(intent: WorkIntent | null): FastOption | undefined {
-  return intent === "compression" ? "compaction" : intent === "memory" ? "memory" : undefined;
+  return intent === "memory" ? "memory" : undefined;
 }
 
 export function roleRouteFor(

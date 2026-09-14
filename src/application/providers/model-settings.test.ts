@@ -231,7 +231,7 @@ test("migration preview/cancel/failure/restart preserve settings and backup prec
   f.failWrite(false);
   const restarted = createModelSettingsService(f.store);
   expect((await restarted.execute(apply)).kind).toBe("written");
-  expect(f.get().roles.fast?.use?.compaction).toBe("off");
+  expect(f.get().roles.fast).toBeUndefined();
   expect(await restarted.execute(apply)).toEqual({ kind: "failed", code: "stale-settings" });
   expect(f.backups.length).toBe(2);
 });
@@ -242,7 +242,7 @@ test("changed migration candidates and clear previews cannot overwrite a later r
     await f.service.execute({
       kind: "apply-migration",
       original,
-      candidate: EMPTY_MODEL_PREFERENCES,
+      candidate: { ...EMPTY_MODEL_PREFERENCES, roles: { fast: { default: route("tampered") } } },
       decisions: {},
       expectedRevision: null,
     }),

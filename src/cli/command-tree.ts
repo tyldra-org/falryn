@@ -386,7 +386,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             .option("input", {
               type: "string",
               describe:
-                "JSON file containing a shared model settings request; mutations require the inspected revision",
+                "JSON settings request; migrate previews stored legacy policy when original is omitted; mutations require the inspected revision",
             }),
         () => {},
       )

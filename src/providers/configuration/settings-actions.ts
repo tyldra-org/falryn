@@ -41,7 +41,7 @@ export const modelSettingsEditSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     kind: z.literal("use"),
-    option: z.enum(["memory", "compaction"]),
+    option: z.literal("memory"),
     use: z.enum(["evaluated", "off"]),
   }),
 ]);

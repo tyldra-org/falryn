@@ -1180,8 +1180,10 @@ active profile in the status line and emits a transcript notice when it changes.
 
 The public model roles are `default`, `fast`, `subagents`, `workflows`, `vision`,
 `plan`, and `advisor`. Ordinary coding, reading, tool selection, editing and
-commit work stays on the captured main model. Fast has independent research,
-documents, background-results, memory, compaction and vision-media options.
+commit work stays on the captured main model. Admitted compression uses the same
+main route, thinking, processing and cumulative limits; deterministic compaction
+makes no model call. Fast has independent research, documents,
+background-results, memory and vision-media options.
 Subagents has Default and Small/Medium/Big presets; Workflows has its own Default.
 Neither inherits Fast. The agent catalog supplies six built-ins and configured
 user definitions to Advanced. Validated global and reviewed project workflow files
@@ -1189,16 +1191,22 @@ supply workflow and stable-step entries; retained missing entries stay inspectab
 owner-supplied definitions, stable node keys, and revision metadata, distinguishes
 model nodes from agent nodes, and gives deterministic nodes no model.
 
-`models.policy` stores schema version 2 in user or profile configuration. A
+`models.policy` stores schema version 3 in user or profile configuration. A
 profile replaces the complete user value. Project, environment and generic CLI
 overrides cannot set it. Reset removes one preference, preserving explicit
 descendants. Separate clear and legacy-import actions require a preview;
 import retains the original and previous destination in a recoverable local copy
-before atomic replacement. Legacy compact routes migrate independently to memory
-and compaction with explicit conflict decisions and preserved use; retired
-read/edit/commit routes never replace main. Historical receipt roles remain
-replay data. Route assignment does not enable model-assisted memory/compaction;
-their evaluated/off policy and existing workload admission remain separate.
+before atomic replacement. Schema-2 Fast compaction and legacy standalone compact
+preferences are retired without copying them into memory or Fast Default. Old
+policies remain inspectable with a migration-required diagnostic and an inert
+projection that never executes their retired route; ordinary settings edits
+require explicit migration first. Preview includes the source revision and retired
+fields. Apply preserves exact source text (including BOM, comments and line endings),
+original assignments and the previous destination in the state root's
+`model-policy-backups` directory before writing. Main and unrelated memory
+preferences remain unchanged. Historical receipt roles remain replay data.
+Memory's evaluated/off policy and admission remain separate. This correction
+does not enable automatic history summarization or promise lossless context.
 
 Thinking follows the winning model route and omitted thinking uses that model's
 provider default. Unsupported explicit thinking fails visibly. Reasoning remains

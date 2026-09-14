@@ -10,6 +10,7 @@ import {
   resolveModelSelection,
 } from "../../providers/configuration/model-selection.ts";
 import type { RoleRoute } from "../../providers/configuration/policy.ts";
+import { storedModelPreferencesSchema } from "../../providers/configuration/policy-compatibility.ts";
 import { previewModelPolicyMigration } from "../../providers/configuration/policy-migration.ts";
 import {
   EMPTY_MODEL_PREFERENCES,
@@ -47,7 +48,7 @@ export const modelSettingsRequestSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     kind: z.literal("preview-migration"),
-    original: z.unknown(),
+    original: z.unknown().optional(),
     decisions: decisionsSchema.optional(),
   }),
   z.strictObject({
@@ -67,6 +68,8 @@ export const modelSettingsRequestSchema = z.discriminatedUnion("kind", [
 export type ModelSettingsRequest = z.infer<typeof modelSettingsRequestSchema>;
 export type ModelSettingsSnapshot = {
   readonly preferences: ModelPreferences;
+  /** A recognized older source may be inspected, but only explicit migration can replace it. */
+  readonly legacyPolicy?: unknown;
   readonly fileRevision: string | null;
   readonly generation: number;
   readonly scope: "user" | "profile";
@@ -163,6 +166,7 @@ export function createModelSettingsService(store: ModelSettingsStore) {
         }
         return {
           kind: "inspection" as const,
+          migrationRequired: snapshot.legacyPolicy !== undefined,
           preferences,
           fileRevision: snapshot.fileRevision,
           scope: snapshot.scope,
@@ -171,8 +175,18 @@ export function createModelSettingsService(store: ModelSettingsStore) {
           rows,
         };
       }
-      if (request.kind === "preview-migration")
-        return previewModelPolicyMigration(request.original, preferences, request.decisions);
+      if (request.kind === "preview-migration") {
+        const preview = previewModelPolicyMigration(
+          request.original ?? snapshot.legacyPolicy,
+          preferences,
+          request.decisions,
+        );
+        return preview.kind === "preview"
+          ? { ...preview, expectedRevision: snapshot.fileRevision }
+          : preview;
+      }
+      if (snapshot.legacyPolicy !== undefined && request.kind !== "apply-migration")
+        return failure("model-policy-migration-required");
       const paths = [
         ...(preferences.processing === undefined ? [] : ["processing"]),
         ...overridePaths(preferences.roles),
@@ -245,6 +259,14 @@ export function createModelSettingsService(store: ModelSettingsStore) {
           return failure("stale-clear-preview");
         candidate = { ...EMPTY_MODEL_PREFERENCES, revision: preferences.revision };
       } else {
+        if (snapshot.legacyPolicy !== undefined) {
+          const original = storedModelPreferencesSchema.safeParse(request.original);
+          if (
+            !original.success ||
+            JSON.stringify(original.data) !== JSON.stringify(snapshot.legacyPolicy)
+          )
+            return failure("stale-migration-source");
+        }
         const preview = previewModelPolicyMigration(
           request.original,
           preferences,

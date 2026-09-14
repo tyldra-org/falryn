@@ -9,6 +9,23 @@ import { REDACTED } from "../diagnostics/redaction.ts";
 import { compactToEvidence, createCompactLanes } from "./compact-lanes.ts";
 
 describe("createCompactLanes", () => {
+  test("deterministic compaction and history checkpointing make zero model calls", () => {
+    let calls = 0;
+    const lanes = createCompactLanes({
+      compact() {
+        calls += 1;
+        throw new Error("Unexpected inference");
+      },
+    });
+    expect(lanes.reduce({ text: "stable source", compactUse: "off" }).ok).toBe(true);
+    expect(
+      lanes.checkpoint({
+        checkpointId: "deterministic",
+        items: [{ id: "source", kind: "user-commitment", text: "Keep the constraint." }],
+      }).ok,
+    ).toBe(true);
+    expect(calls).toBe(0);
+  });
   test("redacts secret-shaped compact projections and never claims exact-source", () => {
     const lanes = createCompactLanes({
       compact() {

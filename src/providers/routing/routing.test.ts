@@ -63,7 +63,7 @@ function samplePolicy(overrides?: {
       },
       fast: {
         default: { providerProfileId: "primary-profile", providerId: primary, modelId: fast },
-        use: { memory: "evaluated", compaction: "evaluated" },
+        use: { memory: "evaluated" },
       },
       plan: {
         providerProfileId: "primary-profile",
@@ -885,7 +885,7 @@ describe("specialized role support", () => {
     });
   });
 
-  test("Fast evaluated use selects for compression and memory", () => {
+  test("compression uses main while evaluated memory retains Fast", () => {
     for (const intent of ["compression", "memory"] as const) {
       const outcome = resolveModelRoute({
         policy: samplePolicy(),
@@ -896,12 +896,12 @@ describe("specialized role support", () => {
       if (outcome.kind !== "selected") {
         return;
       }
-      expect(outcome.receipt.role).toBe("fast");
-      expect(outcome.receipt.modelId).toBe(fast);
+      expect(outcome.receipt.role).toBe(intent === "compression" ? "default" : "fast");
+      expect(outcome.receipt.modelId).toBe(intent === "compression" ? deep : fast);
     }
   });
 
-  test("Fast compaction use off fails closed", () => {
+  test("retired Fast compaction use is rejected by the current schema", () => {
     const parsed = parseModelPolicy({
       roles: {
         default: { providerProfileId: "primary-profile", providerId: primary, modelId: deep },
@@ -911,19 +911,41 @@ describe("specialized role support", () => {
         },
       },
     });
-    expect(parsed.ok).toBe(true);
-    if (!parsed.ok) {
-      return;
-    }
-    const outcome = resolveModelRoute({
-      policy: parsed.value,
+    expect(parsed.ok).toBe(false);
+  });
+
+  test("compression cannot redirect to Fast or vision and retains exact main route controls", () => {
+    const policy = samplePolicy();
+    const selected = resolveModelRoute({
+      policy,
       catalogs: catalogs(),
       intent: "compression",
-    });
-    expect(outcome).toEqual({
-      kind: "role-disabled",
       role: "fast",
-      intent: "compression",
+      explicit: { providerProfileId: "primary-profile", providerId: primary, modelId: fast },
+    });
+    expect(selected.kind).toBe("selected");
+    if (selected.kind !== "selected") throw new Error(selected.kind);
+    expect(selected.receipt).toMatchObject({
+      role: "default",
+      modelId: deep,
+      reasoning: "balanced",
+      budgets: { attempts: 2 },
+    });
+    for (const required of [
+      { minContextTokens: 999_999_999 },
+      { modalities: ["audio"] as const },
+    ]) {
+      const refused = resolveModelRoute({
+        policy,
+        catalogs: catalogs(),
+        intent: "compression",
+        required,
+      });
+      expect(refused).toMatchObject({ kind: "no-eligible-route", role: "default" });
+    }
+    expect(resolveModelRoute({ policy, catalogs: [], intent: "compression" })).toMatchObject({
+      kind: "no-eligible-route",
+      role: "default",
     });
   });
 

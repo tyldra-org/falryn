@@ -66,7 +66,7 @@ function samplePolicy(): ModelPolicy {
           modelId: fast,
           reasoning: "minimal",
         },
-        use: { memory: "evaluated", compaction: "evaluated" },
+        use: { memory: "evaluated" },
       },
       plan: {
         providerProfileId: "primary-profile",

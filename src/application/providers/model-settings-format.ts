@@ -42,6 +42,11 @@ export function modelSettingsLines(result: ModelSettingsResult): readonly string
     case "inspection":
       return [
         `Model roles · ${result.scope} · policy revision ${result.preferences.revision}`,
+        ...(result.migrationRequired
+          ? [
+              "Legacy model policy: preview and apply migration before changing preferences. Retired compaction routes are inactive.",
+            ]
+          : []),
         `File revision: ${result.fileRevision ?? "absent"}`,
         ...result.rows.flatMap(({ target, selection, compatibility, definition }) => {
           const label =
