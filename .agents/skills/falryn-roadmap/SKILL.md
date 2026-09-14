@@ -15,11 +15,12 @@ Accept `Next - Target: Falryn Roadmap`, scoped Next targets and unambiguous
 requests to choose the next work. Keep Next read-only. A greeting, explanation,
 PR status question or request to continue known work does not select new work.
 
-This same procedure supplies the recommendation required by
-[falryn-work's completion rules](../falryn-work/SKILL.md#choose-the-next-prompt),
-including after completed Roadmap maintenance. Run the selector after the
-required audits; do not stop at an audit result or ask the user to invoke Next
-again. Selection and its live recheck recommend work without starting it.
+Use this procedure for explicit Next requests and the selection needed by
+[falryn-work's recommendation policy](../falryn-work/SKILL.md#choose-the-next-prompt)
+after completed delivery or Roadmap maintenance. This skill establishes selection
+evidence; falryn-work owns the choice of follow-up command. Complete an explicit
+Next request when access and evidence permit, rather than returning the same
+request without performing its selection.
 
 1. Establish authenticated access to Project 1 and both canonical repositories
    under [audits](references/audits.md). Resolve the current gh account.
@@ -53,13 +54,16 @@ that catalog interval; it does not deliver the selector's single recommendation.
 The selector returns `candidate`, `decision-required`, `none` or `audit-failed`.
 Ready and Needs Planning candidates both enter Deliver. Needs Decision stops at
 its named human owner; do not bypass it for later Ready work. No owned unblocked
-candidate means no recommendation. Explain the returned skipped counts or scoped
-blockers without dumping the backlog. Out-of-scope prerequisites need explicit
-resolution, not a silently expanded target.
+candidate means there is no eligible delivery target in that captured scope,
+not necessarily that the backlog is empty. Explain skipped counts, scoped
+blockers, missing evidence or the named decision without dumping the backlog.
+Out-of-scope prerequisites need explicit resolution, not a silently expanded target.
 
-Keep the snapshot generation in the private report. End with one copy-ready
-`Suggested next prompt: Deliver - Target: ...`, or `Suggested next prompt: none`
-and the actual prerequisite. The selector proves captured state only, never live
+Keep the snapshot generation in the private report and apply
+[the recommendation policy](../falryn-work/SKILL.md#choose-the-next-prompt) to the
+observed result. A verified candidate normally yields its concrete Deliver prompt;
+uncertain selection, a useful manual recovery step and no actionable continuation
+remain distinct outcomes. The selector proves captured state only, never live
 readiness, permission to act or completed acceptance.
 
 ## Continue known work
