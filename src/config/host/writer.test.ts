@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 
 import { createRuntimeRedactor } from "../../application/diagnostics/index.ts";
 import { err } from "../../domain/foundation/index.ts";
@@ -7,11 +8,11 @@ import {
   type InMemoryNode,
   localPath,
 } from "../../domain/workspace/index.ts";
-import { enumKey } from "../document/declaration.ts";
+import { enumKey, objectKey } from "../document/declaration.ts";
 import { V0_1_CONFIGURATION_KEYS, V0_1_CROSS_FIELD_RULES } from "../resolution/keys.ts";
 import { createConfigurationRegistry } from "../resolution/registry.ts";
 import { CONFIGURATION_FILE_NAME } from "../resolution/sources.ts";
-import { writeConfigurationKey } from "./writer.ts";
+import { writeConfigurationKey, writeConfigurationValue } from "./writer.ts";
 
 const CONFIG_ROOT = localPath("/d/config");
 const LEGACY_CONFIG_ROOT = localPath("/d/legacy-config");
@@ -332,6 +333,72 @@ describe("writeConfigurationKey", () => {
 });
 
 describe("writeConfigurationKey with fixture registry", () => {
+  test("a route reorder and a provider edit share one revision without losing comments", async () => {
+    const registry = createConfigurationRegistry({
+      declarations: [
+        objectKey({
+          path: "fixture.routing",
+          summary: "fixture routing",
+          objectSchema: z.strictObject({ candidates: z.array(z.string()) }),
+          defaultValue: { candidates: [] },
+          scopes: ["user"],
+          applicationClass: "live",
+        }),
+        enumKey({
+          path: "fixture.connection",
+          summary: "fixture connection",
+          allowed: ["alpha", "beta"],
+          defaultValue: "alpha",
+          scopes: ["user"],
+          applicationClass: "live",
+        }),
+      ],
+      redactor: createRuntimeRedactor(),
+    });
+    const source =
+      '{\n  "schemaVersion": 1,\n  "fixture": {\n    "routing": {"candidates": [\n      "first", // candidate\n      "second",\n      "unrelated", // untouched\n    ]},\n    "connection": "alpha" // account\n  }\n}\n';
+    const { fileSystem } = harness({ [USER_FILE]: file(source) });
+    const original = await fileSystem.stat(localPath(USER_FILE));
+    if (!original.ok || original.value === null) throw new Error("expected source");
+    const reordered = await writeConfigurationValue(registry, fileSystem, {
+      ...REQUEST,
+      keyPath: "fixture.routing",
+      value: { candidates: ["second", "first", "unrelated"] },
+      expectedRevision: original.value.revision,
+    });
+    if (reordered.kind !== "written") throw new Error("expected reorder");
+    const expected = source
+      .replace('"first", // candidate', '"second", // candidate')
+      .replace('"second",\n', '"first",\n');
+    expect(await fileSystem.readText(localPath(USER_FILE), 1024)).toEqual({
+      ok: true,
+      value: expected,
+    });
+    expect(
+      await writeConfigurationKey(registry, fileSystem, {
+        ...REQUEST,
+        keyPath: "fixture.connection",
+        rawValue: "beta",
+        expectedRevision: original.value.revision,
+      }),
+    ).toMatchObject({ kind: "stale-write" });
+    expect(await fileSystem.readText(localPath(USER_FILE), 1024)).toEqual({
+      ok: true,
+      value: expected,
+    });
+    expect(
+      await writeConfigurationKey(registry, fileSystem, {
+        ...REQUEST,
+        keyPath: "fixture.connection",
+        rawValue: "beta",
+        expectedRevision: reordered.revision,
+      }),
+    ).toMatchObject({ kind: "written" });
+    expect(await fileSystem.readText(localPath(USER_FILE), 1024)).toEqual({
+      ok: true,
+      value: expected.replace('"alpha"', '"beta"'),
+    });
+  });
   test("refuses map keys that cannot be set from a string", async () => {
     const declaration = enumKey({
       path: "fixture.mode",

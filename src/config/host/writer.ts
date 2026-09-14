@@ -179,7 +179,11 @@ export async function writeConfigurationKey(
     return writeValueAtPath(registry, fileSystem, rooted.value, path.value, undefined, signal);
   }
 
-  const coerced = readOverrideLayer(registry, { [request.keyPath]: request.rawValue });
+  const coerced = readOverrideLayer(
+    registry,
+    { [request.keyPath]: request.rawValue },
+    request.scope,
+  );
   if (coerced.issues.some((issue) => issue.severity === "error")) {
     return { kind: "rejected", issues: coerced.issues };
   }
