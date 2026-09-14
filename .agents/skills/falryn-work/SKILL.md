@@ -71,32 +71,39 @@ proof remains incomplete under either command.
 
 ### Choose the next prompt
 
-Keep a selected continuation ahead of new work. Plan, Implement, Review and
-Verify suggest the next permitted action on the same issue or PR. Prefer the
-existing PR when continuing it. Unresolved delivery or reconciliation stays on
-its actual target; actionable review findings can justify a Deliver suggestion
-without authorizing repairs now. A manual stopping point is not backlog completion.
+Recommend the most useful remaining action, not a fixed command sequence.
+Unfinished selected work keeps its issue or existing PR unless the user redirects;
+an unrelated open issue does not replace missing acceptance or reconciliation.
+Honor manual stopping points without requiring every later manual stage.
 
-After a maintainer Deliver, Merge or equivalent delivery is complete, or after
-completed Roadmap maintenance with no selected continuation, run
-[falryn-roadmap selection](../falryn-roadmap/SKILL.md#select-work-with-next)
-before the final report. This is read-only recommendation work, not authority
-to start the next delivery. Reuse still-valid audit evidence under that skill's
-refresh rules, run its selector and recheck the candidate live. A successful
-audit alone does not select an issue. Preserve an explicit selection scope;
-otherwise use the generated broad order rather than inferring a parent chain.
+After completed maintainer delivery or Roadmap maintenance, look for eligible
+work through [falryn-roadmap](../falryn-roadmap/SKILL.md#select-work-with-next).
+Reuse valid audits, resolve missing selection evidence when available, run the
+selector and recheck a candidate live before recommending it. A large backlog
+is a reason to seek actionable work, not proof that every issue is eligible.
+Preserve explicit selection scope; otherwise use the generated broad order.
 
-End with one copy-ready `Suggested next prompt: Deliver - Target: Issue #N`
-or its verified PR/Docs equivalent. For a selected continuation, use its actual
-command and target instead. If selection fails, needs a human decision, lacks
-required access or has no eligible candidate, report `Suggested next prompt: none`
-and the concrete reason. Keep that limitation separate from the completed work.
-Do not substitute `Next - Target: Falryn Roadmap` for performing selection.
+Choose one copy-ready `Suggested next prompt: ...` from the evidence:
 
-An ordinary answer needs neither a Roadmap audit nor a command footer. Public
-contributions outside the maintainer workflow do not acquire private selection
-requirements. Honor an explicit request to omit recommendations or stop without
-selecting more work.
+| What is actionable | Recommendation |
+| --- | --- |
+| A clear implementation or delivery outcome, current or newly selected | Prefer `Deliver - Target: Issue #N` or the verified PR/Docs equivalent |
+| New-work selection remains uncertain and a focused selection pass can resolve it | `Next - Target: Falryn Roadmap`, or the explicit scoped Next target; explain what needs checking |
+| A bounded manual action is the useful remaining step, or the user wants that boundary | The appropriate Plan, Implement, Review, Verify or Merge command with its exact issue/PR |
+| No useful delivery, selection or manual action is available | `none`, with the concrete blocker or confirmed absence of actionable work |
+
+Prefer a concrete target when evidence supports it. Do not default to Next merely
+because the selector has not been run, or force Deliver by guessing an issue.
+An audit result alone is not a selection. Distinguish uncertainty from a known
+failure: repeating Next cannot fix denied access, an unchanged audit defect or
+a human-owned decision. Name the recovery step or required answer; use Next again
+only when new evidence or that recovery makes another selection pass useful.
+Blocked work is not an empty backlog, and unavailable evidence proves neither.
+
+Keep recommendation limits separate from completed work. A suggestion authorizes
+no execution. Ordinary answers need neither selection nor a command footer;
+public contributions outside the maintainer workflow acquire no private access
+requirement. Honor requests to omit recommendations or stop without selection.
 
 ## Maintain the design
 
