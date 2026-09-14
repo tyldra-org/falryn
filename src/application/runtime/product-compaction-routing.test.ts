@@ -1,11 +1,11 @@
 /** An admitted summarization fixture uses the ordinary product attempt path.
  * This does not attach automatic summarization to conversation history. */
 import { expect, test } from "bun:test";
-import { modelId, turnId } from "../../domain/foundation/index.ts";
+import { duration, modelId, turnId } from "../../domain/foundation/index.ts";
 import { processingProduct, reportedProcessing } from "./product-processing.fixture.ts";
 
-function productWithDistinctFast() {
-  const product = processingProduct();
+function productWithDistinctFast(maxConcurrent = 1) {
+  const product = processingProduct(maxConcurrent);
   Object.assign(product.preferences.roles.default, {
     processing: { mode: "fast" },
     budgets: { attempts: 2, cost: 5000 },
@@ -109,3 +109,53 @@ test("an active compression retains its captured route and replay never resubmit
   ).not.toBe("completed");
   expect(product.requests).toHaveLength(1);
 });
+
+test.each([5000, 7000])(
+  "quota retry preserves compression source and cumulative cost cap %i",
+  async (cost) => {
+    // An error has no authoritative usage/termination receipt. Existing admission
+    // retains its reservation; retry needs spare capacity and the remaining cost.
+    const product = productWithDistinctFast(2);
+    Object.assign(product.preferences.roles.default.budgets, { cost });
+    product.state.quotaFailures = 1;
+    const id = turnId.from(`quota-compression-${cost}`);
+    const controller = new AbortController();
+    let settled = false;
+    const pending = product.executor
+      .run({
+        prompt: "Summarize the original requirement: retain source item A and constraint B.",
+        intent: "compression",
+        turnId: id,
+        signal: controller.signal,
+      })
+      .finally(() => {
+        settled = true;
+      });
+    try {
+      for (let step = 0; step < 100 && !settled; step += 1) {
+        await Bun.sleep(1);
+        await product.clock.advance(duration(100));
+      }
+      expect(settled).toBe(true);
+      const result = await pending;
+      if (cost === 7000) expect(result).toMatchObject({ kind: "completed" });
+      else expect(result.kind).not.toBe("completed");
+      expect(product.requests).toHaveLength(cost === 7000 ? 2 : 1);
+      expect(
+        product.requests.every(
+          (request) => request.modelId === product.preferences.roles.default.modelId,
+        ),
+      ).toBe(true);
+      if (cost === 7000)
+        expect(product.requests[1]?.messages).toEqual(product.requests[0]?.messages);
+      const replay = await product.runtime.journal.replayTurn(id);
+      if (replay.kind !== "rebuilt") throw new Error(replay.kind);
+      expect(replay.turns[0]?.attempts[0]?.processing?.[0]?.binding.maximumCostMicros).toBe(3100);
+      expect(replay.turns[0]?.attempts[0]?.processing?.[0]?.usageCostMaximumMicros).toBeNull();
+      expect(product.requests).toHaveLength(cost === 7000 ? 2 : 1);
+    } finally {
+      controller.abort();
+      await pending;
+    }
+  },
+);

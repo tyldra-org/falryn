@@ -112,6 +112,7 @@ export function processingProduct(maxConcurrent = 1) {
     observations: [] as ProcessingObservation[],
     reportUsage: true,
     fail: false,
+    quotaFailures: 0,
     processingModes: ["provider-default", "standard", "fast"] as const,
     beforeResponse: null as (() => Promise<void>) | null,
   };
@@ -139,6 +140,21 @@ export function processingProduct(maxConcurrent = 1) {
       };
       let sequence = 1;
       yield { ...spine, sequence: sequence++, kind: "request-started" };
+      if (state.quotaFailures > 0) {
+        state.quotaFailures -= 1;
+        yield {
+          ...spine,
+          sequence,
+          kind: "error",
+          failure: {
+            kind: "rate-limit",
+            retryable: true,
+            retryAfterMs: 0,
+            message: "fixture quota refusal before content",
+          },
+        };
+        return;
+      }
       for (const observation of state.observations)
         yield { ...spine, sequence: sequence++, kind: "processing", observation };
       yield { ...spine, sequence: sequence++, kind: "text-delta", text: "done" };
@@ -308,6 +324,7 @@ export function processingProduct(maxConcurrent = 1) {
     });
   }
   return {
+    clock,
     select,
     attempt,
     executor,
