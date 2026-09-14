@@ -76,12 +76,19 @@ export function previewPreviousModelPolicy(
         },
       );
     }
-    move("roles.fast.use.memory", use.memory, current.roles.fast?.use?.memory, () => {
-      candidate.roles.fast = {
-        ...candidate.roles.fast,
-        use: { ...candidate.roles.fast?.use, memory: use.memory },
-      };
-    });
+    for (const [key, setting] of Object.entries(use)) {
+      move(
+        `roles.fast.use.${key}`,
+        setting,
+        current.roles.fast?.use?.[key as keyof typeof use],
+        () => {
+          candidate.roles.fast = {
+            ...candidate.roles.fast,
+            use: { ...candidate.roles.fast?.use, [key]: setting },
+          };
+        },
+      );
+    }
   }
   changes.push({
     path: "intents.compression",

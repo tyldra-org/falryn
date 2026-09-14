@@ -40,9 +40,9 @@ export const LEGACY_INTENTS = [
 // Follow the current registry when independent options land; retire only compaction.
 const previousFastSchema = fastRoleSettingsSchema.extend({
   options: z.partialRecord(z.enum([...FAST_OPTIONS, "compaction"]), roleRouteBaseSchema).optional(),
-  use: z
-    .strictObject({
-      memory: z.enum(["evaluated", "off"]).optional(),
+  use: fastRoleSettingsSchema.shape.use
+    .unwrap()
+    .extend({
       compaction: z.enum(["evaluated", "off"]).optional(),
     })
     .optional(),

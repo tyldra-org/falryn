@@ -8,6 +8,7 @@ import {
 } from "./policy-compatibility.ts";
 import {
   EMPTY_MODEL_PREFERENCES,
+  fastRoleSettingsSchema,
   MODEL_POLICY_SCHEMA_VERSION,
   type ModelPreferences,
   modelPreferencesSchema,
@@ -217,14 +218,17 @@ export function previewModelPolicyMigration(
       candidate.roles.fast ??= {};
       candidate.roles.fast.default = legacy.roles.fast?.default;
     });
+    const useOptions = fastRoleSettingsSchema.shape.use.unwrap().keyof().options;
     for (const option of FAST_OPTIONS) {
       const route = legacy.roles.fast.options?.[option];
-      const helper = option === "memory";
-      const use = helper ? legacy.roles.fast.use?.[option] : undefined;
+      const useOption = useOptions.find((key) => key === option);
+      const helper = useOption !== undefined;
+      const use = useOption === undefined ? undefined : legacy.roles.fast.use?.[useOption];
       if (route === undefined && use === undefined) continue;
       const path = `roles.fast.options.${option}`;
       const existingRoute = candidate.roles.fast?.options?.[option];
-      const existingUse = helper ? candidate.roles.fast?.use?.[option] : undefined;
+      const existingUse =
+        useOption === undefined ? undefined : candidate.roles.fast?.use?.[useOption];
       const incoming = helper ? { route: route ?? null, use: use ?? "off" } : route;
       const existing = helper
         ? existingRoute === undefined && existingUse === undefined
@@ -236,9 +240,9 @@ export function previewModelPolicyMigration(
         candidate.roles.fast.options ??= {};
         if (route === undefined) delete candidate.roles.fast.options[option];
         else candidate.roles.fast.options[option] = route;
-        if (helper) {
+        if (useOption !== undefined) {
           candidate.roles.fast.use ??= {};
-          candidate.roles.fast.use[option] = use ?? "off";
+          candidate.roles.fast.use[useOption] = use ?? "off";
         }
       });
     }
