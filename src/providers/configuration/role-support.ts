@@ -1,6 +1,6 @@
 /**
  * Specialized role support: vision use-policy, thinking/reasoning helpers,
- * ordinary main-model requirements, and Fast memory/compaction use policy.
+ * ordinary main-model requirements, and Fast memory use policy.
  *
  * Pure library helpers consumed by `resolveModelRoute`. No live provider
  * thinking streams or vendor adapters.
@@ -209,14 +209,14 @@ export function resolveSpecializedRole(input: ResolveSpecializedRoleInput): Spec
 
   let role = mappedRole;
 
-  // Configuring a route cannot enable model-assisted memory or compaction.
+  // Compression keeps the captured main route, including when a legacy caller names Fast.
+  if (intent === "compression") return { kind: "resolved", role: "default", required };
+
+  // Configuring a route cannot enable model-assisted memory.
   if (role === "fast") {
     const option = input.fastOption ?? fastOptionForIntent(intent);
     if (option === undefined) return { kind: "role-unconfigured", role, intent };
-    if (
-      (option === "memory" || option === "compaction") &&
-      input.policy.roles.fast?.use?.[option] !== "evaluated"
-    ) {
+    if (option === "memory" && input.policy.roles.fast?.use?.[option] !== "evaluated") {
       return { kind: "role-disabled", role, intent };
     }
     // An explicit Fast media operation does not chain the general vision role.

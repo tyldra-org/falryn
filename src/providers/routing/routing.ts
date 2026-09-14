@@ -379,7 +379,9 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
   const visited = new Set(input.visited ?? []);
   const startPosition = input.fallbackPosition ?? 0;
 
-  if (input.explicit !== undefined) {
+  // Compression is an operation on the captured main policy. A stale helper
+  // selection cannot replace its thinking, processing or cumulative limits.
+  if (input.explicit !== undefined && intent !== "compression") {
     const role =
       input.role ?? (intent !== null ? resolveIntentRole(input.policy, intent) : "default");
     const required = mergeRequirements(
@@ -453,7 +455,9 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
   }
 
   const tentativeRole =
-    input.role ?? (intent !== null ? resolveIntentRole(input.policy, intent) : "default");
+    intent === "compression"
+      ? "default"
+      : (input.role ?? (intent !== null ? resolveIntentRole(input.policy, intent) : "default"));
   const primaryCapability = primaryCapabilityForRole(
     input.policy,
     tentativeRole === "vision" ? "default" : tentativeRole,

@@ -11,6 +11,7 @@ import { joinPath } from "../../domain/workspace/index.ts";
 import { createSha256Hasher } from "../../integrations/filesystem/content-digest.ts";
 import { parseProviderConnectionState } from "../../providers/configuration/connection-schema.ts";
 import type { RoleRoute } from "../../providers/configuration/policy.ts";
+import { modelPreferencesSchema } from "../../providers/configuration/policy-schema.ts";
 import { reasoningControlFor } from "../../providers/routing/routing.ts";
 import type { GlobalOptions } from "../options.ts";
 import { agentRegistryFrom } from "./agent-configuration.ts";
@@ -42,7 +43,14 @@ export function composeProductModelSettings(
     profile: globals.profile,
     scope,
   } as const;
-  const path = resolveConfigurationFilePath(request);
+  const sourcePath = async (signal?: AbortSignal) => {
+    const home = await services.configurationHomeForRead(signal);
+    if (home.kind !== "current" && home.kind !== "legacy" && home.kind !== "empty")
+      throw new Error("Settings home is unavailable.");
+    const path = resolveConfigurationFilePath({ ...request, configurationRoot: home.root });
+    if (!path.ok) throw new Error("Settings scope is unavailable.");
+    return path.value;
+  };
   const readConfiguration = async (signal?: AbortSignal) => {
     const loaded = await loadProductConfiguration(
       services,
@@ -55,12 +63,16 @@ export function composeProductModelSettings(
   };
   return createModelSettingsService({
     async read(signal): Promise<ModelSettingsSnapshot> {
-      if (!path.ok) throw new Error("Settings scope is unavailable.");
-      const before = await services.fileSystem.stat(path.value, signal);
+      const path = await sourcePath(signal);
+      const before = await services.fileSystem.stat(path, signal);
       if (!before.ok) throw new Error("Settings file is unavailable.");
       const loaded = await readConfiguration(signal);
-      const after = await services.fileSystem.stat(path.value, signal);
-      if (!after.ok || before.value?.revision !== after.value?.revision)
+      const after = await services.fileSystem.stat(path, signal);
+      if (
+        !after.ok ||
+        before.value?.revision !== after.value?.revision ||
+        path !== (await sourcePath(signal))
+      )
         throw new Error("Settings changed during inspection.");
       const preferences = modelPreferencesFrom(loaded.values);
       const workflows = await loadWorkflowFiles(
@@ -97,6 +109,9 @@ export function composeProductModelSettings(
             });
       return {
         preferences,
+        ...(!modelPreferencesSchema.safeParse(loaded.values[MODEL_POLICY_CONFIGURATION_KEY]).success
+          ? { legacyPolicy: loaded.values[MODEL_POLICY_CONFIGURATION_KEY] }
+          : {}),
         fileRevision: after.value?.revision ?? null,
         scope,
         generation: Number(loaded.generation),
@@ -152,13 +167,43 @@ export function composeProductModelSettings(
       };
     },
     async backup(original, expectedRevision, signal) {
+      const path = await sourcePath(signal).catch(() => null);
+      if (path === null) return { ok: false, code: "backup-source-unavailable" };
+      const before = await services.fileSystem.stat(path, signal);
+      if (!before.ok || (before.value?.revision ?? null) !== expectedRevision)
+        return { ok: false, code: "stale-settings" };
+      let text: string | null = null;
+      if (before.value !== null) {
+        const source = await services.fileSystem.readBytes(path, 1_048_576, signal);
+        if (!source.ok) return { ok: false, code: "backup-source-unavailable" };
+        try {
+          text = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(source.value);
+        } catch {
+          return { ok: false, code: "backup-source-encoding" };
+        }
+      }
+      const after = await services.fileSystem.stat(path, signal);
+      if (
+        !after.ok ||
+        (after.value?.revision ?? null) !== expectedRevision ||
+        path !== (await sourcePath(signal).catch(() => null))
+      )
+        return { ok: false, code: "stale-settings" };
       const bytes = new TextEncoder().encode(
-        JSON.stringify({ schemaVersion: 1, expectedRevision, original }, null, 2),
+        JSON.stringify(
+          { schemaVersion: 2, expectedRevision, original, source: { path, text } },
+          null,
+          2,
+        ),
       );
       if (bytes.length > 1_048_576) return { ok: false, code: "migration-backup-too-large" };
       const hasher = createSha256Hasher().create();
       hasher.update(bytes);
-      const directory = joinPath(services.configurationRoot, "model-policy-backups");
+      // Recovery must survive a configuration-home move and must not populate
+      // the destination before the comment-preserving writer validates it.
+      const stateRoot = services.localData.layout.roots.find((root) => root.root === "state");
+      if (stateRoot === undefined) return { ok: false, code: "backup-path-invalid" };
+      const directory = joinPath(stateRoot.path, "model-policy-backups");
       if (!directory.ok) return { ok: false, code: "backup-path-invalid" };
       const backup = joinPath(directory.value, `${String(hasher.digest()).split(":").at(-1)}.json`);
       if (!backup.ok) return { ok: false, code: "backup-path-invalid" };

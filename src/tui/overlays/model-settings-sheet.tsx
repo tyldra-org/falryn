@@ -216,7 +216,7 @@ export function ModelSettingsSheet({
         detail: "An explicit model keeps precedence over its preset.",
         run: () => setPage({ kind: "membership", id: target.id }),
       });
-    if (target.kind === "fast" && (target.option === "memory" || target.option === "compaction")) {
+    if (target.kind === "fast" && target.option === "memory") {
       const option = target.option;
       for (const use of ["evaluated", "off"] as const)
         items.push({

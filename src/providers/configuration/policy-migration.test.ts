@@ -31,7 +31,7 @@ const legacy = {
   },
 };
 
-test("migration preserves the original, main route, exact fallback/thinking/use, and reports four retirements", () => {
+test("migration preserves the original and main, retires four helpers without assigning memory", () => {
   const current = modelPreferencesSchema.parse({
     ...EMPTY_MODEL_PREFERENCES,
     roles: { default: route("main") },
@@ -43,21 +43,14 @@ test("migration preserves the original, main route, exact fallback/thinking/use,
   expect(preview.unresolved).toEqual([]);
   expect(preview.candidate.roles.default?.modelId).toBe(modelId.from("main"));
   expect(preview.candidate.roles.fast?.default).toBeUndefined();
-  for (const option of ["memory", "compaction"] as const) {
-    expect(preview.candidate.roles.fast?.options?.[option]?.modelId).toBe(modelId.from("compact"));
-    expect(preview.candidate.roles.fast?.options?.[option]?.reasoning).toBe("deep");
-    expect(preview.candidate.roles.fast?.options?.[option]?.fallbacks).toEqual(
-      legacy.roles.compact.fallbacks,
-    );
-    expect(preview.candidate.roles.fast?.use?.[option]).toBe("off");
-  }
-  expect(preview.changes.filter((change) => change.kind === "retired")).toHaveLength(3);
-  expect(preview.changes.some((change) => change.path === "roles.fast.options.compaction")).toBe(
-    true,
+  expect(preview.candidate.roles.fast).toBeUndefined();
+  expect(preview.changes.filter((change) => change.kind === "retired")).toHaveLength(4);
+  expect(preview.changes.find((change) => change.path === "roles.compact")?.before).toEqual(
+    legacy.roles.compact,
   );
   expect(current.roles.fast).toBeUndefined();
 });
-test("custom memory/compression maps preserve their old effective route and custom ordinary maps need a decision", () => {
+test("custom memory retains its explicit route while compression uses main and ordinary maps need a decision", () => {
   const source = {
     ...legacy,
     roles: { ...legacy.roles, plan: route("plan") },
@@ -67,7 +60,7 @@ test("custom memory/compression maps preserve their old effective route and cust
   if (preview.kind !== "preview") throw new Error("Expected preview");
   expect(preview.unresolved).toEqual(["intents.read"]);
   expect(preview.candidate.roles.fast?.options?.memory?.modelId).toBe(modelId.from("plan"));
-  expect(preview.candidate.roles.fast?.options?.compaction?.modelId).toBe(modelId.from("old-main"));
+  expect(preview.candidate.intents.compression).toBe("default");
   const accepted = previewModelPolicyMigration(source, EMPTY_MODEL_PREFERENCES, {
     "intents.read": "normalize",
   });
@@ -78,17 +71,22 @@ test("conflicts never discard current choices without an explicit decision", () 
     ...EMPTY_MODEL_PREFERENCES,
     roles: { fast: { options: { memory: route("new-memory") }, use: { memory: "evaluated" } } },
   });
-  const preview = previewModelPolicyMigration(legacy, current);
+  const explicitMemory = {
+    ...legacy,
+    roles: { ...legacy.roles, plan: route("old-memory") },
+    intents: { memory: "plan" },
+  };
+  const preview = previewModelPolicyMigration(explicitMemory, current);
   if (preview.kind !== "preview") throw new Error("Expected preview");
   expect(preview.unresolved).toContain("roles.fast.options.memory");
   expect(preview.candidate.roles.fast?.options?.memory?.modelId).toBe(modelId.from("new-memory"));
-  const accepted = previewModelPolicyMigration(legacy, current, {
+  const accepted = previewModelPolicyMigration(explicitMemory, current, {
     "roles.fast.options.memory": "use-legacy",
   });
   expect(
     accepted.kind === "preview" && accepted.candidate.roles.fast?.options?.memory?.modelId,
-  ).toBe(modelId.from("compact"));
-  const retained = previewModelPolicyMigration(legacy, current, {
+  ).toBe(modelId.from("old-memory"));
+  const retained = previewModelPolicyMigration(explicitMemory, current, {
     "roles.fast.options.memory": "keep-current",
   });
   expect(retained.kind === "preview" && retained.candidate.roles.fast?.use?.memory).toBe(
@@ -113,7 +111,7 @@ test("unconfigured legacy helpers remain disabled and proposed nested groups mov
     EMPTY_MODEL_PREFERENCES,
   );
   if (preview.kind !== "preview") throw new Error("Expected preview");
-  expect(preview.candidate.roles.fast?.use).toEqual({ compaction: "off", memory: "off" });
+  expect(preview.candidate.roles.fast?.use).toBeUndefined();
   expect(preview.candidate.roles.subagents?.default?.modelId).toBe(modelId.from("agents"));
   expect(preview.candidate.roles.subagents?.agents?.["user:custom"]?.route?.modelId).toBe(
     modelId.from("custom"),
@@ -144,6 +142,6 @@ test("development Fast options retain their route and enablement without inherit
   if (preview.kind !== "preview") throw new Error("Expected preview");
   expect(preview.unresolved).toEqual([]);
   expect(String(preview.candidate.roles.fast?.options?.memory?.modelId)).toBe("memory");
-  expect(preview.candidate.roles.fast?.use).toEqual({ memory: "evaluated", compaction: "off" });
+  expect(preview.candidate.roles.fast?.use).toEqual({ memory: "evaluated" });
   expect(preview.candidate.roles.subagents).toBeUndefined();
 });
