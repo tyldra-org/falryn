@@ -454,7 +454,14 @@ export function createHostFileSystem(): FileSystemPort {
         const opened = await openTemporaryWrite(parent);
         tempPath = opened.path;
         handle = opened.handle;
-        await handle.writeFile(payload);
+        let offset = 0;
+        while (offset < payload.byteLength) {
+          if (isCancelled(signal)) return cancelled(path, "write");
+          const progress = await handle.write(payload, offset, payload.byteLength - offset);
+          if (progress.bytesWritten === 0)
+            throw Object.assign(new Error("incomplete write"), { code: "EIO" });
+          offset += progress.bytesWritten;
+        }
         await handle.sync();
         await handle.close();
         handle = null;
