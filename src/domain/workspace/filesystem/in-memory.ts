@@ -311,11 +311,17 @@ export function createInMemoryFileSystem(
       return ok(bytes.slice(offset, offset + maximumBytes));
     },
 
-    async writeBytes(path, bytes, signal) {
+    async writeBytes(path, bytes, signal, condition) {
       if (signal?.aborted === true) {
         return cancelled(path, "write");
       }
       const existing = nodes.get(path);
+      if (
+        condition !== undefined &&
+        (entryFor(path)?.revision ?? null) !== condition.expectedRevision
+      ) {
+        return err({ kind: "filesystem", code: "stale-write", path, operation: "write" });
+      }
       if (existing !== undefined && existing.kind !== "file") {
         return err({
           kind: "filesystem",

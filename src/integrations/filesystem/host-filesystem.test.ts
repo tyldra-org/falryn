@@ -7,7 +7,7 @@
  * is tested with a static environment instead.
  */
 
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 
@@ -356,6 +356,88 @@ describe("reading bytes", () => {
 });
 
 describe("writing bytes", () => {
+  test("a failure observing a completed replacement is uncertain, not a failed write", async () => {
+    const path = at("settings.jsonc");
+    await fs.writeFile(path, "original");
+    const before = await fileSystem.stat(path);
+    if (!before.ok || before.value === null) throw new Error("expected file");
+    const realRename = fs.rename;
+    const realStat = fs.lstat;
+    let published = false;
+    const rename = spyOn(fs, "rename").mockImplementation(async (from, to) => {
+      await realRename(from, to);
+      published = true;
+    });
+    const stat = spyOn(fs, "lstat").mockImplementation(((...args: Parameters<typeof fs.lstat>) => {
+      if (published && args[0] === path)
+        return Promise.reject(Object.assign(new Error("fixture"), { code: "EIO" }));
+      return realStat(...args);
+    }) as typeof fs.lstat);
+    try {
+      expect(
+        await fileSystem.writeBytes(path, new TextEncoder().encode("replacement"), undefined, {
+          expectedRevision: before.value.revision,
+        }),
+      ).toMatchObject({ ok: false, error: { code: "publication-uncertain" } });
+      expect(await fs.readFile(path, "utf8")).toBe("replacement");
+    } finally {
+      stat.mockRestore();
+      rename.mockRestore();
+    }
+  });
+  test("disk-full and denied rename leave original bytes and clean temporary files", async () => {
+    const path = at("settings.jsonc");
+    await fs.writeFile(path, "original");
+    const before = await fileSystem.stat(path);
+    if (!before.ok || before.value === null) throw new Error("expected file");
+    for (const code of ["ENOSPC", "EACCES"]) {
+      const rename = spyOn(fs, "rename").mockRejectedValue(
+        Object.assign(new Error("fixture"), { code }),
+      );
+      try {
+        const result = await fileSystem.writeBytes(
+          path,
+          new TextEncoder().encode("replacement"),
+          undefined,
+          { expectedRevision: before.value.revision },
+        );
+        expect(result.ok).toBe(false);
+        expect(await fs.readFile(path, "utf8")).toBe("original");
+        expect(await fs.readdir(root)).toEqual(["settings.jsonc"]);
+      } finally {
+        rename.mockRestore();
+      }
+    }
+  });
+  test("two conditional writers cannot both replace the observed revision", async () => {
+    await fs.writeFile(at("settings.jsonc"), "original");
+    const before = await fileSystem.stat(at("settings.jsonc"));
+    if (!before.ok || before.value === null) throw new Error("expected file");
+    const condition = { expectedRevision: before.value.revision };
+    const outcomes = await Promise.all(
+      ["first", "second"].map((text) =>
+        createHostFileSystem().writeBytes(
+          at("settings.jsonc"),
+          new TextEncoder().encode(text),
+          undefined,
+          condition,
+        ),
+      ),
+    );
+    expect(outcomes.filter((outcome) => outcome.ok)).toHaveLength(1);
+    expect(
+      outcomes.filter((outcome) => !outcome.ok && outcome.error.code === "stale-write"),
+    ).toHaveLength(1);
+    expect(await fs.readdir(root)).toEqual(["settings.jsonc"]);
+    const stale = await fileSystem.writeBytes(
+      at("settings.jsonc"),
+      new TextEncoder().encode("lost"),
+      undefined,
+      condition,
+    );
+    expect(stale).toMatchObject({ ok: false, error: { code: "stale-write" } });
+    expect(await fs.readFile(at("settings.jsonc"), "utf8")).not.toBe("lost");
+  });
   test("creates a file and replaces it with the same parent directory", async () => {
     const created = await fileSystem.writeBytes(at("note.txt"), new TextEncoder().encode("hello"));
     expect(created.ok).toBe(true);

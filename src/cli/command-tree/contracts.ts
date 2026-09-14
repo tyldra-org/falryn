@@ -157,6 +157,7 @@ export type WorkspaceCommandArguments =
 
 /** Command-specific inputs for `falryn config set`. */
 export type ConfigSetArguments = {
+  readonly reset?: boolean;
   readonly keyPath: string;
   readonly rawValue: string;
   readonly scope: "user" | "project" | "profile";

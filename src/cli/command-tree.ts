@@ -114,12 +114,12 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
         group
           .positional("action", {
             type: "string",
-            choices: ["show", "validate", "path", "set"] as const,
-            describe: "show the effective values, validate them, print source paths, or set a key",
+            choices: ["show", "validate", "path", "set", "reset"] as const,
+            describe: "show or validate values, print sources, set a key, or reset its override",
           })
           .positional("key", {
             type: "string",
-            describe: "configuration key path (set only)",
+            describe: "configuration key path (set or reset)",
           })
           .positional("value", {
             type: "string",
@@ -128,11 +128,11 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           .option("file-scope", {
             type: "string",
             choices: ["user", "project", "profile"] as const,
-            describe: "which configuration file to write (set only; default user)",
+            describe: "which configuration file to edit (default user)",
           })
           .option("revision", {
             type: "string",
-            describe: "expected file revision before write (set only)",
+            describe: "expected file revision before set or reset",
           }),
       )
       .command(

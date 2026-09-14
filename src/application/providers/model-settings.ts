@@ -1,5 +1,6 @@
 /** Shared model settings actions. Selection is inspectable without admitting work. */
 import { z } from "zod";
+import type { ConfigurationSaveReceipt } from "../../domain/configuration/save-receipt.ts";
 import type {
   ModelDefinition,
   ModelSelectionTarget,
@@ -79,7 +80,11 @@ export type ModelSettingsStore = {
     expectedRevision: string | null,
     signal?: AbortSignal,
   ): Promise<
-    | { readonly kind: "written"; readonly revision: string }
+    | {
+        readonly kind: "written";
+        readonly revision: string;
+        readonly receipt?: ConfigurationSaveReceipt;
+      }
     | { readonly kind: "stale" | "cancelled" | "failed"; readonly code: string }
   >;
   /** Durable, recoverable original must settle before the new state is published. */
@@ -270,6 +275,7 @@ export function createModelSettingsService(store: ModelSettingsStore) {
             revision: written.revision,
             policyRevision: candidate.revision,
             backup,
+            receipt: written.receipt ?? null,
           }
         : failure(written.code);
     },

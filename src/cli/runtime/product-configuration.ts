@@ -9,6 +9,7 @@
 
 import type { ConfigurationLoader } from "../../config/index.ts";
 import type {
+  ConfigurationIssue,
   ConfigurationLoadOutcome,
   ConfigurationRegistryPort,
   ConfigurationValues,
@@ -19,6 +20,7 @@ import {
   FIRST_CONFIGURATION_GENERATION,
 } from "../../domain/foundation/index.ts";
 import type { WorkspaceTrustReport } from "../../domain/security/workspace-trust.ts";
+import type { LocalPath } from "../../domain/workspace/index.ts";
 import { configurationOverridesFor, type GlobalOptions } from "../options.ts";
 import type { Services } from "./services.ts";
 
@@ -26,6 +28,28 @@ export type ProductConfigurationLoadRequest = {
   readonly profile: string | null;
   readonly overrides: Readonly<Record<string, string>>;
 };
+
+/** Validate a save with the same inspected project source used by product reads. */
+export async function validateProductConfigurationCandidate(
+  services: Services,
+  profile: string | null,
+  path: LocalPath,
+  text: string,
+  signal?: AbortSignal,
+): Promise<readonly ConfigurationIssue[]> {
+  const project = await services.workspaceTrust.project(signal);
+  return services.loader.validate(
+    {
+      configurationRoot: services.configurationRoot,
+      legacyConfigurationRoot: services.legacyConfigurationRoot,
+      workspaceRoot: services.workspaceRoot,
+      profile,
+      projectText: project.text,
+    },
+    { path, text },
+    signal,
+  );
+}
 
 /** Profile and CLI overrides for one invocation, shared with the shell path. */
 export function productConfigurationLoadRequest(

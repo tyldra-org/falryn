@@ -15,7 +15,7 @@ application. The current command surface includes:
 | falryn --help / --version | Print usage or build identity |
 | falryn run [--mode ask\|plan\|debug\|agent] <prompt> | Run one headless coding turn through the selected execution profile and provider |
 | falryn doctor | Run bounded environment and local-storage diagnostics |
-| falryn config show / validate / path / set | Inspect, validate, or revision-safely update effective configuration |
+| falryn config show / validate / path / set / reset | Inspect, validate, update, or remove a scoped configuration override |
 | falryn provider list / add / use / configure / test / login / logout / remove | Manage local provider profiles and credentials |
 | falryn data backup / inspect / restore / diagnostics / retention / gc / reset / uninstall | Inspect, preserve, repair, retain, collect, or preview/apply confirmed removal of Falryn-owned local data |
 | falryn workspace list / show / save / load | Inspect or persist named workspace sets |
@@ -41,6 +41,25 @@ profiles under `~/.falryn/profiles/`, user-authored model catalogs under
 `~/.falryn/layouts/`. Project configuration remains
 `<workspace>/.falryn/falryn.jsonc`. `FALRYN_CONFIG_DIR` is the explicit user
 configuration-root override.
+
+Configuration saves edit the existing JSONC source, preserving unrelated keys,
+comments, ordering, indentation, newline style, UTF-8 BOM, and trailing commas.
+`config reset <key>` removes the selected override; it retains authored parent
+objects and comments and does not create an absent file. New files use the
+canonical minimal format. Duplicate keys, malformed or oversized documents,
+invalid scoped or composed values, and stale revisions refuse the save.
+The source and candidate remain bounded to 256 KiB.
+
+CLI, model-role, provider-profile, and registered package-key file saves share
+the revision-checked writer. Cooperating conditional writers use a sibling
+lock, then compare again before one atomic replacement. Replacement failure
+retains the original bytes. External editors do not share that lock, and
+multiple documents do not form one transaction. An interrupted writer's lock
+is not removed automatically; inspect the file and the writer before recovery.
+`config set` and `reset` report old/new revisions, changed paths, validation,
+save, and pending publication/application separately. Model saves also report
+the reload generation or retain the saved receipt with a failed reload.
+Installed package data in SQLite keeps its separate transactional owner.
 
 Without that override, Falryn recognizes the previous platform-default
 configuration root. Reads select a populated legacy root when `~/.falryn` does

@@ -1,6 +1,7 @@
 /** Public contracts for provider connection management. */
 
 import type { CredentialReference } from "../../../domain/configuration/index.ts";
+import type { ConfigurationSaveReceipt } from "../../../domain/configuration/save-receipt.ts";
 import type { ClockPort } from "../../../domain/foundation/index.ts";
 import type {
   AuthorizedLoginMethod,
@@ -23,7 +24,11 @@ export type ProviderConnectionStoreSnapshot = {
 };
 
 export type ProviderConnectionStoreWriteResult =
-  | { readonly kind: "written"; readonly fileRevision: string }
+  | {
+      readonly kind: "written";
+      readonly fileRevision: string;
+      readonly configurationSave?: ConfigurationSaveReceipt;
+    }
   | { readonly kind: "stale" }
   | { readonly kind: "cancelled" }
   | { readonly kind: "failed"; readonly code: string };
@@ -152,6 +157,7 @@ export type ProviderConnectionIssueCode =
   | "provider-not-ready"
   | "state-invalid"
   | "state-stale"
+  | "state-write-uncertain"
   | "state-write-failed";
 
 export type ProviderConnectionView = {
@@ -210,7 +216,10 @@ export type ProviderConnectionActionResult = (
       readonly discovery: ProviderConnectionDiscoveryView;
       readonly authorization: ProviderAuthorizationReceipt | null;
     }
-) & { readonly credentialChange?: ProviderCredentialChange | null };
+) & {
+  readonly credentialChange?: ProviderCredentialChange | null;
+  readonly configurationSave?: ConfigurationSaveReceipt;
+};
 
 export type ProviderCredentialChange = {
   readonly publication: "replacement-published" | "replacement-rejected" | null;

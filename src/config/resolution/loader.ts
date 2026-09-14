@@ -40,6 +40,7 @@ import {
   FIRST_SEQUENCE,
   idempotencyKey,
   nextSequence,
+  ok,
   RUNTIME_EVENT_SCHEMA_VERSION,
   type Sequence,
   type StreamId,
@@ -50,6 +51,7 @@ import type {
   EventStorePort,
   SessionCorrelation,
 } from "../../domain/sessions/index.ts";
+import { createInMemoryEventStore } from "../../domain/sessions/index.ts";
 import type { FileSystemPort, LocalPath } from "../../domain/workspace/index.ts";
 import type { ConfigurationKeyDeclaration } from "../document/declaration.ts";
 import { configurationHomeIssue, resolveConfigurationHome } from "../host/home.ts";
@@ -120,6 +122,12 @@ export type LoadRequest = {
 };
 
 export type ConfigurationLoader = {
+  /** Composes proposed bytes in isolation; never publishes into the running product. */
+  validate(
+    request: LoadRequest,
+    candidate: { readonly path: LocalPath; readonly text: string },
+    signal?: AbortSignal,
+  ): Promise<readonly ConfigurationIssue[]>;
   /** Composes and, when anything changed, publishes a new generation. */
   load(request: LoadRequest, signal?: AbortSignal): Promise<ConfigurationLoadOutcome>;
   /** The generation currently in effect, or `null` before the first success. */
@@ -135,6 +143,64 @@ export function createConfigurationLoader(
 
   return {
     current: () => current,
+    async validate(request, candidate, signal) {
+      const fileSystem: FileSystemPort = {
+        ...initialOptions.fileSystem,
+        stat: async (path, abort) =>
+          path === candidate.path
+            ? ok({
+                path,
+                kind: "file",
+                byteLength: new TextEncoder().encode(candidate.text).byteLength,
+                mode: 0o600,
+                revision: "candidate",
+              })
+            : initialOptions.fileSystem.stat(path, abort),
+        readText: async (path, maximum, abort) =>
+          path === candidate.path
+            ? ok(candidate.text)
+            : initialOptions.fileSystem.readText(path, maximum, abort),
+      };
+      const staged = createConfigurationLoader({
+        ...initialOptions,
+        fileSystem,
+        eventStore: createInMemoryEventStore(),
+        ...(initialOptions.prepare === undefined
+          ? {}
+          : {
+              prepare: async (loadRequest: LoadRequest, abort?: AbortSignal) => {
+                const prepared = await initialOptions.prepare?.(loadRequest, abort);
+                if (prepared === undefined) throw new Error("configuration-prepare-unavailable");
+                return { ...prepared, publish: () => {} };
+              },
+            }),
+      });
+      const result = await staged.load(
+        {
+          ...request,
+          ...(candidate.path ===
+          discoverSources(request).sources.find((source) => source.source.kind === "project-file")
+            ?.file
+            ? { projectText: candidate.text }
+            : {}),
+        },
+        signal,
+      );
+      if (result.kind === "published" || result.kind === "unchanged") {
+        if (
+          result.record.sources.some((source) =>
+            ["unreadable", "oversized", "malformed-encoding", "malformed-syntax"].includes(
+              source.outcome,
+            ),
+          )
+        ) {
+          return [{ kind: "invalid-value", severity: "error", path: "", allowed: [] }];
+        }
+        return result.record.issues;
+      }
+      if (result.kind === "rejected") return result.issues;
+      return [{ kind: "invalid-value", severity: "error", path: "", allowed: [] }];
+    },
 
     async load(request: LoadRequest, signal?: AbortSignal): Promise<ConfigurationLoadOutcome> {
       if (isAborted(signal)) {

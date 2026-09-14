@@ -238,6 +238,8 @@ export type FileSystemErrorCode =
   | "range-out-of-bounds"
   | "oversized"
   | "malformed-encoding"
+  | "stale-write"
+  | "publication-uncertain"
   | "io-failure"
   | "unsupported"
   | "cross-device"
@@ -368,11 +370,17 @@ export type FileSystemPort = {
    * The write is to a sibling temporary name, then renamed onto `path`.
    * Cross-device and Windows replacement are not claimed as atomic. Directories
    * and final symlinks are refused. Missing parents are `not-found`.
+   * A supplied condition compares the revision immediately before replacement.
+   * Conditional host writers exclude each other with a sibling lock and never
+   * unlink the original on replacement failure. External editors do not share
+   * that lock; this is not a filesystem transaction. An existing lock refuses
+   * the save rather than guessing whether an interrupted writer completed.
    */
   writeBytes(
     path: LocalPath,
     bytes: Uint8Array,
     signal?: AbortSignal,
+    condition?: { readonly expectedRevision: string | null },
   ): Promise<Result<FileWriteReceipt, FileSystemError>>;
 
   /**

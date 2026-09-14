@@ -3,13 +3,25 @@ import type { ModelSettingsResult } from "./model-settings.ts";
 export function modelSettingsLines(result: ModelSettingsResult): readonly string[] {
   switch (result.kind) {
     case "failed":
-      return [`Model settings: ${result.code}`];
+      return [
+        `Model settings: ${result.code}`,
+        ...(result.code === "publication-uncertain"
+          ? ["Inspect the settings file before retrying; the save could not be confirmed."]
+          : []),
+      ];
     case "invalid":
       return [result.message];
     case "written":
       return [
         `Saved model policy revision ${result.policyRevision}.`,
         `File revision: ${result.revision}`,
+        ...(result.receipt === null
+          ? []
+          : [
+              result.receipt.publication === "failed"
+                ? "Saved; configuration reload failed. Inspect before retrying. Application is pending."
+                : `Configuration generation ${result.receipt.generation}; applies to subsequent work.`,
+            ]),
         ...(result.backup === null ? [] : [`Recovery copy: ${result.backup}`]),
       ];
     case "clear-preview":

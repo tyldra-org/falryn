@@ -90,6 +90,8 @@ export function commandFrom(
         return "config.path";
       case "set":
         return "config.set";
+      case "reset":
+        return "config.reset";
       default:
         return null;
     }
@@ -186,12 +188,14 @@ export function configSetArgumentsFor(
   command: RunnableCommand,
   parsed: RawArguments,
 ): ConfigSetArguments | null | string {
-  if (command !== "config.set") {
+  if (command !== "config.set" && command !== "config.reset") {
     return null;
   }
-  if (parsed.key === undefined || parsed.value === undefined) {
+  if (parsed.key === undefined || (command === "config.set" && parsed.value === undefined)) {
     return "Arguments key and value are required for config set.";
   }
+  if (command === "config.reset" && parsed.value !== undefined)
+    return "Config reset accepts a key, not a value.";
   if (parsed.name !== undefined) {
     return "Argument name is only valid with data backup, restore, inspect, or workspace save/load.";
   }
@@ -210,7 +214,8 @@ export function configSetArgumentsFor(
   }
   return {
     keyPath: parsed.key,
-    rawValue: parsed.value,
+    rawValue: parsed.value ?? "",
+    ...(command === "config.reset" ? { reset: true } : {}),
     scope,
     expectedRevision: parsed.revision ?? null,
   };

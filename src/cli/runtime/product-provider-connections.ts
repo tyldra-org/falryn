@@ -53,6 +53,7 @@ import { modelPreferencesFrom } from "./model-configuration.ts";
 import {
   loadProductConfiguration,
   productConfigurationLoadRequest,
+  validateProductConfigurationCandidate,
 } from "./product-configuration.ts";
 import { composeProductCredentials } from "./product-credentials.ts";
 import {
@@ -428,12 +429,18 @@ function configurationStore(
           value: state,
           expectedRevision: expectedFileRevision,
           requireAbsent: expectedFileRevision === null,
+          validateCandidate: (path, text, abort) =>
+            validateProductConfigurationCandidate(services, globals.profile, path, text, abort),
         },
         signal,
       );
       switch (outcome.kind) {
         case "written":
-          return { kind: "written", fileRevision: outcome.revision };
+          return {
+            kind: "written",
+            fileRevision: outcome.revision,
+            configurationSave: { ...outcome, generation: null },
+          };
         case "stale-write":
           return { kind: "stale" };
         case "cancelled":
@@ -443,7 +450,11 @@ function configurationStore(
         case "workspace-required":
         case "profile-required":
         case "filesystem":
-          return { kind: "failed", code: outcome.kind };
+        case "unchanged":
+          return {
+            kind: "failed",
+            code: outcome.kind === "filesystem" ? outcome.code : outcome.kind,
+          };
       }
     },
   };

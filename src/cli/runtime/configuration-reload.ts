@@ -52,6 +52,7 @@ export function startConfigurationReloadWatcher(
   const streams = options.streams;
   return createConfigurationReloadWatcher({
     loader: {
+      validate: graph.loader.validate,
       current: graph.loader.current,
       load: async (_request, signal) =>
         (await loadProductConfiguration(graph, loadRequest, signal)).outcome,

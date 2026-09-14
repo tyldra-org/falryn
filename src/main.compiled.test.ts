@@ -16,7 +16,7 @@ import { prepareNativeCliFixture } from "./cli/commands/package-native-fixtures.
  */
 
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdtemp, readdir, rm, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pluginManifest } from "./application/extensions/package-fixtures.ts";
@@ -178,6 +178,46 @@ function spawnCompiled(
 }
 
 describe.if(built)("the standalone executable", () => {
+  test(
+    "configuration set and reset preserve authored JSONC across process restarts",
+    async () => {
+      const root = await temporaryRoot();
+      const directory = join(root, ".falryn");
+      const path = join(directory, "falryn.jsonc");
+      await mkdir(directory, { recursive: true });
+      const source =
+        '\uFEFF// authored 🌱\r\n{\r\n\t"schemaVersion": 1,\r\n\t"diagnostics": { /* keep */ "level": "info", }, // retained\r\n}\r\n';
+      await writeFile(path, source);
+      const set = spawnCompiled(root, [
+        "config",
+        "set",
+        "diagnostics.level",
+        "warn",
+        "--format",
+        "json",
+      ]);
+      expect(set.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(await readFile(path, "utf8")).toBe(source.replace('"info"', '"warn"'));
+      const show = spawnCompiled(root, ["config", "show", "--format", "json"]);
+      expect(show.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(show.stdout).toContain('"warn"');
+      const reset = spawnCompiled(root, [
+        "config",
+        "reset",
+        "diagnostics.level",
+        "--format",
+        "json",
+      ]);
+      expect(reset.exitCode).toBe(EXIT_CODES.COMPLETED);
+      expect(JSON.parse(reset.stdout).command).toBe("config.reset");
+      const after = await readFile(path, "utf8");
+      expect(after).toContain("/* keep */");
+      expect(after).toContain("// retained\r\n");
+      expect(after).not.toContain('"level"');
+      expect(spawnCompiled(root, ["config", "validate"]).exitCode).toBe(EXIT_CODES.COMPLETED);
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
   test.skipIf(createHostSandbox().probe().status !== "available")(
     "governed package health and replay cross the compiled command boundary",
     async () => {

@@ -400,6 +400,7 @@ export function createHostFileSystem(): FileSystemPort {
       path: LocalPath,
       bytes: Uint8Array,
       signal?: AbortSignal,
+      condition?: { readonly expectedRevision: string | null },
     ): Promise<Result<FileWriteReceipt, FileSystemError>> {
       if (isCancelled(signal)) {
         return cancelled(path, "write");
@@ -411,7 +412,19 @@ export function createHostFileSystem(): FileSystemPort {
       const payload = new Uint8Array(bytes);
       let tempPath: LocalPath | null = null;
       let handle: FileHandle | null = null;
+      let lock: FileHandle | null = null;
+      const lockPath = `${path}.falryn-write-lock`;
+      let published = false;
       try {
+        if (condition !== undefined) {
+          try {
+            lock = await openFile(lockPath, "wx", 0o600);
+          } catch (thrown: unknown) {
+            if (errnoOf(thrown) === "EEXIST")
+              return err({ kind: "filesystem", code: "stale-write", path, operation: "write" });
+            throw thrown;
+          }
+        }
         const existing = await fs.lstat(path).catch((thrown: unknown) => {
           if (errnoOf(thrown) === "ENOENT") {
             return null;
@@ -441,7 +454,7 @@ export function createHostFileSystem(): FileSystemPort {
         const opened = await openTemporaryWrite(parent);
         tempPath = opened.path;
         handle = opened.handle;
-        await handle.write(payload);
+        await handle.writeFile(payload);
         await handle.sync();
         await handle.close();
         handle = null;
@@ -453,19 +466,52 @@ export function createHostFileSystem(): FileSystemPort {
           tempPath = null;
           return cancelled(path, "write");
         }
-        await replaceWithRename(tempPath, path);
+        const prepared = await fs.lstat(tempPath);
+        if (condition !== undefined) {
+          const current = await fs.lstat(path).catch((thrown: unknown) => {
+            if (errnoOf(thrown) === "ENOENT") return null;
+            throw thrown;
+          });
+          if ((current === null ? null : revisionOf(current)) !== condition.expectedRevision) {
+            return err({ kind: "filesystem", code: "stale-write", path, operation: "write" });
+          }
+          if (isCancelled(signal)) return cancelled(path, "write");
+          await fs.rename(tempPath, path);
+        } else {
+          await replaceWithRename(tempPath, path);
+        }
+        published = true;
         tempPath = null;
         const written = await fs.lstat(path);
+        if (
+          condition !== undefined &&
+          (written.ino !== prepared.ino ||
+            written.size !== prepared.size ||
+            written.mtimeMs !== prepared.mtimeMs)
+        ) {
+          return err({
+            kind: "filesystem",
+            code: "publication-uncertain",
+            path,
+            operation: "write",
+          });
+        }
         return ok({
           byteLength: payload.byteLength,
           revision: revisionOf(written),
         });
       } catch (thrown: unknown) {
-        return err(translate(thrown, path, "write"));
+        return published
+          ? err({ kind: "filesystem", code: "publication-uncertain", path, operation: "write" })
+          : err(translate(thrown, path, "write"));
       } finally {
         await handle?.close().catch(() => undefined);
         if (tempPath !== null) {
           await fs.unlink(tempPath).catch(() => undefined);
+        }
+        if (lock !== null) {
+          await lock.close().catch(() => undefined);
+          await fs.unlink(lockPath).catch(() => undefined);
         }
       }
     },

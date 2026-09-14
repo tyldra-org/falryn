@@ -157,6 +157,8 @@ export function createProviderConnectionService(
             });
             const written = await ports.store.write(next, snapshot.fileRevision, signal);
             if (written.kind !== "written") {
+              if (written.kind === "failed" && written.code === "publication-uncertain")
+                return unavailableHandoff("state-write-uncertain", false, connection, expired);
               await lifetime.retire(replacement);
               return {
                 ...unavailableHandoff(
@@ -421,8 +423,15 @@ async function loginApiKey(
   const next = changed(snapshot.state, { connections: replace(snapshot.state, replacement) });
   const written = await ports.store.write(next, snapshot.fileRevision, signal);
   if (written.kind === "written") {
-    return discoverConnection(action.kind, next, action.profileId, ports, signal);
+    return {
+      ...(await discoverConnection(action.kind, next, action.profileId, ports, signal)),
+      ...(written.configurationSave === undefined
+        ? {}
+        : { configurationSave: written.configurationSave }),
+    };
   }
+  if (written.kind === "failed" && written.code === "publication-uncertain")
+    return writeFailure(action.kind, written);
   const rollback = await ports.lifetime.retire(replacement);
   if (
     rollback.local !== "removed" &&
@@ -536,7 +545,7 @@ async function loginAuthorized(
       });
       const written = await ports.store.write(next, snapshot.fileRevision, signal);
       if (written.kind === "written") {
-        return discoverConnection(
+        const result = await discoverConnection(
           action.kind,
           next,
           action.profileId,
@@ -544,7 +553,15 @@ async function loginAuthorized(
           signal,
           authorized.receipt,
         );
+        return {
+          ...result,
+          ...(written.configurationSave === undefined
+            ? {}
+            : { configurationSave: written.configurationSave }),
+        };
       }
+      if (written.kind === "failed" && written.code === "publication-uncertain")
+        return writeFailure(action.kind, written, authorized.receipt);
       const rollback = await ports.lifetime.retire(replacement);
       if (
         rollback.local !== "removed" &&
@@ -586,6 +603,9 @@ async function logout(
   if (written.kind === "written") {
     return {
       ...success(action.kind, next, null, null, undefined, null, ports.authorizedLogin),
+      ...(written.configurationSave === undefined
+        ? {}
+        : { configurationSave: written.configurationSave }),
       revocation: ports.lifetime.reportFor(current.profile.credential) ?? {
         local: "not-present",
         remote: "not-attempted",
@@ -617,6 +637,9 @@ async function remove(
   if (written.kind === "written") {
     return {
       ...success(action.kind, next, null, null, undefined, null, ports.authorizedLogin),
+      ...(written.configurationSave === undefined
+        ? {}
+        : { configurationSave: written.configurationSave }),
       revocation: ports.lifetime.reportFor(current.profile.credential) ?? {
         local: "not-present",
         remote: "not-attempted",
@@ -636,7 +659,12 @@ async function persistAndDiscover(
 ): Promise<ProviderConnectionActionResult> {
   const written = await ports.store.write(state, snapshot.fileRevision, signal);
   return written.kind === "written"
-    ? discoverConnection(action, state, profileId, ports, signal)
+    ? {
+        ...(await discoverConnection(action, state, profileId, ports, signal)),
+        ...(written.configurationSave === undefined
+          ? {}
+          : { configurationSave: written.configurationSave }),
+      }
     : writeFailure(action, written);
 }
 
@@ -710,6 +738,16 @@ function writeFailure(
     case "cancelled":
       return failure(action, "cancelled", false, null, null, undefined, authorization);
     case "failed":
+      if (written.code === "publication-uncertain")
+        return failure(
+          action,
+          "state-write-uncertain",
+          false,
+          null,
+          null,
+          undefined,
+          authorization,
+        );
       return failure(action, "state-write-failed", true, null, null, undefined, authorization);
   }
 }
