@@ -15,6 +15,12 @@ Accept `Next - Target: Falryn Roadmap`, scoped Next targets and unambiguous
 requests to choose the next work. Keep Next read-only. A greeting, explanation,
 PR status question or request to continue known work does not select new work.
 
+This same procedure supplies the recommendation required by
+[falryn-work's completion rules](../falryn-work/SKILL.md#choose-the-next-prompt),
+including after completed Roadmap maintenance. Run the selector after the
+required audits; do not stop at an audit result or ask the user to invoke Next
+again. Selection and its live recheck recommend work without starting it.
+
 1. Establish authenticated access to Project 1 and both canonical repositories
    under [audits](references/audits.md). Resolve the current gh account.
 2. Obtain the required clean audit generation. Broad Next uses the whole generated
