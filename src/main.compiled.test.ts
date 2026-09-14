@@ -165,6 +165,7 @@ function spawnCompiled(
     env: {
       PATH: process.env.PATH ?? "",
       HOME: root,
+      USERPROFILE: root,
       FALRYN_STATE_DIR: root,
     },
     stdout: "pipe",
