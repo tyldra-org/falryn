@@ -54,13 +54,18 @@ type Session = Rendered & {
 async function open(
   shape: TerminalShape = { columns: 100, rows: 24 },
   exportSession?: SessionExportControl,
+  compact?: SessionExportControl,
 ): Promise<Session> {
   let exits = 0;
   const shell = await mount(
     <ShellApp
       theme={THEME}
       model={MODEL}
-      submission={{ ...UNAVAILABLE_SUBMISSION, ...(exportSession ? { exportSession } : {}) }}
+      submission={{
+        ...UNAVAILABLE_SUBMISSION,
+        ...(exportSession ? { exportSession } : {}),
+        ...(compact ? { compact } : {}),
+      }}
       onExit={() => {
         exits += 1;
       }}
@@ -346,6 +351,23 @@ test("session export uses the same shell control from the palette and slash comp
   await shell.press("\r");
   expect(await shell.frame()).toContain("Export preview: retained history");
   expect(calls).toEqual([null, "write example"]);
+});
+
+test("checkpoint preview and slash apply share the active session control", async () => {
+  const calls: (string | null)[] = [];
+  using shell = await open(undefined, undefined, async (argument) => {
+    calls.push(argument);
+    return { message: "Checkpoint receipt: retained history" };
+  });
+  await shell.openPalette();
+  await shell.type("compact.preview");
+  await shell.press("\r");
+  expect(await shell.frame()).toContain("Checkpoint receipt: retained history");
+  await shell.press("\t");
+  await shell.press("\t");
+  await shell.type("/compact apply candidate");
+  await shell.press("\r");
+  expect(calls).toEqual([null, "apply candidate"]);
 });
 
 test("Escape cancels a pending session export and settlement remains visible", async () => {

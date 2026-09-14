@@ -93,6 +93,7 @@ export const COMMAND_IDS = [
   "extension.scope",
   "package",
   "peer",
+  "compact",
   /** Shell completion install script (#731). */
   "completion",
   /** Headless coding entry (#708). */

@@ -1,6 +1,7 @@
 import type { ModelSettingsRequest } from "../../application/providers/model-settings.ts";
 import { assertNever } from "../../domain/foundation/index.ts";
 import type { Invocation, RunnableCommand } from "../command-tree.ts";
+import { type CompactArguments, runCompact } from "../commands/compact.ts";
 import {
   runDataBackup,
   runDataDiagnostics,
@@ -65,6 +66,7 @@ export type DispatchProduceOptions = {
   readonly extensionCatalogArgs?: ExtensionCatalogArguments;
   readonly packageArgs?: PackageArguments;
   readonly peerArgs?: PeerArguments;
+  readonly compactArgs?: CompactArguments;
   readonly modelRequest?: ModelSettingsRequest;
   readonly extensionPath?: string;
   readonly extensionTrust?: import("../../application/extensions/package-trust.ts").TrustRequest;
@@ -95,6 +97,10 @@ export async function produce(
   onMutationStart?: () => void,
 ): Promise<RunCommandResult> {
   switch (command) {
+    case "compact":
+      if (!options.compactArgs) throw new Error("Missing compact arguments.");
+      if (options.compactArgs.request.action !== "inspect") onMutationStart?.();
+      return runCompact(services, options.compactArgs, globals, signal);
     case "extension.catalog":
     case "extension.scope":
       if (options.extensionCatalogArgs === undefined)

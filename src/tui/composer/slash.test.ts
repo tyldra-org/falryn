@@ -107,7 +107,8 @@ describe("parseComposerSlash", () => {
         alias.commandId === "compression.show" ||
         alias.commandId === "model.settings" ||
         alias.commandId === "mode.select" ||
-        alias.commandId === "session.export"
+        alias.commandId === "session.export" ||
+        alias.commandId === "compact.preview"
       ) {
         expect(workspacePanelForSlashCommand(alias.commandId)).toBeNull();
         continue;

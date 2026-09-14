@@ -823,6 +823,8 @@ export async function runCoding(
             additionalCandidates: workspaceTools.contextCandidates,
           });
     const executor = createProductLiveTurnExecutor({
+      checkpointEvents: productArtifactSession.eventStore,
+      checkpointDurable: true,
       extensionCatalog: projectCatalogHistory(extensions.catalog, workspace.value.set),
       ...(workspaceTools.resources === null ? {} : { resources: workspaceTools.resources }),
       modelConfigurationGeneration: () => graph.loader.current()?.generation ?? generation,

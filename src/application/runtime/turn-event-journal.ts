@@ -113,6 +113,13 @@ export type TurnEventJournal = {
     facts: readonly TurnLifecycleFact[],
     signal?: AbortSignal,
   ): Promise<PersistTurnEventsOutcome>;
+  /** A single publication fenced by its inspected stream head and current host authority. */
+  compareAndPersist(
+    fact: TurnLifecycleFact,
+    expectedHead: Sequence,
+    current: () => boolean,
+    signal?: AbortSignal,
+  ): Promise<PersistTurnEventsOutcome | { readonly kind: "stale" }>;
 
   /** Rebuilds every turn in the stream from stored events. */
   replay(signal?: AbortSignal): Promise<ReplayTurnEventsOutcome>;
@@ -307,6 +314,14 @@ export function createTurnEventJournal(options: TurnEventJournalOptions): TurnEv
       appendTail = pending.catch(() => undefined);
       return pending;
     },
+    compareAndPersist(fact, expectedHead, current, signal) {
+      const pending = appendTail.then(async () => {
+        if (!current()) return { kind: "stale" as const };
+        return persistFacts([fact], signal, nextSequence(expectedHead));
+      });
+      appendTail = pending.catch(() => undefined);
+      return pending;
+    },
 
     async replay(signal) {
       const read = await readAllEvents(signal);
@@ -346,6 +361,7 @@ export function createTurnEventJournal(options: TurnEventJournalOptions): TurnEv
   async function persistFacts(
     facts: readonly TurnLifecycleFact[],
     signal?: AbortSignal,
+    expectedSequence?: Sequence,
   ): Promise<PersistTurnEventsOutcome> {
     const events: RuntimeEvent[] = [];
     const receipts: AppendReceipt[] = [];
@@ -353,7 +369,10 @@ export function createTurnEventJournal(options: TurnEventJournalOptions): TurnEv
       return { kind: "persisted", events, receipts };
     }
 
-    const discovered = await discoverNextSequence(signal);
+    const discovered =
+      expectedSequence === undefined
+        ? await discoverNextSequence(signal)
+        : { ok: true as const, next: expectedSequence };
     if (!discovered.ok) {
       if ("cancelled" in discovered) {
         return { kind: "cancelled", events, receipts };

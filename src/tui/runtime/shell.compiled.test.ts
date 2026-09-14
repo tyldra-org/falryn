@@ -630,17 +630,19 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       let closed = "";
       const run = await runOnPty([], async (driver) => {
         opened = await driver.press("?");
-        scrolled = await driver.press("\u001b[F");
+        await driver.press("\u001b[F");
+        scrolled = driver.pty.transcript();
         closed = await driver.press([0x1b]);
         await driver.press([0x03]);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(opened).toContain("Help");
       expect(opened).toContain("Ctrl+C ends the session");
-      // End reaches the task-intelligence block (#726 / #727). Prefer titles
-      // that fit one PTY cell row intact — the final row may truncate mid-word.
-      expect(scrolled).toContain("Commit plan");
-      expect(scrolled).toContain("Validation advice");
+      // End reaches the task-intelligence block. OpenTUI may repaint only
+      // changed cells, so assert the resulting terminal rather than a byte chunk.
+      const screen = await emulateScreen(scrolled, { columns: COLUMNS, rows: ROWS });
+      expect(screen.rows.join("\n")).toContain("Commit plan");
+      expect(screen.rows.join("\n")).toContain("Validation advice");
       // And closing gives the primary view back. Asserted on what the *step*
       // drew, because the transcript keeps every byte the overlay ever wrote.
       //

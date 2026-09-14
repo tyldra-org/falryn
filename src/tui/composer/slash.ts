@@ -31,6 +31,7 @@ export type ComposerSlashAlias = {
  */
 export const WORKSPACE_SLASH_ALIASES: readonly ComposerSlashAlias[] = [
   { forms: ["/export"], commandId: "session.export", argument: "layout-name" },
+  { forms: ["/compact"], commandId: "compact.preview", argument: "layout-name" },
   {
     forms: ["/model roles", "/model configure", "/settings models"],
     commandId: "model.settings",

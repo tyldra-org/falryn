@@ -1,4 +1,4 @@
-import { useSessionExport } from "./session-export.ts";
+import { useSessionOperation } from "./session-operation.ts";
 
 /** React lifecycle around the shell's pure state and command boundaries. */
 
@@ -145,7 +145,13 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         selectedModel === null ? base.selectedModelKey : providerModelIdentityKey(selectedModel),
     };
   });
-  const sessionExport = useSessionExport(options.submission?.exportSession, dispatch);
+  const sessionExport = useSessionOperation(
+    options.submission?.exportSession,
+    dispatch,
+    "Session export",
+  );
+  const compact = useSessionOperation(options.submission?.compact, dispatch, "Compaction");
+  const cancelCompact = compact.cancel;
   const cancelSessionExport = sessionExport.cancel;
   const blocks = options.transcriptBlocks ?? NO_BLOCKS;
   const commandState = useMemo(
@@ -154,7 +160,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         workspaceController: options.workspaceController ?? null,
         sessionNavigationController: options.sessionNavigationController ?? null,
         sessionCreation: options.sessionCreation ?? null,
-        peerPending: peerPending || sessionExport.pending,
+        peerPending: peerPending || sessionExport.pending || compact.pending,
       }),
     [
       state,
@@ -164,6 +170,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       options.sessionCreation,
       peerPending,
       sessionExport.pending,
+      compact.pending,
     ],
   );
   const commandStateRef = useRef(commandState);
@@ -520,6 +527,10 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         sessionExport.run(slash.argument);
         return;
       }
+      if (slash.commandId === "compact.preview") {
+        compact.run(slash.argument);
+        return;
+      }
       if (slash.commandId === "brief.set") {
         const brief = briefControls;
         if (brief === null) {
@@ -683,6 +694,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   }, [
     fileProbe,
     sessionExport.run,
+    compact.run,
     briefControls,
     options.midTurn,
     outputControls,
@@ -712,6 +724,10 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       switch (id) {
         case "session.export":
           return sessionExport.run(null);
+        case "compact.preview":
+          return compact.run(null);
+        case "compact.apply":
+          return compact.run("apply");
         case "confirmation.accept":
           return confirm("accept");
         case "confirmation.deny":
@@ -796,6 +812,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           return true;
         case "app.cancel": {
           if (cancelSessionExport()) return true;
+          if (cancelCompact()) return true;
           if (peerAction.current) {
             peerAction.current.abort();
             peerAction.current = null;
@@ -843,6 +860,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     },
     [
       sessionExport.run,
+      compact.run,
+      cancelCompact,
       cancelSessionExport,
       options.onExit,
       options.transcriptKeys,

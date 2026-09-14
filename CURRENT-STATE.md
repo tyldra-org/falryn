@@ -1137,6 +1137,38 @@ after retained reads. Model tool projections carry a history identity and
 metadata without repeating the inline result; authorized history reads retain
 access to the recorded content.
 
+Manual history checkpoints are published by the admitted `compact.preview` and
+`compact.apply` action behind `/compact`, the palette, and `falryn compact`.
+A preview seals one `history-projection.v1` artifact, preserving every selected
+semantic payload and lifecycle fact while interning repeated text. It binds the
+source range/digest, model/configuration/policy, protected request, ancestry and
+original recovery references. Apply compares that identity and appends its
+pointer and receipt atomically. Duplicate apply returns the existing receipt.
+Preview expires within 30 seconds and the owning operation deadline. Active
+turns return busy; strict ephemeral sessions refuse before artifact preparation.
+
+Admission uses the selected model window (capped by the existing 128,000-token
+Context ceiling) and explicit instruction, fresh-tool/result, modality and
+output/continuation reservations. Token values are labelled estimates using
+UTF-8 bytes divided by four. All source records remain protected; insufficient
+budget, unsupported media admission, changed source/policy, cancellation and
+unavailable evidence refuse without truncation or a provider/tool request.
+The producer does not consume prepared memory or enable automatic overflow retry.
+The live action requires a captured admitted text request; the headless action
+requires an explicit complete reservation. Neither establishes next-provider
+acceptance, which remains #952; combined continuity remains #792.
+
+Checkpoint inspection revalidates the original authorized sources, retention,
+digests and bytes. Restore selects retained checkpoint lineage without modifying
+source events or activating a session. It cannot recover forgotten or unavailable
+evidence. The producer uses the existing 64 semantic-record, 1,000 stream-event,
+32 retained-reference and 4 MiB content ceilings; exceeding them is explicit.
+Ordinary history pages remain 64 KiB, while admitted checkpoint reads may use the
+4 MiB ceiling. Real SQLite/artifact and CLI fixtures cover reopen, repeat/restore,
+source/model/policy races, lost receipts, SIGKILL before/after publication, Unicode,
+modality reservations, smaller windows, expiry, corruption and scope revocation.
+The shared producer fixture is `src/cli/runtime/history-checkpoint.fixtures.ts`.
+
 `/export` and the `session.export` palette command preview the active session
 through the same application action as `falryn export`. `/export write <name>`
 writes a versioned JSONL package with authorized artifact bytes; an existing

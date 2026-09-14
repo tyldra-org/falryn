@@ -1,32 +1,12 @@
 /** Bounded, read-only semantic history. No runner or mutation port is accepted. */
 import { type ArtifactRecord, type ArtifactStorePort, artifactId } from "../artifacts/index.ts";
 import type { Sequence, StreamId } from "../foundation/index.ts";
+import { authorizeCheckpointProjection } from "./checkpoint-recovery.ts";
 import type { RuntimeEvent } from "./event.ts";
 import type { EventStorePort } from "./event-store.ts";
 import { HISTORY_LIMITS } from "./history.ts";
+import type { HistoryAvailability, HistoryReadItem } from "./history-read-result.ts";
 
-export type HistoryAvailability =
-  | "exact"
-  | "reduced"
-  | "missing"
-  | "expired"
-  | "redacted"
-  | "unauthorized"
-  | "corrupt"
-  | "unavailable"
-  | "cancelled";
-export type HistoryReadItem = {
-  readonly references?: readonly {
-    readonly artifactId: string | null;
-    readonly availability: HistoryAvailability;
-    readonly text: string | null;
-    readonly reason: string | null;
-  }[];
-  readonly event: RuntimeEvent | null;
-  readonly availability: HistoryAvailability;
-  readonly text: string | null;
-  readonly reason: string | null;
-};
 export function createHistoryReader(options: {
   readonly digest: (value: string | Uint8Array) => string;
   readonly events: EventStorePort;
@@ -35,6 +15,8 @@ export function createHistoryReader(options: {
   readonly authorize: (event: RuntimeEvent, artifact: ArtifactRecord | null) => boolean;
   /** Export may preserve an authorized fact's position with all denied evidence removed. */
   readonly redactDeniedEvidence?: boolean;
+  /** Trusted admitted bulk readers may use the content bound; ordinary pages stay at 64 KiB. */
+  readonly maximumReadBytes?: number;
 }) {
   return {
     async page(
@@ -54,7 +36,11 @@ export function createHistoryReader(options: {
         limit > HISTORY_LIMITS.page ||
         !Number.isSafeInteger(maxBytes) ||
         maxBytes < 0 ||
-        maxBytes > HISTORY_LIMITS.readBytes
+        maxBytes >
+          Math.min(
+            options.maximumReadBytes ?? HISTORY_LIMITS.readBytes,
+            HISTORY_LIMITS.contentBytes,
+          )
       )
         return { ok: false as const, code: "malformed" };
       const read = await options.events.readFrom(
@@ -80,6 +66,7 @@ export function createHistoryReader(options: {
               { ...event, payload: { ...event.payload, evidence: reference, references: [] } },
               maxBytes - bytes,
               signal,
+              false,
             );
             bytes +=
               resolved.text === null ? 0 : new TextEncoder().encode(resolved.text).byteLength;
@@ -184,6 +171,7 @@ export function createHistoryReader(options: {
     event: RuntimeEvent,
     remaining: number,
     signal: AbortSignal,
+    primary = true,
   ): Promise<HistoryReadItem> {
     const fail = (availability: HistoryAvailability, reason: string): HistoryReadItem => ({
       // Preserve authorized metadata for export, but never refused inline bytes.
@@ -270,10 +258,33 @@ export function createHistoryReader(options: {
     )
       return fail("unavailable", "retention-changed");
     try {
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(read.value.bytes);
+      if (primary && event.payload.type === "checkpoint" && event.payload.publication) {
+        const checkpointFailure = await authorizeCheckpointProjection(
+          event,
+          text,
+          { ...options, resolve },
+          signal,
+        );
+        if (checkpointFailure !== null)
+          return checkpointFailure === "unauthorized"
+            ? deniedEvidence(event, "checkpoint-source-authority")
+            : fail(checkpointFailure, "checkpoint-source-unavailable");
+        const final = options.artifacts.get(id.value);
+        if (!final.ok || !final.value) return fail("missing", "projection-missing");
+        if (!options.authorize(event, final.value) || final.value.sensitivity === "restricted")
+          return deniedEvidence(event, "projection-authority-changed");
+        if (
+          final.value.availability !== "available" ||
+          String(final.value.digest) !== evidence.digest ||
+          final.value.byteLength !== evidence.byteLength
+        )
+          return fail("expired", "projection-retention-changed");
+      }
       return {
         event,
         availability: evidence.fidelity === "exact" ? "exact" : "redacted",
-        text: new TextDecoder("utf-8", { fatal: true }).decode(read.value.bytes),
+        text,
         reason: null,
       };
     } catch {

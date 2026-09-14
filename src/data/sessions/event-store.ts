@@ -353,13 +353,18 @@ function resolveAppend(
     ? historyReferences(event.payload)
     : []) {
     const artifact = statements.all(
-      "SELECT digest, byte_length AS byteLength, availability FROM artifacts WHERE artifact_id = $id",
+      "SELECT digest, byte_length AS byteLength, availability, sensitivity FROM artifacts WHERE artifact_id = $id",
       { id: evidence.artifactId },
     )[0];
     if (
       artifact?.availability !== "available" ||
       artifact.digest !== evidence.digest ||
-      integerOf(artifact.byteLength) !== evidence.byteLength
+      integerOf(artifact.byteLength) !== evidence.byteLength ||
+      (event.kind === "history.recorded" &&
+        event.payload.type === "checkpoint" &&
+        event.payload.publication !== undefined &&
+        artifact.sensitivity !== "public" &&
+        artifact.sensitivity !== "user-content")
     )
       return {
         kind: "malformed-row",

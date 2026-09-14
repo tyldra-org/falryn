@@ -91,6 +91,7 @@ export type SubmissionOutcome =
  * while holding the user's text.
  */
 export type SubmissionPort = {
+  readonly compact?: import("../../application/compression/checkpoint-request.ts").CheckpointControl;
   readonly exportSession?: import("../../application/sessions/session-export.ts").SessionExportControl;
   readonly peer?: (input: unknown, signal: AbortSignal) => Promise<unknown>;
   readonly subscribePeer?: (

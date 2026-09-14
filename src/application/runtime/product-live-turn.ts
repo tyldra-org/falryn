@@ -1,3 +1,6 @@
+import type { EventStorePort } from "../../domain/sessions/index.ts";
+import { createLiveCheckpoint, guardCheckpointTurn } from "../compression/live-checkpoint.ts";
+import type { CheckpointOutcome, CheckpointRequest } from "../compression/product-checkpoint.ts";
 import { createSessionHistory, historyDigest } from "../sessions/session-history.ts";
 /** One application-owned live-turn path for headless and OpenTUI hosts (#787). */
 
@@ -141,6 +144,10 @@ export type ProductModelSelectionControls = {
 };
 
 export type ProductLiveTurnExecutor = {
+  readonly compact?: (
+    request: CheckpointRequest,
+    signal: AbortSignal,
+  ) => Promise<CheckpointOutcome>;
   readonly executionProfile: ProductExecutionProfileControls;
   readonly modelSelection: ProductModelSelectionControls;
   /** Persist `session.started` before accepting the first turn. */
@@ -150,6 +157,8 @@ export type ProductLiveTurnExecutor = {
 };
 
 export type ProductLiveTurnExecutorOptions = {
+  readonly checkpointEvents?: EventStorePort;
+  readonly checkpointDurable?: boolean;
   /** Inert session-start provenance, not a source of executable capability bindings. */
   readonly extensionCatalog?: CatalogHistory;
   readonly resources?: ResourceResolver;
@@ -274,6 +283,32 @@ export function createProductLiveTurnExecutor(
   let activeModelExplicit = options.initialModel !== undefined;
   let sessionStarted = false;
   let initialProfilePersisted = false;
+  const checkpoint =
+    options.artifacts && options.checkpointEvents
+      ? createLiveCheckpoint({
+          events: options.checkpointEvents,
+          artifacts: options.artifacts,
+          streamId: runtime.streamId,
+          correlation,
+          journal: runtime.journal,
+          clock: options.clock,
+          durable: options.checkpointDurable === true,
+          authorize: (event, artifact) =>
+            event.correlation.sessionId === correlation.sessionId &&
+            event.correlation.workspaceId === correlation.workspaceId &&
+            (artifact === null ||
+              artifact.sensitivity === "public" ||
+              artifact.sensitivity === "user-content"),
+          current: () => ({
+            model: activeModel,
+            generation: Number(
+              options.modelConfigurationGeneration?.() ?? correlation.configurationGeneration,
+            ),
+            profile: activeProfile,
+            policy: options.modelPreferences?.() ?? null,
+          }),
+        })
+      : null;
 
   const result = (
     fields: Omit<
@@ -492,7 +527,7 @@ export function createProductLiveTurnExecutor(
     });
   }
 
-  return {
+  const executor: ProductLiveTurnExecutor = {
     executionProfile: {
       get: () => activeProfile,
       async select(profileId) {
@@ -569,6 +604,20 @@ export function createProductLiveTurnExecutor(
       },
     },
     startSession,
+    ...(checkpoint === null
+      ? {}
+      : {
+          async compact(request: CheckpointRequest, signal: AbortSignal) {
+            const resources = runtime.resources.openTask(
+              String(correlation.configurationGeneration),
+            );
+            try {
+              return await checkpoint.run(request, resources, signal);
+            } finally {
+              resources.close();
+            }
+          },
+        }),
     async run(rawInput) {
       const requestInput =
         rawInput.prompt.trim() === "" && (rawInput.attachmentSelection?.attachments.length ?? 0) > 0
@@ -1022,6 +1071,24 @@ export function createProductLiveTurnExecutor(
           journal: runtime.journal,
           persistTurnLifecycle: false,
         });
+        const modelInput = attemptModelInputFromPrompt(
+          planned.value.prompt,
+          disclosure,
+          executionPolicy,
+          {
+            ...(briefed?.ok && briefRequest !== null
+              ? { brief: { request: briefRequest, projection: briefed.value.projection } }
+              : {}),
+            ...(input.maxOutputTokens === undefined
+              ? {}
+              : { maxOutputTokens: input.maxOutputTokens }),
+          },
+        );
+        checkpoint?.capture(
+          modelInput,
+          options.providerCatalog?.models.find((model) => model.modelId === selectedModel?.modelId),
+          prepared.receipt?.generation ?? "static",
+        );
         const attempted = await attemptPolicy.run({
           ...(input.processing === undefined ? {} : { processing: input.processing }),
           taskResources,
@@ -1029,19 +1096,7 @@ export function createProductLiveTurnExecutor(
           configurationGeneration: generation,
           signal: input.signal ?? new AbortController().signal,
           intent: input.intent ?? executionPolicy.workIntent,
-          modelInput: attemptModelInputFromPrompt(
-            planned.value.prompt,
-            disclosure,
-            executionPolicy,
-            {
-              ...(briefed?.ok && briefRequest !== null
-                ? { brief: { request: briefRequest, projection: briefed.value.projection } }
-                : {}),
-              ...(input.maxOutputTokens === undefined
-                ? {}
-                : { maxOutputTokens: input.maxOutputTokens }),
-            },
-          ),
+          modelInput: modelInput,
         });
         const attemptOutcome =
           attempted.turn?.status === "terminal" && attempted.turn.outcome !== null
@@ -1146,6 +1201,29 @@ export function createProductLiveTurnExecutor(
         if (input.childAdmission === undefined) taskResources.close();
       }
     },
+  };
+  return {
+    ...executor,
+    run: guardCheckpointTurn(
+      checkpoint,
+      () =>
+        result({
+          kind: "unavailable",
+          code: "compact.busy",
+          message: "Compaction is publishing; retry the turn after it settles.",
+          response: "",
+          terminalOutcome: FAILED,
+          contextPackItems: 0,
+          modelAttempts: 0,
+          toolResults: 0,
+          disclosedTools: 0,
+          contextStatus: "static",
+          contextGeneration: null,
+          recalledMemories: 0,
+          memoryAdmission: "skipped",
+        }),
+      executor.run,
+    ),
   };
 }
 
