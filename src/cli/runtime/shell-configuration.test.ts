@@ -144,7 +144,7 @@ function loaderAnswering(
     const services = real(globals);
     return () => ({
       ...services(),
-      loader: { load: async () => outcome, current: () => null },
+      loader: { ...services().loader, load: async () => outcome, current: () => null },
     });
   };
 }

@@ -1,20 +1,30 @@
 import { describe, expect, test } from "bun:test";
+import { z } from "zod";
 
 import { createRuntimeRedactor } from "../../application/diagnostics/index.ts";
+import { err } from "../../domain/foundation/index.ts";
 import {
   createInMemoryFileSystem,
   type InMemoryNode,
   localPath,
 } from "../../domain/workspace/index.ts";
-import { enumKey } from "../document/declaration.ts";
+import { enumKey, objectKey } from "../document/declaration.ts";
 import { V0_1_CONFIGURATION_KEYS, V0_1_CROSS_FIELD_RULES } from "../resolution/keys.ts";
 import { createConfigurationRegistry } from "../resolution/registry.ts";
 import { CONFIGURATION_FILE_NAME } from "../resolution/sources.ts";
-import { writeConfigurationKey } from "./writer.ts";
+import { writeConfigurationKey, writeConfigurationValue } from "./writer.ts";
 
 const CONFIG_ROOT = localPath("/d/config");
 const LEGACY_CONFIG_ROOT = localPath("/d/legacy-config");
 const USER_FILE = `/d/config/${CONFIGURATION_FILE_NAME}`;
+const REQUEST = {
+  configurationRoot: CONFIG_ROOT,
+  workspaceRoot: null,
+  profile: null,
+  scope: "user" as const,
+  keyPath: "diagnostics.level",
+  rawValue: "warn",
+};
 
 function file(text: string): InMemoryNode {
   return { kind: "file", text };
@@ -37,6 +47,142 @@ function harness(nodes: Readonly<Record<string, InMemoryNode>> = {}) {
 }
 
 describe("writeConfigurationKey", () => {
+  test("invalid legacy bytes are refused before moving the configuration home", async () => {
+    const { registry, fileSystem } = harness({
+      "/d/legacy-config": { kind: "directory" },
+      "/d/legacy-config/falryn.jsonc": file('{"diagnostics":'),
+    });
+    expect(
+      await writeConfigurationKey(registry, fileSystem, {
+        ...REQUEST,
+        legacyConfigurationRoot: LEGACY_CONFIG_ROOT,
+      }),
+    ).toMatchObject({ kind: "filesystem" });
+    expect(fileSystem.paths()).toContain(LEGACY_CONFIG_ROOT);
+    expect(fileSystem.paths()).not.toContain(USER_FILE);
+  });
+  test("keeps BOM, comments, newer fields and external scripts byte-for-byte", async () => {
+    const source =
+      '\uFEFF// notes\r\n{ "schemaVersion": 2, "minimumReaderSchemaVersion": 1, "future": { "untouched": 42 }, "diagnostics": { /* level */ "level": "info", }, }\r\n';
+    const script = "# authored environment\nexport EXAMPLE='retained'\n";
+    const { registry, fileSystem } = harness({
+      [USER_FILE]: file(source),
+      "/d/config/env.zsh": file(script),
+    });
+    const result = await writeConfigurationKey(registry, fileSystem, REQUEST);
+    expect(result.kind).toBe("written");
+    const saved = await fileSystem.readBytes(localPath(USER_FILE), 256 * 1024);
+    expect(saved.ok && new TextDecoder("utf-8", { ignoreBOM: true }).decode(saved.value)).toBe(
+      source.replace('"info"', '"warn"'),
+    );
+    expect(await fileSystem.readText(localPath("/d/config/env.zsh"), 1024)).toEqual({
+      ok: true,
+      value: script,
+    });
+  });
+
+  test("reset removes the override, retains its comments and never creates an absent file", async () => {
+    const source = '{"schemaVersion":1,"diagnostics":{/* keep */"level":"warn",}}';
+    const { registry, fileSystem } = harness({ [USER_FILE]: file(source) });
+    expect(
+      await writeConfigurationKey(registry, fileSystem, { ...REQUEST, operation: "remove" }),
+    ).toMatchObject({ kind: "written", changedPaths: ["diagnostics.level"] });
+    expect(await fileSystem.readText(localPath(USER_FILE), 1024)).toEqual({
+      ok: true,
+      value: '{"schemaVersion":1,"diagnostics":{/* keep */}}',
+    });
+    const empty = harness();
+    expect(
+      await writeConfigurationKey(empty.registry, empty.fileSystem, {
+        ...REQUEST,
+        operation: "remove",
+      }),
+    ).toMatchObject({ kind: "unchanged", revision: null });
+    expect(empty.fileSystem.paths()).not.toContain(USER_FILE);
+  });
+
+  test("no-op keeps bytes and revision; cancelled and malformed writes do not mutate", async () => {
+    for (const source of [
+      '// keep\n{"schemaVersion":1,"diagnostics":{"level":"warn"}}',
+      '{"diagnostics":',
+      '{"schemaVersion":1,"diagnostics":{"level":"info","level":"debug"}}',
+    ]) {
+      const { registry, fileSystem } = harness({ [USER_FILE]: file(source) });
+      const before = await fileSystem.stat(localPath(USER_FILE));
+      const result = await writeConfigurationKey(registry, fileSystem, REQUEST);
+      expect(result.kind === "written" ? result.save : result.kind).toBe(
+        source.startsWith("//") ? "unchanged" : "filesystem",
+      );
+      expect(await fileSystem.stat(localPath(USER_FILE))).toEqual(before);
+      expect(await fileSystem.readText(localPath(USER_FILE), 1024)).toEqual({
+        ok: true,
+        value: source,
+      });
+      expect(
+        await writeConfigurationKey(registry, fileSystem, REQUEST, AbortSignal.abort()),
+      ).toEqual({ kind: "cancelled" });
+    }
+  });
+
+  test("refuses missing expected files and a second session changing the file at publication", async () => {
+    const { registry, fileSystem } = harness();
+    expect(
+      await writeConfigurationKey(registry, fileSystem, {
+        ...REQUEST,
+        expectedRevision: "deleted-file",
+      }),
+    ).toMatchObject({ kind: "stale-write" });
+    const concurrent = '{"schemaVersion":1,"diagnostics":{"level":"debug"}}';
+    const wrapped = {
+      ...fileSystem,
+      writeBytes: async (...args: Parameters<typeof fileSystem.writeBytes>) => {
+        fileSystem.put(USER_FILE, { kind: "file", text: concurrent, revision: "other-session" });
+        return fileSystem.writeBytes(...args);
+      },
+    };
+    expect(await writeConfigurationKey(registry, wrapped, REQUEST)).toMatchObject({
+      kind: "stale-write",
+    });
+    expect(await fileSystem.readText(localPath(USER_FILE), 1024)).toEqual({
+      ok: true,
+      value: concurrent,
+    });
+  });
+
+  test("failed storage retains the original, and invalid composed settings never reach storage", async () => {
+    const source = '{"schemaVersion":1,"diagnostics":{"level":"info"}}';
+    const { registry, fileSystem } = harness({ [USER_FILE]: file(source) });
+    let writes = 0;
+    const failing = {
+      ...fileSystem,
+      writeBytes: async () => {
+        writes++;
+        return err({
+          kind: "filesystem" as const,
+          operation: "write" as const,
+          path: localPath(USER_FILE),
+          code: "io-failure" as const,
+        });
+      },
+    };
+    expect(await writeConfigurationKey(registry, failing, REQUEST)).toMatchObject({
+      kind: "filesystem",
+      code: "io-failure",
+    });
+    expect(await fileSystem.readText(localPath(USER_FILE), 1024)).toEqual({
+      ok: true,
+      value: source,
+    });
+    expect(
+      await writeConfigurationKey(registry, failing, {
+        ...REQUEST,
+        validateCandidate: async () => [
+          { kind: "invalid-value", severity: "error", path: "diagnostics.level", allowed: [] },
+        ],
+      }),
+    ).toMatchObject({ kind: "rejected" });
+    expect(writes).toBe(1);
+  });
   test("migrates the legacy home before a user write", async () => {
     const legacyFile = "/d/legacy-config/falryn.jsonc";
     const { registry, fileSystem } = harness({
@@ -187,6 +333,72 @@ describe("writeConfigurationKey", () => {
 });
 
 describe("writeConfigurationKey with fixture registry", () => {
+  test("a route reorder and a provider edit share one revision without losing comments", async () => {
+    const registry = createConfigurationRegistry({
+      declarations: [
+        objectKey({
+          path: "fixture.routing",
+          summary: "fixture routing",
+          objectSchema: z.strictObject({ candidates: z.array(z.string()) }),
+          defaultValue: { candidates: [] },
+          scopes: ["user"],
+          applicationClass: "live",
+        }),
+        enumKey({
+          path: "fixture.connection",
+          summary: "fixture connection",
+          allowed: ["alpha", "beta"],
+          defaultValue: "alpha",
+          scopes: ["user"],
+          applicationClass: "live",
+        }),
+      ],
+      redactor: createRuntimeRedactor(),
+    });
+    const source =
+      '{\n  "schemaVersion": 1,\n  "fixture": {\n    "routing": {"candidates": [\n      "first", // candidate\n      "second",\n      "unrelated", // untouched\n    ]},\n    "connection": "alpha" // account\n  }\n}\n';
+    const { fileSystem } = harness({ [USER_FILE]: file(source) });
+    const original = await fileSystem.stat(localPath(USER_FILE));
+    if (!original.ok || original.value === null) throw new Error("expected source");
+    const reordered = await writeConfigurationValue(registry, fileSystem, {
+      ...REQUEST,
+      keyPath: "fixture.routing",
+      value: { candidates: ["second", "first", "unrelated"] },
+      expectedRevision: original.value.revision,
+    });
+    if (reordered.kind !== "written") throw new Error("expected reorder");
+    const expected = source
+      .replace('"first", // candidate', '"second", // candidate')
+      .replace('"second",\n', '"first",\n');
+    expect(await fileSystem.readText(localPath(USER_FILE), 1024)).toEqual({
+      ok: true,
+      value: expected,
+    });
+    expect(
+      await writeConfigurationKey(registry, fileSystem, {
+        ...REQUEST,
+        keyPath: "fixture.connection",
+        rawValue: "beta",
+        expectedRevision: original.value.revision,
+      }),
+    ).toMatchObject({ kind: "stale-write" });
+    expect(await fileSystem.readText(localPath(USER_FILE), 1024)).toEqual({
+      ok: true,
+      value: expected,
+    });
+    expect(
+      await writeConfigurationKey(registry, fileSystem, {
+        ...REQUEST,
+        keyPath: "fixture.connection",
+        rawValue: "beta",
+        expectedRevision: reordered.revision,
+      }),
+    ).toMatchObject({ kind: "written" });
+    expect(await fileSystem.readText(localPath(USER_FILE), 1024)).toEqual({
+      ok: true,
+      value: expected.replace('"alpha"', '"beta"'),
+    });
+  });
   test("refuses map keys that cannot be set from a string", async () => {
     const declaration = enumKey({
       path: "fixture.mode",

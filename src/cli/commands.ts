@@ -29,6 +29,7 @@ import type {
   ConfigShowPayload,
   ConfigValidatePayload,
   runConfigPath,
+  runConfigReset,
   runConfigSet,
   runConfigShow,
   runConfigValidate,
@@ -95,6 +96,7 @@ export {
   type ConfigShowPayload,
   type ConfigValidatePayload,
   runConfigPath,
+  runConfigReset,
   runConfigSet,
   runConfigShow,
   runConfigValidate,
@@ -151,6 +153,8 @@ export function stoppedResult(
       return resultFor<"config.path", ConfigPathPayload>("config.path", null, [], outcome, effect);
     case "config.set":
       return resultFor<"config.set", ConfigSetPayload>("config.set", null, [], outcome, effect);
+    case "config.reset":
+      return resultFor<"config.reset", ConfigSetPayload>("config.reset", null, [], outcome, effect);
     case "data.reset":
       return resultFor<"data.reset", DataRemovalPayload>("data.reset", null, [], outcome, effect);
     case "data.uninstall":
@@ -325,6 +329,7 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runConfigValidate>>
   | Awaited<ReturnType<typeof runConfigPath>>
   | Awaited<ReturnType<typeof runConfigSet>>
+  | Awaited<ReturnType<typeof runConfigReset>>
   | CommandResultOf<"data.reset", DataRemovalPayload>
   | CommandResultOf<"data.uninstall", DataRemovalPayload>
   | CommandResultOf<"data.backup", DataBackupPayload>

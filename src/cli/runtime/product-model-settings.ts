@@ -22,6 +22,7 @@ import {
 import {
   loadProductConfiguration,
   productConfigurationLoadRequest,
+  validateProductConfigurationCandidate,
 } from "./product-configuration.ts";
 import {
   DEFAULT_PROVIDER_CONNECTION_STATE,
@@ -114,17 +115,31 @@ export function composeProductModelSettings(
           value: modelPreferencesValue(preferences),
           expectedRevision,
           requireAbsent: expectedRevision === null,
+          validateCandidate: (path, text, abort) =>
+            validateProductConfigurationCandidate(services, globals.profile, path, text, abort),
         },
         signal,
       );
       if (result.kind === "written") {
-        // Publication already happened. A cancelled refresh must not report the write as failed.
         try {
-          await readConfiguration(signal);
+          const loaded = await readConfiguration(signal);
+          return {
+            kind: "written",
+            revision: result.revision,
+            receipt: {
+              ...result,
+              publication: "published",
+              generation: Number(loaded.generation),
+              application: "pending",
+            },
+          };
         } catch {
-          // The next inspection/turn reloads through the same configuration owner.
+          return {
+            kind: "written",
+            revision: result.revision,
+            receipt: { ...result, publication: "failed", generation: null, application: "failed" },
+          };
         }
-        return { kind: "written", revision: result.revision };
       }
       return {
         kind:
@@ -133,7 +148,7 @@ export function composeProductModelSettings(
             : result.kind === "cancelled"
               ? "cancelled"
               : "failed",
-        code: result.kind,
+        code: result.kind === "filesystem" ? result.code : result.kind,
       };
     },
     async backup(original, expectedRevision, signal) {

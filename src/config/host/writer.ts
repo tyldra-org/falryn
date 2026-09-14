@@ -20,14 +20,8 @@ import {
   type LocalPath,
   parentPath,
 } from "../../domain/workspace/index.ts";
-import {
-  assignConfigurationValue,
-  createEmptyConfigurationDocument,
-  parseConfigurationDocument,
-  serializeConfigurationDocument,
-} from "../document/document.ts";
+import { planConfigurationEdits } from "../document/edits.ts";
 import { MAX_CONFIGURATION_FILE_BYTES } from "../document/jsonc.ts";
-import { CONFIGURATION_SCHEMA_VERSION, SCHEMA_VERSION_FIELD } from "../document/schema-family.ts";
 import { readOverrideLayer } from "../resolution/bridges.ts";
 import {
   CONFIGURATION_FILE_NAME,
@@ -36,7 +30,11 @@ import {
   PROFILE_DIRECTORY,
   PROJECT_CONFIGURATION_DIRECTORY,
 } from "../resolution/sources.ts";
-import { configurationHomeIssue, prepareConfigurationHomeForWrite } from "./home.ts";
+import {
+  configurationHomeIssue,
+  prepareConfigurationHomeForWrite,
+  resolveConfigurationHome,
+} from "./home.ts";
 
 export type ConfigurationFileScope = "user" | "project" | "profile";
 
@@ -49,8 +47,15 @@ export type ConfigurationWriteRequest = {
   readonly scope: ConfigurationFileScope;
   readonly keyPath: string;
   readonly rawValue: string;
+  readonly operation?: "remove";
   /** When set, the file must still have this revision or the write is refused. */
   readonly expectedRevision?: string | null;
+  readonly onMutationStart?: () => void;
+  readonly validateCandidate?: (
+    path: LocalPath,
+    text: string,
+    signal?: AbortSignal,
+  ) => Promise<readonly ConfigurationIssue[]>;
 };
 
 /** A typed value write used by product-owned configuration actions. */
@@ -62,10 +67,28 @@ export type ConfigurationValueWriteRequest = Omit<ConfigurationWriteRequest, "ra
 
 export type ConfigurationWriteOutcome =
   | {
+      readonly kind: "unchanged";
+      readonly path: LocalPath;
+      readonly revision: null;
+      readonly byteLength: 0;
+      readonly previousRevision: null;
+      readonly changedPaths: readonly string[];
+      readonly validation: "valid";
+      readonly save: "unchanged";
+      readonly publication: "pending";
+      readonly application: "pending";
+    }
+  | {
       readonly kind: "written";
       readonly path: LocalPath;
       readonly revision: string;
       readonly byteLength: number;
+      readonly previousRevision: string | null;
+      readonly changedPaths: readonly string[];
+      readonly validation: "valid";
+      readonly save: "saved" | "unchanged";
+      readonly publication: "pending";
+      readonly application: "pending";
     }
   | { readonly kind: "rejected"; readonly issues: readonly ConfigurationIssue[] }
   | { readonly kind: "stale-write"; readonly path: LocalPath }
@@ -143,7 +166,24 @@ export async function writeConfigurationKey(
     return { kind: "cancelled" };
   }
 
-  const coerced = readOverrideLayer(registry, { [request.keyPath]: request.rawValue });
+  if (request.operation === "remove") {
+    if (registry.resolve(request.keyPath).kind === "unknown")
+      return {
+        kind: "rejected",
+        issues: [{ kind: "unknown-key", severity: "error", path: request.keyPath }],
+      };
+    const rooted = await requestForWrite(fileSystem, request, signal);
+    if (!rooted.ok) return rooted.error;
+    const path = resolveConfigurationFilePath(rooted.value);
+    if (!path.ok) return path.error;
+    return writeValueAtPath(registry, fileSystem, rooted.value, path.value, undefined, signal);
+  }
+
+  const coerced = readOverrideLayer(
+    registry,
+    { [request.keyPath]: request.rawValue },
+    request.scope,
+  );
   if (coerced.issues.some((issue) => issue.severity === "error")) {
     return { kind: "rejected", issues: coerced.issues };
   }
@@ -210,12 +250,12 @@ async function requestForWrite<T extends Omit<ConfigurationWriteRequest, "rawVal
   fileSystem: FileSystemPort,
   request: T,
   signal?: AbortSignal,
-): Promise<Result<T, ConfigurationWriteOutcome>> {
+): Promise<Result<T & { readonly publicationRoot?: LocalPath }, ConfigurationWriteOutcome>> {
   if (request.scope === "project") {
     return ok(request);
   }
 
-  const home = await prepareConfigurationHomeForWrite(
+  const home = await resolveConfigurationHome(
     fileSystem,
     {
       current: request.configurationRoot,
@@ -224,8 +264,14 @@ async function requestForWrite<T extends Omit<ConfigurationWriteRequest, "rawVal
     signal,
   );
   switch (home.kind) {
-    case "ready":
-      return ok({ ...request, configurationRoot: home.root });
+    case "current":
+    case "empty":
+    case "legacy":
+      return ok({
+        ...request,
+        configurationRoot: home.root,
+        publicationRoot: request.configurationRoot,
+      });
     case "conflict":
     case "unavailable":
       return home.kind === "conflict"
@@ -239,11 +285,30 @@ async function requestForWrite<T extends Omit<ConfigurationWriteRequest, "rawVal
 async function writeValueAtPath(
   registry: ConfigurationRegistryPort,
   fileSystem: FileSystemPort,
-  request: Omit<ConfigurationWriteRequest, "rawValue"> & { readonly requireAbsent?: boolean },
+  request: Omit<ConfigurationWriteRequest, "rawValue"> & {
+    readonly requireAbsent?: boolean;
+    readonly operation?: "remove";
+    readonly publicationRoot?: LocalPath;
+  },
   path: LocalPath,
-  value: ConfigurationValue,
+  value: ConfigurationValue | undefined,
   signal?: AbortSignal,
 ): Promise<ConfigurationWriteOutcome> {
+  const declaration = registry.resolve(request.keyPath);
+  if (declaration.kind === "known" && !declaration.descriptor.scopes.includes(request.scope)) {
+    return {
+      kind: "rejected",
+      issues: [
+        {
+          kind: "scope-unavailable",
+          severity: "error",
+          path: request.keyPath,
+          scope: request.scope,
+          availableScopes: declaration.descriptor.scopes,
+        },
+      ],
+    };
+  }
   const stated = await fileSystem.stat(path, signal);
   if (!stated.ok) {
     if (stated.error.code === "cancelled") {
@@ -252,12 +317,8 @@ async function writeValueAtPath(
     return { kind: "filesystem", path, code: stated.error.code };
   }
 
-  if (
-    stated.value !== null &&
-    request.expectedRevision !== undefined &&
-    request.expectedRevision !== null
-  ) {
-    if (stated.value.revision !== request.expectedRevision) {
+  if (request.expectedRevision !== undefined) {
+    if ((stated.value?.revision ?? null) !== request.expectedRevision) {
       return { kind: "stale-write", path };
     }
   }
@@ -265,51 +326,117 @@ async function writeValueAtPath(
     return { kind: "stale-write", path };
   }
 
-  let document: Record<string, unknown>;
-  if (stated.value === null) {
-    document = createEmptyConfigurationDocument();
-    const parent = parentPath(path);
-    if (parent !== null) {
-      const created = await ensureParentDirectory(fileSystem, parent, signal);
-      if (created !== null) {
-        return created;
-      }
-    }
-  } else {
-    const text = await fileSystem.readText(path, MAX_CONFIGURATION_FILE_BYTES, signal);
+  let source: string | null = null;
+  if (stated.value !== null) {
+    const text = await fileSystem.readBytes(path, MAX_CONFIGURATION_FILE_BYTES, signal);
     if (!text.ok) {
       if (text.error.code === "cancelled") {
         return { kind: "cancelled" };
       }
       return { kind: "filesystem", path, code: text.error.code };
     }
-    const parsed = parseConfigurationDocument(text.value);
-    document =
-      parsed === null
-        ? createEmptyConfigurationDocument()
-        : {
-            ...createEmptyConfigurationDocument(),
-            ...parsed,
-            [SCHEMA_VERSION_FIELD]: parsed[SCHEMA_VERSION_FIELD] ?? CONFIGURATION_SCHEMA_VERSION,
-          };
+    try {
+      source = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(text.value);
+    } catch {
+      return { kind: "filesystem", path, code: "malformed-encoding" };
+    }
   }
 
-  const candidate = assignConfigurationValue(document, request.keyPath, value);
+  const operations =
+    request.operation === "remove"
+      ? [{ kind: "remove" as const, path: request.keyPath.split(".") }]
+      : [{ kind: "set" as const, path: request.keyPath.split("."), value }];
+  const plan = planConfigurationEdits(source, operations);
+  if (plan.kind === "rejected") return { kind: "filesystem", path, code: plan.code };
   const scope = SCOPE_BY_FILE[request.scope];
-  const validated = registry.validateComplete(candidate, {
+  const validated = registry.validateComplete(plan.document, {
     scope,
     sourceKind: scope === "user" ? "user-file" : scope === "project" ? "project-file" : "profile",
   });
   if (!validated.ok) {
     return { kind: "rejected", issues: validated.issues };
   }
+  let composedIssues: readonly ConfigurationIssue[];
+  try {
+    composedIssues = (await request.validateCandidate?.(path, plan.text, signal)) ?? [];
+  } catch {
+    return { kind: "filesystem", path, code: "validation-unavailable" };
+  }
+  if (signal?.aborted === true) return { kind: "cancelled" };
+  if (composedIssues.some((issue) => issue.severity === "error"))
+    return { kind: "rejected", issues: composedIssues };
 
-  const bytes = new TextEncoder().encode(serializeConfigurationDocument(candidate));
-  const written = await fileSystem.writeBytes(path, bytes, signal);
+  const previousRevision = stated.value?.revision ?? null;
+  const bytes = new TextEncoder().encode(plan.text);
+  const receipt = {
+    previousRevision,
+    changedPaths: plan.changedPaths,
+    validation: "valid" as const,
+    publication: "pending" as const,
+    application: "pending" as const,
+  };
+  const current = await fileSystem.stat(path, signal);
+  if (!current.ok)
+    return current.error.code === "cancelled"
+      ? { kind: "cancelled" }
+      : { kind: "filesystem", path, code: current.error.code };
+  if ((current.value?.revision ?? null) !== previousRevision) return { kind: "stale-write", path };
+  if (source === null && request.operation === "remove") {
+    return {
+      kind: "unchanged",
+      path,
+      revision: null,
+      byteLength: 0,
+      previousRevision: null,
+      changedPaths: [],
+      validation: "valid",
+      save: "unchanged",
+      publication: "pending",
+      application: "pending",
+    };
+  }
+  if (source === plan.text && previousRevision !== null) {
+    return {
+      kind: "written",
+      path,
+      revision: previousRevision,
+      byteLength: bytes.byteLength,
+      save: "unchanged",
+      ...receipt,
+    };
+  }
+  request.onMutationStart?.();
+  if (
+    request.publicationRoot !== undefined &&
+    request.publicationRoot !== request.configurationRoot
+  ) {
+    const home = await prepareConfigurationHomeForWrite(
+      fileSystem,
+      { current: request.publicationRoot, legacy: request.configurationRoot },
+      signal,
+    );
+    if (home.kind === "cancelled") return { kind: "cancelled" };
+    if (home.kind === "conflict")
+      return { kind: "rejected", issues: [configurationHomeIssue(home)] };
+    if (home.kind === "unavailable")
+      return { kind: "filesystem", path: home.path, code: home.code };
+    const destination = resolveConfigurationFilePath({ ...request, configurationRoot: home.root });
+    if (!destination.ok) return destination.error;
+    path = destination.value;
+  }
+  const parent = parentPath(path);
+  if (parent !== null && stated.value === null) {
+    const created = await ensureParentDirectory(fileSystem, parent, signal);
+    if (created !== null) return created;
+  }
+  const written = await fileSystem.writeBytes(path, bytes, signal, {
+    expectedRevision: previousRevision,
+  });
   if (!written.ok) {
     if (written.error.code === "cancelled") {
       return { kind: "cancelled" };
     }
+    if (written.error.code === "stale-write") return { kind: "stale-write", path };
     return { kind: "filesystem", path, code: written.error.code };
   }
 
@@ -318,6 +445,8 @@ async function writeValueAtPath(
     path,
     revision: written.value.revision,
     byteLength: written.value.byteLength,
+    save: "saved",
+    ...receipt,
   };
 }
 

@@ -409,6 +409,7 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
     case "config.path":
       return renderConfigPath(session, result.payload);
     case "config.set":
+    case "config.reset":
       return renderConfigSet(session, result.payload);
     case "data.reset":
     case "data.uninstall":
@@ -559,6 +560,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "config.path":
       return [];
     case "config.set":
+    case "config.reset":
       return [];
     case "export":
       return [];

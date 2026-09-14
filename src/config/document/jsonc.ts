@@ -47,7 +47,7 @@ export function positionOf(text: string, offset: number): SourcePosition {
  */
 export function parseJsonc(text: string): Result<unknown, ParseFailure> {
   const errors: ParseError[] = [];
-  const value = parse(text, errors, {
+  const value = parse(text.startsWith("\uFEFF") ? ` ${text.slice(1)}` : text, errors, {
     allowTrailingComma: true,
     disallowComments: false,
   });

@@ -2,8 +2,8 @@
  * Configuration document shape, assignment, and serialization.
  *
  * Files are nested JSONC objects keyed by dotted paths (`diagnostics.level` lives
- * under `diagnostics`). The serializer produces a canonical indented document
- * with schema version fields every writer includes.
+ * under `diagnostics`). Canonical serialization is for new documents; existing
+ * files are changed through the source-preserving edit planner.
  */
 
 import type { ConfigurationValue } from "../../domain/configuration/index.ts";
@@ -72,8 +72,7 @@ export function assignConfigurationValue(
 /**
  * Serializes a document to canonical JSONC bytes.
  *
- * Comments from a hand-edited file are not preserved on write; the output is
- * deterministic and indented for human editing.
+ * Used only for newly created documents. Existing JSONC uses `planConfigurationEdits`.
  */
 export function serializeConfigurationDocument(
   document: Readonly<Record<string, unknown>>,

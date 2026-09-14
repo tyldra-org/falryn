@@ -40,6 +40,7 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
         ? []
         : result.payload.sources.map((source) => safe(source.path));
     case "config.set":
+    case "config.reset":
       return result.payload === null
         ? []
         : [`${result.payload.keyPath}=${safe(result.payload.path)}`];

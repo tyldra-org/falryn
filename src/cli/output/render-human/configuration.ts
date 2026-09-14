@@ -106,7 +106,8 @@ export function renderConfigSet(
   }
   return {
     lines: [
-      `Wrote ${safe(payload.keyPath)} to ${safe(payload.path)} (${payload.byteLength} bytes, revision ${safe(payload.revision)}).`,
+      `${payload.save === "unchanged" ? "Unchanged" : "Saved"} ${safe(payload.keyPath)} in ${safe(payload.path)} (${payload.byteLength} bytes, revision ${safe(payload.revision ?? "absent")}).`,
+      "Configuration publication and application are pending the next load.",
     ],
     diagnostics: [],
   };

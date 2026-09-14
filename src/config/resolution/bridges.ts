@@ -20,6 +20,7 @@ import {
   type ConfigurationIssue,
   type ConfigurationKeyDescriptor,
   type ConfigurationRegistryPort,
+  type ConfigurationScope,
   type ConfigurationValue,
   type ConfigurationValues,
   UNLIMITED,
@@ -75,6 +76,7 @@ export function readEnvironmentLayer(
 export function readOverrideLayer(
   registry: ConfigurationRegistryPort,
   overrides: Readonly<Record<string, string>>,
+  scope: ConfigurationScope = "cli",
 ): BridgeResult {
   const values: Record<string, ConfigurationValue> = {};
   const issues: ConfigurationIssue[] = [];
@@ -86,12 +88,12 @@ export function readOverrideLayer(
       continue;
     }
     const { descriptor } = resolution;
-    if (!descriptor.scopes.includes("cli")) {
+    if (!descriptor.scopes.includes(scope)) {
       issues.push({
         kind: "scope-unavailable",
         severity: "error",
         path: descriptor.path,
-        scope: "cli",
+        scope,
         availableScopes: descriptor.scopes,
       });
       continue;

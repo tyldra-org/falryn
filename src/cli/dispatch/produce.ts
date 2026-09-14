@@ -30,6 +30,7 @@ import {
   runArtifactShow,
   runCoding,
   runConfigPath,
+  runConfigReset,
   runConfigSet,
   runConfigShow,
   runConfigValidate,
@@ -118,11 +119,14 @@ export async function produce(
       return runConfigValidate(services, overrides, globals, signal);
     case "config.path":
       return runConfigPath(services, globals, signal);
+    case "config.reset":
     case "config.set":
       if (configSetArgs === null) {
         throw new Error("Missing parsed config set arguments.");
       }
-      return runConfigSet(services, configSetArgs, globals, signal, onMutationStart);
+      return command === "config.reset"
+        ? runConfigReset(services, configSetArgs, globals, signal, onMutationStart)
+        : runConfigSet(services, configSetArgs, globals, signal, onMutationStart);
     case "data.reset":
       if (data === null) {
         throw new Error("Missing parsed data reset arguments.");

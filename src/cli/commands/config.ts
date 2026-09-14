@@ -25,6 +25,7 @@ import { joinPath } from "../../domain/workspace/index.ts";
 import type { ConfigSetArguments } from "../command-tree.ts";
 import type { GlobalOptions } from "../options.ts";
 import type { CommandResultOf } from "../output/result.ts";
+import { validateProductConfigurationCandidate } from "../runtime/product-configuration.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import {
   errorsFrom,
@@ -248,11 +249,34 @@ export async function runConfigPath(
 
 export type ConfigSetPayload = {
   readonly path: string;
-  readonly revision: string;
+  readonly revision: string | null;
   readonly byteLength: number;
   readonly scope: ConfigurationFileScope;
   readonly keyPath: string;
+  readonly previousRevision: string | null;
+  readonly changedPaths: readonly string[];
+  readonly validation: "valid";
+  readonly save: "saved" | "unchanged";
+  readonly publication: "pending";
+  readonly application: "pending";
 };
+
+export async function runConfigReset(
+  services: ServiceProvider,
+  arguments_: ConfigSetArguments,
+  options: GlobalOptions,
+  signal?: AbortSignal,
+  onMutationStart?: () => void,
+): Promise<CommandResultOf<"config.reset", ConfigSetPayload>> {
+  const result = await runConfigSet(
+    services,
+    { ...arguments_, reset: true },
+    options,
+    signal,
+    onMutationStart,
+  );
+  return { ...result, command: "config.reset" };
+}
 
 /**
  * Validates and writes one declared key to a scoped configuration file.
@@ -286,7 +310,6 @@ export async function runConfigSet(
     { configurationRoot, legacyConfigurationRoot, workspaceRoot, profile: options.profile },
     signal,
   );
-  onMutationStart?.();
   const outcome = await writeConfigurationKey(
     registry,
     fileSystem,
@@ -298,12 +321,19 @@ export async function runConfigSet(
       scope: arguments_.scope,
       keyPath: arguments_.keyPath,
       rawValue: arguments_.rawValue,
-      expectedRevision: arguments_.expectedRevision,
+      ...(onMutationStart === undefined ? {} : { onMutationStart }),
+      ...(arguments_.reset === true ? { operation: "remove" as const } : {}),
+      ...(arguments_.expectedRevision === null
+        ? {}
+        : { expectedRevision: arguments_.expectedRevision }),
+      validateCandidate: (path, text, abort) =>
+        validateProductConfigurationCandidate(services(), options.profile, path, text, abort),
     },
     signal,
   );
 
   switch (outcome.kind) {
+    case "unchanged":
     case "written":
       return resultFor(
         "config.set",
@@ -313,10 +343,16 @@ export async function runConfigSet(
           byteLength: outcome.byteLength,
           scope: arguments_.scope,
           keyPath: arguments_.keyPath,
+          previousRevision: outcome.previousRevision,
+          changedPaths: outcome.changedPaths,
+          validation: outcome.validation,
+          save: outcome.save,
+          publication: outcome.publication,
+          application: outcome.application,
         },
         [],
         undefined,
-        WRITE_COMPLETED_EFFECT,
+        outcome.save === "unchanged" ? MUTATION_NOT_OBSERVED : WRITE_COMPLETED_EFFECT,
       );
     case "rejected":
       return resultFor(
@@ -378,6 +414,21 @@ export async function runConfigSet(
         MUTATION_NOT_OBSERVED,
       );
     case "filesystem":
+      if (outcome.code === "publication-uncertain")
+        return resultFor(
+          "config.set",
+          null,
+          [
+            fromUnknown(
+              new Error(
+                "Configuration save could not be confirmed. Inspect the file before retrying.",
+              ),
+              { operation: "write configuration" },
+            ),
+          ],
+          { kind: "failed", effect: "uncertain" },
+          { intent: "mutate", observed: "uncertain" },
+        );
       return resultFor(
         "config.set",
         null,

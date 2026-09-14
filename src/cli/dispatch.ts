@@ -810,7 +810,7 @@ function stoppedCommandIntent(
   if (command === "workspace.save") {
     return "mutate";
   }
-  if (command === "config.set") {
+  if (command === "config.set" || command === "config.reset") {
     return "mutate";
   }
   return "none";
