@@ -364,8 +364,10 @@ async function launchShell(
   let productArtifactSession: Awaited<ReturnType<typeof openProductArtifactSession>> = null;
   let sessionNavigationBundle: Awaited<ReturnType<typeof composeSessionNavigationController>>;
   let configurationReload: ReturnType<typeof startConfigurationReloadWatcher> | null = null;
+  let productAttachments: Awaited<ReturnType<typeof composeProductShellAttachments>> = null;
   const closePrepared = async () => {
     configurationReload?.dispose();
+    await productAttachments?.close();
     await productArtifactSession?.close();
     if (sessionNavigationBundle !== undefined) await sessionNavigationBundle.close(stopped.signal);
   };
@@ -514,7 +516,7 @@ async function launchShell(
             : { ownedProcesses: governance.ownedProcesses }),
         });
         const provider = await providerConnections.resolveSelected(stopped.signal);
-        let productAttachments: Awaited<ReturnType<typeof composeProductShellAttachments>> = null;
+
         try {
           if (productArtifactSession !== null) {
             productAttachments = await composeProductShellAttachments({
@@ -557,6 +559,7 @@ async function launchShell(
               rehydrateExtensions: productArtifactSession.rehydrateExtensions,
               publishNativePackages: productArtifactSession.publishNativePackages,
               eventStore: productArtifactSession.eventStore,
+              records: productArtifactSession.records,
               clock: graph.clock,
               fileSystem: graph.fileSystem,
               workspaceSet: resolvedWorkspace.ok === true ? resolvedWorkspace.value.set : null,
@@ -580,6 +583,22 @@ async function launchShell(
         } catch (thrown: unknown) {
           await productArtifactSession?.close();
           throw thrown;
+        }
+
+        if (productAttachments && productArtifactSession) {
+          const { createSessionNavigationController } = await import(
+            "../tui/session-nav/controller.ts"
+          );
+          await sessionNavigationBundle?.close();
+          sessionNavigationBundle = {
+            controller: createSessionNavigationController({
+              ...productArtifactSession.records,
+              events: productArtifactSession.eventStore,
+              workspaceId: sessionNavigationWorkspaceId,
+              activation: productAttachments.activation,
+            }),
+            close: async () => {},
+          };
         }
 
         configurationReload = startConfigurationReloadWatcher(graph, globals, {

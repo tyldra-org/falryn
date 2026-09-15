@@ -1,3 +1,4 @@
+import { sessionHistoryBoundary } from "../../application/sessions/session-activation.ts";
 /**
  * Session resume / fork / rewind / replay CLI (#721).
  *
@@ -334,6 +335,14 @@ export async function runSessionForkOrRewind(
       const record = repositories.sessions.get(arguments_.sessionId);
       if (!record.ok || record.value === null)
         return resultFor(command, null, [navigationFailure("session-not-found", "fork session")]);
+      const boundary = await sessionHistoryBoundary(
+        createSqliteEventStore(opened.store),
+        record.value,
+        arguments_.action === "rewind" ? arguments_.atTurnId : undefined,
+        signal,
+      );
+      if (!boundary.ok && boundary.code !== "rewind-boundary-unavailable")
+        return resultFor(command, null, [navigationFailure(boundary.code, "fork session")]);
       const suffix = crypto.randomUUID();
       const newSessionId =
         arguments_.newSessionId ?? sessionId.from(`${arguments_.action}-${suffix}`);
@@ -344,6 +353,7 @@ export async function runSessionForkOrRewind(
         repositories.turns,
         {
           sourceSessionId: arguments_.sessionId,
+          ...(boundary.ok ? { throughSequence: boundary.throughSequence } : {}),
           identities: {
             sessionId: newSessionId,
             streamId: newStreamId,

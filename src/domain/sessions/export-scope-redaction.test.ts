@@ -58,3 +58,22 @@ test("scope exception does not preserve other auth values or mutate the source",
   expect(value.authToken).toBe("credential-value");
   expect(redactions).toHaveLength(2);
 });
+
+test("numeric model token budgets remain decodable while credential-shaped values stay redacted", () => {
+  const tokenRedactor = { ...redactor, isSecretName: (key: string) => /token|auth/i.test(key) };
+  const counts = {
+    schemaTokensEstimated: 100,
+    schemaTokenBudget: 4096,
+    inputTokens: null,
+    outputTokens: 8192,
+  };
+  expect(redactExportValue(counts, tokenRedactor, [])).toEqual({ ok: true, value: counts });
+  for (const value of ["credential-value", {}, -1, 0.5]) {
+    expect(redactExportValue({ inputTokens: value, authToken: 123456 }, tokenRedactor, [])).toEqual(
+      {
+        ok: true,
+        value: { inputTokens: "[redacted]", authToken: "[redacted]" },
+      },
+    );
+  }
+});

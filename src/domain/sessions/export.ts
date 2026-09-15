@@ -621,6 +621,13 @@ function recordRedaction(redactions: ExportRedaction[], path: string): Result<nu
   return ok(null);
 }
 
+const TOKEN_COUNT_FIELDS = new Set([
+  "schemaTokensEstimated",
+  "schemaTokenBudget",
+  "inputTokens",
+  "outputTokens",
+]);
+
 function walkExportValue(
   value: unknown,
   path: string,
@@ -719,7 +726,17 @@ function walkExportValue(
       continue;
     }
     const sandboxPolicyAuthority = sandbox?.success && key === "authority";
-    if (redactor.isSecretName(key) && !structuralScopeFact && !sandboxPolicyAuthority) {
+    // These exact codec fields are bounded counts, never credential strings.
+    const tokenCount =
+      TOKEN_COUNT_FIELDS.has(key) &&
+      (nested === null ||
+        (typeof nested === "number" && Number.isSafeInteger(nested) && nested >= 0));
+    if (
+      redactor.isSecretName(key) &&
+      !structuralScopeFact &&
+      !sandboxPolicyAuthority &&
+      !tokenCount
+    ) {
       const recorded = recordRedaction(redactions, nestedPath);
       if (!recorded.ok) {
         return recorded;

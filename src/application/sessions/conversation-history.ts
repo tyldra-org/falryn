@@ -14,7 +14,7 @@ import {
   sequence,
   type TurnId,
 } from "../../domain/foundation/index.ts";
-import { NO_RETRY, workUnitId } from "../../domain/orchestration/index.ts";
+import { effectOf, NO_RETRY, workUnitId } from "../../domain/orchestration/index.ts";
 import { HISTORY_LIMITS, historyReferences } from "../../domain/sessions/history.ts";
 import { createHistoryReader } from "../../domain/sessions/history-reader.ts";
 import type {
@@ -32,6 +32,11 @@ import { historyDigest } from "./session-history.ts";
 
 export type { ConversationRecord } from "../context/conversation-projection.ts";
 export type ConversationHistoryPorts = {
+  readonly parents?: readonly {
+    readonly sessionId: SessionCorrelation["sessionId"];
+    readonly streamId: StreamId;
+    readonly throughSequence: number;
+  }[];
   readonly events: EventStorePort;
   readonly artifacts?: ArtifactStorePort;
   readonly streamId: StreamId;
@@ -48,6 +53,8 @@ export type ConversationHistorySnapshot = {
   readonly records: readonly ConversationRecord[];
   readonly messages: readonly ModelMessage[];
   readonly omissions: readonly { readonly id: string; readonly reason: string }[];
+  readonly pendingOperations: readonly string[];
+  readonly eventBytes: number;
   readonly bytesRead: number;
   readonly artifactReads: number;
   /** Recheck mutable authority immediately before provider admission, without new effects. */
@@ -242,6 +249,26 @@ export function createConversationHistoryReader(ports: ConversationHistoryPorts)
         }),
       );
     if (!current()) return fail("authority-changed");
+    const pending = new Set<string>();
+    for (const event of events) {
+      if (event.kind === "turn.started") pending.add(`turn:${event.correlation.turnId}`);
+      if (event.kind === "turn.completed") {
+        pending.delete(`turn:${event.correlation.turnId}`);
+        if (effectOf(event.payload.outcome) === "uncertain")
+          pending.add(`uncertain:${event.correlation.turnId}`);
+      }
+      if (event.kind === "capability.invocation.started") pending.add(`tool:${event.invocationId}`);
+      if (event.kind === "capability.invocation.completed") {
+        pending.delete(`tool:${event.invocationId}`);
+        if (effectOf(event.payload.outcome) === "uncertain")
+          pending.add(`uncertain:${event.invocationId}`);
+      }
+      if (
+        event.kind === "model.attempt.completed" &&
+        effectOf(event.payload.outcome) === "uncertain"
+      )
+        pending.add(`uncertain:${event.modelAttemptId}`);
+    }
     return {
       ok: true,
       value: freezeSnapshot({
@@ -254,6 +281,8 @@ export function createConversationHistoryReader(ports: ConversationHistoryPorts)
         messages: projection.messages,
         omissions: projection.omissions,
         records,
+        pendingOperations: [...pending],
+        eventBytes,
         bytesRead,
         artifactReads,
         current,
@@ -266,6 +295,57 @@ export function createConversationHistoryReader(ports: ConversationHistoryPorts)
       resources: ProductTaskResources,
       signal = new AbortController().signal,
     ): Promise<ConversationHistoryOutcome> {
+      if (ports.parents?.length) {
+        if (ports.parents.length > 8) return fail("lineage-limit");
+        const snapshots: ConversationHistorySnapshot[] = [];
+        const { parents, ...localPorts } = ports;
+        for (const parent of [...parents, null]) {
+          const selected =
+            parent === null
+              ? localPorts
+              : {
+                  ...localPorts,
+                  streamId: parent.streamId,
+                  correlation: { ...ports.correlation, sessionId: parent.sessionId },
+                };
+          const part = await createConversationHistoryReader(selected).read(
+            {
+              currentTurnId: input.currentTurnId,
+              ...(parent === null ? input : { throughSequence: parent.throughSequence }),
+            },
+            resources,
+            signal,
+          );
+          if (!part.ok) return part;
+          snapshots.push(part.value);
+          if (
+            snapshots.reduce((n, s) => n + s.throughSequence, 0) > MAX_STREAM_READ_LIMIT ||
+            snapshots.reduce((n, s) => n + s.eventBytes, 0) > HISTORY_LIMITS.contentBytes ||
+            snapshots.reduce((n, s) => n + s.bytesRead, 0) > HISTORY_LIMITS.contentBytes ||
+            snapshots.reduce((n, s) => n + s.artifactReads, 0) > 128
+          )
+            return fail("lineage-limit");
+        }
+        const own = snapshots.at(-1);
+        if (!own) return fail("missing-lineage");
+        const messages = snapshots.flatMap((s) => s.messages);
+        return {
+          ok: true,
+          value: freezeSnapshot({
+            ...own,
+            messages,
+            records: snapshots.flatMap((s) => s.records),
+            omissions: snapshots.flatMap((s) => s.omissions),
+            pendingOperations: snapshots.flatMap((s) => s.pendingOperations),
+            projectionDigest: historyDigest(JSON.stringify(messages)),
+            checkpointId: snapshots.findLast((s) => s.checkpointId !== null)?.checkpointId ?? null,
+            eventBytes: snapshots.reduce((n, s) => n + s.eventBytes, 0),
+            bytesRead: snapshots.reduce((n, s) => n + s.bytesRead, 0),
+            artifactReads: snapshots.reduce((n, s) => n + s.artifactReads, 0),
+            current: () => snapshots.every((s) => s.current()),
+          }),
+        };
+      }
       const operation = `conversation:${randomUUID()}`;
       const result = await resources.execute<ConversationHistoryOutcome>({
         target: {

@@ -86,6 +86,14 @@ export const MAX_RECORD_LIST_LIMIT = 1_000;
  * session write or force a stub row invented to satisfy it.
  */
 export type SessionRecord = {
+  /** Immutable conversation ancestry; never restores executable session state. */
+  readonly historyParent?:
+    | {
+        readonly sessionId: SessionId;
+        readonly streamId: StreamId;
+        readonly throughSequence: number;
+      }
+    | undefined;
   readonly sessionId: SessionId;
   readonly workspaceId: WorkspaceId;
   /** The stream this session's ordered facts are sequenced within. */
@@ -251,6 +259,14 @@ export type RecordRepositories = {
 const outcomeSchema = terminalOutcomeSchema.nullable();
 
 const sessionSchema = z.object({
+  historyParent: z
+    .object({
+      sessionId: brandedString(sessionId),
+      streamId: brandedString(streamId),
+      throughSequence: z.number().int().min(0).max(1000),
+    })
+    .strict()
+    .optional(),
   sessionId: brandedString(sessionId),
   workspaceId: brandedString(workspaceId),
   streamId: brandedString(streamId),

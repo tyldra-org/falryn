@@ -1,10 +1,19 @@
 import { checkpointControl } from "../../application/compression/checkpoint-request.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
+import {
+  activationRefused,
+  createSessionTransitionGuard,
+  type PreparedSessionSelection,
+  prepareSessionSelection,
+  type SessionActivationFact,
+  type SessionActivationPort,
+} from "../../application/sessions/session-activation.ts";
 import type { ConfigurationValues } from "../../domain/configuration/index.ts";
 import type { SessionId } from "../../domain/foundation/index.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { productToolHost } from "./product-tool-host.ts";
 import { createProductSandbox } from "./sandbox-configuration.ts";
+import { sessionManagedServices } from "./session-managed-services.ts";
 /**
  * Default live-product attachments for the TUI.
  *
@@ -95,6 +104,10 @@ import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  readonly records?: Pick<
+    import("./product-artifact-session.ts").ProductArtifactSession["records"],
+    "sessions" | "turns"
+  >;
   readonly exportSession?: (
     session: SessionId,
     resources: import("../../application/orchestration/product-resources.ts").ProductResources,
@@ -106,8 +119,12 @@ export type ProductShellAttachmentPorts = {
   readonly publishNativePackages?: (
     generation: ConfigurationGeneration,
     signal: AbortSignal,
+    session?: string,
   ) => Promise<NativePublication>;
-  readonly rehydrateExtensions?: (signal: AbortSignal) => Promise<CatalogRehydration>;
+  readonly rehydrateExtensions?: (
+    signal: AbortSignal,
+    session?: string,
+  ) => Promise<CatalogRehydration>;
   readonly peers?: import("./product-peer-mailboxes.ts").ProductPeerMailboxes;
   readonly resolveAgentProvider?: import("../../application/runtime/delegated-agent-runtime.ts").DelegatedRuntimeOptions["resolveProvider"];
   readonly agentRegistry?: import("../../application/orchestration/agent-registry.ts").AgentRegistry;
@@ -146,6 +163,8 @@ export type ProductShellAttachmentPorts = {
 };
 
 export type ProductShellAttachments = {
+  readonly activation: SessionActivationPort;
+  close(): Promise<void>;
   readonly submission: ProductSubmissionPort;
   readonly transcriptFeed: TranscriptFeed;
   readonly sessionCreation: SessionCreationPort;
@@ -159,6 +178,27 @@ export type ProductShellAttachments = {
 export async function composeProductShellAttachments(
   ports: ProductShellAttachmentPorts,
 ): Promise<ProductShellAttachments | null> {
+  const stop = new AbortController();
+  const hostSignal = AbortSignal.any([stop.signal, ports.signal ?? new AbortController().signal]);
+  const pending = new Set<Promise<void>>();
+  const transition = createSessionTransitionGuard();
+  function enter(kind: "prompt" | "activation") {
+    const release = transition.enter(kind);
+    if (!release || hostSignal.aborted) {
+      release?.();
+      return null;
+    }
+    let resolve!: () => void;
+    const settled = new Promise<void>((done) => {
+      resolve = done;
+    });
+    pending.add(settled);
+    return () => {
+      release();
+      pending.delete(settled);
+      resolve();
+    };
+  }
   const workspaceId = workspaceIdCodec.from(
     ports.workspaceSet === null
       ? "workspace-unbound"
@@ -226,15 +266,18 @@ export async function composeProductShellAttachments(
   });
   const output = composeProductOutputControls();
 
-  async function buildSession() {
-    const sessionId = sessionIdCodec.from(`session-shell-${randomUUID()}`);
+  async function buildSession(selection?: PreparedSessionSelection, signal = hostSignal) {
+    const generation = ports.modelConfigurationGeneration?.() ?? ports.configurationGeneration;
+    const sessionId =
+      selection?.record.sessionId ?? sessionIdCodec.from(`session-shell-${randomUUID()}`);
     const native = await ports.publishNativePackages?.(
       generation,
-      ports.signal ?? new AbortController().signal,
+      signal,
+      selection ? String(sessionId) : undefined,
     );
     const extensions =
       native === undefined
-        ? await ports.rehydrateExtensions?.(ports.signal ?? new AbortController().signal)
+        ? await ports.rehydrateExtensions?.(signal, selection ? String(sessionId) : undefined)
         : { status: "ready" as const, catalog: native.catalog };
     if (extensions?.status === "failed") return null;
     const extensionCatalog =
@@ -304,6 +347,7 @@ export async function composeProductShellAttachments(
             gitExecutable: "/usr/bin/git",
             startPath: String(workspaceRoot),
           });
+    const sessionServices = sessionManagedServices(managedServices);
     const languageTools =
       workspaceRoot === null
         ? null
@@ -315,8 +359,8 @@ export async function composeProductShellAttachments(
                 ports.sandboxConfiguration?.(),
               ),
             generation,
-            languageServers: createLanguageServerSupervisor(managedServices),
-            debugAdapters: createDebugAdapterSupervisor(managedServices, {
+            languageServers: createLanguageServerSupervisor(sessionServices.port),
+            debugAdapters: createDebugAdapterSupervisor(sessionServices.port, {
               confirmationPolicy: "auto-allow",
               ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
             }),
@@ -331,187 +375,238 @@ export async function composeProductShellAttachments(
             workspaceId: String(workspaceId),
             ...(ports.memoryRecords === undefined ? {} : { records: ports.memoryRecords }),
           });
+    let prepared = false;
     const peer =
       (await ports.peers?.open({ sessionId: String(sessionId), agentId: "main", generation: 1 })) ??
       null;
-    const productTools =
-      workspaceTools === null ||
-      processTools === null ||
-      gitTools === null ||
-      languageTools === null ||
-      memoryTools === null
-        ? null
-        : mergeProductToolBundles(
-            generation,
-            [
-              workspaceTools,
-              processTools,
-              ...(scratchTools === null ? [] : [scratchTools]),
-              gitTools,
-              languageTools,
-              memoryTools,
-              composePeerTool(generation, peer),
-            ],
-            {
-              afterMutation: async (request) => {
-                if (
-                  request.toolName === "scratch_write" ||
-                  request.toolName === "scratch_discard" ||
-                  request.toolName === "process_task"
-                ) {
-                  return {};
-                }
-                workspaceTools.invalidateContext();
-                const languageDiagnostics = await languageTools.afterWorkspaceMutation(
-                  request.signal,
-                );
-                if (indexLifecycle === null) {
+    try {
+      const productTools =
+        workspaceTools === null ||
+        processTools === null ||
+        gitTools === null ||
+        languageTools === null ||
+        memoryTools === null
+          ? null
+          : mergeProductToolBundles(
+              generation,
+              [
+                workspaceTools,
+                processTools,
+                ...(scratchTools === null ? [] : [scratchTools]),
+                gitTools,
+                languageTools,
+                memoryTools,
+                composePeerTool(generation, peer),
+              ],
+              {
+                afterMutation: async (request) => {
+                  if (
+                    request.toolName === "scratch_write" ||
+                    request.toolName === "scratch_discard" ||
+                    request.toolName === "process_task"
+                  ) {
+                    return {};
+                  }
+                  workspaceTools.invalidateContext();
+                  const languageDiagnostics = await languageTools.afterWorkspaceMutation(
+                    request.signal,
+                  );
+                  if (indexLifecycle === null) {
+                    return {
+                      workspaceIndex: { status: "unavailable", code: "index-unavailable" },
+                      languageDiagnostics,
+                    };
+                  }
+                  const refreshed = await indexLifecycle.refresh(request.signal);
                   return {
-                    workspaceIndex: { status: "unavailable", code: "index-unavailable" },
+                    workspaceIndex: refreshed.ok
+                      ? { status: "completed" }
+                      : { status: "unavailable", code: refreshed.error.code },
                     languageDiagnostics,
                   };
-                }
-                const refreshed = await indexLifecycle.refresh(request.signal);
-                return {
-                  workspaceIndex: refreshed.ok
-                    ? { status: "completed" }
-                    : { status: "unavailable", code: refreshed.error.code },
-                  languageDiagnostics,
-                };
+                },
               },
-            },
-          );
-    const { tasks, artifacts, modelConfigurationGeneration } = ports;
-    const compose =
-      tasks && artifacts
-        ? (runtimePorts: Parameters<typeof composeProductAgentRuntime>[0]) =>
-            composeDelegatedAgentRuntime(runtimePorts, {
-              tasks,
-              ...(ports.workflows ? { workflows: ports.workflows } : {}),
-              ...(ports.workflowQuestions ? { workflowQuestions: ports.workflowQuestions } : {}),
-              ...(ports.joins ? { joins: ports.joins } : {}),
-              ...(ports.peers ? { peers: ports.peers } : {}),
-              artifacts,
-              ...(ports.agentRegistry ? { registry: ports.agentRegistry } : {}),
-              ...(ports.resolveAgentProvider
-                ? { resolveProvider: ports.resolveAgentProvider }
-                : {}),
-              providerCatalog:
-                ports.provider?.kind === "ready" ? ports.provider.session.catalog : null,
-              ...(ports.modelPreferences ? { preferences: ports.modelPreferences } : {}),
-              ...(modelConfigurationGeneration
-                ? { configurationGeneration: () => Number(modelConfigurationGeneration()) }
-                : {}),
-            })
-        : composeProductAgentRuntime;
-    const initialTools =
-      productTools === null
-        ? null
-        : mergeProductToolBundles(generation, [
-            productTools,
-            ...(native === undefined ? [] : [native.tools]),
-          ]);
-    const composed = compose({
-      eventStore: ports.eventStore,
-      ...(ports.artifacts === undefined ? {} : { historyArtifacts: ports.artifacts }),
-      clock: ports.clock,
-      streamId: streamId.from(`live-turn:${String(sessionId)}`),
-      correlation: {
-        workspaceId,
-        sessionId,
-        traceId,
-        configurationGeneration: generation,
-      },
-      ...(providerAdapter === undefined ? {} : { providerAdapter }),
-      ...(ports.toolConfirmation === undefined ? {} : { toolConfirmation: ports.toolConfirmation }),
-      ...(initialTools === null
-        ? {}
-        : {
-            ...productToolHost(),
-            toolRegistry: initialTools.registry,
-            capabilityRegistry: initialTools.capabilityRegistry,
-            toolCatalog: initialTools.catalog,
-            toolRunner: initialTools.runner,
-            sandbox,
-          }),
-    });
-    if (!composed.ok) {
-      return null;
-    }
-    const contextSource =
-      workspaceRoot === null || workspaceTools === null
-        ? undefined
-        : index === undefined
-          ? createUnavailableProductContextSource(
-              "index-unavailable",
-              workspaceTools.contextCandidates,
-            )
-          : createProductContextSource({
-              fileSystem: ports.fileSystem,
-              index,
-              workspaceRoot,
-              workspaceId,
-              additionalCandidates: workspaceTools.contextCandidates,
-            });
-    const memory =
-      memoryTools === null
-        ? undefined
-        : composeProductMemoryTurn({
-            admission: memoryTools.admission,
-            recall: memoryTools.recall,
-          });
-    let publishedRuntime = composed.value;
-    const executor = createProductLiveTurnExecutor({
-      checkpointEvents: ports.eventStore,
-      checkpointDurable: ports.artifacts !== undefined,
-      ...(extensionCatalog === undefined ? {} : { extensionCatalog }),
-      ...(workspaceTools?.resources == null ? {} : { resources: workspaceTools.resources }),
-      ...(ports.modelConfigurationGeneration === undefined
-        ? {}
-        : { modelConfigurationGeneration: ports.modelConfigurationGeneration }),
-      ...(ports.modelPreferences === undefined ? {} : { modelPreferences: ports.modelPreferences }),
-      runtime: composed.value,
-      ...(ports.publishNativePackages === undefined || productTools === null
-        ? {}
-        : {
-            async refreshRuntime(signal: AbortSignal) {
-              const publication = await ports.publishNativePackages?.(generation, signal);
-              if (!publication) throw new Error("native-publication-unavailable");
-              const tools = mergeProductToolBundles(generation, [productTools, publication.tools]);
-              const next = publishedRuntime.recomposeTools(tools);
-              if (!next.ok) throw new Error(next.error.code);
-              publishedRuntime = next.value;
-              return publishedRuntime;
-            },
-          }),
-      clock: ports.clock,
-      providerCatalog: ports.provider?.kind === "ready" ? ports.provider.session.catalog : null,
-      ...(contextSource === undefined
-        ? workspaceTools === null
+            );
+      const { tasks, artifacts, modelConfigurationGeneration } = ports;
+      const compose =
+        tasks && artifacts
+          ? (runtimePorts: Parameters<typeof composeProductAgentRuntime>[0]) =>
+              composeDelegatedAgentRuntime(runtimePorts, {
+                tasks,
+                ...(ports.workflows ? { workflows: ports.workflows } : {}),
+                ...(ports.workflowQuestions ? { workflowQuestions: ports.workflowQuestions } : {}),
+                ...(ports.joins ? { joins: ports.joins } : {}),
+                ...(ports.peers ? { peers: ports.peers } : {}),
+                artifacts,
+                ...(ports.agentRegistry ? { registry: ports.agentRegistry } : {}),
+                ...(ports.resolveAgentProvider
+                  ? { resolveProvider: ports.resolveAgentProvider }
+                  : {}),
+                providerCatalog:
+                  ports.provider?.kind === "ready" ? ports.provider.session.catalog : null,
+                ...(ports.modelPreferences ? { preferences: ports.modelPreferences } : {}),
+                ...(modelConfigurationGeneration
+                  ? { configurationGeneration: () => Number(modelConfigurationGeneration()) }
+                  : {}),
+              })
+          : composeProductAgentRuntime;
+      const initialTools =
+        productTools === null
+          ? null
+          : mergeProductToolBundles(generation, [
+              productTools,
+              ...(native === undefined ? [] : [native.tools]),
+            ]);
+      const composed = compose({
+        eventStore: ports.eventStore,
+        ...(ports.artifacts === undefined ? {} : { historyArtifacts: ports.artifacts }),
+        clock: ports.clock,
+        streamId: selection?.record.streamId ?? streamId.from(`live-turn:${String(sessionId)}`),
+        correlation: {
+          workspaceId,
+          sessionId,
+          traceId,
+          configurationGeneration: generation,
+        },
+        ...(providerAdapter === undefined ? {} : { providerAdapter }),
+        ...(ports.toolConfirmation === undefined
           ? {}
-          : { contextCandidates: workspaceTools.contextCandidates }
-        : { contextSource }),
-      ...(memory === undefined ? {} : { memory }),
-      ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
-      initialExecutionProfile: selectedExecutionProfile,
-      ...(selectedModel === null || !selectedModelExplicit ? {} : { initialModel: selectedModel }),
-    });
-    return {
-      extensionCatalog,
-      sessionId,
-      resources: composed.value.resources,
-      producer: composed.value.attachments.turnProducer,
-      peer,
-      executor,
-      submission: createProductSubmissionPort({
-        executor,
+          : { toolConfirmation: ports.toolConfirmation }),
+        ...(initialTools === null
+          ? {}
+          : {
+              ...productToolHost(),
+              toolRegistry: initialTools.registry,
+              capabilityRegistry: initialTools.capabilityRegistry,
+              toolCatalog: initialTools.catalog,
+              toolRunner: initialTools.runner,
+              sandbox,
+            }),
+      });
+      if (!composed.ok) {
+        return null;
+      }
+      const contextSource =
+        workspaceRoot === null || workspaceTools === null
+          ? undefined
+          : index === undefined
+            ? createUnavailableProductContextSource(
+                "index-unavailable",
+                workspaceTools.contextCandidates,
+              )
+            : createProductContextSource({
+                fileSystem: ports.fileSystem,
+                index,
+                workspaceRoot,
+                workspaceId,
+                additionalCandidates: workspaceTools.contextCandidates,
+              });
+      const memory =
+        memoryTools === null
+          ? undefined
+          : composeProductMemoryTurn({
+              admission: memoryTools.admission,
+              recall: memoryTools.recall,
+            });
+      let publishedRuntime = composed.value;
+      if (selection) {
+        const runtime = composed.value.sessionRuntime;
+        const opened = runtime.create({
+          sessionId,
+          workspaceId,
+          configurationGeneration: generation,
+        });
+        if (
+          !opened.ok ||
+          !runtime.apply({ sessionId, command: "mark-ready", configurationGeneration: generation })
+            .ok
+        ) {
+          return null;
+        }
+        const refreshed = await composed.value.attachments.turnProducer.refreshFromStore();
+        if (!refreshed.ok) {
+          return null;
+        }
+      }
+      const executor = createProductLiveTurnExecutor({
+        ...(selection ? { resumed: true, historyParents: selection.parents } : {}),
+        checkpointEvents: ports.eventStore,
+        checkpointDurable: ports.artifacts !== undefined,
+        ...(extensionCatalog === undefined ? {} : { extensionCatalog }),
+        ...(workspaceTools?.resources == null ? {} : { resources: workspaceTools.resources }),
+        ...(ports.modelConfigurationGeneration === undefined
+          ? {}
+          : { modelConfigurationGeneration: ports.modelConfigurationGeneration }),
+        ...(ports.modelPreferences === undefined
+          ? {}
+          : { modelPreferences: ports.modelPreferences }),
+        runtime: composed.value,
+        ...(ports.publishNativePackages === undefined || productTools === null
+          ? {}
+          : {
+              async refreshRuntime(signal: AbortSignal) {
+                const publication = await ports.publishNativePackages?.(
+                  generation,
+                  signal,
+                  String(sessionId),
+                );
+                if (!publication) throw new Error("native-publication-unavailable");
+                const tools = mergeProductToolBundles(generation, [
+                  productTools,
+                  publication.tools,
+                ]);
+                const next = publishedRuntime.recomposeTools(tools);
+                if (!next.ok) throw new Error(next.error.code);
+                publishedRuntime = next.value;
+                return publishedRuntime;
+              },
+            }),
+        clock: ports.clock,
+        providerCatalog: ports.provider?.kind === "ready" ? ports.provider.session.catalog : null,
+        ...(contextSource === undefined
+          ? workspaceTools === null
+            ? {}
+            : { contextCandidates: workspaceTools.contextCandidates }
+          : { contextSource }),
+        ...(memory === undefined ? {} : { memory }),
+        ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+        initialExecutionProfile: selectedExecutionProfile,
+        ...(selectedModel === null || !selectedModelExplicit
+          ? {}
+          : { initialModel: selectedModel }),
+      });
+      prepared = true;
+      return {
+        async close() {
+          await sessionServices.close();
+          await peer?.close();
+        },
+        extensionCatalog,
         sessionId,
-        configurationGeneration: generation,
-        brief,
-        output,
-        isAccepting: () => ports.signal === undefined || !ports.signal.aborted,
-      }),
-    };
+        streamId: composed.value.streamId,
+        inherited:
+          selection?.history.records
+            .filter((r) => r.event.correlation.sessionId !== sessionId)
+            .map((r) => r.event) ?? [],
+        resources: composed.value.resources,
+        producer: composed.value.attachments.turnProducer,
+        peer,
+        executor,
+        submission: createProductSubmissionPort({
+          executor,
+          sessionId,
+          configurationGeneration: generation,
+          brief,
+          output,
+          isAccepting: () => !hostSignal.aborted,
+        }),
+      };
+    } finally {
+      if (!prepared) {
+        await sessionServices.close();
+        await peer?.close();
+      }
+    }
   }
 
   const initial = await buildSession();
@@ -519,12 +614,14 @@ export async function composeProductShellAttachments(
     return null;
   }
   let active = initial;
+  const taskSubscriptions = new Set<() => void>();
   const listeners = new Set<() => void>();
   let unsubscribeActive = active.producer.subscribe(() => {
     for (const listener of listeners) listener();
   });
   const transcriptFeed: TranscriptFeed = {
     events: () => [
+      ...active.inherited,
       ...active.producer.events(),
       ...(ports.taskNotices
         ?.events()
@@ -533,9 +630,11 @@ export async function composeProductShellAttachments(
     subscribe(listener) {
       listeners.add(listener);
       const unsubscribeTasks = ports.taskNotices?.subscribe(listener);
+      if (unsubscribeTasks) taskSubscriptions.add(unsubscribeTasks);
       return () => {
         listeners.delete(listener);
         unsubscribeTasks?.();
+        if (unsubscribeTasks) taskSubscriptions.delete(unsubscribeTasks);
       };
     },
   };
@@ -549,10 +648,23 @@ export async function composeProductShellAttachments(
   let unsubscribePeer: (() => void) | null = null;
   const exportSession = ports.exportSession;
   const submission = {
+    binding: () => `${active.sessionId}:${activationGeneration}`,
     compact: checkpointControl(
-      (request, signal) =>
-        active.executor.compact?.(request, signal) ??
-        Promise.resolve({ kind: "refused", reason: "compaction-unavailable", effect: "none" }),
+      async (request, signal) => {
+        const release = enter("prompt");
+        if (!release) return { kind: "refused", reason: "session-busy", effect: "none" };
+        try {
+          return (
+            (await active.executor.compact?.(request, AbortSignal.any([hostSignal, signal]))) ?? {
+              kind: "refused",
+              reason: "compaction-unavailable",
+              effect: "none",
+            }
+          );
+        } finally {
+          release();
+        }
+      },
       () => String(active.sessionId),
     ),
     ...(exportSession === undefined
@@ -588,79 +700,247 @@ export async function composeProductShellAttachments(
     executionProfile: {
       get: () => selectedExecutionProfile,
       async select(profileId: ExecutionProfileId) {
-        const controls = active.executor.executionProfile;
-        const selected = await controls.select(profileId);
-        if (selected.ok) {
-          const previousDefault = executionProfile(selectedExecutionProfile).defaultBriefVerbosity;
-          if (brief.getVerbosity() === previousDefault) {
-            brief.setVerbosity(executionProfile(selected.profileId).defaultBriefVerbosity);
+        const release = enter("prompt");
+        if (!release)
+          return {
+            ok: false as const,
+            code: "session.busy",
+            message: "A session transition or turn is in progress.",
+          };
+        try {
+          const controls = active.executor.executionProfile;
+          const selected = await controls.select(profileId);
+          if (selected.ok) {
+            const previousDefault =
+              executionProfile(selectedExecutionProfile).defaultBriefVerbosity;
+            if (brief.getVerbosity() === previousDefault) {
+              brief.setVerbosity(executionProfile(selected.profileId).defaultBriefVerbosity);
+            }
+            selectedExecutionProfile = selected.profileId;
           }
-          selectedExecutionProfile = selected.profileId;
+          return selected;
+        } finally {
+          release();
         }
-        return selected;
       },
     },
     modelSelection: {
       get: () => active.executor.modelSelection.get(),
       async select(identity: ProviderModelIdentity) {
-        const selected = await active.executor.modelSelection.select(identity);
-        if (selected.ok) {
-          selectedModelExplicit = true;
-          selectedModel = {
-            providerProfileId: selected.providerProfileId,
-            providerId: selected.providerId,
-            modelId: selected.modelId,
+        const release = enter("prompt");
+        if (!release)
+          return {
+            ok: false as const,
+            code: "session.busy",
+            message: "A session transition or turn is in progress.",
           };
+        try {
+          const selected = await active.executor.modelSelection.select(identity);
+          if (selected.ok) {
+            selectedModelExplicit = true;
+            selectedModel = {
+              providerProfileId: selected.providerProfileId,
+              providerId: selected.providerId,
+              modelId: selected.modelId,
+            };
+          }
+          return selected;
+        } finally {
+          release();
         }
-        return selected;
       },
     },
     async submit(
       snapshot: Parameters<SubmissionPort["submit"]>[0],
       context: Parameters<SubmissionPort["submit"]>[1],
     ) {
-      const target = active.submission;
+      const release = enter("prompt");
+      if (!release)
+        return {
+          kind: "unavailable" as const,
+          snapshot,
+          reason: "a session transition or turn is in progress",
+          owner: "#953",
+          route: "session.resume",
+        };
+      if (snapshot.binding !== undefined && snapshot.binding !== submission.binding()) {
+        release();
+        return {
+          kind: "unavailable" as const,
+          snapshot,
+          reason: "the selected session changed while this input was being prepared",
+          owner: "#953",
+          route: "session.resume",
+        };
+      }
+      const target = active;
       activeSubmissions += 1;
       active.peer?.state("busy");
       try {
-        return await target.submit(snapshot, context);
+        return await target.submission.submit(snapshot, {
+          payloads: context?.payloads ?? { get: () => null },
+          signal: AbortSignal.any([hostSignal, context?.signal ?? new AbortController().signal]),
+        });
       } finally {
         activeSubmissions -= 1;
-        if (activeSubmissions === 0) active.peer?.state("idle");
+        if (activeSubmissions === 0) target.peer?.state("idle");
+        release();
       }
     },
   };
   let sessionCreationInFlight: ReturnType<SessionCreationPort["create"]> | null = null;
 
-  async function createAndActivateSession() {
-    if (activeSubmissions > 0) {
-      return { ok: false as const, reason: "the current session still has an active turn" };
-    }
-    const candidate = await buildSession();
-    if (candidate === null) {
-      return { ok: false as const, reason: "the product runtime could not compose" };
-    }
-    const failed = await candidate.executor.startSession();
-    if (failed !== null) {
-      await candidate.peer?.close();
-      return { ok: false as const, reason: failed.message };
-    }
+  let activationGeneration = 1;
+  const activationListeners = new Set<(fact: SessionActivationFact) => void>();
+  const activation: SessionActivationPort = {
+    subscribe(listener) {
+      activationListeners.add(listener);
+      return () => {
+        activationListeners.delete(listener);
+      };
+    },
+    async activate(request, requestedSignal) {
+      const release = enter("activation");
+      if (!release) return activationRefused("busy");
+      const signal = AbortSignal.any([hostSignal, requestedSignal ?? new AbortController().signal]);
+      let candidate: Awaited<ReturnType<typeof buildSession>> = null;
+      let committed = false;
+      let selection: PreparedSessionSelection | undefined;
+      const refused = (code: string) => {
+        const result = activationRefused(code);
+        const retained =
+          selection && request.kind !== "resume" && request.kind !== "new"
+            ? selection.record.sessionId
+            : request.kind === "new" && candidate
+              ? candidate.sessionId
+              : null;
+        const stored = retained === null ? null : ports.records?.sessions.get(retained);
+        return stored?.ok && stored.value
+          ? {
+              ...result,
+              reason: `${result.reason} Prepared session ${retained} remains inactive and available for inspection.`,
+            }
+          : result;
+      };
+      try {
+        if (signal.aborted) return refused("cancelled");
+        if ((ports.tasks?.report().active ?? 0) > 0) return refused("busy");
+        const admittedGeneration = ports.modelConfigurationGeneration?.() ?? generation;
+        if (request.kind !== "new") {
+          if (!ports.records) return refused("records-unavailable");
+          if (!providerAdapter) return refused("provider-unavailable");
+          const prepared = await prepareSessionSelection(
+            {
+              ...ports.records,
+              events: ports.eventStore,
+              ...(ports.artifacts ? { artifacts: ports.artifacts } : {}),
+              workspaceId,
+              generation: Number(admittedGeneration),
+              resources: active.resources,
+            },
+            request,
+            signal,
+          );
+          if (!prepared.ok) return prepared;
+          selection = prepared.value;
+          if (request.kind === "resume" && request.sessionId === String(active.sessionId))
+            return {
+              ok: true,
+              sessionId: String(active.sessionId),
+              streamId: String(active.streamId),
+              generation: activationGeneration,
+              explanation: selection.explanation,
+              changed: false,
+            };
+        }
+        candidate = await buildSession(selection, signal);
+        if (!candidate) return refused("prepare-failed");
+        if (
+          signal.aborted ||
+          (ports.modelConfigurationGeneration?.() ?? generation) !== admittedGeneration ||
+          (selection && !selection.current())
+        )
+          return refused("stale-selection");
+        if (!selection) {
+          const failure = await candidate.executor.startSession();
+          if (failure) return refused(failure.code);
+        }
+        if (signal.aborted) return refused("cancelled");
+        const previous = active;
+        unsubscribeActive();
+        unsubscribePeer?.();
+        active = candidate;
+        activationGeneration += 1;
+        committed = true;
+        const fact: SessionActivationFact = Object.freeze({
+          kind: "session.activated",
+          reason: request.kind,
+          sessionId: String(active.sessionId),
+          streamId: String(active.streamId),
+          workspaceId: String(workspaceId),
+          generation: activationGeneration,
+          configurationGeneration: Number(admittedGeneration),
+          checkpointId: selection?.history.checkpointId ?? null,
+          historyDigest: selection?.history.projectionDigest ?? null,
+        });
+        for (const observer of activationListeners) {
+          try {
+            observer(fact);
+          } catch {
+            /* A committed binding remains committed. */
+          }
+        }
+        unsubscribePeer =
+          peerListeners.size > 0
+            ? (ports.peers?.subscribe(String(active.sessionId), notifyPeer) ?? null)
+            : null;
+        unsubscribeActive = active.producer.subscribe(() => {
+          for (const listener of listeners) listener();
+        });
+        for (const listener of listeners) {
+          try {
+            listener();
+          } catch {
+            /* Observers cannot undo the committed binding. */
+          }
+        }
+        await previous.close().catch(() => {});
+        return {
+          ok: true,
+          sessionId: String(active.sessionId),
+          streamId: String(active.streamId),
+          generation: activationGeneration,
+          explanation: `${selection?.explanation ?? `Started session ${active.sessionId} with current configuration ${admittedGeneration}.`} Model: ${active.executor.modelSelection.get()?.modelId ?? "unavailable"}; mode: ${active.executor.executionProfile.get()}. Current instruction/catalog inputs: ${active.extensionCatalog?.inputs ?? "unavailable"}; recorded: ${selection?.record.extensionCatalog?.inputs ?? "unavailable"}. Inspect workspace trust for current loader admission.`,
+          changed: true,
+        };
+      } catch {
+        return refused("prepare-failed");
+      } finally {
+        try {
+          if (!committed) await candidate?.close().catch(() => {});
+        } finally {
+          release();
+        }
+      }
+    },
+  };
+  async function close() {
+    transition.close();
+    stop.abort();
+    await Promise.allSettled([...pending]);
     unsubscribeActive();
     unsubscribePeer?.();
-    await active.peer?.close();
-    active = candidate;
-    unsubscribePeer =
-      peerListeners.size > 0
-        ? (ports.peers?.subscribe(String(active.sessionId), notifyPeer) ?? null)
-        : null;
-    unsubscribeActive = active.producer.subscribe(() => {
-      for (const listener of listeners) listener();
-    });
-    for (const listener of listeners) listener();
-    return { ok: true as const, sessionId: String(active.sessionId) };
+    for (const unsubscribe of taskSubscriptions) unsubscribe();
+    taskSubscriptions.clear();
+    listeners.clear();
+    peerListeners.clear();
+    activationListeners.clear();
+    await active.close();
   }
 
   return {
+    close,
+    activation,
     submission,
     transcriptFeed,
     sessionCreation: {
@@ -668,7 +948,7 @@ export async function composeProductShellAttachments(
         if (sessionCreationInFlight !== null) {
           return sessionCreationInFlight;
         }
-        sessionCreationInFlight = createAndActivateSession();
+        sessionCreationInFlight = activation.activate({ kind: "new" });
         try {
           return await sessionCreationInFlight;
         } finally {
@@ -678,6 +958,18 @@ export async function composeProductShellAttachments(
     },
     controls: {
       ...providerControls(ports.provider),
+      get activeSessionId() {
+        return String(active.sessionId);
+      },
+      get sessions() {
+        return [
+          {
+            id: String(active.sessionId),
+            title: String(active.sessionId),
+            detail: "Active session",
+          },
+        ];
+      },
       get resources() {
         const resources = providerControls(ports.provider).resources;
         const catalog = active.extensionCatalog;

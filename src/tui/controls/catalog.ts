@@ -31,6 +31,7 @@ export type ControlFact = {
 };
 
 export type ControlCatalog = {
+  readonly activeSessionId?: string;
   readonly sessions: readonly ControlOption[];
   readonly models: readonly ControlOption[];
   readonly profiles: readonly ControlOption[];
@@ -89,7 +90,12 @@ export function projectHeader(
 ): WorkspaceHeaderModel {
   return {
     ...header,
-    session: fieldFromOptions(header.session, catalog.sessions, selection.sessionId, "session"),
+    session: fieldFromOptions(
+      header.session,
+      catalog.sessions,
+      catalog.activeSessionId ?? selection.sessionId,
+      "session",
+    ),
     model: fieldFromOptions(header.model, catalog.models, selection.modelKey, "model"),
   };
 }

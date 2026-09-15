@@ -1,3 +1,4 @@
+import { MIGRATION_0027 } from "../sessions/activation-schema.ts";
 import { MIGRATION_0026 } from "../sessions/history-schema.ts";
 /**
  * Migration `0001`, checked against a real database and against the domain.
@@ -108,6 +109,7 @@ describe("a fresh database", () => {
       24,
       25,
       MIGRATION_0026.version,
+      MIGRATION_0027.version,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -231,6 +233,7 @@ describe("a fresh database", () => {
       24,
       25,
       MIGRATION_0026.version,
+      MIGRATION_0027.version,
     ]);
     expect(
       upgraded.read(

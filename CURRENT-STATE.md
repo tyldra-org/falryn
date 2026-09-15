@@ -1212,8 +1212,10 @@ the actual route, including tool continuations and late steering. A smaller
 window or unknown media cost is an explicit refusal, without a model upgrade.
 Application results and headless payloads expose the sequence, checkpoint,
 message digest, bounded omissions, read counts and labelled budget estimate.
-Default `falryn run` still creates a fresh session; selecting a saved session for
-execution remains #953. No new resume option or automatic summarizer is added.
+Default `falryn run` creates a fresh session. `falryn run --continue-session <id>
+<prompt>` explicitly activates a compatible durable session through the shared
+history admission owner. It uses current instructions, model policy and credentials;
+inspection and replay do not submit work.
 
 `/export` and the `session.export` palette command preview the active session
 through the same application action as `falryn export`. `/export write <name>`
@@ -1221,12 +1223,37 @@ writes a versioned JSONL package with authorized artifact bytes; an existing
 destination is refused. Preview reports omissions, and write rechecks artifact
 policy before copying and publishing. Import installs artifacts before events
 that reference them. Cancellation after publication reports the published
-package. Export and replay do not activate a historical session executor (#953).
+package. Export preserves authorized inline history and numeric model token-budget
+metadata so a committed package remains decodable for continuation. Export and
+replay do not activate a historical session executor.
 
-OpenTUI's `session.new` palette action creates a new durable session before it
-switches the active transcript and submission target. A failed creation leaves
-the current session selected; concurrent duplicate actions coalesce, and active
-turns or unresolved confirmations must settle first.
+OpenTUI's new, resume, fork and rewind actions share a transition guard with
+prompt admission and compaction. The guard is acquired before asynchronous
+preparation. Active turns or supervised work return a typed busy result; failed,
+cancelled, foreign, stale or incompatible selections preserve the prior executor
+and draft. Input prepared before a switch retains its original binding and is
+refused if that binding changed. Repeated new-session clicks coalesce. If runtime
+preparation fails after creating a durable fork, the refusal identifies that inactive
+fork for inspection; it does not replace the active session.
+
+Activation publishes the selected executor, transcript and header identity together.
+Resume restores the in-memory lifecycle without appending another `session.started`.
+Turn IDs use independent UUIDs, so reopening never resets a durable counter. Fork
+and rewind store a source session/stream/sequence boundary in migration 0027;
+subsequent turns append only to the new stream. Rewind requires an admitted completed
+turn boundary. Legacy inspection-only fork records without a recoverable boundary
+remain unavailable for execution. Ancestry is limited to eight parents and the same
+aggregate history content, event and artifact-read ceilings. Original artifacts
+are reauthorized; no source event, file, tool effect, credential or grant is restored.
+
+The activation result explains lineage, checkpoint, accepted input, current
+configuration/model policy, current versus recorded instruction/catalog input
+digests and unresolved evidence. Required missing history or
+unfinished operations refuse activation; optional services retain their existing
+unavailable outcomes. `session.activated` observers receive the committed identity,
+reason and generation only after publication; observer failure cannot undo it.
+Old peer/listener and language/debug-service attachments are released. Shutdown
+cancels and awaits admitted work before closing the shared stores.
 
 ## Execution profiles and model roles
 

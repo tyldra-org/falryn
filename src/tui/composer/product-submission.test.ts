@@ -113,7 +113,7 @@ describe("product submission port", () => {
     expect(executions).toBe(1);
   });
 
-  test("derives default turn identities from the durable session", async () => {
+  test("allocates collision-resistant turn identities across submission owners", async () => {
     const observed: string[] = [];
     const live = executor(async (input) => {
       observed.push(String(input.turnId));
@@ -158,7 +158,9 @@ describe("product submission port", () => {
     await first.submit(snapshotOf("one", 1));
     await second.submit(snapshotOf("two", 1));
 
-    expect(observed).toEqual(["turn-submit:session-first:1", "turn-submit:session-second:1"]);
+    expect(observed).toHaveLength(2);
+    expect(new Set(observed).size).toBe(2);
+    for (const id of observed) expect(id).toMatch(/^turn-submit:[a-f0-9-]{36}$/u);
   });
 
   test("fails closed for empty text and when not accepting", async () => {

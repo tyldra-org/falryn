@@ -260,6 +260,7 @@ export type RawArguments = {
   readonly force: boolean | undefined;
   readonly "add-dir": readonly string[] | undefined;
   readonly prompt: readonly string[] | undefined;
+  readonly "continue-session"?: string;
   readonly brief: string | undefined;
   readonly hush: string | undefined;
   readonly loom: string | undefined;

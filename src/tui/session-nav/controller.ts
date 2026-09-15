@@ -1,3 +1,4 @@
+import type { SessionActivationPort } from "../../application/sessions/session-activation.ts";
 /**
  * Application-backed session navigation for the interactive shell (#722).
  *
@@ -45,6 +46,7 @@ export type SessionNavTurnEntry = {
 };
 
 export type SessionResumeResult = {
+  readonly explanation?: string;
   readonly sessionId: string;
   readonly streamId: string;
   readonly pending: number;
@@ -52,6 +54,7 @@ export type SessionResumeResult = {
 };
 
 export type SessionForkResult = {
+  readonly explanation?: string;
   readonly sourceSessionId: string;
   readonly sessionId: string;
   readonly streamId: string;
@@ -145,11 +148,13 @@ export function describeSessionNavigationControllerError(
 }
 
 export function noticeForResume(result: SessionResumeResult): string {
+  if (result.explanation) return result.explanation;
   const pending = result.pending === 1 ? "1 pending event" : `${result.pending} pending events`;
   return `Resumed session ${result.sessionId} (${pending}).`;
 }
 
 export function noticeForFork(result: SessionForkResult): string {
+  if (result.explanation) return result.explanation;
   if (result.kind === "rewind") {
     return `Rewound ${result.sourceSessionId} at turn ${result.atTurnId ?? "?"} → ${result.sessionId}.`;
   }
@@ -162,12 +167,14 @@ export function noticeForReplay(result: SessionReplayResult): string {
 }
 
 export function createSessionNavigationController(options: {
+  readonly activation?: SessionActivationPort;
   readonly sessions: SessionRepositoryPort;
   readonly turns: TurnRepositoryPort;
   readonly events: EventStorePort;
   readonly workspaceId: WorkspaceId;
 }): SessionNavigationController {
   const workspaceId = options.workspaceId;
+  const observed = new Map<string, { generation: number; throughSequence: number }>();
 
   return {
     workspaceId: String(workspaceId),
@@ -179,6 +186,17 @@ export function createSessionNavigationController(options: {
       const catalog = queryWorkspaceSessions(options.sessions, { workspaceId }, signal);
       if (!catalog.ok) {
         return { ok: false, error: navigationError(catalog.error.code) };
+      }
+      observed.clear();
+      for (const entry of catalog.value.sessions) {
+        const record = options.sessions.get(entry.sessionId);
+        if (!record.ok || !record.value) continue;
+        const head = options.events.head?.(record.value.streamId);
+        if (head?.ok)
+          observed.set(String(entry.sessionId), {
+            generation: Number(record.value.configurationGeneration),
+            throughSequence: Number(head.value ?? 0),
+          });
       }
       return {
         ok: true,
@@ -212,6 +230,29 @@ export function createSessionNavigationController(options: {
     },
 
     async resume(sessionIdText, signal) {
+      if (options.activation) {
+        const selection = observed.get(sessionIdText);
+        const result = await options.activation.activate(
+          {
+            kind: "resume",
+            sessionId: sessionIdText,
+            ...(selection ? { observed: selection } : {}),
+          },
+          signal,
+        );
+        if (!result.ok) return { ok: false, error: navigationError(result.reason) };
+        return {
+          ok: true,
+          value: {
+            sessionId: result.sessionId,
+            streamId: result.streamId,
+            explanation: result.explanation,
+            pending: 0,
+            afterSequence: null,
+          },
+        };
+      }
+
       if (signal?.aborted === true) {
         return { ok: false, error: { code: "cancelled" } };
       }
@@ -249,6 +290,26 @@ export function createSessionNavigationController(options: {
     },
 
     async fork(sessionIdText, signal) {
+      if (options.activation) {
+        const selection = observed.get(sessionIdText);
+        const result = await options.activation.activate(
+          { kind: "fork", sessionId: sessionIdText, ...(selection ? { observed: selection } : {}) },
+          signal,
+        );
+        if (!result.ok) return { ok: false, error: navigationError(result.reason) };
+        return {
+          ok: true,
+          value: {
+            sessionId: result.sessionId,
+            streamId: result.streamId,
+            explanation: result.explanation,
+            sourceSessionId: sessionIdText,
+            kind: "fork",
+            atTurnId: null,
+          },
+        };
+      }
+
       if (signal?.aborted === true) {
         return { ok: false, error: { code: "cancelled" } };
       }
@@ -287,6 +348,31 @@ export function createSessionNavigationController(options: {
     },
 
     async rewind(sessionIdText, atTurnId, signal) {
+      if (options.activation) {
+        const selection = observed.get(sessionIdText);
+        const result = await options.activation.activate(
+          {
+            kind: "rewind",
+            sessionId: sessionIdText,
+            ...(selection ? { observed: selection } : {}),
+            atTurnId,
+          },
+          signal,
+        );
+        if (!result.ok) return { ok: false, error: navigationError(result.reason) };
+        return {
+          ok: true,
+          value: {
+            sessionId: result.sessionId,
+            streamId: result.streamId,
+            explanation: result.explanation,
+            sourceSessionId: sessionIdText,
+            kind: "rewind",
+            atTurnId: atTurnId,
+          },
+        };
+      }
+
       if (signal?.aborted === true) {
         return { ok: false, error: { code: "cancelled" } };
       }

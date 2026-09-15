@@ -680,6 +680,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       return;
     }
 
+    const binding = options.submission?.binding?.();
     void (async () => {
       const resolved = await resolveComposerAttachments(
         current.attachments,
@@ -688,7 +689,11 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       );
       dispatch({
         kind: "composer",
-        action: { kind: "submit", attachments: resolved },
+        action: {
+          kind: "submit",
+          attachments: resolved,
+          ...(binding === undefined ? {} : { binding }),
+        },
       });
     })();
   }, [

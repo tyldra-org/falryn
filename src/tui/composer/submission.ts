@@ -33,6 +33,7 @@ import type { AttachmentDescriptor, MentionSpan } from "../../domain/context/ind
  * this module a test of what time it was.
  */
 export type ComposerSnapshot = {
+  readonly binding?: string;
   readonly text: string;
   /** Monotonic within a session, starting at 1. Identity, not a measurement. */
   readonly sequence: number;
@@ -45,10 +46,12 @@ export function snapshotOf(
   sequence: number,
   attachments: readonly AttachmentDescriptor[] = [],
   mentions: readonly MentionSpan[] = [],
+  binding?: string,
 ): ComposerSnapshot {
   return Object.freeze({
     text,
     sequence,
+    ...(binding === undefined ? {} : { binding }),
     attachments: Object.freeze(attachments.map((item) => Object.freeze({ ...item }))),
     mentions: Object.freeze(mentions.map((item) => Object.freeze({ ...item }))),
   });
@@ -91,6 +94,7 @@ export type SubmissionOutcome =
  * while holding the user's text.
  */
 export type SubmissionPort = {
+  readonly binding?: () => string;
   readonly compact?: import("../../application/compression/checkpoint-request.ts").CheckpointControl;
   readonly exportSession?: import("../../application/sessions/session-export.ts").SessionExportControl;
   readonly peer?: (input: unknown, signal: AbortSignal) => Promise<unknown>;

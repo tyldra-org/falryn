@@ -1,3 +1,8 @@
+import { processProductResources } from "../../application/orchestration/product-resources.ts";
+import {
+  type PreparedSessionSelection,
+  prepareSessionSelection,
+} from "../../application/sessions/session-activation.ts";
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { productToolHost } from "./product-tool-host.ts";
@@ -125,6 +130,8 @@ export const CODING_RUN_OWNER = "#708";
 export { DEFAULT_OPENAI_CREDENTIAL_REFERENCE };
 /** Parsed prompt fragments after `falryn run` (may be empty when stdin supplies text). */
 export type CodingRunArguments = {
+  /** Explicit durable continuation; inspection/replay commands remain effect-free. */
+  readonly session?: string;
   readonly promptParts: readonly string[];
   /** Brief verbosity for live prompt composition (#717). */
   readonly brief?: ProductBriefMode;
@@ -137,6 +144,7 @@ export type CodingRunArguments = {
 };
 
 export type CodingRunPayload = {
+  readonly activation?: string;
   readonly history?: import("../../application/runtime/product-live-turn.ts").ProductLiveTurnResult["history"];
   readonly sandbox?: string;
   readonly workspaceTrust?: import("../../domain/security/workspace-trust.ts").WorkspaceTrustReport;
@@ -408,10 +416,13 @@ export async function runCoding(
   let mainPeer: import("../../application/orchestration/peer-mailbox.ts").PeerMailbox | null = null;
 
   try {
-    const ids = options.identities ?? {
-      sessionId: `session-run-${randomUUID()}`,
-      turnId: `turn-run-${randomUUID()}`,
-      traceId: `trace-run-${randomUUID()}`,
+    const ids = {
+      ...(options.identities ?? {
+        sessionId: `session-run-${randomUUID()}`,
+        turnId: `turn-run-${randomUUID()}`,
+        traceId: `trace-run-${randomUUID()}`,
+      }),
+      ...(arguments_.session !== undefined ? { sessionId: arguments_.session } : {}),
     };
     const workspaceId = workspaceIdCodec.from(
       ids.workspaceId ?? primaryWorkspaceRoot(workspace.value.set).rootId,
@@ -481,6 +492,43 @@ export async function runCoding(
       );
     }
 
+    let selection: PreparedSessionSelection | undefined;
+    if (arguments_.session !== undefined) {
+      const prepared = await prepareSessionSelection(
+        {
+          ...productArtifactSession.records,
+          events: productArtifactSession.eventStore,
+          artifacts: productArtifactSession.artifacts,
+          workspaceId,
+          generation: Number(generation),
+          resources: processProductResources,
+        },
+        { kind: "resume", sessionId: arguments_.session },
+        options.signal ?? new AbortController().signal,
+      );
+      if (!prepared.ok)
+        return codingResult(
+          {
+            prompt: resolved.prompt,
+            sessionId: ids.sessionId,
+            turnId: null,
+            workspaceId: String(workspaceId),
+            stage: "compose-failed",
+            eventCount: 0,
+          },
+          [
+            adoptForeignError(
+              {
+                code: `activation.${prepared.code}`,
+                category: "persistence",
+                message: prepared.reason,
+              },
+              { operation: "activate session" },
+            ),
+          ],
+        );
+      selection = prepared.value;
+    }
     const workspaceRoot = primaryWorkspaceRoot(workspace.value.set).path;
     for (const event of trustEvents) {
       const recorded = await productArtifactSession.eventStore.append(event, options.signal);
@@ -678,6 +726,7 @@ export async function runCoding(
     const extensions = await productArtifactSession.publishNativePackages(
       generation,
       options.signal ?? new AbortController().signal,
+      selection ? String(sessionId) : undefined,
     );
     const productTools =
       options.toolExposureOverride === "none"
@@ -728,7 +777,7 @@ export async function runCoding(
         eventStore: productArtifactSession.eventStore,
         historyArtifacts: options.artifacts ?? productArtifactSession.artifacts,
         clock: graph.clock,
-        streamId: streamId.from(`live-turn:${String(sessionId)}`),
+        streamId: selection?.record.streamId ?? streamId.from(`live-turn:${String(sessionId)}`),
         correlation: {
           workspaceId,
           sessionId,
@@ -823,7 +872,46 @@ export async function runCoding(
             workspaceId,
             additionalCandidates: workspaceTools.contextCandidates,
           });
+    if (selection && (!providerAdapter || !providerCatalog))
+      return codingResult(
+        {
+          prompt: resolved.prompt,
+          sessionId: ids.sessionId,
+          turnId: null,
+          workspaceId: String(workspaceId),
+          stage: "provider-required",
+          eventCount: 0,
+        },
+        [
+          adoptForeignError(
+            {
+              code: "activation.provider-unavailable",
+              category: "provider",
+              message:
+                "The current provider connection is unavailable. Session history was not activated.",
+            },
+            { operation: "activate session" },
+          ),
+        ],
+      );
+    if (selection) {
+      if (!selection.current()) throw new Error("activation.stale-selection");
+      const runtime = composed.value.sessionRuntime;
+      const opened = runtime.create({
+        sessionId,
+        workspaceId,
+        configurationGeneration: generation,
+      });
+      if (
+        !opened.ok ||
+        !runtime.apply({ sessionId, command: "mark-ready", configurationGeneration: generation }).ok
+      )
+        throw new Error("activation.runtime-unavailable");
+      const restored = await composed.value.attachments.turnProducer.refreshFromStore();
+      if (!restored.ok) throw new Error("activation.transcript-unavailable");
+    }
     const executor = createProductLiveTurnExecutor({
+      ...(selection ? { resumed: true, historyParents: selection.parents } : {}),
       checkpointEvents: productArtifactSession.eventStore,
       checkpointDurable: true,
       extensionCatalog: projectCatalogHistory(extensions.catalog, workspace.value.set),
@@ -875,6 +963,7 @@ export async function runCoding(
 
     return codingResult(
       {
+        ...(selection ? { activation: selection.explanation } : {}),
         prompt: resolved.prompt,
         sessionId: ids.sessionId,
         turnId: ids.turnId,

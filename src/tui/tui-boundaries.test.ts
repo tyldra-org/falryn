@@ -952,6 +952,7 @@ describe("the rendered test harness", () => {
         "composer/live-composer-mid-turn.test.tsx",
         "overlays/palette.test.tsx",
         "visual/render-gate.test.tsx",
+        "overlays/session-activation.test.tsx",
         "overlays/session-nav-sheet.test.tsx",
         "shell/shell-error-boundary.test.tsx",
         "transcript/transcript.test.tsx",
