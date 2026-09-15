@@ -403,6 +403,12 @@ function renderError(session: Session, error: FalrynError, indent: string): read
 
 function renderPayload(session: Session, result: RunCommandResult): RenderedPayload {
   switch (result.command) {
+    case "profile":
+    case "config.migrate":
+      return {
+        lines: result.payload === null ? [] : [safe(JSON.stringify(result.payload, null, 2))],
+        diagnostics: [],
+      };
     case "config.show":
       return renderConfigShow(session, result.payload);
     case "config.validate":
@@ -563,6 +569,8 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
       // values it has; stderr is where the reader is told those values are not
       // the whole of what they wrote.
       return result.payload === null ? [] : unreadSourceFindings(result.payload.inspection.sources);
+    case "profile":
+    case "config.migrate":
     case "config.path":
       return [];
     case "config.set":

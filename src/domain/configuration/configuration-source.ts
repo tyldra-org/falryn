@@ -38,6 +38,7 @@ export const CONFIGURATION_LAYER_ORDER: readonly ConfigurationSourceKind[] = [
   "built-in-default",
   "user-file",
   "project-file",
+  "private-project-file",
   "profile",
   "environment",
   "cli-override",
@@ -50,6 +51,8 @@ export type ConfigurationSource = {
   readonly file: LocalPath | null;
   /** Which profile a profile layer selected, or `null`. */
   readonly profile: string | null;
+  readonly revision?: string | null;
+  readonly schemaVersion?: number;
 };
 
 /** Why a discovered source contributed nothing. */
@@ -152,8 +155,20 @@ export type OverriddenValue = {
   readonly redactedOriginal: ConfigurationValue;
 };
 
+export type WorkingProfileSelection = {
+  readonly id: string;
+  readonly selectedBy: "explicit" | "workspace" | "global" | "built-in";
+  readonly virtual: boolean;
+  readonly ancestry: readonly {
+    readonly id: string;
+    readonly file: LocalPath;
+    readonly revision: string | null;
+  }[];
+};
+
 /** One composed, cross-validated configuration. */
 export type ConfigurationGenerationRecord = {
+  readonly workingProfile?: WorkingProfileSelection;
   readonly generation: ConfigurationGeneration;
   readonly values: ConfigurationValues;
   readonly provenance: readonly ValueProvenance[];
@@ -217,6 +232,10 @@ export type ConfigurationLoadOutcome =
 
 /** One key as inspection shows it. */
 export type InspectedValue = {
+  /** Requested source contribution, before declared inheritance. Both values are redacted. */
+  readonly requested?: ConfigurationValue;
+  readonly applicationClass?: ConfigurationApplicationClass;
+  readonly documentPath?: string | null;
   readonly path: ConfigurationKeyPath;
   /** Rendered through the key's declared sensitivity. Never raw bytes. */
   readonly value: ConfigurationValue;
@@ -232,6 +251,7 @@ export type InspectedValue = {
  * the surfaces, which is why nothing here formats anything.
  */
 export type ConfigurationInspection = {
+  readonly workingProfile?: WorkingProfileSelection;
   readonly generation: ConfigurationGeneration;
   readonly values: readonly InspectedValue[];
   readonly sources: readonly SourceReport[];

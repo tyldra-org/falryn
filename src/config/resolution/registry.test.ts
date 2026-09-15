@@ -307,7 +307,7 @@ describe("version skew inside a document", () => {
           severity: "warning",
           path: "fixture.futureKey",
           observedSchemaVersion: 4,
-          readerSchemaVersion: 1,
+          readerSchemaVersion: 2,
         },
       ]);
     }
@@ -326,7 +326,7 @@ describe("version skew inside a document", () => {
         path: "minimumReaderSchemaVersion",
         observedSchemaVersion: 4,
         minimumCompatibleVersion: 4,
-        readerSchemaVersion: 1,
+        readerSchemaVersion: 2,
       },
     ]);
   });

@@ -45,6 +45,7 @@ export async function validateProductConfigurationCandidate(
       workspaceRoot: services.workspaceRoot,
       profile,
       projectText: project.text,
+      privateProjectText: project.privateText ?? null,
     },
     { path, text },
     signal,
@@ -119,10 +120,11 @@ export async function loadProductConfiguration(
   signal?: AbortSignal,
 ): Promise<ProductConfigurationLoadResult> {
   const project = await graph.workspaceTrust.project(signal);
-  const load = (projectText: string | null) =>
+  const load = (projectText: string | null, privateProjectText: string | null) =>
     graph.loader.load(
       {
         projectText,
+        privateProjectText,
         configurationRoot: graph.configurationRoot,
         legacyConfigurationRoot: graph.legacyConfigurationRoot,
         workspaceRoot: graph.workspaceRoot,
@@ -131,11 +133,18 @@ export async function loadProductConfiguration(
       },
       signal,
     );
-  let outcome = await load(project.text);
+  let outcome = await load(project.text, project.privateText ?? null);
   // Global/profile files are read by the normal loader. Reject project activation
   // if that read crossed a change to the configuration reviewed by this decision.
-  const confirmed = project.text === null ? project : await graph.workspaceTrust.project(signal);
-  if (confirmed.report.status !== "accepted" && project.text !== null) outcome = await load(null);
+  const confirmed =
+    project.text === null && project.privateText == null
+      ? project
+      : await graph.workspaceTrust.project(signal);
+  if (
+    confirmed.report.status !== "accepted" &&
+    (project.text !== null || project.privateText != null)
+  )
+    outcome = await load(null, null);
   return {
     trust: confirmed.report,
     outcome,

@@ -78,7 +78,7 @@ describe("key paths", () => {
 describe("scopes and sources", () => {
   test("every source kind names the scope it supplies", () => {
     const scopes = CONFIGURATION_SOURCE_KINDS.map(scopeForSourceKind);
-    expect(scopes).toEqual([null, "user", "project", "profile", "environment", "cli"]);
+    expect(scopes).toEqual([null, "user", "project", "project", "profile", "environment", "cli"]);
   });
 
   test("built-in defaults have no scope, because no scope set them", () => {

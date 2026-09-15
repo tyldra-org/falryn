@@ -19,7 +19,7 @@ import {
   MAX_RETAINED_DIAGNOSTICS,
 } from "../../domain/terminal/index.ts";
 import { POINTER_KEY } from "../../tui/runtime/capabilities.ts";
-import { CONFIGURATION_SCHEMA_VERSION, SCHEMA_VERSION_FIELD } from "../document/schema-family.ts";
+import { SCHEMA_VERSION_FIELD } from "../document/schema-family.ts";
 import { readEnvironmentLayer } from "./bridges.ts";
 import {
   MAX_CLASS_BYTES,
@@ -42,7 +42,7 @@ const port = createConfigurationRegistry({
 });
 
 function document(body: Record<string, unknown> = {}): Record<string, unknown> {
-  return { [SCHEMA_VERSION_FIELD]: CONFIGURATION_SCHEMA_VERSION, ...body };
+  return { [SCHEMA_VERSION_FIELD]: 1, ...body };
 }
 
 function firstIssue(issues: readonly ConfigurationIssue[]): ConfigurationIssue | undefined {
@@ -129,7 +129,7 @@ describe("the v0.1 catalog", () => {
     for (const descriptor of port.keys()) {
       expect(descriptor.scopes.length).toBeGreaterThan(0);
       expect(descriptor.applicationClass.length).toBeGreaterThan(0);
-      expect(descriptor.introducedInSchemaVersion).toBe(CONFIGURATION_SCHEMA_VERSION);
+      expect(descriptor.introducedInSchemaVersion).toBe(1);
     }
   });
 

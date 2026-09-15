@@ -58,7 +58,8 @@ import { configurationHomeIssue, resolveConfigurationHome } from "../host/home.t
 import { type BridgeResult, readEnvironmentLayer, readOverrideLayer } from "./bridges.ts";
 import { composeLayers, declaredKeysOf, type LayerInput } from "./composition.ts";
 import { diffGenerations, nextGeneration, strongestApplicationClass } from "./generation.ts";
-import { discoverSources, parseSourceText, readSource } from "./sources.ts";
+import { discoverSources } from "./sources.ts";
+import { readWorkingSources } from "./working-profile.ts";
 
 /**
  * Re-reads the abort flag without letting the compiler narrow it away.
@@ -78,6 +79,7 @@ const SCOPE_BY_KIND: Readonly<Record<ConfigurationSourceKind, ConfigurationScope
   "built-in-default": null,
   "user-file": "user",
   "project-file": "project",
+  "private-project-file": "project",
   profile: "profile",
   environment: "environment",
   "cli-override": "cli",
@@ -112,6 +114,10 @@ export type ConfigurationLoaderOptions = {
 export type LoadRequest = {
   /** Product startup supplies inspected bytes; null explicitly disables project settings. */
   readonly projectText?: string | null;
+  readonly privateProjectText?: string | null;
+  /** Explicitly saved personal association supplied by the workspace owner. */
+  readonly workspaceProfile?: string | null;
+  readonly profileAncestry?: readonly string[];
   readonly configurationRoot: LocalPath;
   /** Previous platform-default root; absent for direct library callers. */
   readonly legacyConfigurationRoot?: LocalPath | null;
@@ -178,6 +184,9 @@ export function createConfigurationLoader(
       const result = await staged.load(
         {
           ...request,
+          ...(candidate.path.endsWith("/.falryn/local/falryn.local.jsonc")
+            ? { privateProjectText: candidate.text }
+            : {}),
           ...(candidate.path ===
           discoverSources(request).sources.find((source) => source.source.kind === "project-file")
             ?.file
@@ -207,29 +216,8 @@ export function createConfigurationLoader(
         return { kind: "cancelled" };
       }
 
-      let prepared:
-        | Awaited<ReturnType<NonNullable<ConfigurationLoaderOptions["prepare"]>>>
-        | undefined;
-      try {
-        prepared = await initialOptions.prepare?.(request, signal);
-      } catch {
-        return {
-          kind: "publish-failed",
-          code: "package-configuration-unavailable",
-          retained: current,
-        };
-      }
-      const options =
-        prepared === undefined
-          ? initialOptions
-          : { ...initialOptions, registry: prepared.registry, declarations: prepared.declarations };
-
-      const reports: SourceReport[] = [];
-      const layers: LayerInput[] = [...(prepared?.layers ?? [])];
-      const issues: ConfigurationIssue[] = [...(prepared?.issues ?? [])];
-
       const home = await resolveConfigurationHome(
-        options.fileSystem,
+        initialOptions.fileSystem,
         {
           current: request.configurationRoot,
           legacy: request.legacyConfigurationRoot ?? null,
@@ -243,27 +231,60 @@ export function createConfigurationLoader(
         return {
           kind: "rejected",
           issues: [configurationHomeIssue(home)],
-          sources: reports,
+          sources: [],
           retained: current,
         };
       }
 
-      const discovery = discoverSources({
-        configurationRoot: home.root,
-        workspaceRoot: request.workspaceRoot,
-        profile: request.profile,
-      });
-      issues.push(...discovery.issues);
+      const working = await readWorkingSources(
+        initialOptions.fileSystem,
+        {
+          ...request,
+          configurationRoot: home.root,
+        },
+        signal,
+      );
+      let prepared:
+        | Awaited<ReturnType<NonNullable<ConfigurationLoaderOptions["prepare"]>>>
+        | undefined;
+      try {
+        prepared = await initialOptions.prepare?.(
+          {
+            ...request,
+            profile: working.selection.id,
+            profileAncestry: working.selection.ancestry.map((entry) => entry.id),
+          },
+          signal,
+        );
+      } catch {
+        return {
+          kind: "publish-failed",
+          code: "package-configuration-unavailable",
+          retained: current,
+        };
+      }
+      const options =
+        prepared === undefined
+          ? initialOptions
+          : { ...initialOptions, registry: prepared.registry, declarations: prepared.declarations };
 
-      for (const discovered of discovery.sources) {
-        if (isAborted(signal)) {
-          return { kind: "cancelled" };
-        }
-        const pinned =
-          discovered.source.kind === "project-file" && request.projectText !== undefined;
-        const read = !pinned
-          ? await readSource(options.fileSystem, discovered, signal)
-          : parseSourceText(discovered, request.projectText ?? null);
+      const reports: SourceReport[] = [];
+      const layers: LayerInput[] = [...(prepared?.layers ?? [])].filter(
+        (layer) => layer.source.kind !== "profile",
+      );
+      const issues: ConfigurationIssue[] = [...(prepared?.issues ?? [])];
+
+      issues.push(...working.issues);
+      for (const read of working.reads) {
+        if (read.source.kind === "profile")
+          layers.push(
+            ...(prepared?.layers ?? []).filter(
+              (layer) =>
+                layer.source.kind === "profile" && layer.source.profile === read.source.profile,
+            ),
+          );
+        if (isAborted(signal)) return { kind: "cancelled" };
+        const pinned = read.source.kind === "project-file" && request.projectText !== undefined;
         if (read.outcome !== "loaded") {
           // Removing or losing a previously loaded package source must not silently
           // revert its settings while an admitted operation still holds that generation.
@@ -323,9 +344,16 @@ export function createConfigurationLoader(
           position: null,
         });
         issues.push(...validated.issues);
-        layers.push({ source: read.source, scope, values: validated.values });
+        layers.push({
+          source: read.source,
+          scope,
+          values: validated.values,
+          schemaVersion: read.source.schemaVersion ?? 1,
+        });
       }
 
+      if (working.selection.virtual)
+        layers.push(...(prepared?.layers ?? []).filter((layer) => layer.source.kind === "profile"));
       const environmentSource: ConfigurationSource = {
         kind: "environment",
         file: null,
@@ -357,14 +385,32 @@ export function createConfigurationLoader(
         return { kind: "rejected", issues, sources: reports, retained: current };
       }
 
-      const record: ConfigurationGenerationRecord = {
+      for (const read of working.reads) {
+        if (
+          read.source.file === null ||
+          read.source.revision == null ||
+          (read.source.kind === "project-file" && request.projectText !== undefined) ||
+          (read.source.kind === "private-project-file" && request.privateProjectText !== undefined)
+        )
+          continue;
+        const latest = await initialOptions.fileSystem.stat(read.source.file, signal);
+        if (!latest.ok || latest.value?.revision !== read.source.revision)
+          return {
+            kind: "publish-failed",
+            code: "configuration-source-changed",
+            retained: current,
+          };
+      }
+
+      const record: ConfigurationGenerationRecord = freezeConfiguration({
+        workingProfile: working.selection,
         generation: nextGeneration(current, FIRST_CONFIGURATION_GENERATION),
         values: composed.values,
         provenance: composed.provenance,
         overridden: composed.overridden,
         sources: reports,
         issues,
-      };
+      });
 
       const changes =
         current === null
@@ -376,12 +422,14 @@ export function createConfigurationLoader(
         changes.length === 0 &&
         (prepared?.generation ?? null) === publishedSourceGeneration &&
         JSON.stringify({
+          workingProfile: working.selection,
           sources: reports,
           provenance: composed.provenance,
           overridden: composed.overridden,
           issues,
         }) ===
           JSON.stringify({
+            workingProfile: current.workingProfile,
             sources: current.sources,
             provenance: current.provenance,
             overridden: current.overridden,
@@ -480,4 +528,13 @@ async function appendGenerationEvent(
   // itself rather than squeezed into a validation issue that would name a key
   // path nothing is wrong with.
   return appended.ok ? { ok: true } : { ok: false, code: appended.error.code };
+}
+
+/** Published JSON values cannot be changed by a consumer holding the generation. */
+function freezeConfiguration<T>(value: T): T {
+  if (value !== null && typeof value === "object" && !Object.isFrozen(value)) {
+    for (const child of Object.values(value)) freezeConfiguration(child);
+    Object.freeze(value);
+  }
+  return value;
 }

@@ -172,6 +172,99 @@ describe("resolveCodingPrompt", () => {
 });
 
 describe("runCoding", () => {
+  test("headless attempts consume the saved working profile and inherited model route", async () => {
+    const seeded = await seededHome();
+    const globals = globalsFor(seeded);
+    const services = providerFor(seeded)(globals);
+    const root = services().configurationRoot;
+    await mkdir(join(root, "profiles"), { recursive: true });
+    const envelope = (value: object) =>
+      JSON.stringify({ schemaVersion: 2, minimumReaderSchemaVersion: 2, ...value });
+    await writeFile(
+      join(root, "falryn.jsonc"),
+      envelope({
+        profiles: { default: "child" },
+        defaults: {
+          models: {
+            policy: {
+              roles: {
+                default: {
+                  providerProfileId: "deterministic",
+                  providerId: "falryn-deterministic",
+                  modelId: "deterministic-echo",
+                  budgets: { outputTokens: 777 },
+                },
+              },
+            },
+          },
+        },
+      }),
+    );
+    await writeFile(
+      join(root, "profiles", "parent.jsonc"),
+      envelope({ overrides: { interface: { pointer: { enabled: false } } } }),
+    );
+    await writeFile(
+      join(root, "profiles", "child.jsonc"),
+      envelope({
+        extends: "parent",
+        overrides: {
+          models: { policy: { roles: { default: { budgets: { outputTokens: 555 } } } } },
+        },
+      }),
+    );
+    const requests: ModelRequest[] = [];
+    const result = await runCoding(
+      services,
+      { promptParts: ["hello"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals,
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+        }),
+        identities: {
+          sessionId: "working-profile-run",
+          turnId: "working-profile-turn",
+          traceId: "working-profile-trace",
+        },
+      },
+    );
+    expect(result.outcome.kind).toBe("completed");
+    expect(requests[0]?.budgets.maxOutputTokens).toBe(555);
+    expect(
+      services()
+        .loader.current()
+        ?.workingProfile?.ancestry.map((entry) => entry.id),
+    ).toEqual(["parent", "child"]);
+    expect(services().loader.current()?.values["interface.pointer.enabled"]).toBe(false);
+    await writeFile(
+      join(root, "profiles", "parent.jsonc"),
+      envelope({ overrides: { models: { policy: { processing: { mode: "fast" } } } } }),
+    );
+    requests.length = 0;
+    const unsupported = await runCoding(
+      providerFor(seeded)(globals),
+      { promptParts: ["hello"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals,
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+        }),
+        identities: {
+          sessionId: "unsupported-profile-run",
+          turnId: "unsupported-profile-turn",
+          traceId: "unsupported-profile-trace",
+        },
+      },
+    );
+    expect(unsupported.outcome.kind).toBe("failed");
+    expect(requests).toHaveLength(0);
+    expect(unsupported.payload?.stage).toBe("attempt-failed");
+    expect(unsupported.payload?.providerRequests).toBe(0);
+  });
+
   test("refuses a live turn when the durable product event store cannot open", async () => {
     const home = await mkdtemp(join(tmpdir(), "falryn-run-no-store-"));
     homes.push(home);

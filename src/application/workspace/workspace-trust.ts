@@ -13,9 +13,11 @@ import type {
 export type WorkspaceTrust = {
   resolve(review?: WorkspaceTrustReview, signal?: AbortSignal): Promise<WorkspaceTrustReport>;
   /** Revalidates the whole inventory and returns only committed, generation-pinned configuration. */
-  project(
-    signal?: AbortSignal,
-  ): Promise<{ readonly text: string | null; readonly report: WorkspaceTrustReport }>;
+  project(signal?: AbortSignal): Promise<{
+    readonly text: string | null;
+    readonly privateText?: string | null;
+    readonly report: WorkspaceTrustReport;
+  }>;
   current(): WorkspaceTrustReport;
 };
 export function createWorkspaceTrust(options: {
@@ -180,7 +182,11 @@ export function createWorkspaceTrust(options: {
       }
       const allowed =
         report.status === "accepted" && admitted === result.snapshot.report.generation;
-      return { text: allowed ? result.snapshot.projectText : null, report };
+      return {
+        text: allowed ? result.snapshot.projectText : null,
+        privateText: allowed ? (result.snapshot.privateProjectText ?? null) : null,
+        report,
+      };
     },
   };
 }

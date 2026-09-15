@@ -24,6 +24,7 @@ import {
 } from "../../domain/configuration/index.ts";
 import { type FileSystemPort, joinPath, type LocalPath } from "../../domain/workspace/index.ts";
 import { MAX_CONFIGURATION_FILE_BYTES, parseJsonc } from "../document/jsonc.ts";
+import { usesOrganizedConfiguration } from "../document/schema-family.ts";
 
 /** The file name every configuration layer uses. */
 export const CONFIGURATION_FILE_NAME = "falryn.jsonc";
@@ -146,13 +147,24 @@ export async function readSource(
 ): Promise<ReadSource> {
   const base = { source: discovered.source, document: undefined, position: null };
 
+  const before = await fileSystem.stat(discovered.file, signal);
   const text = await fileSystem.readText(discovered.file, MAX_CONFIGURATION_FILE_BYTES, signal);
 
   if (!text.ok) {
     return { ...base, outcome: outcomeForRead(text.error.code), issues: [] };
   }
 
-  return parseSourceText(discovered, text.value);
+  const after = await fileSystem.stat(discovered.file, signal);
+  if (!before.ok || !after.ok || before.value?.revision !== after.value?.revision)
+    return {
+      ...base,
+      outcome: "unreadable",
+      issues: [{ kind: "invalid-value", severity: "error", path: "source.changed", allowed: [] }],
+    };
+  return parseSourceText(
+    { ...discovered, source: { ...discovered.source, revision: after.value?.revision ?? null } },
+    text.value,
+  );
 }
 
 /** Parses bytes already pinned by the workspace trust gate with the normal source semantics. */
@@ -188,7 +200,15 @@ export function parseSourceText(discovered: DiscoveredSource, text: string | nul
   }
 
   return {
-    source: discovered.source,
+    source: {
+      ...discovered.source,
+      schemaVersion:
+        typeof parsed.value === "object" &&
+        parsed.value !== null &&
+        usesOrganizedConfiguration(parsed.value as Record<string, unknown>)
+          ? 2
+          : 1,
+    },
     outcome: "loaded",
     document: parsed.value,
     issues: [],

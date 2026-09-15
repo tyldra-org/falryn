@@ -20,8 +20,11 @@ import {
   type LocalPath,
   parentPath,
 } from "../../domain/workspace/index.ts";
-import { planConfigurationEdits } from "../document/edits.ts";
+import { parseConfigurationDocument } from "../document/document.ts";
+import { type ConfigurationDocumentEdit, planConfigurationEdits } from "../document/edits.ts";
 import { MAX_CONFIGURATION_FILE_BYTES } from "../document/jsonc.ts";
+import { documentSettingPath } from "../document/organized.ts";
+import { usesOrganizedConfiguration } from "../document/schema-family.ts";
 import { readOverrideLayer } from "../resolution/bridges.ts";
 import {
   CONFIGURATION_FILE_NAME,
@@ -36,7 +39,7 @@ import {
   resolveConfigurationHome,
 } from "./home.ts";
 
-export type ConfigurationFileScope = "user" | "project" | "profile";
+export type ConfigurationFileScope = "user" | "project" | "private-project" | "profile";
 
 export type ConfigurationWriteRequest = {
   readonly configurationRoot: LocalPath;
@@ -100,6 +103,7 @@ export type ConfigurationWriteOutcome =
 const SCOPE_BY_FILE: Readonly<Record<ConfigurationFileScope, ConfigurationScope>> = {
   user: "user",
   project: "project",
+  "private-project": "project",
   profile: "profile",
 };
 
@@ -116,6 +120,7 @@ export function resolveConfigurationFilePath(
         ? ok(file.value)
         : filesystemOutcome(file.error.code, request.configurationRoot);
     }
+    case "private-project":
     case "project": {
       if (request.workspaceRoot === null) {
         return err({ kind: "workspace-required" });
@@ -123,7 +128,9 @@ export function resolveConfigurationFilePath(
       const file = joinPath(
         request.workspaceRoot,
         PROJECT_CONFIGURATION_DIRECTORY,
-        CONFIGURATION_FILE_NAME,
+        ...(request.scope === "private-project"
+          ? ["local", "falryn.local.jsonc"]
+          : [CONFIGURATION_FILE_NAME]),
       );
       return file.ok ? ok(file.value) : filesystemOutcome(file.error.code, request.workspaceRoot);
     }
@@ -182,7 +189,7 @@ export async function writeConfigurationKey(
   const coerced = readOverrideLayer(
     registry,
     { [request.keyPath]: request.rawValue },
-    request.scope,
+    SCOPE_BY_FILE[request.scope],
   );
   if (coerced.issues.some((issue) => issue.severity === "error")) {
     return { kind: "rejected", issues: coerced.issues };
@@ -251,7 +258,7 @@ async function requestForWrite<T extends Omit<ConfigurationWriteRequest, "rawVal
   request: T,
   signal?: AbortSignal,
 ): Promise<Result<T & { readonly publicationRoot?: LocalPath }, ConfigurationWriteOutcome>> {
-  if (request.scope === "project") {
+  if (request.scope === "project" || request.scope === "private-project") {
     return ok(request);
   }
 
@@ -289,13 +296,17 @@ async function writeValueAtPath(
     readonly requireAbsent?: boolean;
     readonly operation?: "remove";
     readonly publicationRoot?: LocalPath;
+    readonly edits?: readonly ConfigurationDocumentEdit[];
   },
   path: LocalPath,
   value: ConfigurationValue | undefined,
   signal?: AbortSignal,
 ): Promise<ConfigurationWriteOutcome> {
   const declaration = registry.resolve(request.keyPath);
-  if (declaration.kind === "known" && !declaration.descriptor.scopes.includes(request.scope)) {
+  if (
+    declaration.kind === "known" &&
+    !declaration.descriptor.scopes.includes(SCOPE_BY_FILE[request.scope])
+  ) {
     return {
       kind: "rejected",
       issues: [
@@ -303,7 +314,7 @@ async function writeValueAtPath(
           kind: "scope-unavailable",
           severity: "error",
           path: request.keyPath,
-          scope: request.scope,
+          scope: SCOPE_BY_FILE[request.scope],
           availableScopes: declaration.descriptor.scopes,
         },
       ],
@@ -342,14 +353,29 @@ async function writeValueAtPath(
     }
   }
 
+  const document = source === null ? null : parseConfigurationDocument(source);
+  const organized = document === null || usesOrganizedConfiguration(document);
+  const keyPath = organized
+    ? documentSettingPath(request.keyPath, SCOPE_BY_FILE[request.scope])
+    : request.keyPath;
+  if (keyPath === null && request.edits === undefined)
+    return {
+      kind: "rejected",
+      issues: [{ kind: "unknown-key", severity: "error", path: request.keyPath }],
+    };
   const operations =
-    request.operation === "remove"
-      ? [{ kind: "remove" as const, path: request.keyPath.split(".") }]
-      : [{ kind: "set" as const, path: request.keyPath.split("."), value }];
+    request.edits ??
+    (request.operation === "remove"
+      ? [{ kind: "remove" as const, path: (keyPath ?? "").split(".") }]
+      : [{ kind: "set" as const, path: (keyPath ?? "").split("."), value }]);
   const plan = planConfigurationEdits(source, operations);
   if (plan.kind === "rejected") return { kind: "filesystem", path, code: plan.code };
   const scope = SCOPE_BY_FILE[request.scope];
-  const validated = registry.validateComplete(plan.document, {
+  const validated = (
+    organized && request.validateCandidate !== undefined
+      ? registry.validateLayer
+      : registry.validateComplete
+  )(plan.document, {
     scope,
     sourceKind: scope === "user" ? "user-file" : scope === "project" ? "project-file" : "profile",
   });
@@ -456,8 +482,19 @@ export function configurationSourcePaths(
   workspaceRoot: LocalPath | null,
   profile: string | null,
 ): readonly LocalPath[] {
-  const discovery = discoverSources({ configurationRoot, workspaceRoot, profile });
-  return discovery.sources.map((source) => source.file);
+  const discovery = discoverSources({
+    configurationRoot,
+    workspaceRoot,
+    profile: profile ?? "default",
+  });
+  const privateProject =
+    workspaceRoot === null
+      ? null
+      : joinPath(workspaceRoot, ".falryn", "local", "falryn.local.jsonc");
+  return [
+    ...discovery.sources.map((source) => source.file),
+    ...(privateProject?.ok ? [privateProject.value] : []),
+  ];
 }
 
 async function ensureParentDirectory(
@@ -480,4 +517,28 @@ function filesystemOutcome(
   path: LocalPath,
 ): Result<never, ConfigurationWriteOutcome> {
   return err({ kind: "filesystem", path, code });
+}
+
+/** Shared expected-revision writer for explicit metadata changes and migrations. */
+export async function writeConfigurationEdits(
+  registry: ConfigurationRegistryPort,
+  fileSystem: FileSystemPort,
+  request: Omit<ConfigurationWriteRequest, "keyPath" | "rawValue" | "operation"> & {
+    readonly edits: readonly ConfigurationDocumentEdit[];
+  },
+  signal?: AbortSignal,
+): Promise<ConfigurationWriteOutcome> {
+  if (signal?.aborted) return { kind: "cancelled" };
+  const rooted = await requestForWrite(fileSystem, { ...request, keyPath: "" }, signal);
+  if (!rooted.ok) return rooted.error;
+  const path = resolveConfigurationFilePath(rooted.value);
+  if (!path.ok) return path.error;
+  return writeValueAtPath(
+    registry,
+    fileSystem,
+    { ...rooted.value, keyPath: "" },
+    path.value,
+    undefined,
+    signal,
+  );
 }

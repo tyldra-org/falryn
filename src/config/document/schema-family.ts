@@ -27,13 +27,12 @@ import type { ConfigurationIssue } from "../../domain/configuration/index.ts";
 export const CONFIGURATION_SCHEMA_FAMILY = "falryn.configuration";
 
 /** Version this build writes and can fully interpret. */
-export const CONFIGURATION_SCHEMA_VERSION = 1;
+export const CONFIGURATION_SCHEMA_VERSION = 2;
 
 /**
  * Oldest document version this build interprets.
  *
- * Equal to the current version because no earlier version was ever published;
- * an older document is a fabrication rather than history.
+ * Version one retains its original flat setting paths and whole-value model policy.
  */
 export const CONFIGURATION_MINIMUM_SCHEMA_VERSION = 1;
 
@@ -135,4 +134,15 @@ export function evaluateSchemaVersion(
 
 function isPositiveInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
+}
+
+/** A newer additive producer can explicitly retain the version-one reader contract. */
+export function usesOrganizedConfiguration(document: Readonly<Record<string, unknown>>): boolean {
+  return (
+    document.schemaVersion === 2 ||
+    (typeof document.schemaVersion === "number" &&
+      document.schemaVersion > 2 &&
+      typeof document.minimumReaderSchemaVersion === "number" &&
+      document.minimumReaderSchemaVersion >= 2)
+  );
 }

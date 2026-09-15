@@ -28,6 +28,7 @@ export const WORKSPACE_INVENTORY_LIMITS = {
 export type WorkspaceInventorySnapshot = {
   readonly report: WorkspaceInventory;
   readonly projectText: string | null;
+  readonly privateProjectText?: string | null;
 };
 export type WorkspaceInventoryPort = {
   inspect(
@@ -104,6 +105,7 @@ export function createWorkspaceInventory(options: {
     let entries = 0;
     let bytes = 0;
     let projectText: string | null = null;
+    let privateProjectText: string | null = null;
     const check = () => {
       if (signal?.aborted) throw new Error("cancelled");
       if (stop.aborted || options.now() >= deadline) throw new Error("inventory-timeout");
@@ -176,7 +178,10 @@ export function createWorkspaceInventory(options: {
             ) {
               const text = new TextDecoder("utf-8", { fatal: true }).decode(read.value);
               if (!options.validate(family, text, relative)) throw new Error("inventory-malformed");
-              if (rootIndex === 0 && family === "settings") projectText = text;
+              if (rootIndex === 0 && family === "settings") {
+                if (relative === ".falryn/local/falryn.local.jsonc") privateProjectText = text;
+                else projectText = text;
+              }
             }
             loaders.push({
               source: canonicalDigest({ root: canonicalRoot, relative }),
@@ -207,6 +212,7 @@ export function createWorkspaceInventory(options: {
         }
         if (`${canonicalRoot}/.falryn/falryn.jsonc` !== options.userConfiguration)
           await visit(".falryn/falryn.jsonc", "settings", 0, "file");
+        await visit(".falryn/local/falryn.local.jsonc", "settings", 0, "file");
         await visit("AGENTS.md", "instructions", 0, "file");
         await visit(".falryn/instructions", "instructions", 0, "directory");
         await visit("mcp.json", "mcp", 0, "file");
@@ -233,7 +239,7 @@ export function createWorkspaceInventory(options: {
         configuration: options.configuration,
         loaders,
       };
-      return ok({ report, projectText });
+      return ok({ report, projectText, privateProjectText });
     } catch (error) {
       const known = [
         "cancelled",

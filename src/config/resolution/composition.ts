@@ -41,6 +41,7 @@ export type LayerInput = {
   /** `null` only for built-in defaults, which no scope set. */
   readonly scope: ConfigurationScope | null;
   readonly values: ConfigurationValues;
+  readonly schemaVersion?: number;
 };
 
 export type CompositionInputs = {
@@ -145,7 +146,10 @@ function applyLayer(layer: LayerInput, layerIndex: number, context: ApplyContext
       });
     }
 
-    const folded = foldDeclaredValue(declaration.descriptor.merge, context.values[path], incoming);
+    const folded =
+      (layer.schemaVersion ?? 1) >= 2 && declaration.organized !== undefined
+        ? declaration.organized.fold(context.values[path], incoming)
+        : foldDeclaredValue(declaration.descriptor.merge, context.values[path], incoming);
 
     // A fold can produce a value neither layer stated, so the result is checked
     // against the declaration that bounds it rather than assumed valid.
@@ -161,7 +165,7 @@ function applyLayer(layer: LayerInput, layerIndex: number, context: ApplyContext
       source: layer.source,
       scope: layer.scope,
       layerIndex,
-      schemaVersion: CONFIGURATION_SCHEMA_VERSION,
+      schemaVersion: layer.schemaVersion ?? 1,
       redactedOriginal: context.registry.render(path, incoming),
     });
   }

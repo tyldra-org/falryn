@@ -81,8 +81,12 @@ export function commandFrom(
         return null;
     }
   }
+  if (group === "profile")
+    return ["list", "show", "default"].includes(action ?? "") ? "profile" : null;
   if (group === "config") {
     switch (action) {
+      case "migrate":
+        return "config.migrate";
       case "show":
         return "config.show";
       case "validate":
@@ -207,7 +211,12 @@ export function configSetArgumentsFor(
     return "Argument force is only valid with workspace save.";
   }
   const scope = parsed["file-scope"] ?? "user";
-  if (scope !== "user" && scope !== "project" && scope !== "profile") {
+  if (
+    scope !== "user" &&
+    scope !== "project" &&
+    scope !== "private-project" &&
+    scope !== "profile"
+  ) {
     return `Argument file-scope: "${scope}" is not valid.`;
   }
   if (parsed.revision !== undefined && parsed.revision.length === 0) {

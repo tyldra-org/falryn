@@ -87,6 +87,7 @@ import {
 import { versionText } from "./version.ts";
 
 export type DispatchOptions = {
+  readonly workingConfigurationArgs?: import("./commands/profile.ts").WorkingConfigurationArguments;
   readonly modelRequest?: ModelSettingsRequest;
   readonly extensionPath?: string;
   readonly extensionTrust?: import("../application/extensions/package-trust.ts").TrustRequest;
@@ -266,6 +267,9 @@ async function runCommand(
       ...(invocation.packageArgs === undefined ? {} : { packageArgs: invocation.packageArgs }),
       ...(invocation.peerArgs === undefined ? {} : { peerArgs: invocation.peerArgs }),
       ...(invocation.compactArgs === undefined ? {} : { compactArgs: invocation.compactArgs }),
+      ...(invocation.workingConfigurationArgs === undefined
+        ? {}
+        : { workingConfigurationArgs: invocation.workingConfigurationArgs }),
       ...(invocation.modelArgs === undefined ? {} : { modelRequest: invocation.modelArgs }),
       ...(invocation.extensionPath === undefined
         ? {}

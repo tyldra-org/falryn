@@ -18,6 +18,7 @@ import type {
   InspectedValue,
   OverriddenValue,
 } from "../../domain/configuration/index.ts";
+import { documentSettingPath } from "../document/organized.ts";
 
 /**
  * Projects one generation.
@@ -45,7 +46,18 @@ export function inspectGeneration(
     if (raw === undefined) {
       continue;
     }
+    const declaration = registry.resolve(provenance.path);
     values.push({
+      requested: provenance.redactedOriginal,
+      ...(declaration.kind === "known"
+        ? { applicationClass: declaration.descriptor.applicationClass }
+        : {}),
+      documentPath:
+        provenance.source.file === null
+          ? null
+          : provenance.schemaVersion >= 2
+            ? documentSettingPath(provenance.path, provenance.scope ?? "user")
+            : provenance.path,
       path: provenance.path,
       // Rendered through the declared sensitivity, so a sensitive key shows its
       // placeholder here exactly as it does everywhere else.
@@ -58,6 +70,7 @@ export function inspectGeneration(
 
   return {
     generation: record.generation,
+    ...(record.workingProfile === undefined ? {} : { workingProfile: record.workingProfile }),
     values,
     sources: record.sources,
     issues: record.issues,

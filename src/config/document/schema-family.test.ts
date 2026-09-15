@@ -10,9 +10,9 @@ import {
 } from "./schema-family.ts";
 
 describe("the falryn.configuration schema family", () => {
-  test("names itself and starts at version one", () => {
+  test("writes version two while retaining the version-one reader", () => {
     expect(CONFIGURATION_SCHEMA_FAMILY).toBe("falryn.configuration");
-    expect(CONFIGURATION_SCHEMA_VERSION).toBe(1);
+    expect(CONFIGURATION_SCHEMA_VERSION).toBe(2);
     expect(CONFIGURATION_MINIMUM_SCHEMA_VERSION).toBe(1);
   });
 
@@ -58,7 +58,7 @@ describe("the falryn.configuration schema family", () => {
         path: MINIMUM_READER_FIELD,
         observedSchemaVersion: 4,
         minimumCompatibleVersion: 3,
-        readerSchemaVersion: 1,
+        readerSchemaVersion: 2,
       },
     });
   });

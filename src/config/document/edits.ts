@@ -14,7 +14,8 @@ import { MAX_CONFIGURATION_FILE_BYTES, parseJsonc } from "./jsonc.ts";
 
 export type ConfigurationDocumentEdit =
   | { readonly kind: "set"; readonly path: readonly string[]; readonly value: unknown }
-  | { readonly kind: "remove"; readonly path: readonly string[] };
+  | { readonly kind: "remove"; readonly path: readonly string[] }
+  | { readonly kind: "move"; readonly path: readonly string[]; readonly from: readonly string[] };
 
 export type ConfigurationEditPlan =
   | { readonly kind: "rejected"; readonly code: string }
@@ -54,6 +55,33 @@ export function planConfigurationEdits(
         return { kind: "rejected", code: "invalid-path" };
       }
       const before = text;
+      if (operation.kind === "move") {
+        if (
+          operation.from.length === 0 ||
+          operation.from.some(unsafeSegment) ||
+          operation.from.every((segment, index) => operation.path[index] === segment) ||
+          operation.path.every((segment, index) => operation.from[index] === segment)
+        )
+          return { kind: "rejected", code: "invalid-path" };
+        const tree = parseTree(text);
+        const original =
+          tree === undefined ? undefined : findNodeAtLocation(tree, [...operation.from]);
+        if (original === undefined) return { kind: "rejected", code: "missing-migration-source" };
+        if (tree !== undefined && findNodeAtLocation(tree, [...operation.path]) !== undefined)
+          return { kind: "rejected", code: "migration-collision" };
+        const bytes = text.slice(original.offset, original.offset + original.length);
+        text = update(text, operation.path, getNodeValue(original));
+        const targetTree = parseTree(text);
+        const target =
+          targetTree === undefined
+            ? undefined
+            : findNodeAtLocation(targetTree, [...operation.path]);
+        if (target === undefined) return { kind: "rejected", code: "invalid-migration-target" };
+        text = text.slice(0, target.offset) + bytes + text.slice(target.offset + target.length);
+        text = update(text, operation.from, undefined);
+        changedPaths.push(operation.from.join("."), operation.path.join("."));
+        continue;
+      }
       if (parseTree(text) === undefined && operation.kind === "set") {
         // Keep a comment-only preamble, including a final line comment.
         text += `${text.endsWith("\n") || text.length === 0 ? "" : "\n"}${serializeConfigurationDocument(createEmptyConfigurationDocument())}`;
