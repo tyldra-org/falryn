@@ -281,6 +281,11 @@ semantic journaling, and bounded result projection before provider
 continuation. A headless turn cannot report completion unless a terminal model
 attempt ran.
 
+The normal product request in `src/application/context/product-model-input.ts`
+selects text output. Provider output contracts and JSON/JSONL event serialization
+do not establish caller-selected final-answer schema validation. That integration
+remains separately tracked in [#1091](https://github.com/tyldra-org/falryn/issues/1091).
+
 Model identity and model selection are stored separately. Falryn bundles
 strict, versioned OpenAI, Anthropic, Google, and Command Code model catalogs
 as committed JSON resources into the executable. `bun run generate:model-catalogs`
