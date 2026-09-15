@@ -130,7 +130,7 @@ export function processingProduct(maxConcurrent = 1) {
     },
     transportCompatibilityFor: () => plan,
     processingAuthority: () => state.authority,
-    modelCapabilities: [{ ...capability, pricing, contextTokens: 100, outputTokens: 10 }],
+    modelCapabilities: [{ ...capability, pricing, contextTokens: 10000, outputTokens: 10 }],
     async *stream(request): AsyncGenerator<NormalizedProviderEvent> {
       requests.push(request);
       if (state.beforeResponse) await state.beforeResponse();
@@ -309,7 +309,7 @@ export function processingProduct(maxConcurrent = 1) {
         messages: [{ role: "user", parts: [{ kind: "text", text: "Reply." }] }],
         tools: [],
         output: { kind: "text" },
-        budgets: {},
+        budgets: { maxInputTokens: 100 },
         disclosure: {
           catalogGeneration: generation,
           toolNames: [],

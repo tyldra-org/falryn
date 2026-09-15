@@ -21,7 +21,9 @@ test("product entry preserves model, thinking and tools while admitting distinct
     expect(processingReceiptSchema.safeParse(receipt).success).toBe(true);
     receipts.push(receipt);
   }
-  expect(receipts.map((receipt) => receipt?.binding.maximumCostMicros)).toEqual([310, 3100, 3100]);
+  expect(receipts.map((receipt) => receipt?.binding.maximumCostMicros)).toEqual([
+    30010, 300100, 300100,
+  ]);
   expect(receipts.map((receipt) => receipt?.actualMode)).toEqual(["standard", "fast", "fast"]);
   expect(receipts[2]?.binding.nativeParameters).toBeNull();
   const invariant = (index: number) => {
@@ -107,7 +109,7 @@ test.each(["standard", "missing", "conflicting"] as const)(
 
 test("premium cache maximum rejects a standard-sized hard cap; unknown coverage refuses provider-default", async () => {
   const product = processingProduct();
-  Object.assign(product.preferences.roles.default.budgets, { cost: 500 });
+  Object.assign(product.preferences.roles.default.budgets, { cost: 50000 });
   const standard = await product.executor.run({
     prompt: "Reply.",
     turnId: turnId.from("capped-standard"),
@@ -144,7 +146,7 @@ test("a processing selection is captured while active and the next call resolves
   });
   await started.promise;
   product.state.qualification.modes.fast.priceTierIds = null;
-  expect(product.requests[0]?.processing?.maximumCostMicros).toBe(3100);
+  expect(product.requests[0]?.processing?.maximumCostMicros).toBe(300100);
   release.resolve();
   expect((await first).kind).toBe("completed");
   product.state.beforeResponse = null;

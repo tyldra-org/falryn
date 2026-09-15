@@ -1,6 +1,8 @@
 import type { EventStorePort } from "../../domain/sessions/index.ts";
 import { createLiveCheckpoint, guardCheckpointTurn } from "../compression/live-checkpoint.ts";
 import type { CheckpointOutcome, CheckpointRequest } from "../compression/product-checkpoint.ts";
+import { conversationBudget } from "../context/conversation-budget.ts";
+import { createConversationHistoryReader } from "../sessions/conversation-history.ts";
 import { createSessionHistory, historyDigest } from "../sessions/session-history.ts";
 /** One application-owned live-turn path for headless and OpenTUI hosts (#787). */
 
@@ -78,6 +80,16 @@ export type ProductLiveTurnInput = {
 };
 
 export type ProductLiveTurnResult = {
+  readonly history?: {
+    readonly throughSequence: number;
+    readonly checkpointId: string | null;
+    readonly projectionDigest: string;
+    readonly messages: number;
+    readonly bytesRead: number;
+    readonly artifactReads: number;
+    readonly omissions: readonly { readonly id: string; readonly reason: string }[];
+    readonly budget: ReturnType<typeof conversationBudget>;
+  };
   readonly processing?: readonly import("../../domain/sessions/model-processing.ts").ProcessingReceipt[];
   readonly kind: "completed" | "unavailable" | "failed";
   readonly code: string;
@@ -730,6 +742,32 @@ export function createProductLiveTurnExecutor(
       const taskResources =
         input.childAdmission?.resources ?? runtime.resources.openTask(String(generation));
       try {
+        const history = await createConversationHistoryReader({
+          events: runtime.historyEvents,
+          ...(options.artifacts ? { artifacts: options.artifacts } : {}),
+          streamId: runtime.streamId,
+          correlation,
+          authorize: (_event, artifact) =>
+            artifact === null ||
+            artifact.sensitivity === "public" ||
+            artifact.sensitivity === "user-content",
+        }).read({ currentTurnId: input.turnId }, taskResources, input.signal);
+        if (!history.ok)
+          return result({
+            kind: "unavailable",
+            code: `history.${history.code}`,
+            message: `Required conversation history is unavailable (${history.code}). Inspect retained session evidence before retrying.`,
+            response: "",
+            terminalOutcome: FAILED,
+            contextPackItems: 0,
+            modelAttempts: 0,
+            toolResults: 0,
+            disclosedTools: 0,
+            contextStatus: "static",
+            contextGeneration: null,
+            recalledMemories: 0,
+            memoryAdmission: "skipped",
+          });
         const attachments = await admitResourceAttachments(
           input.attachmentSelection ?? { attachments: [], mentions: [] },
           options.resources,
@@ -1076,6 +1114,7 @@ export function createProductLiveTurnExecutor(
           disclosure,
           executionPolicy,
           {
+            history: history.value,
             ...(briefed?.ok && briefRequest !== null
               ? { brief: { request: briefRequest, projection: briefed.value.projection } }
               : {}),
@@ -1084,6 +1123,22 @@ export function createProductLiveTurnExecutor(
               : { maxOutputTokens: input.maxOutputTokens }),
           },
         );
+        const historyBudget = conversationBudget(
+          modelInput.messages,
+          modelInput.tools,
+          modelInput.budgets,
+          options.providerCatalog.models.find((model) => model.modelId === selectedModel?.modelId),
+        );
+        if (historyBudget.reason)
+          return settleFailure(
+            input,
+            {
+              kind: "unavailable",
+              code: `history.${historyBudget.reason}`,
+              message: `The complete conversation request cannot be admitted (${historyBudget.reason}). Required evidence was retained; no provider request was sent.`,
+            },
+            executionPolicy,
+          );
         checkpoint?.capture(
           modelInput,
           options.providerCatalog?.models.find((model) => model.modelId === selectedModel?.modelId),
@@ -1154,6 +1209,16 @@ export function createProductLiveTurnExecutor(
               });
         return result({
           kind: succeeded ? "completed" : "failed",
+          history: {
+            throughSequence: history.value.throughSequence,
+            checkpointId: history.value.checkpointId,
+            projectionDigest: history.value.projectionDigest,
+            messages: history.value.messages.length,
+            bytesRead: history.value.bytesRead,
+            artifactReads: history.value.artifactReads,
+            omissions: history.value.omissions,
+            budget: historyBudget,
+          },
           code: succeeded
             ? "completed"
             : planArtifactFailed

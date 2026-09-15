@@ -99,6 +99,7 @@ export function attemptModelInputFromPrompt(
   disclosure: ProductToolDisclosure,
   executionPolicy: EffectiveExecutionPolicy,
   options: {
+    readonly history?: import("../sessions/conversation-history.ts").ConversationHistorySnapshot;
     readonly brief?: { readonly request: BriefRequest; readonly projection: BriefProjection };
     readonly maxOutputTokens?: number;
   } = {},
@@ -115,9 +116,11 @@ export function attemptModelInputFromPrompt(
   const messages = [
     ...stableMessages,
     message("system", renderSections(brief)),
+    ...(options.history?.messages ?? []),
     message("user", renderSections(user)),
   ].filter((entry): entry is ModelMessage => entry !== null);
   return {
+    ...(options.history ? { history: options.history } : {}),
     messages,
     promptCache: {
       stableMessageCount: stableMessages.length,

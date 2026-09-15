@@ -47,6 +47,7 @@ import type { TurnEventJournalPort } from "../turn-event-journal.ts";
 
 /** Immutable provider input shared by every retry/fallback for one turn. */
 export type AttemptModelInput = {
+  readonly history?: import("../../sessions/conversation-history.ts").ConversationHistorySnapshot;
   readonly messages: readonly ModelMessage[];
   readonly tools: readonly ModelToolDefinition[];
   readonly output: OutputContract;

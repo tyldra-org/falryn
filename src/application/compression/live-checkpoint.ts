@@ -48,7 +48,8 @@ export function createLiveCheckpoint(
       contextGeneration: string,
     ) {
       const current = options.current();
-      const text = JSON.stringify(input);
+      const { history: _history, ...request } = input;
+      const text = JSON.stringify(request);
       if (
         !model?.contextTokens ||
         !model.outputTokens ||
