@@ -132,7 +132,7 @@ async function writeUserConfiguration(
   await mkdir(root, { recursive: true });
   await writeFile(
     join(root, CONFIGURATION_FILE_NAME),
-    JSON.stringify({ [SCHEMA_VERSION_FIELD]: CONFIGURATION_SCHEMA_VERSION, ...document }),
+    JSON.stringify({ [SCHEMA_VERSION_FIELD]: 1, ...document }),
   );
 }
 
@@ -366,7 +366,10 @@ describe("config validate over a source it could not read", () => {
     fileSystem.put(userFile, { kind: "directory" });
     fileSystem.put(workspaceFile, {
       kind: "file",
-      text: JSON.stringify({ [SCHEMA_VERSION_FIELD]: CONFIGURATION_SCHEMA_VERSION }),
+      text: JSON.stringify({
+        [SCHEMA_VERSION_FIELD]: CONFIGURATION_SCHEMA_VERSION,
+        minimumReaderSchemaVersion: 2,
+      }),
     });
 
     const result = await runConfigValidate(services, {}, globals);

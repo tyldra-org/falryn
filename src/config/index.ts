@@ -62,6 +62,8 @@ export {
   prepareConfigurationHomeForWrite,
   resolveConfigurationHome,
 } from "./host/home.ts";
+export type { ConfigurationMigrationRequest } from "./host/migration.ts";
+export { applyConfigurationMigration, previewConfigurationMigration } from "./host/migration.ts";
 export type {
   ConfigurationReloadWatcher,
   ConfigurationReloadWatcherOptions,
@@ -77,6 +79,7 @@ export type {
 export {
   configurationSourcePaths,
   resolveConfigurationFilePath,
+  writeConfigurationEdits,
   writeConfigurationKey,
   writeConfigurationValue,
 } from "./host/writer.ts";
@@ -127,3 +130,4 @@ export {
   readSource,
   sourceLabel,
 } from "./resolution/sources.ts";
+export { listWorkingProfiles, MAX_PROFILE_ANCESTRY } from "./resolution/working-profile.ts";

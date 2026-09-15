@@ -25,8 +25,8 @@ describe("configuration document", () => {
       "warn",
     );
     expect(document).toEqual({
-      schemaVersion: 1,
-      minimumReaderSchemaVersion: 1,
+      schemaVersion: 2,
+      minimumReaderSchemaVersion: 2,
       diagnostics: { level: "warn" },
     });
   });

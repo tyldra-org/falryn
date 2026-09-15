@@ -43,6 +43,7 @@ export const CONFIGURATION_SOURCE_KINDS = [
   "built-in-default",
   "user-file",
   "project-file",
+  "private-project-file",
   "profile",
   "environment",
   "cli-override",
@@ -63,6 +64,7 @@ export function scopeForSourceKind(kind: ConfigurationSourceKind): Configuration
     case "user-file":
       return "user";
     case "project-file":
+    case "private-project-file":
       return "project";
     case "profile":
       return "profile";

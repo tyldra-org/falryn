@@ -13,6 +13,7 @@ import {
 } from "../../domain/foundation/index.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
 import type { GlobalOptions } from "../options.ts";
+import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
 import {
   configurationGenerationFromLoadOutcome,
   loadProductConfiguration,
@@ -68,6 +69,46 @@ describe("configurationGenerationFromLoadOutcome", () => {
 });
 
 describe("loadProductConfiguration", () => {
+  test("reload watches resolved ancestry and optional private-project sources", async () => {
+    const fileSystem = createInMemoryFileSystem();
+    const provider = createServiceProvider(GLOBALS, {
+      home: localPath("/home/tester"),
+      platform: "darwin",
+      environment: createStaticEnvironment({}),
+      currentDirectory: localPath("/workspace"),
+      fileSystem,
+    });
+    const graph = provider();
+    fileSystem.put(`${graph.configurationRoot}/falryn.jsonc`, {
+      kind: "file",
+      text: '{"schemaVersion":2,"minimumReaderSchemaVersion":2,"profiles":{"default":"child"}}',
+    });
+    fileSystem.put(`${graph.configurationRoot}/profiles/child.jsonc`, {
+      kind: "file",
+      text: '{"schemaVersion":2,"minimumReaderSchemaVersion":2,"extends":"parent","overrides":{}}',
+    });
+    fileSystem.put(`${graph.configurationRoot}/profiles/parent.jsonc`, {
+      kind: "file",
+      text: '{"schemaVersion":2,"minimumReaderSchemaVersion":2,"overrides":{}}',
+    });
+    expect(
+      (await loadProductConfiguration(graph, productConfigurationLoadRequest(GLOBALS))).outcome
+        .kind,
+    ).toBe("published");
+    let watched: readonly string[] = [];
+    const handle = startConfigurationReloadWatcher(graph, GLOBALS, {
+      subscribe: async (paths) => {
+        watched = paths;
+        return { dispose() {} };
+      },
+    });
+    await Promise.resolve();
+    expect(watched).toContain(`${graph.configurationRoot}/profiles/parent.jsonc`);
+    expect(watched).toContain(`${graph.configurationRoot}/profiles`);
+    expect(watched).toContain("/workspace/.falryn/local/falryn.local.jsonc");
+    handle.dispose();
+  });
+
   test("appends a durable generation event on first load", async () => {
     const fileSystem = createInMemoryFileSystem();
     const provider = createServiceProvider(GLOBALS, {

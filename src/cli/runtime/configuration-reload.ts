@@ -13,6 +13,7 @@ import {
   type FileChangeSubscriber,
 } from "../../config/index.ts";
 import type { ConfigurationLoadOutcome } from "../../domain/configuration/index.ts";
+import { parentPath } from "../../domain/workspace/index.ts";
 import { createHostFileChangeSubscriber } from "../../integrations/index.ts";
 import type { GlobalOptions } from "../options.ts";
 import { type CliStreams, writeDiagnosticLine } from "../output/streams.ts";
@@ -39,7 +40,10 @@ export function startConfigurationReloadWatcher(
   } = {},
 ): ConfigurationReloadHandle {
   const loadRequest = options.loadRequest ?? productConfigurationLoadRequest(globals);
-  const paths = [
+  const files = [
+    ...(graph.loader
+      .current()
+      ?.sources.flatMap((entry) => (entry.source.file === null ? [] : [entry.source.file])) ?? []),
     ...configurationSourcePaths(graph.configurationRoot, graph.workspaceRoot, loadRequest.profile),
     ...(graph.legacyConfigurationRoot === null
       ? []
@@ -49,6 +53,15 @@ export function startConfigurationReloadWatcher(
           loadRequest.profile,
         )),
   ].filter((path, index, all) => all.indexOf(path) === index);
+  const paths = [
+    ...new Set([
+      ...files,
+      ...files.flatMap((file) => {
+        const parent = parentPath(file);
+        return parent === null ? [] : [parent];
+      }),
+    ]),
+  ];
   const streams = options.streams;
   return createConfigurationReloadWatcher({
     loader: {

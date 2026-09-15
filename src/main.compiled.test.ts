@@ -180,6 +180,75 @@ function spawnCompiled(
 
 describe.if(built)("the standalone executable", () => {
   test(
+    "working profile selection, inheritance, reset and migration survive compiled restarts",
+    async () => {
+      const root = await temporaryRoot();
+      const run = (args: readonly string[]) => {
+        const result = spawnCompiled(root, [...args, "--format", "json"]);
+        expect(result.exitCode).toBe(EXIT_CODES.COMPLETED);
+        return JSON.parse(result.stdout).payload;
+      };
+      expect(run(["profile", "list"]).profiles).toContainEqual({
+        id: "default",
+        file: null,
+        revision: null,
+      });
+      expect(await readdir(root)).toEqual([]);
+      const directory = join(root, ".falryn");
+      await mkdir(join(directory, "profiles"), { recursive: true });
+      await writeFile(
+        join(directory, "profiles", "parent.jsonc"),
+        '{"schemaVersion":2,"minimumReaderSchemaVersion":2,"overrides":{"interface":{"pointer":{"enabled":false}}}}',
+      );
+      await writeFile(
+        join(directory, "profiles", "child.jsonc"),
+        '{"schemaVersion":2,"minimumReaderSchemaVersion":2,"extends":"parent","overrides":{}}',
+      );
+      run(["profile", "default", "child"]);
+      const inspection = run(["config", "show"]).inspection;
+      expect(inspection.workingProfile.id).toBe("child");
+      expect(
+        inspection.values.find(
+          (entry: { path: string }) => entry.path === "interface.pointer.enabled",
+        ).value,
+      ).toBe(false);
+      expect(run(["profile", "show", "default"]).inspection.workingProfile.virtual).toBe(true);
+      run([
+        "config",
+        "set",
+        "interface.pointer.enabled",
+        "true",
+        "--profile",
+        "child",
+        "--file-scope",
+        "profile",
+      ]);
+      run([
+        "config",
+        "reset",
+        "interface.pointer.enabled",
+        "--profile",
+        "child",
+        "--file-scope",
+        "profile",
+      ]);
+      expect(
+        run(["profile", "show", "child"]).inspection.values.find(
+          (entry: { path: string }) => entry.path === "interface.pointer.enabled",
+        ).value,
+      ).toBe(false);
+      const original = '// preserve\n{"schemaVersion":1,"diagnostics":{"level":"warn"}}';
+      await writeFile(join(directory, "falryn.jsonc"), original);
+      const preview = run(["config", "migrate"]).preview;
+      expect(await readFile(join(directory, "falryn.jsonc"), "utf8")).toBe(original);
+      run(["config", "migrate", "--confirm", preview.id, "--revision", preview.sourceRevision]);
+      expect(await readFile(preview.recovery, "utf8")).toBe(original);
+      expect(run(["config", "validate"]).valid).toBe(true);
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
     "configuration set and reset preserve authored JSONC across process restarts",
     async () => {
       const root = await temporaryRoot();

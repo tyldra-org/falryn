@@ -50,6 +50,8 @@ export const COMMAND_RESULT_SCHEMA_VERSION = 1;
 export const COMMAND_IDS = [
   /** The no-argument invocation, which prints help until #21 lands the shell. */
   "default",
+  "profile",
+  "config.migrate",
   "config.show",
   "config.validate",
   "config.path",

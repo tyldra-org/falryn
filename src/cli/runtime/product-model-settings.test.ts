@@ -28,6 +28,89 @@ const GLOBALS: GlobalOptions = {
   help: false,
   version: false,
 };
+
+test("working profile saves and resets stay local across restart, including membership and processing", async () => {
+  const home = await mkdtemp(join(tmpdir(), "falryn-working-models-"));
+  try {
+    const globals = { ...GLOBALS, profile: "child" };
+    const factory = () =>
+      createServiceProvider(globals, {
+        home: localPath(home),
+        platform: "darwin",
+        currentDirectory: localPath(home),
+        environment: createStaticEnvironment({ FALRYN_STATE_DIR: home }),
+      });
+    const services = factory();
+    const root = services().configurationRoot;
+    await mkdir(join(root, "profiles"), { recursive: true });
+    const route = { providerProfileId: "openai", providerId: "openai", modelId: "inherited" };
+    await writeFile(
+      join(root, "profiles", "parent.jsonc"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumReaderSchemaVersion: 2,
+        overrides: {
+          models: {
+            policy: {
+              processing: { mode: "fast", fallback: "allow-standard" },
+              roles: {
+                plan: route,
+                subagents: { agents: { "user:helper": { preset: "small", route } } },
+              },
+            },
+          },
+        },
+      }),
+    );
+    const path = join(root, "profiles", "child.jsonc");
+    await writeFile(
+      path,
+      '{"schemaVersion":2,"minimumReaderSchemaVersion":2,"extends":"parent",/* keep */"overrides":{}}',
+    );
+    const service = () => composeProductModelSettings(factory()(), globals);
+    async function edit(change: object) {
+      const current = service();
+      const inspection = await current.execute({ kind: "inspect" });
+      if (inspection.kind !== "inspection") throw new Error(JSON.stringify(inspection));
+      const result = await current.execute({
+        kind: "edit",
+        edit: change,
+        expectedRevision: inspection.fileRevision,
+      });
+      expect(result.kind).toBe("written");
+      expect(result.kind === "written" && result.receipt?.publication).toBe("published");
+    }
+    await edit({ kind: "membership", id: "user:helper", preset: "big" });
+    await edit({ kind: "processing-default", processing: { mode: "standard" } });
+    let inspection = await service().execute({ kind: "inspect" });
+    if (inspection.kind !== "inspection") throw new Error(JSON.stringify(inspection));
+    expect(inspection.preferences.roles.subagents?.agents?.["user:helper"]).toMatchObject({
+      preset: "big",
+      route: { modelId: "inherited" },
+    });
+    expect(inspection.preferences.processing).toEqual({
+      mode: "standard",
+      fallback: "allow-standard",
+    });
+    const saved = await readFile(path, "utf8");
+    expect(saved).toContain("/* keep */");
+    expect(saved).not.toContain("inherited");
+    expect(saved).not.toContain("allow-standard");
+    await edit({ kind: "membership", id: "user:helper", preset: null });
+    await edit({ kind: "reset", target: { kind: "agent", id: "user:helper" } });
+    await edit({ kind: "processing-default" });
+    inspection = await service().execute({ kind: "inspect" });
+    if (inspection.kind !== "inspection") throw new Error(JSON.stringify(inspection));
+    expect(inspection.preferences.roles.subagents?.agents?.["user:helper"]).toMatchObject({
+      preset: "small",
+      route: { modelId: "inherited" },
+    });
+    expect(String(inspection.preferences.roles.plan?.modelId)).toBe("inherited");
+    expect(inspection.preferences.processing?.mode).toBe("fast");
+  } finally {
+    await rm(home, { recursive: true, force: true });
+  }
+});
 test("CLI and restarted product settings share atomic configuration, migration recovery and stale revision detection", async () => {
   const home = await mkdtemp(join(tmpdir(), "falryn-model-settings-"));
   try {

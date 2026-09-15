@@ -6,6 +6,10 @@ import {
   createModelSettingsService,
   type ModelSettingsSnapshot,
 } from "../../application/providers/model-settings.ts";
+import { parseConfigurationDocument } from "../../config/document/document.ts";
+import { configurationObject } from "../../config/document/organized.ts";
+import { usesOrganizedConfiguration } from "../../config/document/schema-family.ts";
+import { writeConfigurationEdits } from "../../config/host/writer.ts";
 import { resolveConfigurationFilePath, writeConfigurationValue } from "../../config/index.ts";
 import { joinPath } from "../../domain/workspace/index.ts";
 import { createSha256Hasher } from "../../integrations/filesystem/content-digest.ts";
@@ -30,6 +34,7 @@ import {
   PROVIDER_CONNECTIONS_CONFIGURATION_KEY,
 } from "./provider-configuration.ts";
 import type { Services } from "./services.ts";
+import { ownedModelOverridePaths, workingModelEdits } from "./working-model-edits.ts";
 
 export function composeProductModelSettings(
   services: Services,
@@ -67,6 +72,14 @@ export function composeProductModelSettings(
       const before = await services.fileSystem.stat(path, signal);
       if (!before.ok) throw new Error("Settings file is unavailable.");
       const loaded = await readConfiguration(signal);
+      const bytes =
+        before.value === null ? null : await services.fileSystem.readText(path, 262144, signal);
+      if (bytes !== null && !bytes.ok) throw new Error("Settings source is unavailable.");
+      const source = bytes === null ? null : parseConfigurationDocument(bytes.value);
+      const organized = bytes === null || (source !== null && usesOrganizedConfiguration(source));
+      const settings = source?.[scope === "profile" ? "overrides" : "defaults"];
+      const models = configurationObject(settings) ? settings.models : undefined;
+      const owned = configurationObject(models) ? models.policy : undefined;
       const after = await services.fileSystem.stat(path, signal);
       if (
         !after.ok ||
@@ -109,6 +122,7 @@ export function composeProductModelSettings(
             });
       return {
         preferences,
+        ...(organized ? { ownedOverridePaths: ownedModelOverridePaths(owned) } : {}),
         ...(!modelPreferencesSchema.safeParse(loaded.values[MODEL_POLICY_CONFIGURATION_KEY]).success
           ? { legacyPolicy: loaded.values[MODEL_POLICY_CONFIGURATION_KEY] }
           : {}),
@@ -119,22 +133,61 @@ export function composeProductModelSettings(
         definitions: [...agentRegistryFrom(loaded.values).models(), ...workflows.value.models()],
       };
     },
-    async write(preferences, expectedRevision, signal) {
-      const result = await writeConfigurationValue(
-        services.registry,
-        services.fileSystem,
-        {
-          ...request,
-          legacyConfigurationRoot: services.legacyConfigurationRoot,
-          keyPath: MODEL_POLICY_CONFIGURATION_KEY,
-          value: modelPreferencesValue(preferences),
-          expectedRevision,
-          requireAbsent: expectedRevision === null,
-          validateCandidate: (path, text, abort) =>
-            validateProductConfigurationCandidate(services, globals.profile, path, text, abort),
-        },
-        signal,
-      );
+    async write(preferences, expectedRevision, signal, mutation) {
+      const path = await sourcePath(signal);
+      const source =
+        expectedRevision === null ? null : await services.fileSystem.readText(path, 262144, signal);
+      if (source !== null && !source.ok)
+        return { kind: "failed", code: "settings-source-unavailable" };
+      const document = source === null ? null : parseConfigurationDocument(source.value);
+      const organized =
+        source === null || (document !== null && usesOrganizedConfiguration(document));
+      const result =
+        organized && mutation !== undefined
+          ? await writeConfigurationEdits(
+              services.registry,
+              services.fileSystem,
+              {
+                ...request,
+                legacyConfigurationRoot: services.legacyConfigurationRoot,
+                expectedRevision,
+                edits: workingModelEdits(
+                  [scope === "profile" ? "overrides" : "defaults", "models", "policy"],
+                  preferences,
+                  mutation,
+                ),
+                validateCandidate: (path, text, abort) =>
+                  validateProductConfigurationCandidate(
+                    services,
+                    globals.profile,
+                    path,
+                    text,
+                    abort,
+                  ),
+              },
+              signal,
+            )
+          : await writeConfigurationValue(
+              services.registry,
+              services.fileSystem,
+              {
+                ...request,
+                legacyConfigurationRoot: services.legacyConfigurationRoot,
+                keyPath: MODEL_POLICY_CONFIGURATION_KEY,
+                value: modelPreferencesValue(preferences),
+                expectedRevision,
+                requireAbsent: expectedRevision === null,
+                validateCandidate: (path, text, abort) =>
+                  validateProductConfigurationCandidate(
+                    services,
+                    globals.profile,
+                    path,
+                    text,
+                    abort,
+                  ),
+              },
+              signal,
+            );
       if (result.kind === "written") {
         try {
           const loaded = await readConfiguration(signal);

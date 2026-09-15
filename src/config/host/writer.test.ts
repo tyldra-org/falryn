@@ -63,7 +63,7 @@ describe("writeConfigurationKey", () => {
   });
   test("keeps BOM, comments, newer fields and external scripts byte-for-byte", async () => {
     const source =
-      '\uFEFF// notes\r\n{ "schemaVersion": 2, "minimumReaderSchemaVersion": 1, "future": { "untouched": 42 }, "diagnostics": { /* level */ "level": "info", }, }\r\n';
+      '\uFEFF// notes\r\n{ "schemaVersion": 4, "minimumReaderSchemaVersion": 1, "future": { "untouched": 42 }, "diagnostics": { /* level */ "level": "info", }, }\r\n';
     const script = "# authored environment\nexport EXAMPLE='retained'\n";
     const { registry, fileSystem } = harness({
       [USER_FILE]: file(source),

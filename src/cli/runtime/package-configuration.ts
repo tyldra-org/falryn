@@ -108,7 +108,9 @@ export async function loadPackageConfiguration(
           ? layer.owner === actor
           : layer.scope === "project"
             ? admitted && layer.owner === roots
-            : layer.scope === "profile" && layer.owner === request.profile;
+            : layer.scope === "profile" &&
+              (layer.owner === request.profile ||
+                request.profileAncestry?.includes(layer.owner) === true);
       if (!allowed) continue;
       layers.push({
         scope: layer.scope,

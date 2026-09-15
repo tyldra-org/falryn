@@ -63,6 +63,7 @@ import {
 } from "../runtime/session-navigation.ts";
 
 export type DispatchProduceOptions = {
+  readonly workingConfigurationArgs?: import("../commands/profile.ts").WorkingConfigurationArguments;
   readonly extensionCatalogArgs?: ExtensionCatalogArguments;
   readonly packageArgs?: PackageArguments;
   readonly peerArgs?: PeerArguments;
@@ -97,6 +98,19 @@ export async function produce(
   onMutationStart?: () => void,
 ): Promise<RunCommandResult> {
   switch (command) {
+    case "profile":
+    case "config.migrate": {
+      if (options.workingConfigurationArgs === undefined)
+        throw new Error("working-configuration-arguments-required");
+      const { runWorkingConfiguration } = await import("../commands/profile.ts");
+      return runWorkingConfiguration(
+        services,
+        options.workingConfigurationArgs,
+        globals,
+        signal,
+        onMutationStart,
+      );
+    }
     case "compact":
       if (!options.compactArgs) throw new Error("Missing compact arguments.");
       if (options.compactArgs.request.action !== "inspect") onMutationStart?.();

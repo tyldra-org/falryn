@@ -57,6 +57,7 @@ export type {
   SourcePosition,
   SourceReport,
   ValueProvenance,
+  WorkingProfileSelection,
 } from "./configuration-source.ts";
 export {
   CONFIGURATION_LAYER_ORDER,

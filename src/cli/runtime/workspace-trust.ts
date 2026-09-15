@@ -6,7 +6,8 @@ import {
   type WorkspaceTrust,
 } from "../../application/workspace/workspace-trust.ts";
 import { createWorkspaceInventory } from "../../application/workspace/workspace-trust-inventory.ts";
-import { discoverSources, MAX_CONFIGURATION_FILE_BYTES, parseJsonc } from "../../config/index.ts";
+import { parseJsonc } from "../../config/index.ts";
+import { readWorkingSources } from "../../config/resolution/working-profile.ts";
 import {
   openSqliteStore,
   PRODUCTION_MIGRATIONS,
@@ -186,25 +187,23 @@ export function composeWorkspaceTrust(
         const home = await graph.configurationHomeForRead(signal);
         if (home.kind !== "current" && home.kind !== "legacy" && home.kind !== "empty")
           return err({ code: "configuration-unavailable" });
-        const sources = discoverSources({
-          configurationRoot: home.root,
-          workspaceRoot: null,
-          profile: globals.profile,
-        });
-        if (sources.issues.length > 0) return err({ code: "configuration-unavailable" });
-        const configuration: string[] = [];
-        for (const source of sources.sources) {
-          const read = await graph.fileSystem.readText(
-            source.file,
-            MAX_CONFIGURATION_FILE_BYTES,
-            signal,
-          );
-          if (!read.ok && read.error.code !== "not-found")
-            return err({ code: "configuration-unavailable" });
-          configuration.push(
-            canonicalDigest({ source: source.source, text: read.ok ? read.value : null }),
-          );
-        }
+        const working = await readWorkingSources(
+          graph.fileSystem,
+          {
+            configurationRoot: home.root,
+            workspaceRoot: null,
+            profile: globals.profile,
+          },
+          signal,
+        );
+        if (
+          working.issues.length > 0 ||
+          working.reads.some((read) => !["loaded", "empty", "absent"].includes(read.outcome))
+        )
+          return err({ code: "configuration-unavailable" });
+        const configuration = working.reads.map((read) =>
+          canonicalDigest({ source: read.source, document: read.document ?? null }),
+        );
         const userFile = joinPath(home.root, "falryn.jsonc");
         return createWorkspaceInventory({
           fileSystem: graph.fileSystem,

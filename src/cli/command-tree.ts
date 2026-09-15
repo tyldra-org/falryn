@@ -127,11 +127,20 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               describe: "JSON checkpoint request and whole-request reservation",
             }),
       )
+      .command(
+        "profile <action> [id]",
+        "List, inspect, or save the default working profile.",
+        (group) =>
+          group
+            .positional("action", { type: "string", choices: ["list", "show", "default"] })
+            .positional("id", { type: "string", describe: "working-profile identity" })
+            .option("revision", { type: "string", describe: "expected global file revision" }),
+      )
       .command(configCommand, "Inspect and validate effective configuration.", (group) =>
         group
           .positional("action", {
             type: "string",
-            choices: ["show", "validate", "path", "set", "reset"] as const,
+            choices: ["show", "validate", "path", "set", "reset", "migrate"] as const,
             describe: "show or validate values, print sources, set a key, or reset its override",
           })
           .positional("key", {
@@ -142,9 +151,13 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             type: "string",
             describe: "value to write (set only)",
           })
+          .option("confirm", {
+            type: "string",
+            describe: "apply the exact config migration preview identity",
+          })
           .option("file-scope", {
             type: "string",
-            choices: ["user", "project", "profile"] as const,
+            choices: ["user", "project", "private-project", "profile"] as const,
             describe: "which configuration file to edit (default user)",
           })
           .option("revision", {
@@ -935,6 +948,32 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
       return { kind: "invalid", message: "Invalid trust request JSON." };
     }
   }
+  let workingConfigurationArgs:
+    | import("./commands/profile.ts").WorkingConfigurationArguments
+    | undefined;
+  if (command === "profile") {
+    if (parsed.action === "list") workingConfigurationArgs = { action: "list" };
+    else if (parsed.action === "show")
+      workingConfigurationArgs = {
+        action: "show",
+        ...(parsed.id === undefined ? {} : { id: parsed.id }),
+      };
+    else if (parsed.action === "default" && parsed.id !== undefined)
+      workingConfigurationArgs = {
+        action: "default",
+        id: parsed.id,
+        ...(parsed.revision === undefined ? {} : { revision: parsed.revision }),
+      };
+    else
+      return { kind: "invalid", message: "profile default requires a working-profile identity." };
+  }
+  if (command === "config.migrate")
+    workingConfigurationArgs = {
+      action: "migrate",
+      scope: (parsed["file-scope"] ?? "user") as "user" | "project" | "private-project" | "profile",
+      ...(parsed.confirm === undefined ? {} : { confirmation: parsed.confirm }),
+      ...(parsed.revision === undefined ? {} : { revision: parsed.revision }),
+    };
   const providerArgs = providerArgumentsFor(command, parsed);
   if (typeof providerArgs === "string") {
     return { kind: "invalid", message: providerArgs };
@@ -957,6 +996,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     taskArgs,
     commitPlanArgs,
     providerArgs,
+    ...(workingConfigurationArgs === undefined ? {} : { workingConfigurationArgs }),
     ...(modelArgs === undefined ? {} : { modelArgs }),
     ...(extensionCatalogArgs === undefined ? {} : { extensionCatalogArgs }),
     ...(extensionTrust === undefined ? {} : { extensionTrust }),

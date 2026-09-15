@@ -72,7 +72,7 @@ const revisionMetadata = {
   definitionRevision: z.string().min(1).max(256).optional(),
   schemaRevision: z.number().int().nonnegative().optional(),
 };
-function boundedRecord<K extends z.ZodType<string>, V extends z.ZodType>(
+export function boundedRecord<K extends z.ZodType<string>, V extends z.ZodType>(
   key: K,
   value: V,
   maximum: number,

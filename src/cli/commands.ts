@@ -278,6 +278,12 @@ export function stoppedResult(
       return resultFor<"package", PackageReceipt>("package", null, [], outcome, effect);
     case "peer":
       return resultFor<"peer", PeerPayload>("peer", null, [], outcome, effect);
+    case "profile":
+    case "config.migrate":
+      return resultFor<
+        "profile" | "config.migrate",
+        import("./commands/profile.ts").WorkingConfigurationPayload
+      >(command, null, [], outcome, effect);
     case "compact":
       return resultFor<"compact", CheckpointOutcome>("compact", null, [], outcome, effect);
     case "model":
@@ -326,6 +332,10 @@ export function stoppedResult(
  * text rather than a result — dispatch resolves them before any command runs.
  */
 export type RunCommandResult =
+  | CommandResultOf<
+      "profile" | "config.migrate",
+      import("./commands/profile.ts").WorkingConfigurationPayload
+    >
   | CommandResultOf<"compact", CheckpointOutcome>
   | CommandResultOf<"peer", PeerPayload>
   | CommandResultOf<"package", PackageReceipt>

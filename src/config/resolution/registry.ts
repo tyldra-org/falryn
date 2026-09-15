@@ -33,6 +33,7 @@ import {
   type SensitiveValueRedactor,
 } from "../../domain/configuration/index.ts";
 import type { ConfigurationKeyDeclaration } from "../document/declaration.ts";
+import { normalizeOrganizedDocument } from "../document/organized.ts";
 import {
   CONFIGURATION_MINIMUM_SCHEMA_VERSION,
   CONFIGURATION_SCHEMA_FAMILY,
@@ -41,6 +42,7 @@ import {
   RESERVED_DOCUMENT_FIELDS,
   type SchemaVersionPolicy,
   type SchemaVersionVerdict,
+  usesOrganizedConfiguration,
 } from "../document/schema-family.ts";
 
 /**
@@ -143,10 +145,19 @@ export function createConfigurationRegistry(
       return { ok: false, issues: [verdict.issue] };
     }
 
-    const issues: ConfigurationIssue[] = [];
+    const organized = usesOrganizedConfiguration(document)
+      ? normalizeOrganizedDocument(document, context.scope, descriptors)
+      : { document, issues: [] };
+    const issues: ConfigurationIssue[] = [...organized.issues];
     const values: Record<string, ConfigurationValue> = {};
 
-    for (const found of collectAssignments(document, verdict, prefixes, resolve, policy)) {
+    for (const found of collectAssignments(
+      organized.document,
+      verdict,
+      prefixes,
+      resolve,
+      policy,
+    )) {
       if (found.kind === "issue") {
         issues.push(found.issue);
         continue;
@@ -182,7 +193,10 @@ export function createConfigurationRegistry(
       }
 
       const entry = entries.get(descriptor.path);
-      const parsed = entry?.declaration.validate(found.raw);
+      const parsed =
+        usesOrganizedConfiguration(document) && entry?.declaration.organized !== undefined
+          ? entry.declaration.organized.validate(found.raw)
+          : entry?.declaration.validate(found.raw);
       if (parsed === undefined || !parsed.ok) {
         issues.push(...(parsed?.error ?? []));
         continue;
@@ -241,6 +255,16 @@ export function createConfigurationRegistry(
         return layer;
       }
       const effective = foldOverDefaults(descriptors, defaults(), layer.values);
+      if (isPlainObject(document) && usesOrganizedConfiguration(document)) {
+        for (const [path, incoming] of Object.entries(layer.values)) {
+          const owner = entries.get(path)?.declaration.organized;
+          if (owner !== undefined)
+            (effective as Record<string, ConfigurationValue>)[path] = owner.fold(
+              defaults()[path],
+              incoming,
+            );
+        }
+      }
       const folded = revalidateFolded(entries, layer.values, effective);
       const conflicts = crossValidate(effective);
       const issues = [...layer.issues, ...folded, ...conflicts];

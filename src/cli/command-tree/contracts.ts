@@ -160,7 +160,7 @@ export type ConfigSetArguments = {
   readonly reset?: boolean;
   readonly keyPath: string;
   readonly rawValue: string;
-  readonly scope: "user" | "project" | "profile";
+  readonly scope: "user" | "project" | "private-project" | "profile";
   readonly expectedRevision: string | null;
 };
 
@@ -209,6 +209,7 @@ export type Invocation =
       readonly taskArgs: TaskCommandArguments | null;
       readonly commitPlanArgs: TaskCommitPlanArguments | null;
       readonly providerArgs: ProviderCommandArguments | null;
+      readonly workingConfigurationArgs?: import("../commands/profile.ts").WorkingConfigurationArguments;
       readonly modelArgs?: ModelSettingsRequest;
       readonly extensionPath?: string;
       readonly extensionCatalogArgs?: import("../commands/extension-catalog.ts").ExtensionCatalogArguments;

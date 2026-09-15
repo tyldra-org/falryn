@@ -70,6 +70,7 @@ export type ModelSettingsSnapshot = {
   readonly preferences: ModelPreferences;
   /** A recognized older source may be inspected, but only explicit migration can replace it. */
   readonly legacyPolicy?: unknown;
+  readonly ownedOverridePaths?: readonly string[];
   readonly fileRevision: string | null;
   readonly generation: number;
   readonly scope: "user" | "profile";
@@ -82,6 +83,7 @@ export type ModelSettingsStore = {
     preferences: ModelPreferences,
     expectedRevision: string | null,
     signal?: AbortSignal,
+    mutation?: Extract<ModelSettingsRequest, { kind: "edit" | "apply-clear" | "apply-migration" }>,
   ): Promise<
     | {
         readonly kind: "written";
@@ -187,7 +189,7 @@ export function createModelSettingsService(store: ModelSettingsStore) {
       }
       if (snapshot.legacyPolicy !== undefined && request.kind !== "apply-migration")
         return failure("model-policy-migration-required");
-      const paths = [
+      const paths = snapshot.ownedOverridePaths ?? [
         ...(preferences.processing === undefined ? [] : ["processing"]),
         ...overridePaths(preferences.roles),
         ...Object.entries(preferences.intents)
@@ -290,7 +292,7 @@ export function createModelSettingsService(store: ModelSettingsStore) {
         ...candidate,
         revision: preferences.revision + 1,
       });
-      const written = await store.write(candidate, snapshot.fileRevision, signal);
+      const written = await store.write(candidate, snapshot.fileRevision, signal, request);
       return written.kind === "written"
         ? {
             kind: "written" as const,

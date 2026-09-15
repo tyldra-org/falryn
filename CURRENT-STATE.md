@@ -15,7 +15,8 @@ application. The current command surface includes:
 | falryn --help / --version | Print usage or build identity |
 | falryn run [--mode ask\|plan\|debug\|agent] <prompt> | Run one headless coding turn through the selected execution profile and provider |
 | falryn doctor | Run bounded environment and local-storage diagnostics |
-| falryn config show / validate / path / set / reset | Inspect, validate, update, or remove a scoped configuration override |
+| falryn config show / validate / path / set / reset / migrate | Inspect, validate, update, or remove a scoped configuration override |
+| falryn profile list / show / default | Inspect working profiles and explicitly save the global default |
 | falryn provider list / add / use / configure / test / login / logout / remove | Manage local provider profiles and credentials |
 | falryn data backup / inspect / restore / diagnostics / retention / gc / reset / uninstall | Inspect, preserve, repair, retain, collect, or preview/apply confirmed removal of Falryn-owned local data |
 | falryn workspace list / show / save / load | Inspect or persist named workspace sets |
@@ -41,6 +42,50 @@ profiles under `~/.falryn/profiles/`, user-authored model catalogs under
 `~/.falryn/layouts/`. Project configuration remains
 `<workspace>/.falryn/falryn.jsonc`. `FALRYN_CONFIG_DIR` is the explicit user
 configuration-root override.
+
+Version-two configuration separates global `connections`, `defaults`, `storage`
+and `policy` from working-profile `overrides`. The registered settings keep their
+existing consumers and scope restrictions. Version-one files retain their paths
+and whole-value model-policy behavior until explicit migration. New documents
+write `schemaVersion: 2` and `minimumReaderSchemaVersion: 2`.
+
+`--profile` selects a working setup; otherwise `profiles.default` or the reserved
+`default` identity selects it. A missing `profiles/default.jsonc` is virtual and
+creates nothing. The loader also accepts an explicit personal workspace
+association from its caller, below an explicit selection. Missing named profiles,
+malformed defaults, cycles, case ambiguity and ancestry beyond eight files fail.
+Each profile ID is at most 64 characters. The immutable generation reports
+ancestry and revisions. `config show` and `profile show` report requested and
+effective values, source contributions and application timing without starting
+providers or extensions.
+
+Profile ancestry follows project and optional private-project settings at
+`.falryn/local/falryn.local.jsonc`; environment and CLI overrides follow it.
+Private-project settings retain project scope and participate in workspace trust.
+`config set --file-scope private-project` creates that file only on explicit save.
+Version-two model preferences inherit by declared field and identity; model
+changes reset omitted thinking to provider default. Model actions edit their
+selected source, so route, membership and processing resets reveal inheritance.
+Provider account, endpoint and executable definitions remain global in version two.
+
+A working profile differs from a provider connection (account and destination),
+`run --mode` (execution behavior), and a browser profile (browser-owned state).
+To inspect or select a working setup:
+
+```sh
+falryn profile list
+falryn profile show default --format json
+falryn profile default coding
+falryn config show --profile coding
+```
+
+`profile default` validates an existing named profile before saving the selection.
+For an existing version-one global file, preview `falryn config migrate`, inspect
+its mapping and collisions, then apply with `--confirm <preview-id> --revision
+<source-revision>`. Migration preserves an exact recovery original beside the
+source, refuses stale previews or unsupported mappings, and uses the shared
+atomic writer. A refused migration leaves the version-one source authoritative.
+Unknown package settings remain inert under their qualified identity.
 
 Configuration saves edit the existing JSONC source, preserving unrelated keys,
 comments, ordering, indentation, newline style, UTF-8 BOM, and trailing commas.

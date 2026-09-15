@@ -38,7 +38,6 @@ import {
   MAX_CREDENTIAL_LOCATOR_LENGTH,
 } from "../../domain/security/index.ts";
 import type { ConfigurationApplicationClass } from "../../domain/sessions/index.ts";
-import { CONFIGURATION_SCHEMA_VERSION } from "./schema-family.ts";
 
 /** A descriptor with the validator that enforces it. */
 export type ConfigurationKeyDeclaration = {
@@ -46,6 +45,11 @@ export type ConfigurationKeyDeclaration = {
   /** The Zod 4 type for this key's raw JSON value. */
   readonly schema: z.ZodType;
   validate(raw: unknown): Result<ConfigurationValue, readonly ConfigurationIssue[]>;
+  /** Version-two partial input and its owner-defined fold. Version one remains unchanged. */
+  readonly organized?: {
+    validate(raw: unknown): Result<ConfigurationValue, readonly ConfigurationIssue[]>;
+    fold(base: ConfigurationValue | undefined, incoming: ConfigurationValue): ConfigurationValue;
+  };
 };
 
 /** Fields every key declares regardless of its shape. */
@@ -92,7 +96,7 @@ function describe(input: CommonInput, shape: DescriptorShape): ConfigurationKeyD
     aliases: input.aliases ?? [],
     deprecation: input.deprecation ?? null,
     crossFieldDependencies: input.crossFieldDependencies ?? [],
-    introducedInSchemaVersion: input.introducedInSchemaVersion ?? CONFIGURATION_SCHEMA_VERSION,
+    introducedInSchemaVersion: input.introducedInSchemaVersion ?? 1,
   };
 }
 
