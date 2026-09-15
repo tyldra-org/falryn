@@ -75,6 +75,11 @@ Credential bytes remain in the operating-system keychain or an explicitly
 referenced external source. Help, version, doctor, and configuration inspection
 do not create `~/.falryn` or trigger migration.
 
+Configuration registry construction does not validate declaration defaults.
+Complete validation rechecks supplied folded keys, so an invalid omitted-key
+default can pass. #1088 owns that validation gap; no shipped default was found
+to be invalid.
+
 ## Workspace trust
 
 Interactive startup reviews project settings, instructions, MCP declarations,
@@ -1565,6 +1570,10 @@ call passes through the unified policy, confirmation, hooks, scheduler,
 capture, journal, and projection gateway. Registration alone does not imply
 that all 61 schemas are placed in every prompt.
 
+LSP file resource operations remain rejected and embedded code-action commands
+remain deferred. #1085 owns resource-operation patch conversion; #1086 records
+the unresolved command-effect decision. Existing text-edit support is unchanged.
+
 ## Scoped work-item records
 
 `createWorkQueueActions` is the bounded application boundary for version-1 work
@@ -1864,6 +1873,10 @@ named pipes. Fresh process signing/encryption keys authenticate nonce-bound
 requests and opaque single-use operation capabilities. Private keys and tokens
 are not persisted. Expired process claims require fresh authentication after
 restart. Cross-machine transport and automatic collaboration turns are unavailable.
+The separate follow-ups are #1082 for opted-in local turn admission, #1083 for
+explicit local cross-worktree route grants and #1084 for the remote transport
+and trust decision. #161 owns their user controls. These issue links do not
+change current runtime availability.
 
 Mailbox limits are 16 KiB text, 32 KiB envelopes, eight artifact handles totalling
 1 MiB, 64 pending messages/1 MiB queued bytes per endpoint, 64 sends/minute,
@@ -1990,6 +2003,10 @@ tool activation are implemented; automatic package-agent preparation is not. Req
 its native owner; a descriptor alone does not make it ready.
 
 ## Current product-integration limits
+
+Model-backed prompt enhancement remains unavailable. Its current refusal names
+historical provider issue #33; #1087 owns the separate enhancement backend and
+correction of that explanation. Local draft normalization remains supported.
 
 The model tool loop defaults to four concurrent executions and enforces an
 implementation ceiling of sixteen. Product tool gateways and provider requests
