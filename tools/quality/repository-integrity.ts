@@ -27,14 +27,14 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "@anthropic-ai/sdk",
     group: "dependencies",
-    version: "0.124.0",
+    version: "0.125.0",
     license: "MIT",
     repository: "github:anthropics/anthropic-sdk-typescript",
   },
   {
     name: "@google/genai",
     group: "dependencies",
-    version: "2.21.0",
+    version: "2.22.0",
     license: "Apache-2.0",
     repository: "https://github.com/googleapis/js-genai",
     installLifecycleHooks: { preinstall: "echo 'preinstall: no-op'" },
@@ -70,14 +70,14 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "openai",
     group: "dependencies",
-    version: "7.10.0",
+    version: "7.15.0",
     license: "Apache-2.0",
     repository: "github:openai/openai-node",
   },
   {
     name: "react",
     group: "dependencies",
-    version: "19.2.8",
+    version: "19.3.0",
     license: "MIT",
     repository: "https://github.com/react/react",
   },
@@ -98,7 +98,7 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "yaml",
     group: "dependencies",
-    version: "2.9.0",
+    version: "2.9.1",
     license: "ISC",
     repository: "github:eemeli/yaml",
   },
@@ -112,7 +112,7 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "zod",
     group: "dependencies",
-    version: "4.5.4",
+    version: "4.6.2",
     license: "MIT",
     repository: "https://github.com/colinhacks/zod",
   },
@@ -140,7 +140,7 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "@types/react",
     group: "devDependencies",
-    version: "19.2.18",
+    version: "19.3.0",
     license: "MIT",
     repository: "https://github.com/DefinitelyTyped/DefinitelyTyped",
   },

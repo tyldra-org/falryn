@@ -272,7 +272,6 @@ describe("createOpenAiResponsesSdkAdapter", () => {
               sequence_number: 5,
               item_id: "fc-1",
               output_index: 1,
-              name: "read_file",
               arguments: '{"path":"a.ts"}',
             },
             {
@@ -437,7 +436,6 @@ describe("createOpenAiResponsesSdkAdapter", () => {
             sequence_number: 5,
             item_id: "fc-1",
             output_index: 2,
-            name: "search_text",
             arguments: '{"query":"needle"}',
           },
           {
@@ -681,6 +679,33 @@ describe("createOpenAiResponsesSdkAdapter", () => {
       fetch: async () => sseResponse([]),
     });
     expect((await collect(malformed)).at(-1)).toMatchObject({
+      kind: "error",
+      failure: { kind: "malformed-stream", retryable: false },
+    });
+  });
+
+  test("rejects argument completion without a bound function-call identity", async () => {
+    const adapter = createOpenAiResponsesSdkAdapter({
+      profileId: "orphan-arguments",
+      baseUrl: "https://api.example.test/v1",
+      supportedModels: ["gpt-test"],
+      resolveApiKey: async () => "sk-test",
+      compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+      fetch: async () =>
+        sseResponse([
+          {
+            type: "response.function_call_arguments.done",
+            item_id: "fc-orphan",
+            output_index: 0,
+            sequence_number: 1,
+            arguments: '{"path":"a.ts"}',
+          },
+          { type: "response.completed", response: response("resp-orphan") },
+        ]),
+    });
+    const events = await collect(adapter);
+    expect(events.filter((event) => event.kind === "tool-proposal")).toEqual([]);
+    expect(events.at(-1)).toMatchObject({
       kind: "error",
       failure: { kind: "malformed-stream", retryable: false },
     });
@@ -1079,7 +1104,6 @@ test("strict streamed arguments reach the assembler in native form and replay in
           type: "response.function_call_arguments.done",
           item_id: "fc-native",
           output_index: 0,
-          name: "edit",
           arguments: wireArguments,
         },
         {
