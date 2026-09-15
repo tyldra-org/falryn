@@ -17,6 +17,7 @@ export const PROVIDER_EVENT_KINDS = [
   "tool-call-delta",
   "tool-proposal",
   "usage",
+  "processing",
   "provider-metadata",
   "finished",
   "error",

@@ -29,6 +29,7 @@ describe("provider roles and event vocabulary", () => {
       "tool-call-delta",
       "tool-proposal",
       "usage",
+      "processing",
       "provider-metadata",
       "finished",
       "error",

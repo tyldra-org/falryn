@@ -177,10 +177,18 @@ describe("createOpenAiProviderAdapter", () => {
 
     expect(semanticText(chat)).toBe("same");
     expect(semanticText(responses)).toBe("same");
-    expect(chat.map((event) => event.kind)).toEqual(["request-started", "text-delta", "finished"]);
+    expect(chat.map((event) => event.kind)).toEqual([
+      "request-started",
+      "text-delta",
+      "processing",
+      "provider-metadata",
+      "finished",
+    ]);
     expect(responses.map((event) => event.kind)).toEqual([
       "request-started",
       "text-delta",
+      "processing",
+      "provider-metadata",
       "finished",
     ]);
   });

@@ -12,6 +12,7 @@ import { modelRequestId } from "../../providers/configuration/identity.ts";
 import { OPENAI_CHAT_TRANSPORT_DEFAULT } from "../../providers/configuration/transport-compatibility.ts";
 import type { ModelRequest } from "../../providers/protocol/request.ts";
 import type { NormalizedProviderEvent } from "../../providers/protocol/stream.ts";
+import { admittedOpenAiRequest } from "./openai-processing-fixtures.ts";
 import { createOpenAiSdkAdapter } from "./openai-sdk-adapter.ts";
 
 function request(overrides: Partial<ModelRequest> = {}): ModelRequest {
@@ -606,3 +607,38 @@ describe("createOpenAiSdkAdapter", () => {
     }
   });
 });
+
+test.each(["fast", "priority", "default", undefined, "unrecognized-private-value"])(
+  "Chat actual tier %s is bounded independently of the requested mode",
+  async (tier) => {
+    const adapter = createOpenAiSdkAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      processingAccountGeneration: "account",
+      supportedModels: ["gpt-5.6-sol"],
+      resolveApiKey: async () => "fixture",
+      fetch: async () =>
+        sseResponse([
+          `data: ${JSON.stringify({ service_tier: tier, choices: [{ delta: { content: "ok" }, finish_reason: "stop" }] })}\n\n`,
+        ]),
+    });
+    const events = await collect(
+      adapter,
+      undefined,
+      admittedOpenAiRequest(adapter, request({ modelId: modelId.from("gpt-5.6-sol") }), "fast"),
+    );
+    expect(events.at(-1)?.kind).toBe("finished");
+    expect(events.find((event) => event.kind === "processing")).toMatchObject({
+      observation: {
+        actualMode:
+          tier === "default"
+            ? "standard"
+            : tier === "fast" || tier === "priority"
+              ? "fast"
+              : "unknown",
+        nativeTier: tier === "unrecognized-private-value" || tier === undefined ? null : tier,
+      },
+    });
+    expect(JSON.stringify(events)).not.toContain("unrecognized-private-value");
+  },
+);

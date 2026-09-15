@@ -9,6 +9,7 @@ import { OPENAI_RESPONSES_TRANSPORT_DEFAULT } from "../../providers/configuratio
 import type { ModelRequest } from "../../providers/protocol/request.ts";
 import type { NormalizedProviderEvent } from "../../providers/protocol/stream.ts";
 import { ProviderStreamAssembler } from "../../providers/protocol/stream-assembly.ts";
+import { admittedOpenAiRequest } from "./openai-processing-fixtures.ts";
 import { responsesToolSchema } from "./openai-responses-sdk-adapter/tool-schema.ts";
 import { createOpenAiResponsesSdkAdapter } from "./openai-responses-sdk-adapter.ts";
 
@@ -215,10 +216,33 @@ describe("createOpenAiResponsesSdkAdapter", () => {
   test("replays completed reasoning before a stateless tool continuation", async () => {
     const bodies: Record<string, unknown>[] = [];
     let call = 0;
+    let processingRequestCount = 0;
+    function processingRequest(overrides: Partial<ModelRequest> = {}) {
+      return admittedOpenAiRequest(
+        adapter,
+        request({
+          ...overrides,
+          modelId: modelId.from("gpt-5.6-sol"),
+          promptCache: {
+            schemaVersion: 1,
+            key: `sha-256:${"a".repeat(64)}`,
+            scope: "session",
+            stablePrefixDigest: `sha-256:${"b".repeat(64)}`,
+            stableMessageCount: 1,
+            toolCatalogGeneration: 1,
+            mode: "openai-routing-key",
+            minimumInputTokens: 1024,
+          },
+        }),
+        processingRequestCount++ === 0 ? "fast" : "standard",
+      );
+    }
+
     const adapter = createOpenAiResponsesSdkAdapter({
       profileId: "openai",
-      baseUrl: "https://api.example.test/v1",
-      supportedModels: ["gpt-test"],
+      baseUrl: "https://api.openai.com/v1",
+      supportedModels: ["gpt-5.6-sol"],
+      processingAccountGeneration: "account",
       resolveApiKey: async () => "sk-test",
       compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
       fetch: async (_input, init) => {
@@ -299,7 +323,7 @@ describe("createOpenAiResponsesSdkAdapter", () => {
 
     const first = await collect(
       adapter,
-      request({
+      processingRequest({
         tools: [
           {
             name: "read_file",
@@ -317,7 +341,7 @@ describe("createOpenAiResponsesSdkAdapter", () => {
 
     await collect(
       adapter,
-      request({
+      processingRequest({
         requestId: modelRequestId.from("req-responses-2"),
         messages: [
           { role: "user", parts: [{ kind: "text", text: "read a.ts" }] },
@@ -335,6 +359,8 @@ describe("createOpenAiResponsesSdkAdapter", () => {
       }),
     );
 
+    expect(bodies.map((body) => body.service_tier)).toEqual(["fast", "default"]);
+    expect(bodies[0]?.prompt_cache_key).toBe(bodies[1]?.prompt_cache_key);
     expect(bodies[1]).not.toHaveProperty("previous_response_id");
     expect(bodies[1]?.input).toEqual([
       { role: "user", content: "read a.ts" },
@@ -356,18 +382,43 @@ describe("createOpenAiResponsesSdkAdapter", () => {
   });
 
   test("defers authorized definitions through server tool search and records loads", async () => {
+    const processingBodies: Record<string, unknown>[] = [];
     let body: Record<string, unknown> | null = null;
+    let processingRequestCount = 0;
+    function processingRequest(overrides: Partial<ModelRequest> = {}) {
+      return admittedOpenAiRequest(
+        adapter,
+        request({
+          ...overrides,
+          modelId: modelId.from("gpt-5.6-sol"),
+          promptCache: {
+            schemaVersion: 1,
+            key: `sha-256:${"a".repeat(64)}`,
+            scope: "session",
+            stablePrefixDigest: `sha-256:${"b".repeat(64)}`,
+            stableMessageCount: 1,
+            toolCatalogGeneration: 1,
+            mode: "openai-routing-key",
+            minimumInputTokens: 1024,
+          },
+        }),
+        processingRequestCount++ === 0 ? "fast" : "standard",
+      );
+    }
+
     const adapter = createOpenAiResponsesSdkAdapter({
       profileId: "openai",
-      baseUrl: "https://api.example.test/v1",
-      supportedModels: ["gpt-test"],
+      baseUrl: "https://api.openai.com/v1",
+      supportedModels: ["gpt-5.6-sol"],
+      processingAccountGeneration: "account",
       resolveApiKey: async () => "sk-test",
       compatibility: {
         ...OPENAI_RESPONSES_TRANSPORT_DEFAULT,
-        nativeToolSearchModels: ["gpt-test"],
+        nativeToolSearchModels: ["gpt-5.6-sol"],
       },
       fetch: async (_input, init) => {
         body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        processingBodies.push(body);
         const toolSearchCall = {
           id: "tsc-1",
           type: "tool_search_call",
@@ -457,7 +508,7 @@ describe("createOpenAiResponsesSdkAdapter", () => {
 
     const events = await collect(
       adapter,
-      request({
+      processingRequest({
         tools: [
           {
             name: "read_file",
@@ -524,7 +575,7 @@ describe("createOpenAiResponsesSdkAdapter", () => {
 
     await collect(
       adapter,
-      request({
+      processingRequest({
         tools: [
           {
             name: "search_text",
@@ -553,10 +604,12 @@ describe("createOpenAiResponsesSdkAdapter", () => {
     );
     expect(JSON.stringify(body)).toContain('"type":"tool_search_output"');
     expect(JSON.stringify(body)).toContain('"type":"tool_search_call"');
+    expect(processingBodies.map((body) => body.service_tier)).toEqual(["fast", "default"]);
+    expect(processingBodies[0]?.prompt_cache_key).toBe(processingBodies[1]?.prompt_cache_key);
     const beforeRevocation = body;
     const refused = await collect(
       adapter,
-      request({
+      processingRequest({
         tools: [],
         messages: [
           {
@@ -575,10 +628,33 @@ describe("createOpenAiResponsesSdkAdapter", () => {
   test("uses provider state only when the explicit plan enables it", async () => {
     const bodies: Record<string, unknown>[] = [];
     let call = 0;
+    let processingRequestCount = 0;
+    function processingRequest(overrides: Partial<ModelRequest> = {}) {
+      return admittedOpenAiRequest(
+        adapter,
+        request({
+          ...overrides,
+          modelId: modelId.from("gpt-5.6-sol"),
+          promptCache: {
+            schemaVersion: 1,
+            key: `sha-256:${"a".repeat(64)}`,
+            scope: "session",
+            stablePrefixDigest: `sha-256:${"b".repeat(64)}`,
+            stableMessageCount: 1,
+            toolCatalogGeneration: 1,
+            mode: "openai-routing-key",
+            minimumInputTokens: 1024,
+          },
+        }),
+        processingRequestCount++ === 0 ? "fast" : "standard",
+      );
+    }
+
     const adapter = createOpenAiResponsesSdkAdapter({
       profileId: "openai-stateful",
-      baseUrl: "https://api.example.test/v1",
-      supportedModels: ["gpt-test"],
+      baseUrl: "https://api.openai.com/v1",
+      supportedModels: ["gpt-5.6-sol"],
+      processingAccountGeneration: "account",
       resolveApiKey: async () => "sk-test",
       compatibility: {
         ...OPENAI_RESPONSES_TRANSPORT_DEFAULT,
@@ -627,10 +703,10 @@ describe("createOpenAiResponsesSdkAdapter", () => {
       },
     });
 
-    await collect(adapter);
+    await collect(adapter, processingRequest());
     await collect(
       adapter,
-      request({
+      processingRequest({
         requestId: modelRequestId.from("req-stateful-2"),
         messages: [
           { role: "user", parts: [{ kind: "text", text: "read" }] },
@@ -648,6 +724,8 @@ describe("createOpenAiResponsesSdkAdapter", () => {
       }),
     );
 
+    expect(bodies.map((body) => body.service_tier)).toEqual(["fast", "default"]);
+    expect(bodies[0]?.prompt_cache_key).toBe(bodies[1]?.prompt_cache_key);
     expect(bodies[0]).toMatchObject({ store: true });
     expect(bodies[0]).not.toHaveProperty("include");
     expect(bodies[1]).toMatchObject({
@@ -1197,5 +1275,44 @@ test.each([false, true])(
     expect(events.some((event) => event.kind === "error")).toBe(false);
     expect(JSON.stringify(body.tools).includes('"type":"tool_search"')).toBe(qualified);
     expect(JSON.stringify(body.tools).includes('"defer_loading":true')).toBe(qualified);
+  },
+);
+
+test.each(["fast", "priority", "default", undefined, "unrecognized-private-value"])(
+  "Responses terminal object actual tier %s is bounded",
+  async (tier) => {
+    const adapter = createOpenAiResponsesSdkAdapter({
+      profileId: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      processingAccountGeneration: "account",
+      compatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
+      supportedModels: ["gpt-5.6-sol"],
+      resolveApiKey: async () => "fixture",
+      fetch: async () =>
+        sseResponse([
+          {
+            type: "response.completed",
+            sequence_number: 1,
+            response: response("terminal", { service_tier: tier }),
+          },
+        ]),
+    });
+    const events = await collect(
+      adapter,
+      admittedOpenAiRequest(adapter, request({ modelId: modelId.from("gpt-5.6-sol") }), "fast"),
+    );
+    expect(events.at(-1)?.kind).toBe("finished");
+    expect(events.find((event) => event.kind === "processing")).toMatchObject({
+      observation: {
+        actualMode:
+          tier === "default"
+            ? "standard"
+            : tier === "fast" || tier === "priority"
+              ? "fast"
+              : "unknown",
+        nativeTier: tier === "unrecognized-private-value" || tier === undefined ? null : tier,
+      },
+    });
+    expect(JSON.stringify(events)).not.toContain("unrecognized-private-value");
   },
 );

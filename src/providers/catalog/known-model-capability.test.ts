@@ -45,6 +45,24 @@ describe("known OpenAI model capabilities", () => {
           id: "standard-long",
           usdMicrosPerMillionTokens: { input: 8_000_000, output: 30_000_000 },
         },
+        {
+          id: "fast-short",
+          usdMicrosPerMillionTokens: {
+            input: 8_000_000,
+            cachedInput: 800_000,
+            cacheWriteInput: 10_000_000,
+            output: 40_000_000,
+          },
+        },
+        {
+          id: "fast-long",
+          usdMicrosPerMillionTokens: {
+            input: 16_000_000,
+            cachedInput: 1_600_000,
+            cacheWriteInput: 20_000_000,
+            output: 60_000_000,
+          },
+        },
       ],
     });
     expect(LATEST_OPENAI_MODEL_CAPABILITIES.at(-1)?.pricing).toMatchObject({
@@ -78,6 +96,15 @@ describe("known OpenAI model capabilities", () => {
             input: 150_000,
             cachedInput: 75_000,
             output: 600_000,
+          },
+        },
+        {
+          serviceTier: "fast",
+          usdMicrosPerMillionTokens: {
+            input: 250_000,
+            cachedInput: 125_000,
+            cacheWriteInput: null,
+            output: 1_000_000,
           },
         },
       ],

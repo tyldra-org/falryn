@@ -1,3 +1,4 @@
+import { openAiAccountGeneration } from "../../integrations/providers/openai-processing.ts";
 import {
   createHostSandbox,
   installationSandboxPolicy,
@@ -275,6 +276,7 @@ export function composeProductProviderConnections(
           adapter = createOpenAiProviderAdapter({
             ...common,
             baseUrl: profile.endpoint,
+            processingAccountGeneration: openAiAccountGeneration(session.connection),
             compatibility: compatibility.value.declaration,
             organization: profile.organization,
             project: profile.project,
@@ -355,6 +357,14 @@ export function composeProductProviderConnections(
                 current.adapter.identity.providerId !== boundAdapter.identity.providerId
               )
                 throw new Error("provider-generation-stale");
+              if (
+                request.processing?.accountGeneration != null &&
+                current.adapter.processingAuthority?.(
+                  request.modelId,
+                  request.processing.resolvedMode,
+                ).accountGeneration !== request.processing.accountGeneration
+              )
+                throw new Error("provider-processing-account-stale");
               yield* current.adapter.stream(request, streamOptions);
             } finally {
               await current.session.release();
