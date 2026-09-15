@@ -1,6 +1,11 @@
 /** OpenAI provider adapter with exact-model Chat Completions/Responses routing. */
 
-import { modelAttemptId, modelId, providerId } from "../../domain/foundation/identity.ts";
+import {
+  type ModelId,
+  modelAttemptId,
+  modelId,
+  providerId,
+} from "../../domain/foundation/identity.ts";
 import {
   OPENAI_CHAT_TRANSPORT_DEFAULT,
   OPENAI_RESPONSES_TRANSPORT_DEFAULT,
@@ -13,6 +18,7 @@ import type { ProviderContinuationStatePort } from "../../providers/protocol/con
 import type { ProviderAdapterPort, ProviderStreamOptions } from "../../providers/protocol/port.ts";
 import type { ModelRequest } from "../../providers/protocol/request.ts";
 import type { NormalizedProviderEvent } from "../../providers/protocol/stream.ts";
+import { OPENAI_PROCESSING_VERSION } from "./openai-processing.ts";
 import { createOpenAiResponsesSdkAdapter } from "./openai-responses-sdk-adapter.ts";
 import { createOpenAiSdkAdapter, type OpenAiSdkFetch } from "./openai-sdk-adapter.ts";
 import { providerDestinationId } from "./provider-destination.ts";
@@ -29,6 +35,7 @@ export type OpenAiProviderAdapterOptions = {
   readonly organization?: string | null;
   readonly project?: string | null;
   readonly requestTimeoutMs?: number;
+  readonly processingAccountGeneration?: string;
   readonly compatibility:
     | OpenAiChatTransportCompatibilityDeclaration
     | OpenAiResponsesTransportCompatibilityDeclaration;
@@ -103,6 +110,10 @@ export function createOpenAiProviderAdapter(
   }
 
   const common = {
+    ...(options.processingAccountGeneration === undefined
+      ? {}
+      : { processingAccountGeneration: options.processingAccountGeneration }),
+    ...(options.now === undefined ? {} : { now: options.now }),
     profileId: options.profileId,
     providerId: options.providerId ?? "openai",
     displayName: options.displayName ?? "OpenAI",
@@ -141,9 +152,12 @@ export function createOpenAiProviderAdapter(
     ...(options.continuationState === undefined
       ? {}
       : { continuationState: options.continuationState }),
-    ...(options.now === undefined ? {} : { now: options.now }),
   });
   const transportCompatibility = resolved.value.destination;
+  const leafFor = (model: ModelId) => {
+    const plan = planByModel.get(String(model));
+    return plan && transportFor(plan.declaration) === "responses" ? responses : chat;
+  };
 
   return {
     identity: {
@@ -160,8 +174,15 @@ export function createOpenAiProviderAdapter(
     requestResponseDensityControls: ["low", "medium", "high"],
     transportCompatibility,
     transportCompatibilityFor(selectedModelId) {
-      return planByModel.get(String(selectedModelId)) ?? null;
+      return planByModel.has(String(selectedModelId))
+        ? leafFor(selectedModelId).transportCompatibilityFor(selectedModelId)
+        : null;
     },
+    processingTransportVersion: OPENAI_PROCESSING_VERSION,
+    processingModes: chat.processingModes ?? ["provider-default"],
+    ...(chat.processingAuthority === undefined
+      ? {}
+      : { processingAuthority: chat.processingAuthority }),
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,

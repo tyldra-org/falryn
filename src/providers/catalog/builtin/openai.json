@@ -46,7 +46,7 @@
         "currency": "USD",
         "tokenUnit": 1000000,
         "sourceUrl": "https://developers.openai.com/api/docs/pricing",
-        "observedAt": "2026-08-29T00:00:00Z",
+        "observedAt": "2026-09-15T00:00:00Z",
         "tiers": [
           {
             "id": "standard-short",
@@ -79,6 +79,38 @@
               "cacheWriteInput": 10000000,
               "output": 30000000
             }
+          },
+          {
+            "id": "fast-short",
+            "label": "Fast short context",
+            "serviceTier": "fast",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 8000000,
+              "cachedInput": 800000,
+              "cacheWriteInput": 10000000,
+              "output": 40000000
+            }
+          },
+          {
+            "id": "fast-long",
+            "label": "Fast long context",
+            "serviceTier": "fast",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 16000000,
+              "cachedInput": 1600000,
+              "cacheWriteInput": 20000000,
+              "output": 60000000
+            }
           }
         ]
       },
@@ -106,7 +138,7 @@
         "currency": "USD",
         "tokenUnit": 1000000,
         "sourceUrl": "https://developers.openai.com/api/docs/pricing",
-        "observedAt": "2026-08-29T00:00:00Z",
+        "observedAt": "2026-09-15T00:00:00Z",
         "tiers": [
           {
             "id": "standard-short",
@@ -139,6 +171,38 @@
               "cacheWriteInput": 5000000,
               "output": 18000000
             }
+          },
+          {
+            "id": "fast-short",
+            "label": "Fast short context",
+            "serviceTier": "fast",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 4000000,
+              "cachedInput": 400000,
+              "cacheWriteInput": 5000000,
+              "output": 24000000
+            }
+          },
+          {
+            "id": "fast-long",
+            "label": "Fast long context",
+            "serviceTier": "fast",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 8000000,
+              "cachedInput": 800000,
+              "cacheWriteInput": 10000000,
+              "output": 36000000
+            }
           }
         ]
       },
@@ -166,7 +230,7 @@
         "currency": "USD",
         "tokenUnit": 1000000,
         "sourceUrl": "https://developers.openai.com/api/docs/pricing",
-        "observedAt": "2026-08-29T00:00:00Z",
+        "observedAt": "2026-09-15T00:00:00Z",
         "tiers": [
           {
             "id": "standard-short",
@@ -198,6 +262,38 @@
               "cachedInput": 40000,
               "cacheWriteInput": 500000,
               "output": 1800000
+            }
+          },
+          {
+            "id": "fast-short",
+            "label": "Fast short context",
+            "serviceTier": "fast",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": 272000,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 400000,
+              "cachedInput": 40000,
+              "cacheWriteInput": 500000,
+              "output": 2400000
+            }
+          },
+          {
+            "id": "fast-long",
+            "label": "Fast long context",
+            "serviceTier": "fast",
+            "inputTokensFrom": 272001,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 800000,
+              "cachedInput": 80000,
+              "cacheWriteInput": 1000000,
+              "output": 3600000
             }
           }
         ]
@@ -405,8 +501,8 @@
         "billingMode": "api",
         "currency": "USD",
         "tokenUnit": 1000000,
-        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.3-codex",
-        "observedAt": "2026-08-29T00:00:00Z",
+        "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+        "observedAt": "2026-09-15T00:00:00Z",
         "tiers": [
           {
             "id": "standard",
@@ -422,6 +518,22 @@
               "cachedInput": 175000,
               "cacheWriteInput": null,
               "output": 14000000
+            }
+          },
+          {
+            "id": "fast",
+            "label": "Fast",
+            "serviceTier": "fast",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 3500000,
+              "cachedInput": 350000,
+              "cacheWriteInput": null,
+              "output": 28000000
             }
           }
         ]
@@ -449,8 +561,8 @@
         "billingMode": "api",
         "currency": "USD",
         "tokenUnit": 1000000,
-        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-5.4-mini",
-        "observedAt": "2026-08-29T00:00:00Z",
+        "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+        "observedAt": "2026-09-15T00:00:00Z",
         "tiers": [
           {
             "id": "standard",
@@ -466,6 +578,22 @@
               "cachedInput": 75000,
               "cacheWriteInput": null,
               "output": 4500000
+            }
+          },
+          {
+            "id": "fast",
+            "label": "Fast",
+            "serviceTier": "fast",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 1500000,
+              "cachedInput": 150000,
+              "cacheWriteInput": null,
+              "output": 9000000
             }
           }
         ]
@@ -537,8 +665,8 @@
         "billingMode": "api",
         "currency": "USD",
         "tokenUnit": 1000000,
-        "sourceUrl": "https://developers.openai.com/api/docs/models/gpt-4o-mini",
-        "observedAt": "2026-08-29T00:00:00Z",
+        "sourceUrl": "https://developers.openai.com/api/docs/pricing",
+        "observedAt": "2026-09-15T00:00:00Z",
         "tiers": [
           {
             "id": "standard",
@@ -554,6 +682,22 @@
               "cachedInput": 75000,
               "cacheWriteInput": null,
               "output": 600000
+            }
+          },
+          {
+            "id": "fast",
+            "label": "Fast",
+            "serviceTier": "fast",
+            "inputTokensFrom": 0,
+            "inputTokensThrough": null,
+            "effectiveFrom": null,
+            "effectiveUntil": null,
+            "utcWindows": [],
+            "usdMicrosPerMillionTokens": {
+              "input": 250000,
+              "cachedInput": 125000,
+              "cacheWriteInput": null,
+              "output": 1000000
             }
           }
         ]

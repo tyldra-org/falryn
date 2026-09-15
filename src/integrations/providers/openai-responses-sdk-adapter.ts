@@ -1,4 +1,5 @@
 import { supportsNativeToolSearch } from "../../providers/configuration/transport-compatibility.ts";
+import { openAiProcessing } from "./openai-processing.ts";
 /** Official OpenAI SDK adapter for the Responses transport. */
 
 import OpenAI from "openai";
@@ -109,8 +110,12 @@ export function createOpenAiResponsesSdkAdapter(
   if (transportCompatibility.declaration.dialect !== "openai-responses") {
     throw new Error("OpenAI Responses adapter requires the Responses dialect");
   }
+  const processing = openAiProcessing(options);
   const compatibilityByModel = new Map(
-    resolvedCompatibility.value.models.map((entry) => [String(entry.modelId), entry.plan]),
+    resolvedCompatibility.value.models.map((entry) => [
+      String(entry.modelId),
+      processing.qualify(entry.plan, entry.modelId),
+    ]),
   );
   const retained = new Map<string, RetainedContinuation>();
   const transportCompatibilityFor = (
@@ -126,7 +131,7 @@ export function createOpenAiResponsesSdkAdapter(
         ? {}
         : { modelOverrides: options.modelCompatibility }),
     });
-    return resolved.ok ? resolved.value : null;
+    return resolved.ok ? processing.qualify(resolved.value, selectedModelId) : null;
   };
   const identity = {
     providerId: providerId.from(options.providerId ?? "openai"),
@@ -157,6 +162,7 @@ export function createOpenAiResponsesSdkAdapter(
     requestResponseDensityControls: ["low", "medium", "high"],
     transportCompatibility,
     transportCompatibilityFor,
+    ...processing.port,
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
@@ -273,7 +279,9 @@ export function createOpenAiResponsesSdkAdapter(
 
       let body: ResponseCreateParamsStreaming;
       try {
+        const serviceTier = processing.serviceTier(request, plan);
         body = responseBody(request, compatibility, retainedForRequest);
+        if (serviceTier !== undefined) body.service_tier = serviceTier;
       } catch (error) {
         yield errorEvent(classifySdkError(error, streamOptions.signal));
         return;
@@ -599,7 +607,29 @@ export function createOpenAiResponsesSdkAdapter(
               break;
             }
             case "response.completed":
+            case "response.failed":
             case "response.incomplete": {
+              const observation = processing.observe(
+                event.response.service_tier,
+                request,
+                (options.now ?? Date.now)(),
+              );
+              yield {
+                kind: "processing",
+                requestId: request.requestId,
+                modelAttemptId: attempt,
+                sequence: next(),
+                observation,
+              };
+              if (observation.actualMode === "unknown") {
+                yield {
+                  kind: "provider-metadata",
+                  requestId: request.requestId,
+                  modelAttemptId: attempt,
+                  sequence: next(),
+                  entries: { processingDiagnostic: "service-tier-unknown" },
+                };
+              }
               const usage = usageOf(event.response);
               if (usage !== null) {
                 yield {
@@ -609,6 +639,10 @@ export function createOpenAiResponsesSdkAdapter(
                   sequence: next(),
                   usage,
                 };
+              }
+              if (event.type === "response.failed") {
+                yield errorEvent(responseFailure(event.response));
+                return;
               }
               if (
                 malformedToolIdentity ||
@@ -731,9 +765,6 @@ export function createOpenAiResponsesSdkAdapter(
               };
               return;
             }
-            case "response.failed":
-              yield errorEvent(responseFailure(event.response));
-              return;
             case "error": {
               const providerFailure =
                 event.code === "rate_limit_exceeded"

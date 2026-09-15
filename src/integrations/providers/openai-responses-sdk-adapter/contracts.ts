@@ -24,6 +24,7 @@ export type OpenAiResponsesSdkAdapterOptions = {
   readonly organization?: string | null;
   readonly project?: string | null;
   readonly requestTimeoutMs?: number;
+  readonly processingAccountGeneration?: string;
   readonly compatibility: OpenAiResponsesTransportCompatibilityDeclaration;
   readonly modelCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
   readonly continuationState?: ProviderContinuationStatePort;

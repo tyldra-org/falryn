@@ -406,9 +406,30 @@ Normalized observations keep requested and actual processing separate;
 contradictory reports remain unknown. The existing journal, export and replay
 codecs preserve the binding, bounded observations and conservative usage-cost
 settlement without executing requests. Missing legacy observations remain
-unrecorded. Product fixtures verify these paths; installed provider adapters
-currently retain ordinary behavior and expose no qualified explicit Fast or
-Standard mapping through this contract. There is no `/fast` control yet.
+unrecorded. Direct OpenAI API-key connections now qualify explicit Standard
+(`service_tier: default`) and Fast (`service_tier: fast`) through both installed
+SDK transports. Provider-default preserves omitted Chat tier or the existing
+Responses `auto`/`default` declaration. Fast is qualified for exact
+`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`, `gpt-5.4-mini`, and `gpt-4o-mini`
+on both endpoints, and `gpt-5.3-codex` on Responses only, at
+`https://api.openai.com/v1`. Unfamiliar models, custom endpoints, the legacy
+`gpt-5.6` alias, and older long-context models without complete Fast coverage
+remain unqualified. Missing price modifiers remain unknown and cannot establish
+a hard cost cap.
+
+OpenAI terminal response tiers and Chat stream tiers normalize `fast`/`priority`
+to Fast and `default` to Standard while retaining the bounded native label.
+Missing or unfamiliar values produce unknown plus a fixed diagnostic. A successful
+Standard downgrade is consumed once and settles against captured ordinary rates.
+The product connection owner binds local account configuration and rechecks it
+before submission; upstream entitlement and capacity remain provider decisions.
+Processing adds no capacity, SDK retry, helper request or subscription authority.
+Controlled HTTP fixtures exercise the real product factory and attempt runner,
+including premium admission, actual-tier journal receipts, quota and cancellation.
+Continuation fixtures preserve prompt-cache affinity, stateless/stateful tool
+results and native tool-search replay across Fast-to-Standard changes. Live
+account access and latency gains have not been measured. Other providers retain
+ordinary behavior through this contract. There is no `/fast` control yet.
 
 The Command Code catalog contains the 62 execution IDs currently published by
 its Provider API, with names and context limits from the model endpoint and

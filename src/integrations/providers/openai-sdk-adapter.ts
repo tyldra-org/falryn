@@ -1,3 +1,4 @@
+import { openAiProcessing } from "./openai-processing.ts";
 /**
  * OpenAI SDK Chat Completions adapter.
  *
@@ -58,6 +59,8 @@ export type OpenAiSdkAdapterOptions = {
   readonly organization?: string | null;
   readonly project?: string | null;
   readonly requestTimeoutMs?: number;
+  readonly processingAccountGeneration?: string;
+  readonly now?: () => number;
   readonly compatibility?: OpenAiChatTransportCompatibilityDeclaration;
   readonly modelCompatibility?: readonly ProviderModelTransportCompatibilityOverride[];
 };
@@ -327,8 +330,12 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
   if (transportCompatibility.declaration.dialect !== "openai-chat-completions") {
     throw new Error("OpenAI SDK adapter requires the OpenAI Chat Completions dialect");
   }
+  const processing = openAiProcessing(options);
   const compatibilityByModel = new Map(
-    resolvedCompatibility.value.models.map((entry) => [String(entry.modelId), entry.plan]),
+    resolvedCompatibility.value.models.map((entry) => [
+      String(entry.modelId),
+      processing.qualify(entry.plan, entry.modelId),
+    ]),
   );
   const transportCompatibilityFor = (
     selectedModelId: ModelId,
@@ -343,7 +350,7 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
         ? {}
         : { modelOverrides: options.modelCompatibility }),
     });
-    return resolved.ok ? resolved.value : null;
+    return resolved.ok ? processing.qualify(resolved.value, selectedModelId) : null;
   };
   const identity = {
     providerId: providerId.from(options.providerId ?? "openai"),
@@ -362,6 +369,7 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
     requestResponseDensityControls: ["low", "medium", "high"],
     transportCompatibility,
     transportCompatibilityFor,
+    ...processing.port,
     async *stream(
       request: ModelRequest,
       streamOptions: ProviderStreamOptions,
@@ -465,6 +473,7 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
 
       let body: OpenAI.ChatCompletionCreateParamsStreaming;
       try {
+        const serviceTier = processing.serviceTier(request, modelTransportCompatibility);
         const tools = toTools(request.tools, compatibility);
         const reasoningEffort = openAiReasoningEffort(request.reasoningControl);
         const outputBudget =
@@ -476,6 +485,7 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
         body = {
           model: String(request.modelId),
           stream: true,
+          ...(serviceTier === undefined ? {} : { service_tier: serviceTier }),
           ...(compatibility.streamingUsage === "include"
             ? { stream_options: { include_usage: true } }
             : {}),
@@ -517,12 +527,21 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
       const toolCalls = new Map<number, ToolCallState>();
       let finishReason: string | null = null;
       let proposalsEmitted = false;
+      const reportedTiers = new Map<string, ReturnType<typeof processing.observe>>();
 
       try {
         const stream = await clientFor(options, apiKey).chat.completions.create(body, {
           signal: streamOptions.signal,
         });
         for await (const chunk of stream) {
+          if (chunk.service_tier != null) {
+            const observation = processing.observe(
+              chunk.service_tier,
+              request,
+              (options.now ?? Date.now)(),
+            );
+            reportedTiers.set(observation.nativeTier ?? "unknown", observation);
+          }
           const usage = usageEvent(chunk, request, attempt, sequence);
           if (usage !== null) {
             sequence += 1;
@@ -648,6 +667,29 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
             argumentsJson: tool.arguments,
           };
         }
+      }
+      if (reportedTiers.size === 0)
+        reportedTiers.set(
+          "unknown",
+          processing.observe(null, request, (options.now ?? Date.now)()),
+        );
+      for (const observation of reportedTiers.values()) {
+        yield {
+          kind: "processing",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          observation,
+        };
+      }
+      if ([...reportedTiers.values()].some((observation) => observation.actualMode === "unknown")) {
+        yield {
+          kind: "provider-metadata",
+          requestId: request.requestId,
+          modelAttemptId: attempt,
+          sequence: next(),
+          entries: { processingDiagnostic: "service-tier-unknown" },
+        };
       }
       yield {
         kind: "finished",

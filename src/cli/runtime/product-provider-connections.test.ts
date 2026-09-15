@@ -2,7 +2,6 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-
 import { CONFIGURATION_FILE_NAME } from "../../config/index.ts";
 import {
   createStaticEnvironment,
@@ -13,6 +12,7 @@ import {
 } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
 import type { OpenAiSdkFetch, OperatingSystemSecretsPort } from "../../integrations/index.ts";
+import { admittedOpenAiRequest } from "../../integrations/providers/openai-processing-fixtures.ts";
 import type {
   AuthorizedProviderLoginHost,
   ModelDiscoveryPort,
@@ -1230,7 +1230,10 @@ describe("product provider connection persistence", () => {
       budgets: {},
       metadata: { role: "default" },
     };
-    const beforeRestart = await providerEvents(first.adapter, baseRequest);
+    const beforeRestart = await providerEvents(
+      first.adapter,
+      admittedOpenAiRequest(first.adapter, baseRequest, "fast"),
+    );
     expect(beforeRestart.at(-1)).toMatchObject({ kind: "finished", finishReason: "tool_calls" });
     expect(beforeRestart).toContainEqual(
       expect.objectContaining({
@@ -1253,23 +1256,31 @@ describe("product provider connection persistence", () => {
     if (restarted.kind !== "ready") {
       throw new Error(`expected restarted provider route, got ${restarted.code}`);
     }
-    const afterRestart = await providerEvents(restarted.adapter, {
-      ...baseRequest,
-      requestId: modelRequestId.from("responses-after-restart"),
-      messages: [
-        ...baseRequest.messages,
+    const afterRestart = await providerEvents(
+      restarted.adapter,
+      admittedOpenAiRequest(
+        restarted.adapter,
         {
-          role: "assistant",
-          parts: [],
-          toolCalls: [{ toolCallId: "call-restart", name: "read_file", arguments: {} }],
+          ...baseRequest,
+          requestId: modelRequestId.from("responses-after-restart"),
+          messages: [
+            ...baseRequest.messages,
+            {
+              role: "assistant",
+              parts: [],
+              toolCalls: [{ toolCallId: "call-restart", name: "read_file", arguments: {} }],
+            },
+            {
+              role: "tool",
+              toolCallId: "call-restart",
+              parts: [{ kind: "text", text: "contents" }],
+            },
+          ],
         },
-        {
-          role: "tool",
-          toolCallId: "call-restart",
-          parts: [{ kind: "text", text: "contents" }],
-        },
-      ],
-    });
+        "standard",
+      ),
+    );
+    expect(bodies.map((body) => body.service_tier)).toEqual(["fast", "default"]);
     expect(afterRestart).toContainEqual(
       expect.objectContaining({
         kind: "provider-metadata",
@@ -1290,6 +1301,20 @@ describe("product provider connection persistence", () => {
       { type: "function_call_output", call_id: "call-restart", output: "contents" },
     ]);
     expect(JSON.stringify(afterRestart)).not.toContain("opaque-provider-state");
+    const staleRequest = admittedOpenAiRequest(restarted.adapter, baseRequest, "fast");
+    expect(
+      await configured.execute({
+        kind: "configure",
+        profile: { ...profile, project: "changed-project" },
+        preserveCredential: true,
+        preserveCapabilities: true,
+        preserveTransportCompatibility: true,
+      }),
+    ).toMatchObject({ kind: "completed" });
+    await expect(providerEvents(restarted.adapter, staleRequest)).rejects.toThrow(
+      "provider-processing-account-stale",
+    );
+    expect(bodies).toHaveLength(2);
     await restartedState.close();
   });
 });
