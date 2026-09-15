@@ -313,11 +313,11 @@ test("two real headless turns consume settled tool evidence once across checkpoi
   const adapter = createDeterministicProviderAdapter({
     onRequest: (request) => requests.push(structuredClone(request)),
     script: (_request, index) => {
-      if (index === 0) {
+      if (index === 0 || index === 3) {
         toolCalls++;
         return {
           kind: "tool",
-          toolCallId: "history-read",
+          toolCallId: index === 0 ? "history-read" : "later-read",
           name: "list_dir",
           argumentFragments: ['{"path":"."}'],
         };
@@ -487,6 +487,12 @@ test("two real headless turns consume settled tool evidence once across checkpoi
   ).toBe("applied");
   const third = await run("THIRD_TURN_CANARY the correction still applies", "third-live");
   expect(third.payload?.stage, JSON.stringify(third.errors)).toBe("attempt-completed");
+  expect(requests).toHaveLength(5);
+  expect(
+    requests[4]?.messages
+      .filter((message) => message.role === "tool")
+      .map((message) => message.toolCallId),
+  ).toEqual(["history-read", "later-read"]);
   expect(JSON.stringify(requests[3]?.messages)).not.toContain("UNREVIEWED_MEMORY_CANARY");
   for (const canary of ["RATIONALE_CANARY", "OUTSTANDING_TASK_CANARY", "CORRECTION_CANARY"])
     expect(JSON.stringify(requests[3]?.messages)).toContain(canary);
@@ -495,7 +501,7 @@ test("two real headless turns consume settled tool evidence once across checkpoi
       .filter((message) => message.role !== "system")
       .slice(0, next.messages.filter((message) => message.role !== "system").length - 1),
   ).toEqual(next.messages.filter((message) => message.role !== "system").slice(0, -1));
-  expect(toolCalls).toBe(1);
+  expect(toolCalls).toBe(2);
   const catalog = catalogFromAdapterModels(adapter.supportedModels, {
     generation: 0,
     fetchedAt: instant(0),
@@ -520,7 +526,7 @@ test("two real headless turns consume settled tool evidence once across checkpoi
   );
   expect(refused.payload?.stage).toBe("attempt-failed");
   expect(JSON.stringify(refused.errors)).toContain("history.insufficient-budget");
-  expect(requests).toHaveLength(4);
+  expect(requests).toHaveLength(5);
 });
 
 test("the interactive host consumes prior input, answer and stable tool results after repeated compaction without replaying effects", async () => {
