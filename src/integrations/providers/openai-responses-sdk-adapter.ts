@@ -464,12 +464,8 @@ export function createOpenAiResponsesSdkAdapter(
                 malformedToolIdentity = true;
               }
               state.argumentsDone = true;
-              if (state.name !== null && state.name !== event.name) {
-                malformedToolIdentity = true;
-              }
-              state.name = event.name;
               state.arguments = event.arguments;
-              if (state.callId !== null && !state.proposed) {
+              if (state.callId !== null && state.name !== null && !state.proposed) {
                 if (state.emittedArguments.length === 0) {
                   yield {
                     kind: "tool-call-delta",
@@ -477,8 +473,8 @@ export function createOpenAiResponsesSdkAdapter(
                     modelAttemptId: attempt,
                     sequence: next(),
                     toolCallId: state.callId,
-                    name: event.name,
-                    argumentsFragment: nativeArguments(event.name, event.arguments),
+                    name: state.name,
+                    argumentsFragment: nativeArguments(state.name, event.arguments),
                   };
                 }
                 yield {
@@ -487,8 +483,8 @@ export function createOpenAiResponsesSdkAdapter(
                   modelAttemptId: attempt,
                   sequence: next(),
                   toolCallId: state.callId,
-                  name: event.name,
-                  argumentsJson: nativeArguments(event.name, event.arguments),
+                  name: state.name,
+                  argumentsJson: nativeArguments(state.name, event.arguments),
                 };
                 state.proposed = true;
               }
