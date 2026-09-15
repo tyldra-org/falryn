@@ -137,6 +137,7 @@ export type CodingRunArguments = {
 };
 
 export type CodingRunPayload = {
+  readonly history?: import("../../application/runtime/product-live-turn.ts").ProductLiveTurnResult["history"];
   readonly sandbox?: string;
   readonly workspaceTrust?: import("../../domain/security/workspace-trust.ts").WorkspaceTrustReport;
   readonly prompt: string;
@@ -887,6 +888,7 @@ export async function runCoding(
         eventCount: attempted.events.length + trustEvents.length,
         workspaceTrust: graph.workspaceTrust.current(),
         contextPackItems: attempted.contextPackItems,
+        ...(attempted.history ? { history: attempted.history } : {}),
         contextPlannerOwner,
         indexFreshness,
         indexOwner,

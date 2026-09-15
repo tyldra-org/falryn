@@ -1171,8 +1171,8 @@ budget, unsupported media admission, changed source/policy, cancellation and
 unavailable evidence refuse without truncation or a provider/tool request.
 The producer does not consume prepared memory or enable automatic overflow retry.
 The live action requires a captured admitted text request; the headless action
-requires an explicit complete reservation. Neither establishes next-provider
-acceptance, which remains #952; combined continuity remains #792.
+requires an explicit complete reservation. The live conversation reader below
+consumes these projections; combined continuity remains #792.
 
 Checkpoint inspection revalidates the original authorized sources, retention,
 digests and bytes. Restore selects retained checkpoint lineage without modifying
@@ -1185,14 +1185,43 @@ source/model/policy races, lost receipts, SIGKILL before/after publication, Unic
 modality reservations, smaller windows, expiry, corruption and scope revocation.
 The shared producer fixture is `src/cli/runtime/history-checkpoint.fixtures.ts`.
 
+Live turns now read the selected session's committed conversation before recording
+the new user input. Interactive and headless composition use one application
+reader, including when a host is constructed over reopened SQLite. The snapshot
+binds stream/session/workspace and a high-water sequence. It contains ordered
+public user/assistant messages, correlated terminal tool exchanges, source
+evidence, original recovery records and the selected checkpoint identity.
+Streaming fragments are replaced by their settled answer; interrupted output
+remains labelled partial. Current instructions stay in the leading system prefix.
+History never dispatches a tool, hook, peer notification or optional memory model.
+
+Applied/selected checkpoints revalidate the complete original range, artifact
+digests, authority and retained bytes. Residual records append after their covered
+range, with stable tool-result bytes across subsequent requests and compactions.
+Missing, expired, denied, corrupt, unrecorded or incomplete tool evidence refuses
+the request rather than silently falling back to the newest prompt. Historical
+source text remains attributed evidence, not current task state or fresh effect
+permission. The next request refreshes history; later commits cannot change an
+already captured snapshot.
+
+Each read admits at most 1,000 events, 4 MiB each of event metadata and expanded
+content, 128 artifact reads and a 30-second deadline narrowed by its task. These
+are request bounds, not storage quotas. Complete messages and disclosed schemas
+are charged with UTF-8 byte estimates, output and continuation reservations on
+the actual route, including tool continuations and late steering. A smaller
+window or unknown media cost is an explicit refusal, without a model upgrade.
+Application results and headless payloads expose the sequence, checkpoint,
+message digest, bounded omissions, read counts and labelled budget estimate.
+Default `falryn run` still creates a fresh session; selecting a saved session for
+execution remains #953. No new resume option or automatic summarizer is added.
+
 `/export` and the `session.export` palette command preview the active session
 through the same application action as `falryn export`. `/export write <name>`
 writes a versioned JSONL package with authorized artifact bytes; an existing
 destination is refused. Preview reports omissions, and write rechecks artifact
 policy before copying and publishing. Import installs artifacts before events
 that reference them. Cancellation after publication reports the published
-package. These surfaces do not activate a historical session executor (#953) or
-add prior history to later model turns (#952).
+package. Export and replay do not activate a historical session executor (#953).
 
 OpenTUI's `session.new` palette action creates a new durable session before it
 switches the active transcript and submission target. A failed creation leaves

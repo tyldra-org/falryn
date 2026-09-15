@@ -148,6 +148,7 @@ export type ProductAgentPortResult<Value> =
   | { readonly ok: false; readonly error: ProductAgentRuntimeError };
 
 export type ProductAgentRuntime = {
+  readonly historyEvents: EventStorePort;
   recomposeTools(bundle: ProductToolBundle): ProductAgentRuntimeComposeResult;
   childAdmission(
     input: Parameters<typeof createChildAdmission>[0],
@@ -328,6 +329,7 @@ export function composeProductAgentRuntime(
     });
 
   const runtime: ProductAgentRuntime = {
+    historyEvents: ports.eventStore,
     recomposeTools(bundle) {
       if (bundle.registry.generation !== ports.correlation.configurationGeneration)
         throw new Error("tool publication belongs to another configuration generation");

@@ -7,6 +7,7 @@ import {
 } from "../../domain/sessions/model-processing.ts";
 import { supportsNativeToolSearch } from "../../providers/configuration/transport-compatibility.ts";
 import { createCapabilityComposition } from "../capabilities/capability-composition.ts";
+import { conversationBudget } from "../context/conversation-budget.ts";
 import {
   bindModelProcessing,
   inspectModelProcessing,
@@ -1008,6 +1009,17 @@ export function createProductAttemptRunner(
       }
 
       const consume = async (): Promise<ProviderStreamConsumeOutcome> => {
+        if (input.history) {
+          if (!input.history.current())
+            throw new Error("resource-admission:history-authority-changed");
+          const budget = conversationBudget(
+            messages,
+            input.tools,
+            budgets,
+            request.resourceCapability,
+          );
+          if (budget.reason) throw new Error(`resource-admission:history-${budget.reason}`);
+        }
         const observedProposals = new Set<string>();
         requestSequence += 1;
         const currentRequest = modelRequest(
@@ -1118,9 +1130,10 @@ export function createProductAttemptRunner(
             scopeId: null,
           },
           async run(signal) {
+            if (input.history && !input.history.current())
+              throw new Error("resource-admission:history-authority-changed");
             if (signal.aborted || !processingAuthorityCurrent(options.provider, processingBinding))
               throw new Error("resource-admission:stale-generation");
-            launchedRequests += 1;
             for (const steering of options.takeSteering?.() ?? []) {
               messages.push({
                 role: "user",
@@ -1132,6 +1145,16 @@ export function createProductAttemptRunner(
                 ],
               });
             }
+            if (input.history) {
+              const budget = conversationBudget(
+                messages,
+                input.tools,
+                budgets,
+                request.resourceCapability,
+              );
+              if (budget.reason) throw new Error(`resource-admission:history-${budget.reason}`);
+            }
+            launchedRequests += 1;
             const disclosureDigest = historyDigest(JSON.stringify(input.disclosure.toolNames));
             const source = options.provider.stream(
               {

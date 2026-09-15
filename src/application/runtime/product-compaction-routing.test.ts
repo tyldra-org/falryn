@@ -8,7 +8,7 @@ function productWithDistinctFast(maxConcurrent = 1) {
   const product = processingProduct(maxConcurrent);
   Object.assign(product.preferences.roles.default, {
     processing: { mode: "fast" },
-    budgets: { attempts: 2, cost: 5000 },
+    budgets: { attempts: 2, cost: 500000 },
   });
   Object.assign(product.preferences.roles, {
     fast: {
@@ -44,7 +44,7 @@ test.each(["coding", "read", "toolRouting", "edit", "compression"] as const)(
     const attempt = replay.turns[0]?.attempts[0];
     expect(attempt?.binding?.modelId).toBe(product.preferences.roles.default.modelId);
     expect(attempt?.processing?.[0]?.actualMode).toBe("fast");
-    expect(attempt?.processing?.[0]?.binding.maximumCostMicros).toBe(3100);
+    expect(attempt?.processing?.[0]?.binding.maximumCostMicros).toBe(300100);
     expect(attempt?.processing?.[0]?.usageCostMaximumMicros).toBe(320);
     await product.runtime.journal.replay();
     expect(product.requests).toHaveLength(1);
@@ -53,7 +53,7 @@ test.each(["coding", "read", "toolRouting", "edit", "compression"] as const)(
 
 test("compression keeps live cancellation and cost limits without a helper attempt", async () => {
   const product = productWithDistinctFast();
-  Object.assign(product.preferences.roles.default.budgets, { cost: 500 });
+  Object.assign(product.preferences.roles.default.budgets, { cost: 50000 });
   const capped = await product.executor.run({
     prompt: "Summarize.",
     intent: "compression",
@@ -61,7 +61,7 @@ test("compression keeps live cancellation and cost limits without a helper attem
   });
   expect(capped.kind).not.toBe("completed");
   expect(product.requests).toHaveLength(0);
-  Object.assign(product.preferences.roles.default.budgets, { cost: 5000 });
+  Object.assign(product.preferences.roles.default.budgets, { cost: 500000 });
   const controller = new AbortController();
   product.state.beforeResponse = async () => controller.abort();
   const cancelled = await product.executor.run({
@@ -110,7 +110,7 @@ test("an active compression retains its captured route and replay never resubmit
   expect(product.requests).toHaveLength(1);
 });
 
-test.each([5000, 7000])(
+test.each([500000, 700000])(
   "quota retry preserves compression source and cumulative cost cap %i",
   async (cost) => {
     // An error has no authoritative usage/termination receipt. Existing admission
@@ -138,21 +138,21 @@ test.each([5000, 7000])(
       }
       expect(settled).toBe(true);
       const result = await pending;
-      if (cost === 7000) expect(result).toMatchObject({ kind: "completed" });
+      if (cost === 700000) expect(result).toMatchObject({ kind: "completed" });
       else expect(result.kind).not.toBe("completed");
-      expect(product.requests).toHaveLength(cost === 7000 ? 2 : 1);
+      expect(product.requests).toHaveLength(cost === 700000 ? 2 : 1);
       expect(
         product.requests.every(
           (request) => request.modelId === product.preferences.roles.default.modelId,
         ),
       ).toBe(true);
-      if (cost === 7000)
+      if (cost === 700000)
         expect(product.requests[1]?.messages).toEqual(product.requests[0]?.messages);
       const replay = await product.runtime.journal.replayTurn(id);
       if (replay.kind !== "rebuilt") throw new Error(replay.kind);
-      expect(replay.turns[0]?.attempts[0]?.processing?.[0]?.binding.maximumCostMicros).toBe(3100);
+      expect(replay.turns[0]?.attempts[0]?.processing?.[0]?.binding.maximumCostMicros).toBe(300100);
       expect(replay.turns[0]?.attempts[0]?.processing?.[0]?.usageCostMaximumMicros).toBeNull();
-      expect(product.requests).toHaveLength(cost === 7000 ? 2 : 1);
+      expect(product.requests).toHaveLength(cost === 700000 ? 2 : 1);
     } finally {
       controller.abort();
       await pending;
