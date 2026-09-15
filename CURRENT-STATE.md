@@ -75,6 +75,11 @@ Credential bytes remain in the operating-system keychain or an explicitly
 referenced external source. Help, version, doctor, and configuration inspection
 do not create `~/.falryn` or trigger migration.
 
+Configuration registry construction does not validate declaration defaults.
+Complete validation rechecks supplied folded keys, so an invalid omitted-key
+default can pass. #1088 owns that validation gap; no shipped default was found
+to be invalid.
+
 ## Workspace trust
 
 Interactive startup reviews project settings, instructions, MCP declarations,
@@ -275,6 +280,11 @@ pass through policy, focused confirmation, hooks, scheduling, exact capture,
 semantic journaling, and bounded result projection before provider
 continuation. A headless turn cannot report completion unless a terminal model
 attempt ran.
+
+The normal product request in `src/application/context/product-model-input.ts`
+selects text output. Provider output contracts and JSON/JSONL event serialization
+do not establish caller-selected final-answer schema validation. That integration
+remains separately tracked in [#1091](https://github.com/tyldra-org/falryn/issues/1091).
 
 Model identity and model selection are stored separately. Falryn bundles
 strict, versioned OpenAI, Anthropic, Google, and Command Code model catalogs
@@ -489,8 +499,9 @@ route, generation, stable instruction, or disclosed schema change breaks it.
 Each built-in model records its exact provider cache mechanism, published
 minimum cacheable prefix, and provider-bound cache-read and cache-write prices;
 unknown thresholds or prices remain unknown. OpenAI receives the current SDK
-`prompt_cache_key`. Anthropic receives a five-minute `cache_control` breakpoint
-on the last stable system block. Google reports provider-managed cache usage.
+`prompt_cache_key`. Anthropic receives a `cache_control` breakpoint on the last stable system
+block, using the qualified transport declaration's `5m` default or supported
+`1h` TTL. It does not place a cache marker on conversation messages. Google reports provider-managed cache usage.
 The Generate Content adapter can consume an exact cached-content binding, but
 creation, reuse, expiry, deletion, restart recovery, and retention are not yet
 implemented. Without that binding, an explicit-cache request sends the exact
@@ -500,6 +511,11 @@ Anthropic-specific controls through its protocol adapters. Attempt events retain
 the selected mechanism, eligibility threshold, cache digests, and stable
 boundary, never prompt text or credentials. Normalized usage keeps
 provider-reported cache reads and cache writes distinct.
+The nominal stable capability brief includes plan, selection and health facts;
+changes can alter its digest, but their cache-hit impact has not been measured.
+[Conversation-prefix reuse](https://github.com/tyldra-org/falryn/issues/1098)
+remains a follow-up. No sustained cache-hit rate or comparative cost result is
+claimed by the current implementation.
 
 `falryn extension inspect <path>` reads a local package directory and prepares
 inert declarations from Agent Plugins 1.0.0 `plugin.json`, immediate
@@ -1565,6 +1581,10 @@ call passes through the unified policy, confirmation, hooks, scheduler,
 capture, journal, and projection gateway. Registration alone does not imply
 that all 61 schemas are placed in every prompt.
 
+LSP file resource operations remain rejected and embedded code-action commands
+remain deferred. #1085 owns resource-operation patch conversion; #1086 records
+the unresolved command-effect decision. Existing text-edit support is unchanged.
+
 ## Scoped work-item records
 
 `createWorkQueueActions` is the bounded application boundary for version-1 work
@@ -1864,6 +1884,10 @@ named pipes. Fresh process signing/encryption keys authenticate nonce-bound
 requests and opaque single-use operation capabilities. Private keys and tokens
 are not persisted. Expired process claims require fresh authentication after
 restart. Cross-machine transport and automatic collaboration turns are unavailable.
+The separate follow-ups are #1082 for opted-in local turn admission, #1083 for
+explicit local cross-worktree route grants and #1084 for the remote transport
+and trust decision. #161 owns their user controls. These issue links do not
+change current runtime availability.
 
 Mailbox limits are 16 KiB text, 32 KiB envelopes, eight artifact handles totalling
 1 MiB, 64 pending messages/1 MiB queued bytes per endpoint, 64 sends/minute,
@@ -1990,6 +2014,10 @@ tool activation are implemented; automatic package-agent preparation is not. Req
 its native owner; a descriptor alone does not make it ready.
 
 ## Current product-integration limits
+
+Model-backed prompt enhancement remains unavailable. Its current refusal names
+historical provider issue #33; #1087 owns the separate enhancement backend and
+correction of that explanation. Local draft normalization remains supported.
 
 The model tool loop defaults to four concurrent executions and enforces an
 implementation ceiling of sixteen. Product tool gateways and provider requests
