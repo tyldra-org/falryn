@@ -499,8 +499,9 @@ route, generation, stable instruction, or disclosed schema change breaks it.
 Each built-in model records its exact provider cache mechanism, published
 minimum cacheable prefix, and provider-bound cache-read and cache-write prices;
 unknown thresholds or prices remain unknown. OpenAI receives the current SDK
-`prompt_cache_key`. Anthropic receives a five-minute `cache_control` breakpoint
-on the last stable system block. Google reports provider-managed cache usage.
+`prompt_cache_key`. Anthropic receives a `cache_control` breakpoint on the last stable system
+block, using the qualified transport declaration's `5m` default or supported
+`1h` TTL. It does not place a cache marker on conversation messages. Google reports provider-managed cache usage.
 The Generate Content adapter can consume an exact cached-content binding, but
 creation, reuse, expiry, deletion, restart recovery, and retention are not yet
 implemented. Without that binding, an explicit-cache request sends the exact
@@ -510,6 +511,11 @@ Anthropic-specific controls through its protocol adapters. Attempt events retain
 the selected mechanism, eligibility threshold, cache digests, and stable
 boundary, never prompt text or credentials. Normalized usage keeps
 provider-reported cache reads and cache writes distinct.
+The nominal stable capability brief includes plan, selection and health facts;
+changes can alter its digest, but their cache-hit impact has not been measured.
+[Conversation-prefix reuse](https://github.com/tyldra-org/falryn/issues/1098)
+remains a follow-up. No sustained cache-hit rate or comparative cost result is
+claimed by the current implementation.
 
 `falryn extension inspect <path>` reads a local package directory and prepares
 inert declarations from Agent Plugins 1.0.0 `plugin.json`, immediate
