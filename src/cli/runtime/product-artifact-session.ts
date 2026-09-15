@@ -66,6 +66,7 @@ import {
   type WorkQueueLocations,
 } from "../../data/orchestration/work-queue-locations.ts";
 import { createWorkflowStore } from "../../data/orchestration/workflow-store.ts";
+import { createRecordRepositories } from "../../data/sessions/repositories.ts";
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import { runId } from "../../domain/foundation/index.ts";
 import type { ReflectionAuthority } from "../../domain/memory/reflection.ts";
@@ -94,6 +95,7 @@ import {
 import type { Services } from "./services.ts";
 
 export type ProductArtifactSession = {
+  readonly records: ReturnType<typeof createRecordRepositories>;
   readonly workflows: WorkflowStore;
   readonly workflowQuestions: WorkflowQuestions | null;
   readonly workQueues: WorkQueueLocations;
@@ -387,6 +389,7 @@ export async function openProductArtifactSession(
     },
     artifacts,
     eventStore,
+    records: createRecordRepositories(store),
     loom,
     memoryRecords: durableMemory.value,
     openReflection(authority, resources) {

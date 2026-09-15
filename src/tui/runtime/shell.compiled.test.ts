@@ -359,6 +359,8 @@ async function runOnPty(
   // wrong one.
   await drawn();
 
+  if (started.exitCode !== null)
+    throw new Error(`Shell exited before interaction (${started.exitCode}): ${pty.transcript()}`);
   await act({
     process: started,
     pty,

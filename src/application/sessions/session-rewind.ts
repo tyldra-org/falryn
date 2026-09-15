@@ -30,6 +30,7 @@ function rewindError(code: SessionRewindError["code"], field: string | null): Se
 }
 
 export type RewindWorkspaceSessionInput = {
+  readonly throughSequence?: number;
   readonly sourceSessionId: SessionId;
   readonly identities: {
     readonly sessionId: SessionId;
@@ -46,6 +47,7 @@ function insertFork(
   sessions: SessionRepositoryPort,
   source: SessionRecord,
   identities: RewindWorkspaceSessionInput["identities"],
+  throughSequence: number | undefined,
   signal?: AbortSignal,
 ): Result<null, SessionRewindError> {
   const existing = sessions.get(identities.sessionId);
@@ -63,6 +65,16 @@ function insertFork(
     configurationGeneration: configurationGeneration.from(source.configurationGeneration + 1),
     closedAt: null,
     outcome: null,
+    historyParent: undefined,
+    ...(throughSequence === undefined
+      ? {}
+      : {
+          historyParent: {
+            sessionId: source.sessionId,
+            streamId: source.streamId,
+            throughSequence,
+          },
+        }),
   };
   const inserted = sessions.fork
     ? sessions.fork(source, destination, signal)
@@ -109,7 +121,13 @@ export function rewindWorkspaceSession(
   if (!planned.ok) {
     return planned;
   }
-  const written = insertFork(sessions, source.value, input.identities, signal);
+  const written = insertFork(
+    sessions,
+    source.value,
+    input.identities,
+    input.throughSequence,
+    signal,
+  );
   if (!written.ok) {
     return written;
   }

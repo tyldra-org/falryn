@@ -20,7 +20,7 @@ import { localPath } from "../../domain/workspace/index.ts";
 import { openProductArtifactSession } from "./product-artifact-session.ts";
 import { createServiceProvider } from "./services.ts";
 
-export async function createCheckpointFixture(existingHome?: string) {
+export async function createCheckpointFixture(existingHome?: string, workspaceRoot?: string) {
   const cleanups: (() => Promise<unknown>)[] = [];
   const home = existingHome ?? (await mkdtemp(join(tmpdir(), "falryn-checkpoint-")));
   if (!existingHome) cleanups.push(() => rm(home, { recursive: true, force: true }));
@@ -41,7 +41,7 @@ export async function createCheckpointFixture(existingHome?: string) {
     {
       home: localPath(home),
       platform: "darwin",
-      currentDirectory: localPath(home),
+      currentDirectory: localPath(workspaceRoot ?? home),
       environment: createStaticEnvironment({
         FALRYN_STATE_DIR: join(home, "state"),
         FALRYN_CONFIG_DIR: join(home, "config"),

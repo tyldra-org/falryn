@@ -148,7 +148,11 @@ export type ComposerAction =
    * `attachments` is the TOCTOU-resolved list from the application seam; omitted
    * in pure reducer tests that already hold ready handles.
    */
-  | { readonly kind: "submit"; readonly attachments?: readonly AttachmentDescriptor[] }
+  | {
+      readonly kind: "submit";
+      readonly binding?: string;
+      readonly attachments?: readonly AttachmentDescriptor[];
+    }
   /** The port answered. The draft is kept or cleared according to the outcome. */
   | { readonly kind: "resolve"; readonly outcome: SubmissionOutcome }
   | { readonly kind: "cancel" }
@@ -271,7 +275,7 @@ export function composerReducer(state: ComposerState, action: ComposerAction): C
         }
       });
       const sequence = state.submissions + 1;
-      const snapshot = snapshotOf(state.text, sequence, attachments, mentions);
+      const snapshot = snapshotOf(state.text, sequence, attachments, mentions, action.binding);
       if (unresolved.length > 0 || attachments.some(isBlockingAttachment)) {
         const reason =
           unresolved[0]?.kind === "unsupported"

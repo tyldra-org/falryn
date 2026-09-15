@@ -311,6 +311,7 @@ export function forkSession(
 
   const forked: SessionRecord = {
     ...source.value,
+    historyParent: undefined,
     sessionId: identities.sessionId,
     streamId: identities.streamId,
     workspaceId: identities.workspaceId,

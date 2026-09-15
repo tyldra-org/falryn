@@ -460,10 +460,7 @@ describe("composeProductShellAttachments", () => {
       snapshotOf("Where is `runRealTurn` defined?", 1),
     );
     const refusedDuringTurn = await attachments?.sessionCreation.create();
-    expect(refusedDuringTurn).toEqual({
-      ok: false,
-      reason: "the current session still has an active turn",
-    });
+    expect(refusedDuringTurn).toMatchObject({ ok: false, code: "busy" });
     const submitted = await pendingSubmission;
     if (submitted?.kind === "unavailable") {
       throw new Error(submitted.reason);

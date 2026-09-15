@@ -491,7 +491,14 @@ export async function eachEvent(
       return err(cancelled);
     }
     const page = await reader.page(
-      { streamId: record.value.streamId, afterSequence, limit: HISTORY_LIMITS.page, maxBytes: 0 },
+      // One event keeps inline evidence within its own byte allowance. Larger retained
+      // artifacts remain metadata here and stream through the package member writer.
+      {
+        streamId: record.value.streamId,
+        afterSequence,
+        limit: 1,
+        maxBytes: HISTORY_LIMITS.inlineBytes,
+      },
       signal,
     );
     if (!page.ok) return err({ kind: "export", code: "history", reason: page.code });

@@ -236,6 +236,7 @@ export function runArgumentsFor(
   const mode = parsed.mode;
   return {
     promptParts: parsed.prompt ?? [],
+    ...(parsed["continue-session"] === undefined ? {} : { session: parsed["continue-session"] }),
     ...(brief === undefined
       ? {}
       : { brief: productBriefModeFromFrontend(brief as ProductBriefFrontendMode) }),

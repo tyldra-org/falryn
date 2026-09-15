@@ -130,6 +130,17 @@ function withOutcome(row: SqliteRow): Record<string, unknown> {
 }
 
 function parseStoredSession(value: unknown): Result<SessionRecord, readonly CodecIssue[]> {
+  if (typeof value === "object" && value !== null && "historyParent" in value) {
+    const { historyParent, ...rest } = value;
+    try {
+      value =
+        historyParent === null
+          ? rest
+          : { ...rest, historyParent: JSON.parse(String(historyParent)) };
+    } catch {
+      return err([{ path: "historyParent", code: "invalid_type" }]);
+    }
+  }
   if (typeof value !== "object" || value === null || !("extensionCatalog" in value)) {
     return parseSessionRecord(value);
   }
@@ -158,15 +169,18 @@ const sessionSpec: TableSpec<SessionRecord> = {
   selectList: `session_id AS sessionId, workspace_id AS workspaceId, stream_id AS streamId,
     title AS title, configuration_generation AS configurationGeneration,
     started_at AS startedAt, closed_at AS closedAt, ${LIFECYCLE_COLUMNS},
+    CASE WHEN length(CAST(history_parent AS BLOB)) > 2048 THEN 0
+      ELSE history_parent END AS historyParent,
     CASE WHEN length(CAST(extension_catalog AS BLOB)) > ${CATALOG_HISTORY_BYTES}
       THEN 0 ELSE extension_catalog END AS extensionCatalog`,
   insert: `INSERT INTO ${SESSIONS_TABLE}
     (session_id, workspace_id, stream_id, title, configuration_generation,
-     started_at, closed_at, outcome_kind, outcome_effect, extension_catalog)
+     started_at, closed_at, outcome_kind, outcome_effect, extension_catalog, history_parent)
     VALUES ($sessionId, $workspaceId, $streamId, $title, $configurationGeneration,
-            $startedAt, $completedAt, $outcomeKind, $outcomeEffect, $extensionCatalog)`,
+            $startedAt, $completedAt, $outcomeKind, $outcomeEffect, $extensionCatalog, $historyParent)`,
   bindingsFor: (record) => ({
     sessionId: record.sessionId,
+    historyParent: record.historyParent === undefined ? null : JSON.stringify(record.historyParent),
     workspaceId: record.workspaceId,
     streamId: record.streamId,
     title: record.title,

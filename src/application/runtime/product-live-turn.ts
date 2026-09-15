@@ -169,6 +169,8 @@ export type ProductLiveTurnExecutor = {
 };
 
 export type ProductLiveTurnExecutorOptions = {
+  readonly resumed?: boolean;
+  readonly historyParents?: import("../sessions/conversation-history.ts").ConversationHistoryPorts["parents"];
   readonly checkpointEvents?: EventStorePort;
   readonly checkpointDurable?: boolean;
   /** Inert session-start provenance, not a source of executable capability bindings. */
@@ -293,7 +295,7 @@ export function createProductLiveTurnExecutor(
           modelId: initialCatalogModel,
         });
   let activeModelExplicit = options.initialModel !== undefined;
-  let sessionStarted = false;
+  let sessionStarted = options.resumed === true;
   let initialProfilePersisted = false;
   const checkpoint =
     options.artifacts && options.checkpointEvents
@@ -743,6 +745,7 @@ export function createProductLiveTurnExecutor(
         input.childAdmission?.resources ?? runtime.resources.openTask(String(generation));
       try {
         const history = await createConversationHistoryReader({
+          ...(options.historyParents ? { parents: options.historyParents } : {}),
           events: runtime.historyEvents,
           ...(options.artifacts ? { artifacts: options.artifacts } : {}),
           streamId: runtime.streamId,

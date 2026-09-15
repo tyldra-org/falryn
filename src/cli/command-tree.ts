@@ -202,6 +202,11 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               type: "string",
               describe: "task text; omit to read UTF-8 from stdin (never prompts)",
             })
+            .option("continue-session", {
+              type: "string",
+              describe:
+                "Activate this durable session and run the prompt with its authorized history",
+            })
             .option("brief", {
               type: "string",
               choices: ["compact", "balanced", "detailed", "auto", "on", "off"] as const,

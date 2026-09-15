@@ -41,6 +41,31 @@ export type SessionNavSheetProps = {
 };
 
 export function SessionNavSheet(props: SessionNavSheetProps): ReactNode {
+  const active = useRef<AbortController | null>(null);
+  useEffect(
+    () => () => {
+      active.current?.abort();
+    },
+    [],
+  );
+  const run = (operation: (signal: AbortSignal) => Promise<void>) => {
+    if (active.current) {
+      props.onNotice?.("Session activation is already preparing.");
+      return;
+    }
+    const request = new AbortController();
+    active.current = request;
+    void operation(request.signal)
+      .catch(() => {
+        if (!request.signal.aborted)
+          props.onNotice?.(
+            "Session activation failed; the current session and draft are unchanged.",
+          );
+      })
+      .finally(() => {
+        if (active.current === request) active.current = null;
+      });
+  };
   const { terminal } = useFrame();
   const columns = Math.max(8, terminal.columns - PANEL_CHROME_COLUMNS);
 
@@ -57,7 +82,7 @@ export function SessionNavSheet(props: SessionNavSheetProps): ReactNode {
           columns={columns}
           rows={props.rows}
           onSelect={(sessionId) => {
-            void applyResumeOrFork(props, sessionId);
+            run((signal) => applyResumeOrFork(props, sessionId, signal));
           }}
         />
       );
@@ -72,7 +97,7 @@ export function SessionNavSheet(props: SessionNavSheetProps): ReactNode {
           {...(props.onDraft === undefined ? {} : { onDraft: props.onDraft })}
           {...(props.onSession === undefined ? {} : { onSession: props.onSession })}
           onSubmit={() => {
-            void applyRewind(props);
+            run((signal) => applyRewind(props, signal));
           }}
         />
       );
@@ -96,9 +121,14 @@ export function SessionNavSheet(props: SessionNavSheetProps): ReactNode {
   }
 }
 
-async function applyResumeOrFork(props: SessionNavSheetProps, sessionId: string): Promise<void> {
+async function applyResumeOrFork(
+  props: SessionNavSheetProps,
+  sessionId: string,
+  signal: AbortSignal,
+): Promise<void> {
   if (props.panel === "resume") {
-    const result = await props.controller.resume(sessionId);
+    const result = await props.controller.resume(sessionId, signal);
+    if (signal.aborted) return;
     if (!result.ok) {
       props.onNotice?.(describeSessionNavigationControllerError(result.error));
       return;
@@ -107,7 +137,8 @@ async function applyResumeOrFork(props: SessionNavSheetProps, sessionId: string)
     props.onClose?.();
     return;
   }
-  const result = await props.controller.fork(sessionId);
+  const result = await props.controller.fork(sessionId, signal);
+  if (signal.aborted) return;
   if (!result.ok) {
     props.onNotice?.(describeSessionNavigationControllerError(result.error));
     return;
@@ -116,13 +147,14 @@ async function applyResumeOrFork(props: SessionNavSheetProps, sessionId: string)
   props.onClose?.();
 }
 
-async function applyRewind(props: SessionNavSheetProps): Promise<void> {
+async function applyRewind(props: SessionNavSheetProps, signal: AbortSignal): Promise<void> {
   const sessionId = props.sessionId;
   if (sessionId === null) {
     props.onNotice?.("Choose a session to rewind.");
     return;
   }
-  const result = await props.controller.rewind(sessionId, props.draft);
+  const result = await props.controller.rewind(sessionId, props.draft, signal);
+  if (signal.aborted) return;
   if (!result.ok) {
     props.onNotice?.(describeSessionNavigationControllerError(result.error));
     return;

@@ -58,12 +58,10 @@ export type ProductSubmissionPort = SubmissionPort & {
 export function createProductSubmissionPort(
   options: ProductSubmissionPortOptions,
 ): ProductSubmissionPort {
-  let sequence = 0;
   const nextTurnId =
     options.nextTurnId ??
     (() => {
-      sequence += 1;
-      return turnId.from(`turn-submit:${String(options.sessionId)}:${sequence}`);
+      return turnId.from(`turn-submit:${crypto.randomUUID()}`);
     });
   const brief = options.brief ?? composeProductBriefControls();
   const output = options.output ?? composeProductOutputControls();
