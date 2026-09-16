@@ -1,3 +1,4 @@
+import { MCP_CONFIGURATION_KEYS } from "./mcp-configuration.ts";
 import { SANDBOX_CONFIGURATION_KEYS } from "./sandbox-configuration.ts";
 /**
  * What a command may reach, and when it is allowed to reach it.
@@ -105,6 +106,7 @@ export const PRODUCT_CONFIGURATION_KEYS = [
   ...AGENT_CONFIGURATION_KEYS,
   ...LANGUAGE_SERVICE_CONFIGURATION_KEYS,
   ...ENVIRONMENT_CONFIGURATION_KEYS,
+  ...MCP_CONFIGURATION_KEYS,
 ] as const;
 
 export type Services = {

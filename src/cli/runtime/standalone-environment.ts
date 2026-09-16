@@ -69,6 +69,7 @@ export async function standaloneEnvironment(
   return {
     control,
     context,
+    resources,
     close() {
       closed = true;
       environment.close();

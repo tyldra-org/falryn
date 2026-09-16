@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { prepareNativeCliFixture } from "./cli/commands/package-native-fixtures.ts";
+import { mcpFixtureReply } from "./integrations/extensions/mcp-fixtures.ts";
 /**
  * The compiled smoke check.
  *
@@ -755,3 +756,66 @@ describe.if(built)("compiled sandbox composition", () => {
     COMPILED_BUILD_TIMEOUT_MS,
   );
 });
+
+test.skipIf(!built)(
+  "compiled MCP HTTP inspection is inert and probes retain truthful output in every format",
+  async () => {
+    const root = await temporaryRoot();
+    const config = join(root, "config");
+    await mkdir(config);
+    let requests = 0;
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        requests += 1;
+        return Response.json(mcpFixtureReply((await request.json()) as Record<string, unknown>));
+      },
+    });
+    try {
+      await writeFile(
+        join(config, "falryn.jsonc"),
+        JSON.stringify({
+          schemaVersion: 2,
+          minimumReaderSchemaVersion: 2,
+          connections: {
+            mcp: {
+              servers: [
+                {
+                  id: "compiled-fixture",
+                  transport: "http",
+                  url: `http://127.0.0.1:${server.port}/mcp`,
+                },
+              ],
+            },
+          },
+        }),
+      );
+      const run = async (args: string[]) => {
+        const child = Bun.spawn([EXECUTABLE, "mcp", ...args], {
+          env: { HOME: root, USERPROFILE: root, FALRYN_STATE_DIR: root, FALRYN_CONFIG_DIR: config },
+          cwd: root,
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        const [exit, stdout, stderr] = await Promise.all([
+          child.exited,
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+        ]);
+        expect(exit, `${stderr} ${stdout}`).toBe(EXIT_CODES.COMPLETED);
+        return stdout;
+      };
+      expect(await run(["inspect", "--format", "json"])).toContain("unqueried");
+      expect(requests).toBe(0);
+      for (const format of ["human", "quiet", "json", "jsonl"]) {
+        const output = await run(["probe", "compiled-fixture", "--format", format]);
+        expect(output).toContain("compiled-fixture");
+        expect(output).toContain("stopped");
+      }
+      expect(requests).toBe(4);
+    } finally {
+      server.stop(true);
+    }
+  },
+  10_000,
+);

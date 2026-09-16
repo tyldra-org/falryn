@@ -403,6 +403,7 @@ function renderError(session: Session, error: FalrynError, indent: string): read
 
 function renderPayload(session: Session, result: RunCommandResult): RenderedPayload {
   switch (result.command) {
+    case "mcp":
     case "env.inspect":
     case "env.reload":
     case "profile":
@@ -575,6 +576,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "config.migrate":
     case "config.path":
     case "env.inspect":
+    case "mcp":
     case "env.reload":
       return [];
     case "config.set":

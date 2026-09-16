@@ -84,9 +84,21 @@ export function createProductOpportunityPlan(
     throw new Error("opportunity planner generations do not match");
   }
   const task = options.task ?? "";
+  // Transport controls are relevant only to MCP work; metadata never starts a peer.
+  const mcpControls = /\bmcp(?:_|\b)|model context protocol/iu.test(task)
+    ? tools.entries
+        .filter(
+          (tool) =>
+            tool.manifest.source === "builtin" &&
+            tool.manifest.namespace === "extensions" &&
+            tool.manifest.capabilityKind === "mcp",
+        )
+        .map((tool) => tool.manifest.capabilityId)
+    : [];
   const preferredCapabilityIds = [
     ...(options.preferredCapabilityIds ?? []),
     ...languageToolPrerequisites(task, tools),
+    ...mcpControls,
   ];
   const taskFingerprint = createHash("sha256").update(task).digest("hex").slice(0, 24);
   return planCapabilityOpportunities({
@@ -111,7 +123,8 @@ export function createProductOpportunityPlan(
         modelSchemaEligible:
           schema.eligible &&
           (entry.state.explicitOnly !== true ||
-            options.preferredCapabilityIds?.includes(entry.capabilityId) === true),
+            options.preferredCapabilityIds?.includes(entry.capabilityId) === true ||
+            mcpControls.includes(entry.capabilityId)),
         order,
       };
     }),

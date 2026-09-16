@@ -67,6 +67,7 @@ export type DispatchProduceOptions = {
   readonly extensionCatalogArgs?: ExtensionCatalogArguments;
   readonly packageArgs?: PackageArguments;
   readonly peerArgs?: PeerArguments;
+  readonly mcpArgs?: import("../commands/mcp.ts").McpArguments;
   readonly compactArgs?: CompactArguments;
   readonly modelRequest?: ModelSettingsRequest;
   readonly extensionPath?: string;
@@ -144,6 +145,12 @@ export async function produce(
       if (!options.peerArgs) throw new Error("Missing peer arguments.");
       onMutationStart?.();
       return runPeer(services, options.peerArgs, signal);
+    case "mcp": {
+      if (!options.mcpArgs) throw new Error("Missing MCP arguments.");
+      const { runMcp } = await import("../commands/mcp.ts");
+      if (options.mcpArgs.action === "probe") onMutationStart?.();
+      return runMcp(services, options.mcpArgs, globals, signal, options.governance?.ownedProcesses);
+    }
     case "config.show":
       return runConfigShow(services, overrides, globals, signal);
     case "config.validate":

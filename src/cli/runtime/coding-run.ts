@@ -6,6 +6,7 @@ import {
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
 import { createEnvironmentProcessContext } from "./environment-process-context.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
+import { composeProductMcp } from "./product-mcp.ts";
 import { productToolHost } from "./product-tool-host.ts";
 import { createProductSandbox } from "./sandbox-configuration.ts";
 import { standaloneEnvironment } from "./standalone-environment.ts";
@@ -416,6 +417,7 @@ export async function runCoding(
         });
   let productArtifactSession: ProductArtifactSession | null = null;
   let environmentRuntime: Awaited<ReturnType<typeof standaloneEnvironment>> | null = null;
+  let mcp: ReturnType<typeof composeProductMcp> | null = null;
   let mainPeer: import("../../application/orchestration/peer-mailbox.ts").PeerMailbox | null = null;
 
   try {
@@ -733,9 +735,24 @@ export async function runCoding(
       resolveExecutable: scopedProcesses.gitExecutable,
       startPath: String(workspaceRoot),
     });
-    const managedServices = scopedProcesses.services(
-      createHostManagedServicePort(ownedProcessOptions),
-    );
+    const hostManagedServices = createHostManagedServicePort(ownedProcessOptions);
+    const managedServices = scopedProcesses.services(hostManagedServices);
+    mcp = composeProductMcp({
+      identity: String(sessionId),
+      generation,
+      context: scopedProcesses,
+      services: hostManagedServices,
+      environment: graph.environment,
+      configuration: () => ({
+        values: graph.loader.current()?.values ?? configuration.values,
+        generation: Number(graph.loader.current()?.generation ?? generation),
+        record: graph.loader.current(),
+      }),
+      async authorize(signal) {
+        const trust = await graph.workspaceTrust.resolve(undefined, signal);
+        return trust.status === "accepted" || trust.status === "empty";
+      },
+    });
     const languageTools = composeProductLanguageTools({
       configuration: () =>
         languageServiceConfiguration(
@@ -779,6 +796,7 @@ export async function runCoding(
             generation,
             [
               extensions.tools,
+              mcp.tools,
               workspaceTools,
               processTools,
               scratchTools,
@@ -988,22 +1006,35 @@ export async function runCoding(
           }),
     });
     peer?.state("idle");
-    const succeeded = attempted.kind === "completed";
-    const errors = succeeded
-      ? []
-      : [
-          adoptForeignError(
-            {
-              code: attempted.code,
-              category: attempted.code.startsWith("provider.") ? "provider" : "internal",
-              message:
-                attempted.code === "provider.adapter-required"
-                  ? `The selected provider connection is unavailable (${providerUnavailableCode ?? "provider-not-ready"}). Run 'falryn provider list' and 'falryn provider test <id>' to inspect it.`
-                  : attempted.message,
-            },
-            { operation: "run coding attempt" },
-          ),
-        ];
+    const cleanupUncertain = (await mcp.close()).some((result) => result.kind !== "completed");
+    const succeeded = attempted.kind === "completed" && !cleanupUncertain;
+    const errors =
+      attempted.kind === "completed"
+        ? cleanupUncertain
+          ? [
+              adoptForeignError(
+                {
+                  code: "mcp.shutdown-uncertain",
+                  category: "internal",
+                  message: "MCP process cleanup could not be confirmed.",
+                },
+                { operation: "close MCP transports" },
+              ),
+            ]
+          : []
+        : [
+            adoptForeignError(
+              {
+                code: attempted.code,
+                category: attempted.code.startsWith("provider.") ? "provider" : "internal",
+                message:
+                  attempted.code === "provider.adapter-required"
+                    ? `The selected provider connection is unavailable (${providerUnavailableCode ?? "provider-not-ready"}). Run 'falryn provider list' and 'falryn provider test <id>' to inspect it.`
+                    : attempted.message,
+              },
+              { operation: "run coding attempt" },
+            ),
+          ];
 
     return codingResult(
       {
@@ -1049,11 +1080,12 @@ export async function runCoding(
         providerRequests: attempted.providerRequests,
       },
       errors,
-      attempted.terminalOutcome,
-      READ_ONLY_EFFECT,
+      cleanupUncertain ? { kind: "failed", effect: "uncertain" } : attempted.terminalOutcome,
+      cleanupUncertain ? { intent: "none", observed: "uncertain" } : READ_ONLY_EFFECT,
       [...trustEvents, ...attempted.events],
     );
   } finally {
+    await mcp?.close();
     environmentRuntime?.close();
     await mainPeer?.close();
     if (options.ownedProcesses === undefined) await productArtifactSession?.close();

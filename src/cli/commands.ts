@@ -278,6 +278,14 @@ export function stoppedResult(
       return resultFor<"package", PackageReceipt>("package", null, [], outcome, effect);
     case "peer":
       return resultFor<"peer", PeerPayload>("peer", null, [], outcome, effect);
+    case "mcp":
+      return resultFor<"mcp", import("./commands/mcp.ts").McpPayload>(
+        "mcp",
+        null,
+        [],
+        outcome,
+        effect,
+      );
     case "profile":
     case "config.migrate":
       return resultFor<
@@ -348,6 +356,7 @@ export type RunCommandResult =
     >
   | CommandResultOf<"compact", CheckpointOutcome>
   | CommandResultOf<"peer", PeerPayload>
+  | CommandResultOf<"mcp", import("./commands/mcp.ts").McpPayload>
   | CommandResultOf<"package", PackageReceipt>
   | Awaited<ReturnType<typeof runConfigShow>>
   | Awaited<ReturnType<typeof runConfigValidate>>

@@ -25,6 +25,13 @@ export type DirectDependencyPolicy = Readonly<{
 
 export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
+    name: "@modelcontextprotocol/client",
+    group: "dependencies",
+    version: "2.0.0",
+    license: "MIT",
+    repository: "https://github.com/modelcontextprotocol/typescript-sdk",
+  },
+  {
     name: "@anthropic-ai/sdk",
     group: "dependencies",
     version: "0.125.0",
