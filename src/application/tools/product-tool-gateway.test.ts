@@ -1438,8 +1438,10 @@ test.each(["before-capability-invocation", "after-capability-invocation"] as con
         "events" in replay &&
           replay.events.some(
             (event) =>
-              event.kind === "capability.invocation.completed" &&
-              event.payload.outcome.kind === "completed",
+              event.kind === "history.recorded" &&
+              event.payload.type === "result" &&
+              event.payload.status === "completed" &&
+              event.payload.effect === "completed",
           ),
       ).toBe(true);
     } else expect(outcome.status).not.toBe("completed");
