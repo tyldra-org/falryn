@@ -7,19 +7,25 @@ import type {
   CapabilityRegistry,
   CapabilityRegistryEntry,
 } from "../../domain/capabilities/index.ts";
-import type { CapabilityId, ConfigurationGeneration } from "../../domain/foundation/index.ts";
+import {
+  type CapabilityId,
+  type ConfigurationGeneration,
+  configurationGeneration,
+} from "../../domain/foundation/index.ts";
 import type {
   ToolCatalog,
+  ToolHookRegistry,
   ToolInvocationOutcome,
   ToolRegistry,
   ToolRegistryEntry,
 } from "../../domain/tools/index.ts";
-import { createToolRegistry } from "../../domain/tools/index.ts";
+import { createToolHookRegistry, createToolRegistry } from "../../domain/tools/index.ts";
 import { createProductCapabilityRegistry } from "../capabilities/product-capability-registry.ts";
 import type { CapabilityTrustPort } from "../extensions/capability-trust.ts";
 import type { ToolRunnerPort, ToolRunnerRequest } from "../runtime/tool-call-loop.ts";
 
 export type ProductToolSourceBundle = {
+  readonly hooks?: ToolHookRegistry;
   /** Host-validated native publication facts; package metadata cannot provide these ports. */
   readonly trust?: CapabilityTrustPort;
   readonly families?: ReadonlyMap<CapabilityId, CapabilityFamily>;
@@ -73,6 +79,16 @@ export function mergeProductToolBundles(
     throw new Error(`product tool merge failed: ${registryResult.error.code}`);
   }
   const registry = registryResult.value;
+  const hooks = createToolHookRegistry(
+    configurationGeneration.from(
+      Math.max(
+        Number(generation),
+        ...bundles.map((bundle) => Number(bundle.hooks?.generation ?? 0)),
+      ),
+    ),
+    bundles.flatMap((bundle) => bundle.hooks?.hooks ?? []),
+  );
+  if (!hooks.ok) throw new Error(`product hook merge failed: ${hooks.error.code}`);
   const capabilityRegistry = createProductCapabilityRegistry(
     generation,
     registry,
@@ -121,6 +137,7 @@ export function mergeProductToolBundles(
     },
   };
   return {
+    ...(bundles.some((bundle) => bundle.hooks !== undefined) ? { hooks: hooks.value } : {}),
     registry,
     capabilityRegistry,
     catalog: registry.catalog,

@@ -20,6 +20,7 @@ import { scopeControlDigest, scopeControlKey } from "../../domain/extensions/sco
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type { ToolInvocationOutcome } from "../../domain/tools/index.ts";
 import { createHostPackageProcess } from "../../integrations/extensions/host-package-health.ts";
+import { composeNativeHooks } from "./native-hooks.ts";
 import { createNativePackageContext } from "./native-package-context.ts";
 import type { Services } from "./services.ts";
 
@@ -32,6 +33,7 @@ export function composeNativePackages(options: {
   session?: string;
 }) {
   const context = createNativePackageContext(options);
+  const hookOwner = composeNativeHooks(context, options.records, options.activations);
   const stopped = new AbortController();
   const active = new Set<Promise<ToolInvocationOutcome>>();
   const track = async (run: () => Promise<ToolInvocationOutcome>) => {
@@ -103,6 +105,7 @@ export function composeNativePackages(options: {
     current: () => current,
     async close() {
       stopped.abort();
+      await hookOwner.close();
       await Promise.allSettled([...active]);
     },
     activate,
@@ -172,7 +175,10 @@ export function composeNativePackages(options: {
         },
       });
       const trustById = new Map<string, NonNullable<ReturnType<typeof captured.trust.get>>>();
-      const publication = createNativeRegistrationPublisher([owner]).publish({
+      const publication = createNativeRegistrationPublisher([
+        owner,
+        hookOwner.owner(captured),
+      ]).publish({
         catalog: createExtensionCatalog({
           generation: Math.max(captured.catalog.generation, (current?.catalog.generation ?? 0) + 1),
           inputs: captured.catalog.inputs,

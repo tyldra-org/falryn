@@ -539,6 +539,7 @@ export async function composeProductShellAttachments(
           ? {}
           : {
               ...productToolHost(),
+              ...(initialTools.hooks ? { toolHooks: initialTools.hooks } : {}),
               toolRegistry: initialTools.registry,
               capabilityRegistry: initialTools.capabilityRegistry,
               toolCatalog: initialTools.catalog,

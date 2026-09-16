@@ -106,7 +106,7 @@ export function packageInspectionLines(report: PackageInspectionReport): string[
       ...(entry.hook == null
         ? []
         : [
-            `Hook ${entry.hook.point}@${entry.hook.pointVersion}: ${entry.hook.handler}, ${entry.hook.mode}; ${entry.hook.availability.status}${entry.hook.availability.status === "unavailable" ? ` (${entry.hook.availability.code})` : ""}.`,
+            `Hook ${entry.hook.point}@${entry.hook.pointVersion}: ${entry.hook.handler}, ${entry.hook.mode}, ${entry.hook.timeoutMs} ms timeout, ${entry.hook.wait}, ${entry.hook.cost}; ${entry.hook.availability.status}${entry.hook.availability.status === "unavailable" ? ` (${entry.hook.availability.code})` : ""}.`,
           ]),
       ...(entry.disclosure === null ? [] : [entry.disclosure]),
     ]),

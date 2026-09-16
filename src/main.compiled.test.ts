@@ -1,5 +1,7 @@
 import { z } from "zod";
+import { pythonHookFixture } from "./cli/commands/package-hook-fixtures.ts";
 import { prepareNativeCliFixture } from "./cli/commands/package-native-fixtures.ts";
+import { qualifiedHookPython } from "./integrations/extensions/host-hook-command.ts";
 import { mcpFixtureReply } from "./integrations/extensions/mcp-fixtures.ts";
 /**
  * The compiled smoke check.
@@ -385,7 +387,11 @@ describe.if(built)("the standalone executable", () => {
     "native activation and model invocation survive compiled boundaries",
     async () => {
       const root = await temporaryRoot();
-      const fixture = await prepareNativeCliFixture([EXECUTABLE], root);
+      const fixture = await prepareNativeCliFixture(
+        [EXECUTABLE],
+        root,
+        qualifiedHookPython() ? pythonHookFixture() : undefined,
+      );
       const binary = join(bootstrapDirectory, "native-product");
       const build = Bun.spawnSync(
         [
@@ -407,6 +413,11 @@ describe.if(built)("the standalone executable", () => {
         { stdout: "pipe", stderr: "pipe", timeout: 20_000 },
       );
       expect(child.exitCode).toBe(0);
+      if (qualifiedHookPython()) {
+        const history = JSON.stringify(JSON.parse(child.stdout.toString()).events);
+        expect(history.match(/"decision":"hook-chain-bound"/gu)).toHaveLength(2);
+        expect(history.match(/"decision":"observe"/gu)).toHaveLength(3);
+      }
       const observed = z
         .object({
           result: z.object({ payload: z.object({ stage: z.string(), toolResults: z.number() }) }),

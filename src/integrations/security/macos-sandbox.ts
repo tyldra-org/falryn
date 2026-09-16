@@ -1,4 +1,5 @@
 import { realpathSync, statSync } from "node:fs";
+import { release } from "node:os";
 import { dirname, isAbsolute } from "node:path";
 import {
   hasSandboxPathControl,
@@ -64,8 +65,19 @@ export function seatbeltLaunch(
     "(deny default)",
     "(allow syscall*)",
     "(allow mach-bootstrap)",
+    // Darwin 27 dyld queries its own AMFI policy before resolving interpreter libraries.
+    ...(release() === "27.0.0"
+      ? [
+          '(allow system-mac-syscall (require-all (mac-policy-name "AMFI") (mac-syscall-number 90)))',
+        ]
+      : []),
     "(allow process-info-pidinfo process-info-codesignature (target self))",
-    "(allow system-fcntl (fcntl-command F_GETPATH))",
+    ...(release() === "27.0.0"
+      ? [
+          "(allow system-fcntl (fcntl-command F_GETPATH F_GETFD F_SETFD F_ADDFILESIGS_RETURN F_CHECK_LV))",
+          '(allow file-read* file-test-existence (literal "/dev/urandom"))',
+        ]
+      : ["(allow system-fcntl (fcntl-command F_GETPATH))"]),
     "(deny syscall-unix (syscall-number 202 26))",
     '(allow sysctl-read (sysctl-name "hw.memsize" "hw.pagesize" "hw.pagesize_compat" "hw.ncpu" "hw.activecpu" "hw.physicalcpu" "hw.physicalcpu_max" "hw.logicalcpu" "hw.logicalcpu_max" "hw.cputype" "hw.cpusubtype" "kern.osrelease" "kern.osversion" "kern.ostype"))',
     `(allow process-exec (literal ${quote(executable)}))`,

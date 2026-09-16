@@ -94,6 +94,7 @@ export function composeDelegatedAgentRuntime(
     );
   };
   let base: ProductToolSourceBundle = {
+    ...(ports.toolHooks ? { hooks: ports.toolHooks } : {}),
     registry: baseRegistry,
     runner: baseRunner,
     catalog: baseRegistry.catalog,
@@ -405,6 +406,7 @@ export function composeDelegatedAgentRuntime(
         delegation.finishTurn(String(turn.sessionId), String(turn.turnId));
         childPorts.onTerminal?.(turn);
       },
+      ...(ownedBase.hooks ? { toolHooks: ownedBase.hooks } : {}),
       toolRegistry: tools.registry,
       toolRunner: tools.runner,
       toolCatalog: tools.catalog,

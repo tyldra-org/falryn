@@ -1395,7 +1395,20 @@ test("hook decisions and effective intent survive SQLite reopen and headless exp
       ? [item.event.payload]
       : [],
   );
-  expect(gates.filter((gate) => gate.hook)).toHaveLength(2);
+  expect(gates.filter((gate) => gate.hook && !gate.hook.order)).toHaveLength(2);
+  expect(gates.filter((gate) => gate.hook?.order).map((gate) => gate.hook?.order)).toEqual([
+    ["change"],
+    ["observe"],
+  ]);
+  expect(
+    gates
+      .filter((gate) => gate.hook?.order)
+      .every(
+        (gate) =>
+          gate.hook?.registrationGeneration === Number(hooks.value.generation) &&
+          gate.hook.configurationGeneration === Number(f.correlation.configurationGeneration),
+      ),
+  ).toBe(true);
   const admitted = gates.find((gate) => gate.decision === "transformed");
   expect(admitted?.originalInputDigest).not.toBe(admitted?.admittedInputDigest);
   expect(JSON.stringify(page)).not.toContain("HOOK_SECRET_CANARY");

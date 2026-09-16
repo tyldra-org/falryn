@@ -267,8 +267,10 @@ The user-only `tools.sandbox` object has `version: 1`, `mode`, `readRoots` and
 `writeRoots`. Project/profile configuration and model arguments cannot select a
 weaker mode. `strict` admits the primary workspace for read/write and explicit
 additional roots, requires offline execution, and denies subprocess creation.
-The current macOS adapter qualifies Darwin 25.6.0 arm64 with the checked system
-`sandbox-exec` identity. Other hosts, broader network/process controls and
+The current macOS adapter qualifies Darwin 25.6.0 and 27.0.0 arm64 with pinned
+`sandbox-exec` identities. The 27.0.0 policy additionally permits the dyld self-policy
+query, descriptor/library-validation operations and `/dev/urandom` reads needed
+by the qualified Python runtime. Other hosts, broader network/process controls and
 strict PTYs are unavailable. `degraded` is unavailable because no weaker
 boundary is qualified. A strict refusal never retries without isolation.
 Missing accepted configuration or unread sources refuse workspace launches.
@@ -2400,11 +2402,21 @@ patcher without the available Git observation port, so live preview/apply miss
 the patch layer's current in-progress-operation and observed-HEAD safeguards.
 GitHub issue #200 owns both final pre-effect product paths.
 
-Built-in before/after capability hooks run in process. Package hook loading is
-not composed, shipped ordering uses descending priority and hook ID rather than
-the full planned dependency/source/owner order, and a timeout settles the hook
-without propagating an `AbortSignal` to stop late asynchronous work.
-GitHub issue #143 owns those hook-runtime corrections.
+Before/after capability hooks capture an immutable registry and resolve same-point
+dependencies before descending priority, source rank (builtin, user, workspace,
+session, process, development) and bytewise owner-qualified identity. A registry
+has one registration generation; duplicate identities, missing dependencies and
+cycles refuse publication. Replacement publication affects new admission and
+leaves bound work to drain; explicit disable, trust withdrawal, uninstall and
+strict-profile withdrawal cancel the owning external execution generation.
+
+Exact, prefix and bounded relative path glob filters run before resource admission
+or package preparation. Glob `*` and `?` match within one path segment. Invocations
+receive a signal combining caller cancellation, revocation, resource-owner shutdown
+and deadline. Late decisions are fenced. Cleanup waits at most one second within
+the remaining chain/enclosing deadline, with complete, uncertain or not-started
+outcomes recorded explicitly. Non-cooperative trusted callbacks cannot be forcibly
+terminated; their late decisions remain unusable and cleanup stays uncertain.
 
 The v1 hook catalog in `src/domain/extensions/hook-points.ts` defines 47 closed
 point schemas and their phase, allowed decisions, mutable fields, filters,
@@ -2442,10 +2454,17 @@ subject is durably settled, each request enters the ordinary gateway with its
 own invocation, confirmation, shared task budget and receipt. One generation of
 requested effects is allowed; nested effect requests fail closed. Unknown or
 undisclosed requests are visible as unavailable. Follow-up text is a proposal
-only and never starts another model turn. Async declarations may propose a
-separate effect but cannot transform or veto a settled subject.
+only and never starts another model turn. Async execution accepts observations
+only; it cannot propose an effect, transform or veto a settled subject. The shared
+resource owner supplies four running slots per session, with sixteen pending
+observers and 1 MiB of pending payload. Admission reserves the remaining hook
+budget before returning a queued receipt. Overflow records a typed unavailable
+outcome. Retained child scopes own callbacks, cancellation cleanup and their final
+receipts through parent settlement; user cancellation and shutdown reach that work.
 
-The semantic journal records each decision with digests and correlation, plus
+The semantic journal records the resolved order and registration, catalog and
+configuration generations before invocation. It records each decision with digests,
+position, elapsed time, execution/cleanup state and correlation, plus
 original/admitted input digests. It does not store hook annotations or proposed
 patch contents. Result projections expose hook warnings and separate effect
 receipts; effect summaries retain uncertainty. Invalid pre-decisions prevent
@@ -2458,14 +2477,42 @@ handler/mode combinations. External entrypoints require inventory digest locks.
 `falryn extension inspect <directory> --format json` reports the declared point,
 handler and availability; human output reports the same unavailable reason.
 Inspection neither activates handlers nor exposes arguments or credentials.
-The handler union includes built-in, command, HTTP, MCP and evaluator declarations;
-only the existing built-in tool callbacks execute. The external command codec
-accepts one UTF-8 JSON document per direction, with a 64 KiB input, 16 KiB
-response and exact invocation correlation. Python and Bun protocol fixtures
-exercise stdin/stdout EOF; they are not a product process adapter. Local timing
-remains 50 ms default/1,000 ms maximum. Broader publishers and handler runners
-remain with their existing owners; declared remote/evaluator budgets do not
-widen the current runner.
+The handler union includes built-in, command, HTTP, MCP and evaluator declarations.
+Built-ins and explicitly installed/trusted/native-activated Python package hooks
+execute at the two gateway points. Other publishers and remote/evaluator adapters
+remain unavailable. One scheduler applies the declared class budgets: local
+50 ms default/1,000 ms maximum/2,000 ms cumulative; remote 5/10/20 seconds;
+evaluator 10/30 seconds; mixed chains 60 seconds. The enclosing deadline always
+narrows them. Inspection displays resolved timeout, chain ceiling, blocking mode
+and local/nonlocal resource cost; declarations require explicit nonlocal opt-in.
+
+The `python39-macos-observer-v1` external-command profile is qualified only on
+Darwin 27.0.0 arm64 with the pinned Apple Python 3.9.6 executable and library in
+Xcode's Python3 framework. Its logical executable is `python3.9`; the governed
+execution declaration uses loader `python`, protocol `falryn-hook-command-v1`,
+and the same locked package-relative entrypoint and arguments as the hook.
+`src/cli/commands/package-hook-fixtures.ts` is a complete manifest/script example.
+Native package enablement uses the existing explicit activation confirmation.
+Missing or different runtimes remain unavailable; built-in hooks need no Python.
+There is no PATH search, interpreter installation, shell sourcing or fallback.
+
+The host revalidates installed revision, locked bytes, authority and activation
+before preparation/launch and after execution. It copies admitted package bytes
+into a private read-only invocation directory and runs a separate process with
+isolated Python flags, an empty environment, offline policy, no child processes,
+no writable roots and reads restricted to the package and qualified runtime.
+The existing narrow system bootstrap allowance still applies. The common resource
+owner reserves one process and conservatively debits the 64 MiB package-cache
+ceiling before preparation. CPU/memory usage is unknown, so finite limits for
+those dimensions refuse admission. Full-user execution is not provided.
+
+The external codec accepts one UTF-8 JSON document per direction with 64 KiB
+stdin ending at EOF, 16 KiB response, 16 KiB diagnostics and exact invocation
+correlation. Nonzero exit, malformed/truncated output, stale authority and timeout
+cannot authorize a proposal. Process-group termination and sandbox receipts own
+cleanup certainty; uncertain cleanup retains the invocation directory. Python
+working/hostile controls, installed gateway tests and compiled fixtures exercise
+these boundaries. Broader lifecycle publishers retain their existing owners.
 
 The generic gateway captures its native result before projection and reports a
 failed capture independently of the observed effect. Content above the 4 MiB

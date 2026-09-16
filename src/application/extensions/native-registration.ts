@@ -11,8 +11,16 @@ import type {
   ContributionIdentityV1,
 } from "../../domain/extensions/identity.ts";
 import type { NativeActivation } from "../../domain/extensions/native-activation.ts";
-import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
-import { createToolRegistry, type ToolRegistryEntry } from "../../domain/tools/index.ts";
+import {
+  type ConfigurationGeneration,
+  configurationGeneration,
+} from "../../domain/foundation/index.ts";
+import {
+  createToolHookRegistry,
+  createToolRegistry,
+  type RegisteredToolHook,
+  type ToolRegistryEntry,
+} from "../../domain/tools/index.ts";
 import type { ToolRunnerPort } from "../runtime/tool-call-loop.ts";
 import type { ProductToolSourceBundle } from "../tools/product-tools-merge.ts";
 import type { CapabilityTrustPort } from "./capability-trust.ts";
@@ -23,12 +31,14 @@ export type NativeRegistrationContext = {
   contribution: PreparedContribution;
   activation: NativeActivation;
   generation: ConfigurationGeneration;
+  hookGeneration?: ConfigurationGeneration;
 };
 export type NativeRegistration =
   | { status: "unavailable"; reason: string }
   | {
       status: "registered";
       binding: CapabilityBindingV1;
+      hook?: RegisteredToolHook;
       tool?: { entry: ToolRegistryEntry; runner: ToolRunnerPort };
     };
 /** Native owners validate their own codec and runner. Registration must start no package code. */
@@ -126,12 +136,18 @@ export function createNativeRegistrationPublisher(owners: readonly NativeRegistr
           contribution,
           activation,
           generation: input.generation,
+          hookGeneration: configurationGeneration.from(publicationGeneration),
         });
         if (registered.status === "unavailable") return { ...candidate, reason: registered.reason };
         if (
           registered.binding.nativeRegistryOwner !== owner.id ||
-          registered.binding.nativeRegistryGeneration !== Number(input.generation) ||
+          registered.binding.nativeRegistryGeneration !==
+            Number(
+              entry.contribution.nativeKind === "hook" ? publicationGeneration : input.generation,
+            ) ||
           (entry.contribution.nativeKind === "tool" && registered.tool === undefined) ||
+          (entry.contribution.nativeKind === "hook" && registered.hook === undefined) ||
+          (registered.hook !== undefined && entry.contribution.nativeKind !== "hook") ||
           (registered.tool !== undefined &&
             registered.tool.runner.hasBinding?.(registered.tool.entry.manifest.capabilityId) !==
               true) ||
@@ -143,6 +159,7 @@ export function createNativeRegistrationPublisher(owners: readonly NativeRegistr
         registrations.set(catalogEntryKey(candidate), registered);
         return {
           ...candidate,
+          family: entry.family ?? registered.binding.family,
           availability: "available",
           reason: "native-owner-bound",
           binding: registered.binding,
@@ -225,9 +242,15 @@ export function createNativeRegistrationPublisher(owners: readonly NativeRegistr
             : [],
         ),
       );
+      const hooks = createToolHookRegistry(
+        configurationGeneration.from(publicationGeneration),
+        [...registrations.values()].flatMap((value) => (value.hook ? [value.hook] : [])),
+      );
+      if (!hooks.ok) throw new ExtensionInputError(hooks.error.code);
       const candidate: NativePublication = {
         catalog,
         tools: {
+          hooks: hooks.value,
           registry: registry.value,
           catalog: registry.value.catalog,
           toolNames: tools.map((tool) => tool.entry.manifest.name),

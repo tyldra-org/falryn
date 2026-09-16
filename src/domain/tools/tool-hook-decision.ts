@@ -1,6 +1,7 @@
 /** Built-in compatibility is translated at the same validated decision boundary as wire input. */
 import { z } from "zod";
 import { canonicalJson, freezeMetadata } from "../extensions/canonical.ts";
+import type { HookRegistration } from "../extensions/hook-handlers.ts";
 import { hookDecisionBinding, validateHookDecision } from "../extensions/hook-protocol.ts";
 import type { ToolHookDecision, ToolHookEnvelope } from "./tool-hooks.ts";
 
@@ -33,9 +34,16 @@ const legacySchema = z.discriminatedUnion("kind", [
 export function validateToolHookDecision(
   candidate: unknown,
   envelope: ToolHookEnvelope,
+  registration?: HookRegistration,
 ): ToolHookDecision {
   canonicalJson(candidate);
   const legacy = legacySchema.safeParse(candidate);
+  if (registration && registration.handler.kind !== "builtin") {
+    const result = validateHookDecision(registration, envelope.catalog, candidate);
+    if (registration.mode === "async" && result.kind !== "observe")
+      throw new Error("hook-observation-only");
+    return result;
+  }
   const binding = hookDecisionBinding(envelope.catalog);
   let decision: unknown = candidate;
   if (legacy.success) {
@@ -68,12 +76,13 @@ export function validateToolHookDecision(
         };
         break;
       case "diagnostic":
-        if (envelope.phase !== "post") throw new Error("hook-diagnostic-unavailable");
+        if (envelope.phase !== "post" || registration?.mode === "async")
+          throw new Error("hook-diagnostic-unavailable");
         return freezeMetadata(value);
     }
   }
   const validated = validateHookDecision(
-    {
+    registration ?? {
       version: 1,
       point: envelope.point,
       pointVersion: 1,
@@ -85,6 +94,8 @@ export function validateToolHookDecision(
     envelope.catalog,
     decision,
   );
+  if (registration?.mode === "async" && validated.kind !== "observe")
+    throw new Error("hook-observation-only");
   // Keep legacy settlement/result consumers stable; validation is shared with the wire algebra.
   return legacy.success ? freezeMetadata(legacy.data) : validated;
 }

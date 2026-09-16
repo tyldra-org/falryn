@@ -163,6 +163,7 @@ describe("createToolHookRunner", () => {
       signal: new AbortController().signal,
     });
     await clock.advance(duration(50));
+    await clock.advance(duration(1_000));
     const result = await pending;
     expect(result.kind).toBe("recorded");
     if (result.kind !== "recorded") {
@@ -195,6 +196,7 @@ describe("createToolHookRunner", () => {
       signal: new AbortController().signal,
     });
     await clock.advance(duration(50));
+    await clock.advance(duration(1_000));
     const result = await pending;
     expect(result.kind).toBe("failed-closed");
   });
@@ -226,7 +228,9 @@ test("cancelled and expired callbacks cannot settle a later subject or mutate a 
     });
     await Promise.resolve();
     if (cancelled) controller.abort();
-    else clock.advance(duration(11));
+    else await clock.advance(duration(11));
+    await clock.advance(duration(0));
+    await clock.advance(duration(1_000));
     expect((await result).kind).toBe("failed-closed");
     pending.resolve({ kind: "transform", annotations: { late: "ignored" } });
     await Promise.resolve();

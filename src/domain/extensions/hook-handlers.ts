@@ -76,6 +76,8 @@ export const hookRegistrationSchema = z
     mode: z.enum(["sync", "async"]),
     nonlocalOptIn: z.boolean().default(false),
     timeoutMs: z.int().positive().optional(),
+    priority: z.int().optional(),
+    after: z.array(hookIdentity).max(32).optional(),
     filters: z
       .array(
         z.strictObject({
@@ -120,7 +122,7 @@ export function hookRegistrationAvailability(registration: HookRegistration) {
   const descriptor = HOOK_POINTS[registration.point];
   if (descriptor.producer !== "tool.gateway")
     return { status: "unavailable", code: "hook-publisher-unavailable" } as const;
-  if (registration.handler.kind !== "builtin" || registration.mode !== "sync")
+  if (registration.handler.kind !== "builtin")
     return { status: "unavailable", code: "hook-handler-unavailable" } as const;
   return { status: "available" } as const;
 }
@@ -137,6 +139,14 @@ export function inspectHookRegistration(input: unknown) {
     handler: registration.handler.kind,
     mode: registration.mode,
     budgetClass: hookBudgetClass(registration.handler),
+    timeoutMs:
+      registration.timeoutMs ?? HOOK_BUDGETS[hookBudgetClass(registration.handler)].defaultMs,
+    chainMaximumMs: HOOK_BUDGETS[hookBudgetClass(registration.handler)].chainMs,
+    wait: registration.mode === "sync" ? "blocks-subject" : "bounded-background-observation",
+    cost:
+      hookBudgetClass(registration.handler) === "local"
+        ? "local-resources"
+        : "explicit-nonlocal-resources",
     phase: descriptor.phase,
     decisions: descriptor.decisions,
     mutableFields: descriptor.mutableFields,

@@ -5,6 +5,7 @@ import { hookDecisionBinding } from "../../domain/extensions/hook-protocol.ts";
 import {
   configurationGeneration,
   createManualClock,
+  duration,
   err,
   instant,
   invocationId,
@@ -1005,7 +1006,7 @@ test.each([false, true])(
     const gates = await f.gates();
     const transformed = gates.find((gate) => gate.decision === "transformed");
     expect(transformed?.originalInputDigest).not.toBe(transformed?.admittedInputDigest);
-    expect(gates.filter((gate) => gate.hook)).toHaveLength(1);
+    expect(gates.filter((gate) => gate.hook && !gate.hook.order)).toHaveLength(1);
     expect(JSON.stringify(gates)).not.toContain('"text":"changed"');
   },
 );
@@ -1029,10 +1030,11 @@ test("same-field transforms conflict even when equal, and every attempted decisi
     effect: "none",
   });
   expect(f.dispatched).toEqual([]);
-  expect((await f.gates()).filter((gate) => gate.hook).map((gate) => gate.hook?.hookId)).toEqual([
-    "one",
-    "two",
-  ]);
+  expect(
+    (await f.gates())
+      .filter((gate) => gate.hook && !gate.hook.order)
+      .map((gate) => gate.hook?.hookId),
+  ).toEqual(["one", "two"]);
 });
 
 test.each([{ permission: "allow" }, { path: "../outside" }, { path: 5 }])(
@@ -1334,4 +1336,62 @@ test("policy and hook confirmations retain distinct receipts for the same normal
     gates.filter((gate) => gate.stage === "confirmation").map((gate) => gate.decision),
   ).toEqual(["confirmed", "hook-accepted"]);
   expect(new Set(gates.map((gate) => gate.id)).size).toBe(gates.length);
+});
+
+test("parallel hook lineages preserve veto, timeout and immutable replay independently", async () => {
+  const late = Promise.withResolvers<import("../../domain/tools/tool-hooks.ts").ToolHookDecision>();
+  const started = Promise.withResolvers<void>();
+  const calls: string[] = [];
+  const f = hookGateway([
+    preHook((envelope) => {
+      calls.push(`${envelope.invocationId}:first`);
+      if (String(envelope.invocationId) === "veto") return { kind: "deny", reason: "blocked" };
+      if (String(envelope.invocationId) === "timeout") {
+        started.resolve();
+        return late.promise;
+      }
+      return { kind: "allow" };
+    }, "first"),
+    {
+      ...preHook((envelope) => {
+        calls.push(`${envelope.invocationId}:second`);
+        return { kind: "allow" };
+      }, "second"),
+      after: ["first"],
+      priority: 100,
+    },
+  ]);
+  const requests = ["veto", "timeout", "control"].map((id) => ({
+    ...f.request(),
+    invocationId: invocationId.from(id),
+    toolCallId: id,
+  }));
+  const pending = requests.map((request) => f.gateway.execute(request));
+  await started.promise;
+  await f.clock.advance(duration(50));
+  await f.clock.advance(duration(1000));
+  const results = await Promise.all(pending);
+  expect(results.map((result) => result.status)).toEqual(["denied", "denied", "completed"]);
+  expect(f.dispatched).toEqual(["control"]);
+  expect(calls.filter((id) => id.endsWith(":second"))).toEqual(["control:second"]);
+  late.resolve({ kind: "allow" });
+  await f.clock.advance(duration(0));
+  const gates = await f.gates();
+  expect(
+    gates.filter((gate) => gate.decision === "hook-chain-bound").map((gate) => gate.hook?.order),
+  ).toEqual([
+    ["first", "second"],
+    ["first", "second"],
+    ["first", "second"],
+  ]);
+  expect(
+    gates.find((gate) => gate.invocationId === "timeout" && gate.hook?.execution)?.hook?.execution
+      ?.cleanup,
+  ).toBe("uncertain");
+  for (const [index, request] of requests.entries()) {
+    const result = results[index];
+    if (!result) throw new Error("missing result");
+    expect(await f.gateway.execute(request)).toEqual(result);
+  }
+  expect(f.dispatched).toEqual(["control"]);
 });

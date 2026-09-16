@@ -62,6 +62,8 @@ export type ProcessCaptureLimits = {
 };
 
 export type ProcessCaptureRequest = CommandRequest & {
+  /** One bounded document, followed by EOF. No interactive input ownership. */
+  readonly stdin?: Uint8Array;
   /** Invocation lineage for durable capture artifacts when a tool call owns the process. */
   readonly invocationId?: InvocationId | undefined;
   readonly maxInlineBytes?: number | undefined;
@@ -170,6 +172,7 @@ export type ProcessCaptureReport = {
 };
 
 export type ProcessCaptureValidationCode =
+  | "invalid-stdin"
   | "invalid-executable"
   | "invalid-working-directory"
   | "invalid-argument"
@@ -283,6 +286,11 @@ export function resolveProcessCaptureLimits(request: ProcessCaptureRequest): Pro
 export function validateProcessCaptureRequest(
   request: ProcessCaptureRequest,
 ): ProcessCaptureValidationCode | null {
+  if (
+    request.stdin !== undefined &&
+    (!(request.stdin instanceof Uint8Array) || request.stdin.byteLength > 65_536)
+  )
+    return "invalid-stdin";
   if (!isAbsoluteCommandPath(request.executable)) {
     return "invalid-executable";
   }
