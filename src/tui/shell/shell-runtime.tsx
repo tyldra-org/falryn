@@ -1,3 +1,4 @@
+import { modelSettingsLines } from "../../application/providers/model-settings-format.ts";
 import { useSessionOperation } from "./session-operation.ts";
 
 /** React lifecycle around the shell's pure state and command boundaries. */
@@ -145,6 +146,42 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         selectedModel === null ? base.selectedModelKey : providerModelIdentityKey(selectedModel),
     };
   });
+  const processingControl = useCallback(
+    async (action: string | null, signal: AbortSignal) => {
+      if (action === null || action === "inspect") {
+        dispatch({ kind: "open-overlay", route: { kind: "model-settings", processing: true } });
+        return { message: "Processing speed; inspection does not submit a request." };
+      }
+      const service =
+        options.submission && "modelSettings" in options.submission
+          ? (
+              options.submission as import("../composer/product-submission.ts").ProductSubmissionPort
+            ).modelSettings
+          : null;
+      if (!service) return { message: "Processing session host unavailable." };
+      const binding = options.submission?.binding?.();
+      const result = await service.execute(
+        action === "reset"
+          ? { kind: "processing-reset", scope: { kind: "session" } }
+          : { kind: "processing-set", scope: { kind: "session" }, preference: { mode: action } },
+        signal,
+      );
+      return {
+        message:
+          binding === options.submission?.binding?.()
+            ? result.kind === "processing-changed"
+              ? "Processing preference pending."
+              : modelSettingsLines(result).join(" ")
+            : "Processing change settled in the previous session.",
+      };
+    },
+    [options.submission],
+  );
+  const { run: runProcessing, cancel: cancelProcessing } = useSessionOperation(
+    processingControl,
+    dispatch,
+    "Processing speed",
+  );
   const sessionExport = useSessionOperation(
     options.submission?.exportSession,
     dispatch,
@@ -711,6 +748,14 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return;
       }
 
+      if (slash.commandId.startsWith("model.processing.")) {
+        absorbDraftEcho.current = true;
+        runProcessing(slash.commandId.slice("model.processing.".length));
+        setTimeout(() => {
+          absorbDraftEcho.current = false;
+        }, 0);
+        return;
+      }
       if (slash.commandId === "model.settings") {
         dispatch({ kind: "open-overlay", route: { kind: "model-settings" } });
         dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
@@ -771,6 +816,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     options.midTurn,
     outputControls,
     options.submission,
+    runProcessing,
     options.workspaceController,
     submitMidTurn,
   ]);
@@ -793,6 +839,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return false;
       }
 
+      if (id.startsWith("model.processing."))
+        return runProcessing(id.slice("model.processing.".length));
       switch (id) {
         case "environment.inspect":
           return environment.run(null);
@@ -887,6 +935,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           dispatch({ kind: "close-overlay" });
           return true;
         case "app.cancel": {
+          if (cancelProcessing()) return true;
           if (cancelSessionExport()) return true;
           if (cancelCompact()) return true;
           if (cancelProfile()) return true;
@@ -937,6 +986,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       });
     },
     [
+      runProcessing,
+      cancelProcessing,
       sessionExport.run,
       environment.run,
       compact.run,

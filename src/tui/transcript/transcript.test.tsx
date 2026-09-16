@@ -150,6 +150,7 @@ describe("an empty transcript", () => {
     using shell = await open(EMPTY_PROJECTION, { columns: 100, rows: 30 });
     await shell.press("?");
     await shell.press("\u001b[6~");
+    await shell.press("\u001b[6~");
     expect(await shell.frame()).toContain("there is no transcript yet");
   });
 });

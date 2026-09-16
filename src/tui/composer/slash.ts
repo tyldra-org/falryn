@@ -30,12 +30,16 @@ export type ComposerSlashAlias = {
  * without inventing a parallel catalog.
  */
 export const WORKSPACE_SLASH_ALIASES: readonly ComposerSlashAlias[] = [
+  { forms: ["/fast on"], commandId: "model.processing.fast", argument: "none" },
+  { forms: ["/fast off"], commandId: "model.processing.standard", argument: "none" },
+  { forms: ["/fast reset"], commandId: "model.processing.reset", argument: "none" },
+  { forms: ["/fast"], commandId: "model.processing.inspect", argument: "none" },
   { forms: ["/env"], commandId: "environment.inspect", argument: "profile" },
   { forms: ["/profile"], commandId: "profile.inspect", argument: "profile" },
   { forms: ["/export"], commandId: "session.export", argument: "layout-name" },
   { forms: ["/compact"], commandId: "compact.preview", argument: "layout-name" },
   {
-    forms: ["/model roles", "/model configure", "/settings models"],
+    forms: ["/model roles", "/model configure", "/settings models", "/model"],
     commandId: "model.settings",
     argument: "none",
   },

@@ -1,6 +1,7 @@
 /** Shared model settings actions. Selection is inspectable without admitting work. */
 import { z } from "zod";
 import type { ConfigurationSaveReceipt } from "../../domain/configuration/save-receipt.ts";
+import { resolveProcessingPreference } from "../../domain/sessions/model-processing.ts";
 import type {
   ModelDefinition,
   ModelSelectionTarget,
@@ -23,10 +24,16 @@ import {
   SUBAGENT_PRESETS,
 } from "../../providers/configuration/roles.ts";
 import {
+  configuredModelRoute,
   editModelPreferences,
   modelSelectionTargetSchema,
   modelSettingsEditSchema,
 } from "../../providers/configuration/settings-actions.ts";
+import {
+  type ProcessingRouteInspection,
+  type ProcessingSessionControl,
+  processingRequests,
+} from "./processing-controls.ts";
 
 const expectedRevisionSchema = z.string().min(1).nullable();
 const decisionsSchema = z.record(
@@ -34,6 +41,7 @@ const decisionsSchema = z.record(
   z.enum(["keep-current", "use-legacy", "normalize"]),
 );
 export const modelSettingsRequestSchema = z.discriminatedUnion("kind", [
+  ...processingRequests,
   z.strictObject({
     kind: z.literal("inspect"),
     target: modelSelectionTargetSchema.optional(),
@@ -78,6 +86,8 @@ export type ModelSettingsSnapshot = {
   readonly definitions: readonly ModelDefinition[];
 };
 export type ModelSettingsStore = {
+  readonly processingSession?: ProcessingSessionControl;
+  inspectProcessing?(route: RoleRoute, signal?: AbortSignal): Promise<ProcessingRouteInspection>;
   read(signal?: AbortSignal): Promise<ModelSettingsSnapshot>;
   write(
     preferences: ModelPreferences,
@@ -113,7 +123,27 @@ export function createModelSettingsService(store: ModelSettingsStore) {
       const parsed = modelSettingsRequestSchema.safeParse(raw);
       if (!parsed.success) return failure("invalid-model-settings-request");
       if (signal?.aborted) return failure("cancelled");
-      const request = parsed.data;
+      let request = parsed.data;
+      if (
+        request.kind.startsWith("processing-") &&
+        "scope" in request &&
+        request.scope.kind === "session"
+      ) {
+        const control = store.processingSession;
+        if (!control) return failure("processing-session-host-required");
+        const inspected = control.inspect();
+        if (
+          request.scope.sessionId !== undefined &&
+          request.scope.sessionId !== inspected.scope.sessionId
+        )
+          return failure("processing-session-not-authorized");
+        return request.kind === "processing-inspect"
+          ? inspected
+          : control.change(
+              request.kind === "processing-set" ? request.preference : undefined,
+              signal,
+            );
+      }
       let snapshot: ModelSettingsSnapshot;
       try {
         snapshot = await store.read(signal);
@@ -121,6 +151,72 @@ export function createModelSettingsService(store: ModelSettingsStore) {
         return failure("configuration-unavailable");
       }
       const { preferences } = snapshot;
+      if (
+        request.kind === "processing-inspect" ||
+        request.kind === "processing-set" ||
+        request.kind === "processing-reset"
+      ) {
+        if (request.scope.kind === "session") return failure("processing-session-host-required");
+        if (request.scope.kind !== snapshot.scope) return failure("processing-scope-mismatch");
+        const target = request.scope.target;
+        const selection =
+          snapshot.main === null
+            ? null
+            : resolveModelSelection({
+                preferences,
+                main: snapshot.main,
+                configurationGeneration: snapshot.generation,
+                definitions: snapshot.definitions,
+                target: target ?? { kind: "role", role: "default" },
+              });
+        if (selection?.kind === "no-model") return failure("deterministic-step-has-no-model");
+        const route = selection?.kind === "route" ? selection.route : null;
+        if (request.kind === "processing-inspect")
+          return {
+            kind: "processing-inspection" as const,
+            scope: request.scope,
+            selection:
+              route && store.inspectProcessing
+                ? await store.inspectProcessing(route, signal)
+                : null,
+            override:
+              target === undefined
+                ? (preferences.processing ?? null)
+                : (configuredModelRoute(preferences, target)?.processing ?? null),
+            lastServed: null,
+            active: null,
+            fileRevision: snapshot.fileRevision,
+          };
+        if (request.expectedRevision === undefined)
+          return failure("processing-expected-revision-required");
+        if (request.expectedRevision !== snapshot.fileRevision) return failure("stale-settings");
+        const processing = request.kind === "processing-set" ? request.preference : undefined;
+        if (processing !== undefined) {
+          if (!route || !store.inspectProcessing) return failure("processing-model-unavailable");
+          const inspected = await store.inspectProcessing(
+            { ...route, processing: resolveProcessingPreference([processing, route.processing]) },
+            signal,
+          );
+          const mode = inspected.modes.find((entry) => entry.preference.mode === processing.mode);
+          if (!mode?.eligible) return failure(mode?.reason ?? "processing-unavailable");
+        }
+        request = {
+          kind: "edit",
+          expectedRevision: request.expectedRevision,
+          edit:
+            target === undefined
+              ? { kind: "processing-default", ...(processing === undefined ? {} : { processing }) }
+              : processing !== undefined &&
+                  route !== null &&
+                  configuredModelRoute(preferences, target) === null
+                ? { kind: "configure", target, route: { ...route, processing } }
+                : {
+                    kind: "processing-route",
+                    target,
+                    ...(processing === undefined ? {} : { processing }),
+                  },
+        };
+      }
       if (request.kind === "inspect") {
         const targets: ModelSelectionTarget[] =
           request.target !== undefined
@@ -317,3 +413,45 @@ function overridePaths(value: unknown, prefix = "roles"): string[] {
     .flatMap((key) => overridePaths(record[key], `${prefix}.${key}`));
 }
 export type ModelSettingsResult = Awaited<ReturnType<ModelSettingsService["execute"]>>;
+
+/** The host supplies the currently authorized session; standalone callers cannot attach by ID. */
+export function withProcessingSession(
+  service: ModelSettingsService,
+  control: ProcessingSessionControl,
+  current: () => boolean = () => true,
+): ModelSettingsService {
+  return {
+    async execute(raw, signal) {
+      if (!current()) return failure("processing-session-no-longer-active");
+      const parsed = modelSettingsRequestSchema.safeParse(raw);
+      if (parsed.success && "scope" in parsed.data && parsed.data.scope.kind === "session") {
+        const request = parsed.data;
+        const inspected = control.inspect();
+        if (request.scope.kind !== "session") return failure("processing-session-host-required");
+        if (
+          request.scope.sessionId !== undefined &&
+          request.scope.sessionId !== inspected.scope.sessionId
+        )
+          return failure("processing-session-not-authorized");
+        if (signal?.aborted) return failure("cancelled");
+        return request.kind === "processing-inspect"
+          ? inspected
+          : control.change(
+              request.kind === "processing-set" ? request.preference : undefined,
+              signal,
+            );
+      }
+      return service.execute(raw, signal);
+    },
+  };
+}
+/** Stable declarations for host/SDK consumers; projections do not create attempts. */
+export type HostModelServiceQuery = Extract<
+  ModelSettingsRequest,
+  { kind: "inspect" | "processing-inspect" }
+>;
+export type HostModelServicePreference = Extract<
+  ModelSettingsRequest,
+  { kind: "processing-set" | "processing-reset" }
+>;
+export type HostModelServiceReceipt = ModelSettingsResult;

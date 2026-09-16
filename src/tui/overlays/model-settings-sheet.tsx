@@ -1,5 +1,4 @@
 /** Role navigation and edits over the application settings service. */
-import type { SelectOption, SelectRenderable } from "@opentui/core";
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type {
   ModelSettingsRequest,
@@ -16,10 +15,12 @@ import {
 } from "../../providers/configuration/roles.ts";
 import { useFrame } from "../shell/context.tsx";
 import { Line } from "../visual/primitives.tsx";
-import { useSelectNavigation } from "./select-navigation.ts";
+import { type MenuItem, SettingsMenu } from "./model-settings-menu.tsx";
+import { ProcessingSettingsSheet } from "./processing-settings-sheet.tsx";
 
 type Page =
   | { readonly kind: "roles" }
+  | { readonly kind: "processing"; readonly target?: ModelSelectionTarget }
   | { readonly kind: "group"; readonly role: "fast" | "subagents" | "workflows" }
   | {
       readonly kind: "advanced";
@@ -38,17 +39,18 @@ type Page =
       readonly expectedRevision: string | null;
     };
 type Inspection = Extract<ModelSettingsResult, { kind: "inspection" }>;
-type MenuItem = { readonly title: string; readonly detail: string; readonly run: () => void };
 
 export function ModelSettingsSheet({
   service,
   rows,
+  processing = false,
 }: {
   readonly service: ModelSettingsService | null;
   readonly rows: number;
+  readonly processing?: boolean;
 }): ReactNode {
   const { terminal } = useFrame();
-  const [page, setPage] = useState<Page>({ kind: "roles" });
+  const [page, setPage] = useState<Page>({ kind: processing ? "processing" : "roles" });
   const [inspection, setInspection] = useState<Inspection | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -117,6 +119,11 @@ export function ModelSettingsSheet({
           : targetItem(role, { kind: "role", role }),
       );
     }
+    items.push({
+      title: "Processing speed",
+      detail: "Session main preference, eligibility and actual results",
+      run: () => setPage({ kind: "processing" }),
+    });
   } else if (page.kind === "group") {
     items.push(targetItem("Default", { kind: "role", role: page.role }));
     if (page.role === "fast")
@@ -210,6 +217,12 @@ export function ModelSettingsSheet({
         },
       });
     }
+    if (selection?.kind !== "no-model")
+      items.push({
+        title: "Processing speed",
+        detail: "Explicit saved preference for this configured route",
+        run: () => setPage({ kind: "processing", target }),
+      });
     if (target.kind === "agent")
       items.push({
         title: "Preset membership",
@@ -297,6 +310,16 @@ export function ModelSettingsSheet({
         Model settings are not attached.
       </Line>
     );
+  if (page.kind === "processing")
+    return (
+      <ProcessingSettingsSheet
+        service={service}
+        rows={rows}
+        savedScope={inspection?.scope ?? "user"}
+        {...(page.target === undefined ? {} : { target: page.target })}
+        onBack={() => setPage({ kind: "roles" })}
+      />
+    );
   const editing = page.kind === "edit" && page.field < 3;
   const summary =
     page.kind === "target" && inspection !== null ? modelSettingsLines(inspection).slice(2) : [];
@@ -377,37 +400,5 @@ export function ModelSettingsSheet({
         }
       />
     </box>
-  );
-}
-
-function SettingsMenu({
-  items,
-  rows,
-  enabled,
-}: {
-  readonly items: readonly MenuItem[];
-  readonly rows: number;
-  readonly enabled: boolean;
-}): ReactNode {
-  const control = useRef<SelectRenderable | null>(null);
-  const options: SelectOption[] = items.map((item, index) => ({
-    name: item.title,
-    description: item.detail,
-    value: index,
-  }));
-  useSelectNavigation(control, items.length, { enabled });
-  if (rows === 0) return null;
-  return (
-    <select
-      ref={control}
-      options={options}
-      height={rows}
-      focused={enabled}
-      showScrollIndicator
-      showDescription={rows >= 4}
-      onSelect={(_index, option) => {
-        if (typeof option?.value === "number") items[option.value]?.run();
-      }}
-    />
   );
 }

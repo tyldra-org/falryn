@@ -2,6 +2,39 @@
 import type { ModelSettingsResult } from "./model-settings.ts";
 export function modelSettingsLines(result: ModelSettingsResult): readonly string[] {
   switch (result.kind) {
+    case "processing-changed":
+      return [
+        "Processing preference changed; application: pending (next main request).",
+        ...modelSettingsLines(result.inspection),
+      ];
+    case "processing-inspection": {
+      const selection = result.selection;
+      return [
+        `Processing speed · ${result.scope.kind}${result.scope.kind === "session" ? ` · ${result.scope.sessionId}` : ""}`,
+        ...(selection === null
+          ? ["Model/account unavailable."]
+          : [
+              `${selection.route.providerProfileId} / ${String(selection.route.modelId)} · thinking ${selection.route.reasoning}`,
+              `Requested: ${selection.preference.mode}; local fallback: ${selection.preference.fallback}.`,
+              ...selection.modes.map((mode) => {
+                const price = "price" in mode ? mode.price : null;
+                const known =
+                  price?.inputMicrosPerMillion != null && price.outputMicrosPerMillion !== null;
+                return `${mode.preference.mode}: ${mode.eligible ? "eligible" : mode.reason} · ${known ? `USD micros per million tokens: input ≤${price.inputMicrosPerMillion}, output ≤${price.outputMicrosPerMillion}` : "price unknown"}`;
+              }),
+            ]),
+        `Last served: ${result.lastServed?.actualMode ?? "unknown"}${result.lastServed ? `; requested ${result.lastServed.binding.preference.mode}; resolved ${result.lastServed.binding.resolvedMode}` : " (no completed attempt in this process)"}.`,
+        ...(result.active
+          ? [
+              `Active request: ${result.active.mode}; actual unknown until provider receipt. Pending preference applies to the next request.`,
+            ]
+          : []),
+        "Stop/Allow Standard controls client fallback; providers may still downgrade successful requests.",
+        ...(result.scope.kind === "session"
+          ? ["Session only; main model; next admitted request."]
+          : [`File revision: ${result.fileRevision ?? "absent"}`]),
+      ];
+    }
     case "failed":
       return [
         `Model settings: ${result.code}`,

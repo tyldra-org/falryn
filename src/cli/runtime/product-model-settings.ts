@@ -6,11 +6,16 @@ import {
   createModelSettingsService,
   type ModelSettingsSnapshot,
 } from "../../application/providers/model-settings.ts";
+import { inspectProcessingRoute } from "../../application/providers/processing-controls.ts";
 import { parseConfigurationDocument } from "../../config/document/document.ts";
 import { configurationObject } from "../../config/document/organized.ts";
 import { usesOrganizedConfiguration } from "../../config/document/schema-family.ts";
 import { writeConfigurationEdits } from "../../config/host/writer.ts";
 import { resolveConfigurationFilePath, writeConfigurationValue } from "../../config/index.ts";
+import {
+  PROCESSING_MODES,
+  resolveProcessingPreference,
+} from "../../domain/sessions/model-processing.ts";
 import { joinPath } from "../../domain/workspace/index.ts";
 import { createSha256Hasher } from "../../integrations/filesystem/content-digest.ts";
 import { parseProviderConnectionState } from "../../providers/configuration/connection-schema.ts";
@@ -29,6 +34,7 @@ import {
   productConfigurationLoadRequest,
   validateProductConfigurationCandidate,
 } from "./product-configuration.ts";
+import { composeProductProviderConnections } from "./product-provider-connections.ts";
 import {
   DEFAULT_PROVIDER_CONNECTION_STATE,
   PROVIDER_CONNECTIONS_CONFIGURATION_KEY,
@@ -96,6 +102,33 @@ export function composeProductModelSettings(
     return loaded;
   };
   return createModelSettingsService({
+    async inspectProcessing(route, signal) {
+      const localDiscovery = createUserCatalogModelDiscovery({
+        fileSystem: services.fileSystem,
+        configurationRoot: async () => {
+          const home = await services.configurationHomeForRead(signal);
+          return home.kind === "current" || home.kind === "legacy" || home.kind === "empty"
+            ? home.root
+            : services.configurationRoot;
+        },
+      });
+      const provider = await composeProductProviderConnections(services, globals, {
+        authorizedLoginAdapters: [],
+        modelDiscovery: localDiscovery,
+      }).resolveProfile(route.providerProfileId, signal);
+      if (provider.kind === "ready")
+        return inspectProcessingRoute(provider.adapter, provider.session.catalog, route);
+      const preference = resolveProcessingPreference([route.processing]);
+      return {
+        route,
+        preference,
+        modes: PROCESSING_MODES.map((mode) => ({
+          eligible: false as const,
+          reason: provider.code,
+          preference: { ...preference, mode },
+        })),
+      };
+    },
     async read(signal): Promise<ModelSettingsSnapshot> {
       const path = await sourcePath(signal);
       const before = await services.fileSystem.stat(path, signal);

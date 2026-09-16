@@ -233,6 +233,9 @@ export type Invocation =
 
 /** The shape yargs parses into. Narrowed into `GlobalOptions` after validation. */
 export type RawArguments = {
+  readonly "processing-action"?: string;
+  readonly fallback?: string;
+  readonly role?: string;
   readonly path: string | undefined;
   readonly _: readonly (string | number)[];
   /** Bound by name from `config <action>`; it never appears in `_`. */

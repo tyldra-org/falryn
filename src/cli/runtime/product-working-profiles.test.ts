@@ -49,6 +49,7 @@ test.each([
   "source-edit",
   "cancelled",
   "account",
+  "processing-rejected",
   "revoked",
   "optional",
   ...(process.platform === "win32" ? [] : ["pty"]),
@@ -98,7 +99,10 @@ test.each([
       },
       organization: null,
       project: null,
-      enabledModels: [modelId.from("gpt-5.6-sol")],
+      enabledModels: [
+        modelId.from("gpt-5.6-sol"),
+        ...(mode === "processing-rejected" ? [modelId.from("gpt-5.5")] : []),
+      ],
       modelCapabilities: [],
       discovery: "static",
       transportCompatibility: OPENAI_RESPONSES_TRANSPORT_DEFAULT,
@@ -156,7 +160,10 @@ test.each([
           execution: { environment: { set: { PROFILE_FIXTURE: "b" } } },
           models: {
             policy: {
-              processing: { mode: "standard" },
+              processing: { mode: mode === "processing-rejected" ? "fast" : "standard" },
+              ...(mode === "processing-rejected"
+                ? { roles: { default: { modelId: "gpt-5.5" } } }
+                : {}),
               ...(mode === "account"
                 ? { roles: { default: { providerProfileId: "account-b" } } }
                 : {}),
@@ -372,7 +379,7 @@ test.each([
       }),
     };
     const cancelledApply = new AbortController();
-    let fail = true;
+    let fail = mode !== "processing-rejected";
     let preparations = 0;
     const mcp: ProfileTransitionOwner = {
       id: "required-mcp-fixture",
@@ -403,12 +410,12 @@ test.each([
       configuration: configuration.values,
     }).resolveSelected();
     const shell = await composeProductShellAttachments({
-      workingProfileSession: async (runtime, compose, context, defer) => {
+      workingProfileSession: async (runtime, compose, context, defer, processing) => {
         environmentContext = context;
         return productWorkingProfileSessions(graph, globals, providerOptions, [
           mcp,
           ...(mode === "pty" ? [processOwner] : []),
-        ])(runtime, compose, context, defer);
+        ])(runtime, compose, context, defer, processing);
       },
       eventStore: data.eventStore,
       records: data.records,
@@ -464,6 +471,16 @@ test.each([
         signal,
       )) as ProfileTransitionOutcome;
       expect(rejected.kind === "receipt" && rejected.receipt.publishedGeneration).toBeNull();
+      if (mode === "processing-rejected") {
+        expect(JSON.stringify(rejected)).toContain("processing-unknown");
+        expect(shell.submission.processing?.inspect().selection?.route.modelId).toBe(
+          modelId.from("gpt-5.6-sol"),
+        );
+        expect(bodies).toHaveLength(1);
+        release();
+        await first;
+        return;
+      }
       fail = false;
       const accepted = (await control("use b", signal)) as ProfileTransitionPreview;
       if (mode === "source-edit") {

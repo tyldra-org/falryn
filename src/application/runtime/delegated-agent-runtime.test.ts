@@ -52,6 +52,7 @@ import {
   type DelegatedRuntimeOptions,
 } from "./delegated-agent-runtime.ts";
 import { createProductLiveTurnExecutor } from "./product-live-turn.ts";
+import { processingProduct } from "./product-processing.fixture.ts";
 import type { ToolRunnerRequest } from "./tool-call-loop.ts";
 
 afterEach(removeTemporaryRoots);
@@ -107,7 +108,7 @@ async function run(
   script: (request: ModelRequest, index: number) => DeterministicProviderScript,
   options: Partial<
     Pick<DelegatedRuntimeOptions, "preferences" | "resolveProvider" | "registry">
-  > & { nativeDenied?: boolean; withPeers?: boolean } = {},
+  > & { nativeDenied?: boolean; withPeers?: boolean; processing?: boolean } = {},
   nativeEffect: "observation" | "mutation" | "external" = "observation",
   native?: {
     name: string;
@@ -119,10 +120,22 @@ async function run(
 ) {
   const f = await createProcessTaskFixture(false);
   const requests: ModelRequest[] = [];
-  const adapter = createDeterministicProviderAdapter({
+  const scripted = createDeterministicProviderAdapter({
     script,
     onRequest: (request) => requests.push(request),
   });
+  const qualified = options.processing ? processingProduct() : null;
+  const adapter = qualified
+    ? {
+        ...qualified.adapter,
+        modelCapabilities:
+          scripted.modelCapabilities?.map((capability) => ({
+            ...capability,
+            pricing: qualified.state.pricing,
+          })) ?? [],
+        stream: scripted.stream,
+      }
+    : scripted;
   const catalog = catalogFromAdapterModels(adapter.supportedModels, {
     generation: 0,
     fetchedAt: instant(0),
@@ -277,6 +290,8 @@ async function run(
     providerCatalog: catalog,
     artifacts: f.artifacts,
   });
+  if (options.processing)
+    expect(executor.processing.change({ mode: "fast" }).kind).toBe("processing-changed");
   try {
     const result = await executor.run({
       prompt: "Delegate an independent source inspection",
@@ -338,6 +353,10 @@ test("an admitted child receives its exact owning-session endpoint and closes it
 
 test("a background child completes another provider turn after its parent has closed", async () => {
   let release!: () => void;
+  let preferences = {
+    ...EMPTY_MODEL_PREFERENCES,
+    processing: { mode: "standard" as "standard" | "fast" },
+  };
   const held = new Promise<void>((resolve) => {
     release = resolve;
   });
@@ -361,7 +380,7 @@ test("a background child completes another provider turn after its parent has cl
         };
       return { kind: "text", text: explorerResult };
     },
-    {},
+    { processing: true, preferences: () => preferences },
     "observation",
     {
       name: "inspect",
@@ -371,11 +390,19 @@ test("a background child completes another provider turn after its parent has cl
         return { status: "completed", effect: "completed", output: { observed: true } };
       },
     },
-    () => release(),
+    () => {
+      preferences = { ...preferences, processing: { mode: "fast" } };
+      release();
+    },
     2,
   );
   expect(result.terminalOutcome.kind).toBe("completed");
   expect(requests).toHaveLength(4);
+  expect(
+    requests
+      .filter((request) => !request.tools.some((tool) => tool.name === "delegate"))
+      .every((request) => request.processing?.preference.mode === "standard"),
+  ).toBe(true);
   expect(
     JSON.stringify(
       requests.filter((request) => request.tools.some((tool) => tool.name === "delegate"))[1]
@@ -694,4 +721,34 @@ test("two child edits use native patch preconditions and preserve the earlier se
   const firstResult = requests[3]?.messages.filter((message) => message.role === "tool").at(-1);
   expect(JSON.stringify(firstResult)).toContain("agent-result");
   expect(JSON.stringify(requests[6]?.messages)).toContain(JSON.stringify(firstResult).slice(1, -1));
+});
+
+test("main session Fast never becomes a delegated role preference", async () => {
+  const observed = await run(
+    (request, index) => {
+      if (index === 0) return launch("general", "Inspect independently", []);
+      return {
+        kind: "text",
+        text: request.tools.some((tool) => tool.name === "delegate")
+          ? "Parent finished"
+          : generalResult,
+      };
+    },
+    { processing: true },
+  );
+  const main = observed.requests.filter((request) =>
+    request.tools.some((tool) => tool.name === "delegate"),
+  );
+  const children = observed.requests.filter(
+    (request) => !request.tools.some((tool) => tool.name === "delegate"),
+  );
+  expect(main.length).toBeGreaterThan(0);
+  expect(children.length).toBeGreaterThan(0);
+  expect(main.every((request) => request.processing?.preference.mode === "fast")).toBe(true);
+  expect(
+    children.every((request) => request.processing?.preference.mode === "provider-default"),
+  ).toBe(true);
+  expect(
+    new Set(observed.requests.map((request) => JSON.stringify(request.processing?.admission))).size,
+  ).toBe(observed.requests.length);
 });

@@ -1,7 +1,13 @@
 import type { EventStorePort } from "../../domain/sessions/index.ts";
+import { resolveProcessingPreference } from "../../domain/sessions/model-processing.ts";
 import { createLiveCheckpoint, guardCheckpointTurn } from "../compression/live-checkpoint.ts";
 import type { CheckpointOutcome, CheckpointRequest } from "../compression/product-checkpoint.ts";
 import { conversationBudget } from "../context/conversation-budget.ts";
+import {
+  createProcessingSessionControl,
+  inspectProcessingRoute,
+  type ProcessingSessionControl,
+} from "../providers/processing-controls.ts";
 import { createConversationHistoryReader } from "../sessions/conversation-history.ts";
 import { createSessionHistory, historyDigest } from "../sessions/session-history.ts";
 /** One application-owned live-turn path for headless and OpenTUI hosts (#787). */
@@ -156,6 +162,7 @@ export type ProductModelSelectionControls = {
 };
 
 export type ProductLiveTurnExecutor = {
+  readonly processing: ProcessingSessionControl;
   readonly compact?: (
     request: CheckpointRequest,
     signal: AbortSignal,
@@ -309,6 +316,45 @@ export function createProductLiveTurnExecutor(
           modelId: initialCatalogModel,
         });
   let activeModelExplicit = options.initialModel !== undefined;
+  const processing = createProcessingSessionControl(String(correlation.sessionId), (preference) => {
+    const binding = options.admissionBinding?.();
+    const runtime = binding?.runtime ?? publishedRuntime;
+    const catalog = binding === undefined ? options.providerCatalog : binding.catalog;
+    const adapter = runtime.providerAdapter;
+    if (!adapter || !catalog) return null;
+    const preferences = binding?.preferences ?? options.modelPreferences?.();
+    const policy = productModelPolicy(
+      adapter,
+      catalog,
+      resolveExecutionProfile(
+        activeProfile,
+        binding?.generation ?? correlation.configurationGeneration,
+      ),
+      activeModelExplicit ? activeModel : preferences?.roles.default,
+      preferences,
+    );
+    const route = policy?.roles.default;
+    return route
+      ? inspectProcessingRoute(adapter, catalog, {
+          ...route,
+          processing: resolveProcessingPreference([
+            preference,
+            route.processing,
+            preferences?.processing,
+          ]),
+        })
+      : null;
+  });
+  processing.settled(
+    producer
+      .events()
+      .flatMap((event) =>
+        event.kind === "model.processing.recorded" &&
+        event.correlation.sessionId === correlation.sessionId
+          ? [event.payload.receipt]
+          : [],
+      ),
+  );
   let sessionStarted = options.resumed === true;
   let initialProfilePersisted = false;
   const checkpoint =
@@ -327,14 +373,26 @@ export function createProductLiveTurnExecutor(
             (artifact === null ||
               artifact.sensitivity === "public" ||
               artifact.sensitivity === "user-content"),
-          current: () => ({
-            model: activeModel,
-            generation: Number(
-              options.modelConfigurationGeneration?.() ?? correlation.configurationGeneration,
-            ),
-            profile: activeProfile,
-            policy: options.modelPreferences?.() ?? null,
-          }),
+          current: () => {
+            const binding = options.admissionBinding?.();
+            const preferences = binding?.preferences ?? options.modelPreferences?.();
+            const route = processing.control.inspect().selection?.route;
+            return {
+              model: activeModel,
+              generation: Number(
+                binding?.generation ??
+                  options.modelConfigurationGeneration?.() ??
+                  correlation.configurationGeneration,
+              ),
+              profile: activeProfile,
+              policy:
+                preferences === undefined
+                  ? null
+                  : route
+                    ? { ...preferences, roles: { ...preferences.roles, default: route } }
+                    : preferences,
+            };
+          },
         })
       : null;
 
@@ -370,6 +428,7 @@ export function createProductLiveTurnExecutor(
       >,
   ): ProductLiveTurnResult => {
     const profile = executionProfile(fields.executionProfile ?? activeProfile);
+    processing.settled(fields.processing ?? []);
     return {
       executionProfile: profile.id,
       executionProfileVersion: profile.schemaVersion,
@@ -573,6 +632,7 @@ export function createProductLiveTurnExecutor(
         return persistProfileSelection(profileId);
       },
     },
+    processing: processing.control,
     modelSelection: {
       get: () => activeModel,
       async select(identity) {
@@ -619,6 +679,38 @@ export function createProductLiveTurnExecutor(
             message: "the selected provider adapter cannot execute this model",
           };
         }
+        const preferences = binding?.preferences ?? options.modelPreferences?.();
+        const policy = productModelPolicy(
+          provider.value,
+          catalog,
+          resolveExecutionProfile(
+            activeProfile,
+            binding?.generation ?? correlation.configurationGeneration,
+          ),
+          identity,
+          preferences,
+        );
+        const route = policy?.roles.default;
+        if (route) {
+          const inspected = inspectProcessingRoute(provider.value, catalog, {
+            ...route,
+            processing: resolveProcessingPreference([
+              processing.capture(),
+              route.processing,
+              preferences?.processing,
+            ]),
+          });
+          const mode = inspected.modes.find(
+            (entry) => entry.preference.mode === inspected.preference.mode,
+          );
+          if (!mode?.eligible)
+            return {
+              ok: false,
+              code: mode?.reason ?? "processing-unavailable",
+              message:
+                "Processing preference is unavailable for this model; the current selection is unchanged.",
+            };
+        }
         const changed = !sameProviderModelIdentity(activeModel, identity);
         activeModel = identity;
         activeModelExplicit = true;
@@ -648,6 +740,12 @@ export function createProductLiveTurnExecutor(
           },
         }),
     async run(rawInput) {
+      const capturedProcessing =
+        rawInput.processing ??
+        (rawInput.childAdmission === undefined ? processing.capture() : undefined);
+      processing.started(capturedProcessing);
+      if (capturedProcessing !== undefined)
+        rawInput = { ...rawInput, processing: capturedProcessing };
       const binding = options.admissionBinding?.();
       const inScope = binding?.runScope ?? (<T>(work: () => Promise<T>) => work());
       return inScope(async () => {

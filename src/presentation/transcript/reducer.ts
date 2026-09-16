@@ -371,8 +371,23 @@ export function blockFor(event: RuntimeEvent, history?: HistoryPayload): Transcr
           `Published: ${event.payload.publishedGeneration ?? "none"}. ${event.payload.owners.map((owner) => `${owner.owner}: ${owner.state}`).join("; ")}`,
         ),
       };
-    case "turn.started":
     case "model.processing.recorded":
+      return {
+        ...spine,
+        kind: "notice",
+        source: "runtime",
+        status: "final",
+        invocationId: null,
+        anchor: {
+          of: "declared",
+          key: `processing:${event.modelAttemptId}:${event.payload.receipt.requestId}`,
+        },
+        summary: complete(`Processing actual: ${event.payload.receipt.actualMode}.`),
+        note: complete(
+          `Requested: ${event.payload.receipt.binding.preference.mode}; resolved: ${event.payload.receipt.binding.resolvedMode}; actual: ${event.payload.receipt.actualMode}. Model ${event.payload.receipt.binding.modelId}; account ${event.payload.receipt.binding.accountId}.`,
+        ),
+      };
+    case "turn.started":
     case "model.attempt.started":
       // Scope boundaries. See this module's header for why they draw nothing.
       return null;

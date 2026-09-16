@@ -12,12 +12,20 @@ import {
   type ProfileControl,
 } from "../../application/configuration/profile-control.ts";
 import { scopeProviderContinuations } from "../../application/providers/continuation-scope.ts";
+import { inspectProcessingRoute } from "../../application/providers/processing-controls.ts";
 import type { ProductAgentRuntime } from "../../application/runtime/product-agent-runtime.ts";
-import type { ProductAdmissionBinding } from "../../application/runtime/product-live-turn.ts";
+import {
+  type ProductAdmissionBinding,
+  productModelPolicy,
+} from "../../application/runtime/product-live-turn.ts";
 import { createTurnEventJournal } from "../../application/runtime/turn-event-journal.ts";
 import type { ConfigurationGenerationRecord } from "../../domain/configuration/index.ts";
 import { configurationGeneration, streamId } from "../../domain/foundation/index.ts";
 import { createInMemoryEventStore } from "../../domain/sessions/index.ts";
+import {
+  type ProcessingPreference,
+  resolveProcessingPreference,
+} from "../../domain/sessions/model-processing.ts";
 import { runWorkingConfiguration } from "../commands/profile.ts";
 import type { GlobalOptions } from "../options.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
@@ -65,6 +73,7 @@ export type WorkingProfileSessionFactory = (
   ) => ProductAgentRuntime,
   environmentContext?: EnvironmentProcessContext,
   deferEnvironment?: boolean,
+  sessionProcessing?: () => ProcessingPreference | undefined,
 ) => Promise<WorkingProfileSession>;
 
 /** Host factory shared by interactive and embeddable session composition. */
@@ -79,6 +88,7 @@ export function productWorkingProfileSessions(
     compose,
     environmentContext = createEnvironmentProcessContext(),
     deferEnvironment = false,
+    sessionProcessing,
   ) => {
     const history = await runtime.journal.replay();
     if (history.kind !== "rebuilt" && history.kind !== "empty")
@@ -208,6 +218,31 @@ export function productWorkingProfileSessions(
         });
         const provider = await connections.resolveSelected(signal);
         if (provider.kind !== "ready") return { kind: "refused", code: provider.code };
+        const preferences = modelPreferencesFrom(candidate.record.values);
+        const route = productModelPolicy(
+          provider.adapter,
+          provider.session.catalog,
+          undefined,
+          preferences.roles.default,
+          preferences,
+        )?.roles.default;
+        if (route) {
+          const inspection = inspectProcessingRoute(provider.adapter, provider.session.catalog, {
+            ...route,
+            processing: resolveProcessingPreference([
+              sessionProcessing?.(),
+              route.processing,
+              preferences.processing,
+            ]),
+          });
+          const requested = inspection.modes.find(
+            (mode) => mode.preference.mode === inspection.preference.mode,
+          );
+          if (!requested?.eligible) {
+            await provider.session.release();
+            return { kind: "refused", code: requested?.reason ?? "processing-unavailable" };
+          }
+        }
         let nextRuntime: ProductAgentRuntime;
         try {
           nextRuntime = compose(candidate.record, connections, provider);

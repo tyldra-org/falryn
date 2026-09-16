@@ -314,6 +314,12 @@ function ResolvedShell(
     executionProfile === null
       ? props.activityModel.health.headline
       : `[${executionProfile}] ${props.activityModel.health.headline}`;
+  const processing =
+    props.submission && "processing" in props.submission
+      ? (
+          props.submission as import("../composer/product-submission.ts").ProductSubmissionPort
+        ).processing?.inspect()
+      : undefined;
   const model: ShellModel = {
     ...props.model,
     header: projectWorkspaceHeader(
@@ -333,6 +339,17 @@ function ResolvedShell(
         : [],
     status: {
       ...props.model.status,
+      ...(processing
+        ? {
+            processing: {
+              requested: processing.selection?.preference.mode ?? "unknown",
+              actual: processing.active
+                ? ("unknown" as const)
+                : (processing.lastServed?.actualMode ?? ("unknown" as const)),
+              active: processing.active !== null,
+            },
+          }
+        : {}),
       status: statusOfHealth(props.activityModel.health.level),
       message: healthMessage,
       ...(props.refusal !== null

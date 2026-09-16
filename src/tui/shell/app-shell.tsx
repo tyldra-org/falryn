@@ -579,7 +579,13 @@ function overlayBody(
         </scrollbox>
       );
     case "model-settings":
-      return <ModelSettingsSheet service={props.modelSettings ?? null} rows={rows} />;
+      return (
+        <ModelSettingsSheet
+          service={props.modelSettings ?? null}
+          rows={rows}
+          processing={overlay.processing ?? false}
+        />
+      );
     case "compression":
       return (
         <CompressionSheet

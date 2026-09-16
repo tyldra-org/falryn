@@ -20,6 +20,8 @@ export function workingModelEdits(
         : { kind: "set", path: [...root, ...path], value },
     );
   if (edit.kind === "processing-default") put(["processing"], edit.processing);
+  else if (edit.kind === "processing-route")
+    put([...modelPreferencePath(edit.target), "processing"], edit.processing);
   else if (edit.kind === "membership")
     put(["roles", "subagents", "agents", edit.id, "preset"], edit.preset ?? undefined);
   else if (edit.kind === "use") put(["roles", "fast", "use", edit.option], edit.use);

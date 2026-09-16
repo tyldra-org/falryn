@@ -16,6 +16,8 @@ import {
   OPENAI_RESPONSES_TRANSPORT_DEFAULT,
   type ProviderProfile,
 } from "../../providers/index.ts";
+import { parseInvocation } from "../command-tree.ts";
+import { runModel } from "../commands/model.ts";
 import type { GlobalOptions } from "../options.ts";
 import { createRecordingCliStreams } from "../output/streams.ts";
 import { runCoding } from "./coding-run.ts";
@@ -96,6 +98,7 @@ export async function openAiProcessingJourney(
     fetch?: OpenAiSdkFetch;
     signal?: AbortSignal;
     continueAt?: "standard";
+    throughControls?: boolean;
   },
   register: (home: string) => void,
 ) {
@@ -172,7 +175,7 @@ export async function openAiProcessingJourney(
   config.defaults ??= {};
   config.defaults.models ??= {};
   config.defaults.models.policy = {
-    processing: { mode: options.mode },
+    processing: { mode: options.throughControls ? "standard" : options.mode },
     roles: {
       default: {
         providerProfileId: "openai-processing",
@@ -188,6 +191,31 @@ export async function openAiProcessingJourney(
     },
   };
   await writeFile(path, JSON.stringify(config));
+  const controlResults = [];
+  if (options.throughControls) {
+    const invoke = async (args: string[]) => {
+      const parsed = await parseInvocation(["model", "processing", ...args]);
+      if (parsed.kind !== "run" || !parsed.modelArgs) throw new Error(JSON.stringify(parsed));
+      return runModel(makeServices(), parsed.modelArgs, globals);
+    };
+    const inspected = await invoke(["inspect", "--scope", "user"]);
+    if (inspected.payload?.kind !== "processing-inspection")
+      throw new Error(JSON.stringify(inspected));
+    controlResults.push(inspected.payload);
+    const saved = await invoke([
+      "set",
+      "--scope",
+      "user",
+      "--mode",
+      options.mode,
+      "--revision",
+      inspected.payload.fileRevision ?? "absent",
+    ]);
+    if (saved.payload?.kind !== "written") throw new Error(JSON.stringify(saved));
+    controlResults.push(saved.payload);
+    // A fresh service provider reopens the persisted source before the first model call.
+    controlResults.push((await invoke(["inspect", "--scope", "user"])).payload);
+  }
   const services = makeServices();
   const bodies: Record<string, unknown>[] = [];
   const urls: string[] = [];
@@ -232,7 +260,7 @@ export async function openAiProcessingJourney(
     const receipts = events.value.flatMap((event) =>
       event.kind === "model.processing.recorded" ? [event.payload.receipt] : [],
     );
-    return { result, followUp, bodies, urls, events, receipts };
+    return { result, followUp, bodies, urls, events, receipts, controlResults };
   } finally {
     await state.close();
   }
