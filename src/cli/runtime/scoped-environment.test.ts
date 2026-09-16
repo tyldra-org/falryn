@@ -278,5 +278,19 @@ zsh(
     expect(result.inspection.ineligibleMappings).toContain("FALRYN_STATE_DIR");
     expect(JSON.stringify(result)).not.toContain("private-fixture-value");
     expect(JSON.stringify(result)).not.toContain("/invalid-root");
+    await writeFile(
+      join(f.config, "falryn.jsonc"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumReaderSchemaVersion: 2,
+        defaults: { execution: { environment: { set: { VALUE: "structured" } } } },
+      }),
+    );
+    expect((await runtime.control.execute("inspect")).inspection.outdated).toBe(true);
+    const structured = await runtime.control.execute("reload");
+    expect(structured.inspection.state).toBe("active");
+    expect(structured.inspection.ineligibleMappings).toEqual([]);
+    expect(structured.inspection.sources).toEqual([]);
+    expect(runtime.graph.loader.current()?.values["diagnostics.level"]).toBe("info");
   },
 );

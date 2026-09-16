@@ -142,7 +142,7 @@ export function createScopedEnvironment(ports: {
       const attempt = ++serial;
       const identity = ports.identity();
       let terminated = true;
-      fact = { ...fact, prepared: identity, effects: "none" };
+      fact = { ...fact, prepared: identity, effects: "none", ineligibleMappings: [] };
       const cancelled = () => {
         if (attempt === serial) fail("environment-cancelled");
       };
