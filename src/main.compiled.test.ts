@@ -133,6 +133,29 @@ const built = await stat(EXECUTABLE)
   .then(() => true)
   .catch(() => false);
 
+test.skipIf(!built)(
+  "compiled profile use refuses an absent or unsupported session target without creating state",
+  async () => {
+    const root = await temporaryRoot();
+    for (const target of [[], ["--target-session", "exact-session"]]) {
+      const result = spawnCompiled(root, [
+        "profile",
+        "use",
+        "coding",
+        ...target,
+        "--format",
+        "json",
+      ]);
+      expect(result.exitCode).toBe(EXIT_CODES.OPERATION_FAILED);
+      expect(result.stdout).toContain(
+        target.length ? "session-target-transport-unavailable" : "session-target-required",
+      );
+      expect(result.stdout).toContain("--profile");
+    }
+    expect(await readdir(root)).toEqual([]);
+  },
+);
+
 if (selectedSmokeTarget !== undefined) {
   test("requires the selected standalone executable to exist", () => {
     // The regular suite records a missing binary as skipped for source-only

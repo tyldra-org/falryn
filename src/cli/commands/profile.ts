@@ -10,10 +10,12 @@ import { listWorkingProfiles } from "../../config/resolution/working-profile.ts"
 import type { ConfigurationInspection } from "../../domain/configuration/index.ts";
 import type { GlobalOptions } from "../options.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
+import { workspaceProfilePreference } from "../runtime/workspace-profile-preferences.ts";
 import { errorsFrom, resultFor } from "./shared.ts";
 
 export type WorkingConfigurationArguments =
   | { readonly action: "list" }
+  | { readonly action: "use"; readonly id: string; readonly session?: string }
   | { readonly action: "show"; readonly id?: string }
   | { readonly action: "default"; readonly id: string; readonly revision?: string }
   | {
@@ -80,6 +82,16 @@ export async function runWorkingConfiguration(
       },
       true,
     );
+  if (args.action === "use")
+    return result(
+      {
+        kind: "refused",
+        code: args.session ? "session-target-transport-unavailable" : "session-target-required",
+        remedy:
+          "Use /profile use <id> inside the exact running session, or launch falryn --profile <id> for a new session. This standalone command has no active-session transport.",
+      },
+      true,
+    );
   const graph = services();
   const workspace = await graph.ensureWorkspaceSet(signal);
   if (!workspace.ok) return refuse("workspace-unavailable");
@@ -92,7 +104,17 @@ export async function runWorkingConfiguration(
       : args.action === "default"
         ? args.id
         : globals.profile;
-  const request = { configurationRoot: home.root, workspaceRoot: graph.workspaceRoot, profile };
+  const preference =
+    args.action === "show" && profile === null
+      ? await workspaceProfilePreference(graph, signal)
+      : null;
+  if (preference && !preference.ok) return refuse(preference.error.code);
+  const request = {
+    configurationRoot: home.root,
+    workspaceRoot: graph.workspaceRoot,
+    profile,
+    workspaceProfile: preference?.ok ? preference.value.profile : null,
+  };
   if (args.action === "list") {
     const listed = await listWorkingProfiles(graph.fileSystem, home.root, signal);
     if (listed.issues.length > 0) return refuse("profile-catalog-unavailable-or-ambiguous");
@@ -145,8 +167,8 @@ export async function runWorkingConfiguration(
     if (preview.kind !== "preview") return refuse(preview.code);
     return result({ kind: "migration", preview });
   }
-  const loaded = await graph.loader.load(request, signal);
-  if (loaded.kind !== "published" && loaded.kind !== "unchanged") {
+  const loaded = await graph.loader.preview(request, signal);
+  if (loaded.kind !== "candidate" && loaded.kind !== "unchanged") {
     if (loaded.kind === "rejected")
       return resultFor(
         command,
@@ -160,7 +182,10 @@ export async function runWorkingConfiguration(
   if (args.action === "show")
     return result({
       kind: "profile",
-      inspection: inspectGeneration(graph.registry, loaded.record),
+      inspection:
+        loaded.kind === "candidate"
+          ? loaded.inspection
+          : inspectGeneration(graph.registry, loaded.record),
     });
   const receipt = await writeConfigurationEdits(
     graph.registry,

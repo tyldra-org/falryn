@@ -205,10 +205,13 @@ export function composeDelegatedAgentRuntime(
           "busy",
         )) ?? null;
       try {
+        // A child owns a distinct stream and coordinator. Only root recomposition
+        // may reuse the parent's host.
+        const { host: _parentHost, ...childBase } = ports;
         const child = compose(
           run,
           {
-            ...ports,
+            ...childBase,
             providerAdapter: provider.adapter,
             streamId: streamId.from(`agent:${String(childSession)}`),
             correlation: { ...ports.correlation, sessionId: childSession },
@@ -412,6 +415,10 @@ export function composeDelegatedAgentRuntime(
   if (!initial.ok) return initial;
   const decorate = (runtime: typeof initial.value): typeof initial.value => ({
     ...runtime,
+    closeBindings() {
+      runtime.closeBindings();
+      delegation.close();
+    },
     recomposeTools(bundle) {
       const previous = { base, baseRegistry, baseRunner, baseCapabilities };
       base = bundle;

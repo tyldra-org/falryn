@@ -54,6 +54,7 @@ function file(text: string): InMemoryNode {
 }
 
 type Harness = {
+  readonly fileSystem: ReturnType<typeof createInMemoryFileSystem>;
   readonly loader: ReturnType<typeof createConfigurationLoader>;
   readonly registry: ReturnType<typeof createConfigurationRegistry>;
   readonly eventStore: EventStorePort;
@@ -74,10 +75,11 @@ function harness(
     redactor: createRuntimeRedactor(),
   });
   const eventStore = createInMemoryEventStore();
+  const fileSystem = createInMemoryFileSystem({ nodes: options.nodes ?? {} });
   const loader = createConfigurationLoader({
     registry,
     declarations,
-    fileSystem: createInMemoryFileSystem({ nodes: options.nodes ?? {} }),
+    fileSystem,
     environment: options.environmentPort ?? createStaticEnvironment(options.environment ?? {}),
     redactor: createRuntimeRedactor(),
     clock: createManualClock(),
@@ -85,7 +87,7 @@ function harness(
     correlation: CORRELATION,
     streamId: streamId.from("configuration"),
   });
-  return { loader, registry, eventStore };
+  return { loader, registry, eventStore, fileSystem };
 }
 
 const REQUEST: LoadRequest = {
@@ -831,5 +833,59 @@ describe("negative controls", () => {
     });
     const outcome = await loader.load(REQUEST);
     expect(JSON.stringify(outcome)).not.toContain(secret);
+  });
+});
+
+describe("reviewed publication", () => {
+  test("host authority is checked at the publication boundary after source reads", async () => {
+    const f = harness();
+    const candidate = await f.loader.preview(REQUEST);
+    if (candidate.kind !== "candidate") throw new Error("Missing candidate");
+    expect(await candidate.publish(undefined, () => false)).toMatchObject({
+      kind: "publish-failed",
+      code: "configuration-authority-changed",
+    });
+    expect(f.loader.current()).toBeNull();
+  });
+  test("preview has no publication and consumes exactly one reviewed candidate", async () => {
+    const f = harness();
+    const candidate = await f.loader.preview(REQUEST);
+    expect(candidate.kind).toBe("candidate");
+    expect(f.loader.current()).toBeNull();
+    if (candidate.kind !== "candidate") throw new Error("Missing candidate");
+    expect((await candidate.publish()).kind).toBe("published");
+    expect(await candidate.publish()).toMatchObject({
+      kind: "publish-failed",
+      code: "configuration-generation-changed",
+    });
+  });
+  test("a concurrent publication invalidates an earlier reviewed generation", async () => {
+    const f = harness();
+    const first = await f.loader.preview(REQUEST);
+    const second = await f.loader.preview(REQUEST);
+    if (first.kind !== "candidate" || second.kind !== "candidate")
+      throw new Error("Missing candidate");
+    expect((await second.publish()).kind).toBe("published");
+    expect(await first.publish()).toMatchObject({
+      kind: "publish-failed",
+      code: "configuration-generation-changed",
+    });
+  });
+  test("editing or creating a source after preview preserves the current record", async () => {
+    for (const existed of [true, false]) {
+      const f = harness({
+        nodes: existed
+          ? { [USER_FILE]: file('{"schemaVersion":1,"diagnostics":{"level":"info"}}') }
+          : {},
+      });
+      const candidate = await f.loader.preview(REQUEST);
+      if (candidate.kind !== "candidate") throw new Error("Missing candidate");
+      f.fileSystem.put(USER_FILE, file('{"schemaVersion":1,"diagnostics":{"level":"debug"}}'));
+      expect(await candidate.publish()).toMatchObject({
+        kind: "publish-failed",
+        code: "configuration-source-changed",
+      });
+      expect(f.loader.current()).toBeNull();
+    }
   });
 });

@@ -23,6 +23,7 @@ import type { WorkspaceTrustReport } from "../../domain/security/workspace-trust
 import type { LocalPath } from "../../domain/workspace/index.ts";
 import { configurationOverridesFor, type GlobalOptions } from "../options.ts";
 import type { Services } from "./services.ts";
+import { workspaceProfilePreference } from "./workspace-profile-preferences.ts";
 
 export type ProductConfigurationLoadRequest = {
   readonly profile: string | null;
@@ -120,6 +121,9 @@ export async function loadProductConfiguration(
   signal?: AbortSignal,
 ): Promise<ProductConfigurationLoadResult> {
   const project = await graph.workspaceTrust.project(signal);
+  const preference =
+    request.profile === null ? await workspaceProfilePreference(graph, signal) : null;
+  if (preference && !preference.ok) throw new Error(preference.error.code);
   const load = (projectText: string | null, privateProjectText: string | null) =>
     graph.loader.load(
       {
@@ -129,6 +133,7 @@ export async function loadProductConfiguration(
         legacyConfigurationRoot: graph.legacyConfigurationRoot,
         workspaceRoot: graph.workspaceRoot,
         profile: request.profile,
+        workspaceProfile: preference?.ok ? preference.value.profile : null,
         overrides: request.overrides,
       },
       signal,

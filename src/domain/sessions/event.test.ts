@@ -22,6 +22,7 @@ import {
 function carriesTurnIdentity(event: RuntimeEvent): boolean {
   switch (event.kind) {
     case "session.started":
+    case "configuration.transition.recorded":
     case "configuration.generation.changed":
     case "workspace.trust.reviewed":
     case "work.queue.changed":

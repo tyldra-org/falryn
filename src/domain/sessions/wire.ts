@@ -1,4 +1,5 @@
 import { compositionProvenanceSchema } from "../capabilities/composition.ts";
+import { profileTransitionReceiptSchema } from "../configuration/profile-transition.ts";
 import { workflowReceiptSchema } from "../orchestration/workflow-state.ts";
 import {
   MAX_SANDBOX_LAUNCHES,
@@ -488,6 +489,12 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
   }),
   z.object({
     ...envelopeSpine,
+    kind: z.literal("configuration.transition.recorded"),
+    correlation: sessionCorrelationSchema,
+    payload: profileTransitionReceiptSchema,
+  }),
+  z.object({
+    ...envelopeSpine,
     kind: z.literal("configuration.generation.changed"),
     correlation: sessionCorrelationSchema,
     payload: configurationPayloadSchema,
@@ -630,6 +637,7 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
       };
     case "configuration.generation.changed":
       return configurationPayloadToJson(event);
+    case "configuration.transition.recorded":
     case "workspace.trust.reviewed":
     case "work.queue.changed":
     case "workflow.changed":

@@ -269,6 +269,7 @@ export type RawArguments = {
   readonly key: string | undefined;
   readonly value: string | undefined;
   readonly revision: string | undefined;
+  readonly "target-session"?: string;
   readonly shell: string | undefined;
   readonly "file-scope": string | undefined;
   readonly statement: string | undefined;

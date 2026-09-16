@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { CompositionProvenance } from "../capabilities/composition.ts";
+import type { ProfileTransitionReceipt } from "../configuration/profile-transition.ts";
 import type { CatalogHistory } from "../extensions/catalog-history.ts";
 import type { HistoryPayload } from "./history.ts";
 import type { ProcessingReceipt } from "./model-processing.ts";
@@ -50,6 +51,11 @@ import type { ExecutionProfileCompletion, ExecutionProfileId } from "./execution
 
 /** One semantic fact the turn loop records. Effects are facts, never re-run. */
 export type TurnLifecycleFact =
+  | {
+      readonly kind: "configuration.transition.recorded";
+      readonly correlation: SessionCorrelation;
+      readonly payload: ProfileTransitionReceipt;
+    }
   | {
       readonly kind: "model.processing.recorded";
       readonly correlation: TurnCorrelation;
@@ -127,6 +133,8 @@ export type TurnLifecycleFact =
  */
 export function factIdentity(fact: TurnLifecycleFact): string {
   switch (fact.kind) {
+    case "configuration.transition.recorded":
+      return `configuration-transition:${createHash("sha256").update(JSON.stringify(fact.payload)).digest("hex")}`;
     case "history.recorded":
       return `history:${createHash("sha256")
         .update(JSON.stringify([fact.correlation.sessionId, fact.payload.id]))
@@ -246,6 +254,8 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
       };
       return event;
     }
+    case "configuration.transition.recorded":
+      return { ...spine, kind: fact.kind, correlation: fact.correlation, payload: fact.payload };
     case "model.processing.recorded":
       return {
         ...spine,
@@ -566,6 +576,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
         break;
       }
       case "history.recorded":
+      case "configuration.transition.recorded":
       case "configuration.generation.changed":
       case "workspace.trust.reviewed":
       case "workflow.changed":

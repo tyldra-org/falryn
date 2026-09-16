@@ -270,6 +270,7 @@ describe("reads", () => {
       sequence.from(13),
       sequence.from(14),
       sequence.from(15),
+      sequence.from(16),
     ]);
     await store.close();
   });

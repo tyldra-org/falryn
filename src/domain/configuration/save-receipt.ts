@@ -8,5 +8,6 @@ export type ConfigurationSaveReceipt = {
   readonly save: "saved" | "unchanged";
   readonly publication: "pending" | "published" | "failed";
   readonly generation: number | null;
-  readonly application: "pending" | "failed";
+  readonly application: "pending" | "failed" | "applied";
+  readonly transition?: import("./profile-transition.ts").ProfileTransitionReceipt | null;
 };

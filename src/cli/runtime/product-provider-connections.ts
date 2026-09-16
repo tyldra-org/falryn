@@ -92,6 +92,8 @@ export type ProductProviderConnectionOptions = {
   readonly ownedProcesses?: OwnedProcessRegistry;
   /** Reuse an already-loaded generation on bootstrap paths. */
   readonly configuration?: ConfigurationValues;
+  /** Captured session admission binding; credential resolution remains live. */
+  readonly configurationBinding?: ConfigurationValues;
   /** Injectable controlled transport for provider integration fixtures. */
   readonly providerFetch?: OpenAiSdkFetch;
   /** Injectable discovery boundary for deterministic provider fixtures. */
@@ -172,7 +174,12 @@ export function composeProductProviderConnections(
       host,
     });
   }
-  const store = configurationStore(services, globals, options.configuration);
+  const store = configurationStore(
+    services,
+    globals,
+    options.configuration,
+    options.configurationBinding,
+  );
   const remoteDiscovery =
     options.modelDiscovery ??
     createCachedModelDiscovery(
@@ -209,6 +216,7 @@ export function composeProductProviderConnections(
     admitted = false,
   ): Promise<ProductProviderConnectionHandoff> {
     const values =
+      options.configurationBinding ??
       options.configuration ??
       (await loadProductConfiguration(services, productConfigurationLoadRequest(globals), signal))
         .values;
@@ -392,6 +400,7 @@ function configurationStore(
   services: Services,
   globals: GlobalOptions,
   initialValues: ConfigurationValues | undefined,
+  binding?: ConfigurationValues,
 ): ProviderConnectionStorePort {
   let supplied = initialValues;
   const scope = globals.profile === null ? "user" : "profile";
@@ -400,6 +409,7 @@ function configurationStore(
     ownership: credentialOwner(services, globals),
     async read(signal) {
       const values =
+        binding ??
         supplied ??
         (await loadProductConfiguration(services, productConfigurationLoadRequest(globals), signal))
           .values;
@@ -426,6 +436,7 @@ function configurationStore(
       };
     },
     async write(state, expectedFileRevision, signal) {
+      if (binding) return { kind: "failed", code: "profile-binding-read-only" };
       const outcome = await writeConfigurationValue(
         services.registry,
         services.fileSystem,

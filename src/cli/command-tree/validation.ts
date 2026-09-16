@@ -48,6 +48,7 @@ export function isRawArguments(value: unknown): value is RawArguments {
     (field("after-sequence") === undefined || typeof field("after-sequence") === "number") &&
     (field("schema-generation") === undefined || typeof field("schema-generation") === "number") &&
     optionalString(field("at-turn")) &&
+    optionalString(field("target-session")) &&
     optionalString(field("new-session-id")) &&
     optionalString(field("new-stream-id")) &&
     optionalString(field("replay-action")) &&

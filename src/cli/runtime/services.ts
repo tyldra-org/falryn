@@ -45,8 +45,10 @@ import {
 import type { ConfigurationRegistryPort } from "../../domain/configuration/index.ts";
 import {
   type ClockPort,
+  type ConfigurationGeneration,
   createSystemClock,
   type EnvironmentPort,
+  FIRST_CONFIGURATION_GENERATION,
   type Result,
   sessionId,
   streamId,
@@ -121,6 +123,10 @@ export type Services = {
   readonly removalData: ReturnType<typeof createLocalDataService>;
   readonly registry: ConfigurationRegistryPort;
   readonly loader: ConfigurationLoader;
+  /** Independent session publication; shares filesystem and trust, never selected state. */
+  readonly configurationSession: (
+    generation?: ConfigurationGeneration,
+  ) => Pick<Services, "registry" | "loader">;
   /** Current user-authored configuration home, normally `~/.falryn`. */
   readonly configurationRoot: LocalPath;
   /** Previous platform-default home, absent under an explicit override. */
@@ -231,19 +237,6 @@ export function createServiceProvider(
       }
     }
 
-    const registryPublication = createRegistryPublication(
-      createConfigurationRegistry({
-        declarations: PRODUCT_CONFIGURATION_KEYS,
-        crossFieldRules: V0_1_CROSS_FIELD_RULES,
-        redactor: createRuntimeRedactor(),
-      }),
-    );
-    const registry = registryPublication.registry;
-    let packageConfigurationDocuments = new Map<
-      string,
-      import("../../domain/extensions/package-data-store.ts").PackageDataDocument
-    >();
-
     const eventStore = createInMemoryEventStore();
     const configurationRoot = rootChild(localData.layout, "configuration") ?? home;
     const legacyConfigurationRoot = localData.layout.legacyConfigurationRoot;
@@ -255,6 +248,74 @@ export function createServiceProvider(
       | { readonly ok: false; readonly error: WorkspaceResolveError }
       | null = null;
 
+    function configurationSession(
+      firstGeneration = FIRST_CONFIGURATION_GENERATION,
+      sessionEvents = createInMemoryEventStore(),
+    ): Pick<Services, "registry" | "loader"> {
+      const registryPublication = createRegistryPublication(
+        createConfigurationRegistry({
+          declarations: PRODUCT_CONFIGURATION_KEYS,
+          crossFieldRules: V0_1_CROSS_FIELD_RULES,
+          redactor: createRuntimeRedactor(),
+        }),
+      );
+      const registry = registryPublication.registry;
+      let packageConfigurationDocuments = new Map<
+        string,
+        import("../../domain/extensions/package-data-store.ts").PackageDataDocument
+      >();
+
+      return {
+        registry,
+        loader: createConfigurationLoader({
+          firstGeneration,
+          prepare: async (request, signal) => {
+            const packages = await loadPackageConfiguration(
+              services,
+              request,
+              signal,
+              packageConfigurationDocuments,
+            );
+            const declarations = [...PRODUCT_CONFIGURATION_KEYS, ...packages.declarations];
+            const candidate = createConfigurationRegistry({
+              declarations,
+              crossFieldRules: V0_1_CROSS_FIELD_RULES,
+              redactor: createRuntimeRedactor(),
+            });
+            return {
+              ...packages,
+              declarations,
+              registry: candidate,
+              publish: () => {
+                registryPublication.publish(candidate);
+                packageConfigurationDocuments = packages.documents;
+              },
+            };
+          },
+          registry,
+          declarations: PRODUCT_CONFIGURATION_KEYS,
+          fileSystem,
+          environment,
+          // Injected, never reimplemented. A second redaction rule in the CLI
+          // would be a second answer to what a secret looks like.
+          redactor: createRuntimeRedactor(),
+          clock,
+          // In memory on purpose: `config show` is a read, and appending a
+          // durable generation event because someone inspected their settings
+          // would write to a user's database for a question.
+          eventStore: sessionEvents,
+          // Synthetic identities for a read that belongs to no session. The
+          // loader's event never leaves this process, so these correlate the
+          // inspection rather than naming durable work.
+          correlation: {
+            workspaceId: workspaceId.from("cli"),
+            sessionId: sessionId.from("cli"),
+            traceId: traceId.from("cli"),
+          },
+          streamId: streamId.from(CLI_EVENT_STREAM),
+        }),
+      };
+    }
     let trust: WorkspaceTrust | null = null;
     const services: Services = {
       get workspaceTrust() {
@@ -267,53 +328,8 @@ export function createServiceProvider(
       eventStore,
       localData,
       removalData,
-      registry,
-      loader: createConfigurationLoader({
-        prepare: async (request, signal) => {
-          const packages = await loadPackageConfiguration(
-            services,
-            request,
-            signal,
-            packageConfigurationDocuments,
-          );
-          const declarations = [...PRODUCT_CONFIGURATION_KEYS, ...packages.declarations];
-          const candidate = createConfigurationRegistry({
-            declarations,
-            crossFieldRules: V0_1_CROSS_FIELD_RULES,
-            redactor: createRuntimeRedactor(),
-          });
-          return {
-            ...packages,
-            declarations,
-            registry: candidate,
-            publish: () => {
-              registryPublication.publish(candidate);
-              packageConfigurationDocuments = packages.documents;
-            },
-          };
-        },
-        registry,
-        declarations: PRODUCT_CONFIGURATION_KEYS,
-        fileSystem,
-        environment,
-        // Injected, never reimplemented. A second redaction rule in the CLI
-        // would be a second answer to what a secret looks like.
-        redactor: createRuntimeRedactor(),
-        clock,
-        // In memory on purpose: `config show` is a read, and appending a
-        // durable generation event because someone inspected their settings
-        // would write to a user's database for a question.
-        eventStore,
-        // Synthetic identities for a read that belongs to no session. The
-        // loader's event never leaves this process, so these correlate the
-        // inspection rather than naming durable work.
-        correlation: {
-          workspaceId: workspaceId.from("cli"),
-          sessionId: sessionId.from("cli"),
-          traceId: traceId.from("cli"),
-        },
-        streamId: streamId.from(CLI_EVENT_STREAM),
-      }),
+      ...configurationSession(FIRST_CONFIGURATION_GENERATION, eventStore),
+      configurationSession,
       configurationRoot,
       legacyConfigurationRoot,
       configurationHomeForRead: (signal) =>

@@ -129,12 +129,16 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
       )
       .command(
         "profile <action> [id]",
-        "List, inspect, or save the default working profile.",
+        "Inspect working profiles, save a future default, or request an exact session target.",
         (group) =>
           group
-            .positional("action", { type: "string", choices: ["list", "show", "default"] })
+            .positional("action", { type: "string", choices: ["list", "show", "use", "default"] })
             .positional("id", { type: "string", describe: "working-profile identity" })
-            .option("revision", { type: "string", describe: "expected global file revision" }),
+            .option("revision", { type: "string", describe: "expected global file revision" })
+            .option("target-session", {
+              type: "string",
+              describe: "exact session target (requires a supported host transport)",
+            }),
       )
       .command(configCommand, "Inspect and validate effective configuration.", (group) =>
         group
@@ -957,6 +961,12 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
       workingConfigurationArgs = {
         action: "show",
         ...(parsed.id === undefined ? {} : { id: parsed.id }),
+      };
+    else if (parsed.action === "use" && parsed.id !== undefined)
+      workingConfigurationArgs = {
+        action: "use",
+        id: parsed.id,
+        ...(parsed["target-session"] === undefined ? {} : { session: parsed["target-session"] }),
       };
     else if (parsed.action === "default" && parsed.id !== undefined)
       workingConfigurationArgs = {

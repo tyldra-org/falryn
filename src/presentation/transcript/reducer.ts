@@ -358,6 +358,19 @@ export function blockFor(event: RuntimeEvent, history?: HistoryPayload): Transcr
         note: complete("A session was opened. Nothing has run in it yet."),
       };
 
+    case "configuration.transition.recorded":
+      return {
+        ...spine,
+        kind: "notice",
+        anchor: { of: "session", sessionId: event.correlation.sessionId },
+        source: "runtime",
+        status: "final",
+        invocationId: null,
+        summary: complete(`Profile ${event.payload.profile}: ${event.payload.code}.`),
+        note: complete(
+          `Published: ${event.payload.publishedGeneration ?? "none"}. ${event.payload.owners.map((owner) => `${owner.owner}: ${owner.state}`).join("; ")}`,
+        ),
+      };
     case "turn.started":
     case "model.processing.recorded":
     case "model.attempt.started":

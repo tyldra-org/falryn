@@ -37,6 +37,8 @@ export function startConfigurationReloadWatcher(
     readonly signal?: AbortSignal;
     readonly loadRequest?: ProductConfigurationLoadRequest;
     readonly subscribe?: FileChangeSubscriber;
+    /** Session transition owner handles invalidation without preparing or publishing. */
+    readonly onInvalidation?: (signal?: AbortSignal) => void | Promise<void>;
   } = {},
 ): ConfigurationReloadHandle {
   const loadRequest = options.loadRequest ?? productConfigurationLoadRequest(globals);
@@ -65,10 +67,22 @@ export function startConfigurationReloadWatcher(
   const streams = options.streams;
   return createConfigurationReloadWatcher({
     loader: {
-      validate: graph.loader.validate,
-      current: graph.loader.current,
-      load: async (_request, signal) =>
-        (await loadProductConfiguration(graph, loadRequest, signal)).outcome,
+      load: async (_request, signal) => {
+        if (options.onInvalidation) {
+          await options.onInvalidation(signal);
+          const record = graph.loader.current();
+          return record ? { kind: "unchanged", record } : { kind: "cancelled" };
+        }
+        try {
+          return (await loadProductConfiguration(graph, loadRequest, signal)).outcome;
+        } catch {
+          return {
+            kind: "publish-failed",
+            code: "configuration-read-failed",
+            retained: graph.loader.current(),
+          };
+        }
+      },
     },
     loadRequest: {
       configurationRoot: graph.configurationRoot,
@@ -116,7 +130,9 @@ function reportReloadOutcome(
     case "publish-failed":
       writeDiagnosticLine(
         streams,
-        `Configuration was valid but could not be recorded (${outcome.code}). The previous generation remains in effect.`,
+        outcome.code === "configuration-read-failed"
+          ? "Configuration could not be read. The previous generation remains in effect."
+          : `Configuration was valid but could not be recorded (${outcome.code}). The previous generation remains in effect.`,
       );
       return;
     case "cancelled":

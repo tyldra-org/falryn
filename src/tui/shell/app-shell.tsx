@@ -444,6 +444,8 @@ function overlayTitle(
       return CONTROL_PANEL_TITLES[route.panel];
     case "compression":
       return "Compression";
+    case "profile-result":
+      return "Working profile result";
     case "model-settings":
       return "Model roles";
     case "workspace":
@@ -569,6 +571,12 @@ function overlayBody(
           rows={rows}
           {...(props.onControlSelect === undefined ? {} : { onSelect: props.onControlSelect })}
         />
+      );
+    case "profile-result":
+      return (
+        <scrollbox focused height={Math.max(1, rows)}>
+          <text>{overlay.text}</text>
+        </scrollbox>
       );
     case "model-settings":
       return <ModelSettingsSheet service={props.modelSettings ?? null} rows={rows} />;

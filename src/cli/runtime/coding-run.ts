@@ -434,7 +434,32 @@ export async function runCoding(
       options.globals === undefined
         ? { profile: null, overrides: {} }
         : productConfigurationLoadRequest(options.globals);
-    const configuration = await loadProductConfiguration(graph, configRequest, options.signal);
+    const configuration = await loadProductConfiguration(
+      graph,
+      configRequest,
+      options.signal,
+    ).catch(() => null);
+    if (configuration === null)
+      return codingResult(
+        {
+          prompt: resolved.prompt,
+          sessionId: ids.sessionId,
+          turnId: null,
+          workspaceId: String(workspaceId),
+          stage: "compose-failed",
+          eventCount: 0,
+        },
+        [
+          adoptForeignError(
+            {
+              code: "runtime.configuration-unavailable",
+              category: "configuration",
+              message: "Session configuration or personal workspace preferences could not be read.",
+            },
+            { operation: "load coding configuration" },
+          ),
+        ],
+      );
     if (configuration.trust.status !== "accepted" && configuration.trust.status !== "empty") {
       const changedEvent = workspaceTrustEvent(configuration.trust, Number(graph.clock.now()));
       return codingResult(

@@ -45,7 +45,9 @@ export type ProductSubmissionPortOptions = {
 };
 
 export type ProductSubmissionPort = SubmissionPort & {
-  readonly modelSettings?: import("../../application/providers/model-settings.ts").ModelSettingsService;
+  readonly modelSettings?:
+    | import("../../application/providers/model-settings.ts").ModelSettingsService
+    | undefined;
   readonly brief: ProductBriefControls;
   readonly output: ProductOutputControls;
   readonly executionProfile: ProductExecutionProfileControls;

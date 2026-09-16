@@ -18,8 +18,8 @@ describe("monotonic sequencing within a stream", () => {
     for (const event of everyEventKind()) {
       expect(sequencer.append(event)).toEqual({ kind: "appended", sequence: event.sequence });
     }
-    expect(sequencer.lastSequence(FIXTURE_STREAM)).toBe(sequence.from(15));
-    expect(sequencer.expectedSequence(FIXTURE_STREAM)).toBe(sequence.from(16));
+    expect(sequencer.lastSequence(FIXTURE_STREAM)).toBe(sequence.from(16));
+    expect(sequencer.expectedSequence(FIXTURE_STREAM)).toBe(sequence.from(17));
   });
 
   test("requires a stream to begin at the first sequence", () => {
@@ -141,7 +141,7 @@ describe("stream isolation", () => {
 describe("replay inspection", () => {
   test("reports a clean replay", () => {
     const report = inspectReplay(everyEventKind());
-    expect(report.appended).toBe(15);
+    expect(report.appended).toBe(16);
     expect(report.duplicates).toBe(0);
     expect(report.anomalies).toEqual([]);
     expect(report.streams).toEqual([FIXTURE_STREAM]);
