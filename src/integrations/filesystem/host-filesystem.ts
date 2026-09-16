@@ -102,7 +102,7 @@ function modeOf(stats: Stats): number | null {
 
 /** A comparable, adapter-owned identity for one stat snapshot. */
 function revisionOf(stats: Stats): string {
-  return `${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`;
+  return `${stats.dev}:${stats.ino}:${stats.size}:${stats.mtimeMs}:${stats.ctimeMs}`;
 }
 
 function cancelled(
@@ -349,6 +349,7 @@ export function createHostFileSystem(): FileSystemPort {
       offset: number,
       maximumBytes: number,
       signal?: AbortSignal,
+      condition?: { readonly expectedRevision: string },
     ): Promise<Result<Uint8Array, FileSystemError>> {
       if (signal?.aborted === true) {
         return cancelled(path, "read-bytes-range");
@@ -368,7 +369,28 @@ export function createHostFileSystem(): FileSystemPort {
       }
       let handle: FileHandle | null = null;
       try {
-        const stats = await fs.stat(path);
+        const observed = await fs.stat(path);
+        if (!observed.isFile())
+          return err({
+            kind: "filesystem",
+            code: "not-a-directory",
+            path,
+            operation: "read-bytes-range",
+          });
+        const flags =
+          fsConstants.O_RDONLY |
+          (process.platform === "win32"
+            ? 0
+            : fsConstants.O_NONBLOCK | (condition ? fsConstants.O_NOFOLLOW : 0));
+        handle = await openFile(path, flags);
+        const stats = await handle.stat();
+        if (condition && revisionOf(stats) !== condition.expectedRevision)
+          return err({
+            kind: "filesystem",
+            code: "stale-read",
+            path,
+            operation: "read-bytes-range",
+          });
         if (!stats.isFile()) {
           return err({
             kind: "filesystem",
@@ -385,9 +407,16 @@ export function createHostFileSystem(): FileSystemPort {
             operation: "read-bytes-range",
           });
         }
-        handle = await openFile(path, fsConstants.O_RDONLY);
         const buffer = new Uint8Array(maximumBytes);
         const result = await handle.read(buffer, 0, maximumBytes, offset);
+        if (signal?.aborted) return cancelled(path, "read-bytes-range");
+        if (condition && revisionOf(await handle.stat()) !== condition.expectedRevision)
+          return err({
+            kind: "filesystem",
+            code: "stale-read",
+            path,
+            operation: "read-bytes-range",
+          });
         return ok(buffer.subarray(0, result.bytesRead));
       } catch (thrown: unknown) {
         return err(translate(thrown, path, "read-bytes-range"));

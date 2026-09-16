@@ -59,6 +59,7 @@ import {
 import { agentRegistryFrom } from "./runtime/agent-configuration.ts";
 import { composeSessionNavigationController } from "./runtime/compose-session-navigation-controller.ts";
 import { startConfigurationReloadWatcher } from "./runtime/configuration-reload.ts";
+import { composeInstructionSources } from "./runtime/instruction-sources.ts";
 import {
   createInvocationGovernance,
   type InvocationGovernance,
@@ -526,6 +527,8 @@ async function launchShell(
         try {
           if (productArtifactSession !== null) {
             productAttachments = await composeProductShellAttachments({
+              instructionSources: (configuration) =>
+                composeInstructionSources(graph, configuration),
               async authorizeMcp(signal) {
                 const trust = await graph.workspaceTrust.resolve(undefined, signal);
                 return trust.status === "accepted" || trust.status === "empty";

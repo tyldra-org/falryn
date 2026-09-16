@@ -427,6 +427,77 @@ export function everyEventKind(): readonly RuntimeEvent[] {
         owners: [{ owner: "models", state: "pending", generation: 0, code: "next-turn" }],
       },
     },
+    ...(["instructions.resolved", "instructions.revoked"] as const).map((kind, index) => ({
+      ...spine({
+        eventId: `event-instructions-${index}`,
+        sequence: 17 + index,
+        idempotencyKey: `key-instructions-${index}`,
+      }),
+      kind,
+      correlation: FIXTURE_TURN_CORRELATION,
+      payload: {
+        generation: `sha256:${"c".repeat(64)}`,
+        previousGeneration: null,
+        configuration: "0",
+        workspace: "workspace-fixture",
+        scope: {
+          root: "workspace-fixture",
+          directory: "",
+          execution: "turn-fixture",
+          kind: "main" as const,
+        },
+        contentDigest: `sha256:${"d".repeat(64)}`,
+        sources: [
+          {
+            identity: {
+              version: 1 as const,
+              kind: "instruction" as const,
+              root: "workspace-fixture",
+              path: "AGENTS.md",
+              namespace: "instructions",
+              localId: "AGENTS.md",
+            },
+            origin: "project-agents" as const,
+            scope: "",
+            source: `sha256:${"e".repeat(64)}`,
+            digest: `sha256:${"f".repeat(64)}`,
+            kind: "instruction" as const,
+            name: "AGENTS.md",
+            namespace: "instructions",
+            state: "selected" as const,
+            reason: "instruction-composition",
+          },
+        ],
+        omitted: 0,
+        reload: "committed" as const,
+        observedGeneration: `sha256:${"c".repeat(64)}`,
+        rejection: null,
+        contentChanged: true,
+        reused: false,
+      },
+    })),
+    {
+      ...spine({
+        eventId: "event-instructions-rejected",
+        sequence: 19,
+        idempotencyKey: "key-instructions-rejected",
+      }),
+      kind: "instructions.rejected",
+      correlation: FIXTURE_TURN_CORRELATION,
+      payload: {
+        scope: {
+          root: "workspace-fixture",
+          directory: "",
+          execution: "turn-fixture",
+          kind: "main",
+        },
+        configuration: "0",
+        code: "source-unavailable",
+        observedGeneration: null,
+        rejectedSource: null,
+        sources: [],
+      },
+    },
   ];
 }
 

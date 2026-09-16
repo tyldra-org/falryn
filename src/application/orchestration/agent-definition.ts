@@ -1,5 +1,6 @@
 /** Inert agent definitions. Registration never authorizes execution. */
 import { z } from "zod";
+import { instructionDirectorySchema } from "../../domain/context/instruction-sources.ts";
 import { definitionValueSchema as jsonSchema } from "../../domain/orchestration/definition-values.ts";
 
 export { validateDefinitionValue as validateAgentValue } from "../../domain/orchestration/definition-values.ts";
@@ -40,6 +41,7 @@ export const agentDefinitionSchema = z.strictObject({
   effects: z.array(z.enum(EFFECT_CLASSES)).max(EFFECT_CLASSES.length),
   context: z.literal("selected-evidence"),
   workspace: z.literal("inherited"),
+  instructionDirectory: instructionDirectorySchema.optional(),
   modelRole: z.literal("subagents"),
   model: roleRouteBaseSchema.optional(),
   preset: z.enum(["small", "medium", "big", "default"]).optional(),

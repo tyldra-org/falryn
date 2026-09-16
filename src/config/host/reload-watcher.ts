@@ -25,6 +25,9 @@ export type ConfigurationReloadWatcherOptions = {
   readonly clock: ClockPort;
   /** Milliseconds to wait after the last file event before reloading. */
   readonly coalesceMs?: number;
+  readonly maxCoalesceMs?: number;
+  /** Periodic full reread recovers notifications lost by the host watcher. */
+  readonly rescanMs?: number;
   readonly subscribe: FileChangeSubscriber;
   readonly onReload: (outcome: ConfigurationLoadOutcome) => void;
   readonly signal?: AbortSignal;
@@ -47,6 +50,7 @@ export function createConfigurationReloadWatcher(
   let disposed = false;
   let subscription: { dispose: () => void } | null = null;
   let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+  let maximumTimer: ReturnType<typeof setTimeout> | null = null;
   let reloading = false;
   let rerunAfterCurrent = false;
 
@@ -57,12 +61,17 @@ export function createConfigurationReloadWatcher(
     if (pendingTimer !== null) {
       clearTimeout(pendingTimer);
     }
-    pendingTimer = setTimeout(() => {
-      pendingTimer = null;
-      void runReload();
-    }, coalesceMs);
+    pendingTimer = setTimeout(flush, coalesceMs);
+    maximumTimer ??= setTimeout(flush, options.maxCoalesceMs ?? 1000);
   };
 
+  const flush = (): void => {
+    if (pendingTimer !== null) clearTimeout(pendingTimer);
+    if (maximumTimer !== null) clearTimeout(maximumTimer);
+    pendingTimer = null;
+    maximumTimer = null;
+    void runReload();
+  };
   const runReload = async (): Promise<void> => {
     if (disposed || isAborted(options.signal)) {
       return;
@@ -78,22 +87,38 @@ export function createConfigurationReloadWatcher(
         const outcome = await options.loader.load(options.loadRequest, options.signal);
         options.onReload(outcome);
       } while (rerunAfterCurrent && !disposed && !isAborted(options.signal));
+    } catch {
+      options.onReload({
+        kind: "publish-failed",
+        code: "configuration-read-failed",
+        retained: null,
+      });
     } finally {
       reloading = false;
     }
   };
 
-  void options.subscribe(options.watchedPaths, scheduleReload, options.signal).then((handle) => {
-    if (disposed) {
-      handle.dispose();
-      return;
-    }
-    subscription = handle;
-  });
+  const rescanTimer = setInterval(flush, options.rescanMs ?? 30000);
+  rescanTimer.unref();
+  void options
+    .subscribe(options.watchedPaths, scheduleReload, options.signal)
+    .then((handle) => {
+      if (disposed) {
+        handle.dispose();
+        return;
+      }
+      subscription = handle;
+    })
+    .catch(() => {
+      // The periodic full reread remains active after notification delivery fails.
+      if (!disposed && !isAborted(options.signal)) flush();
+    });
 
   return {
     dispose: () => {
       disposed = true;
+      clearInterval(rescanTimer);
+      if (maximumTimer !== null) clearTimeout(maximumTimer);
       if (pendingTimer !== null) {
         clearTimeout(pendingTimer);
         pendingTimer = null;

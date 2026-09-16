@@ -468,6 +468,43 @@ export function blockFor(event: RuntimeEvent, history?: HistoryPayload): Transcr
         outcome: event.payload.outcome,
       };
 
+    case "instructions.rejected":
+      return {
+        ...spine,
+        kind: "notice",
+        source: "runtime",
+        status: "final",
+        anchor: {
+          of: "declared",
+          key: `instructions:${event.correlation.turnId}:instructions.rejected`,
+        },
+        summary: complete("Instruction sources unavailable; execution refused."),
+        invocationId: null,
+        note: bound(
+          `${event.payload.code}. Source ${event.payload.rejectedSource ?? "catalog"}. ${event.payload.sources.map((source) => `${source.namespace}/${source.name}: ${source.state} (${source.reason})`).join("; ")}`,
+        ),
+      };
+    case "instructions.revoked":
+    case "instructions.resolved":
+      if (event.payload.sources.length === 0 && event.payload.reload !== "rejected") return null;
+      return {
+        ...spine,
+        kind: "notice",
+        source: "runtime",
+        status: "final",
+        anchor: { of: "declared", key: `instructions:${event.correlation.turnId}:${event.kind}` },
+        summary: complete(
+          event.kind === "instructions.revoked"
+            ? "Instruction authority changed; execution stopped."
+            : event.payload.reload === "rejected"
+              ? "Instruction reload rejected; prior content retained."
+              : `Instructions resolved for ${event.payload.scope.kind}.`,
+        ),
+        invocationId: null,
+        note: bound(
+          `Generation ${event.payload.generation}.${event.payload.rejection ? ` Rejected ${event.payload.rejectedSource ?? "catalog"}: ${event.payload.rejection}.` : ""} ${event.payload.sources.map((source) => `${source.namespace}/${source.name}: ${source.state} (${source.reason})`).join("; ")}${event.payload.omitted ? `; ${event.payload.omitted} more sources omitted` : ""}`,
+        ),
+      };
     case "configuration.generation.changed":
       return {
         ...spine,

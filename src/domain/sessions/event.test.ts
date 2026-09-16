@@ -29,6 +29,9 @@ function carriesTurnIdentity(event: RuntimeEvent): boolean {
     case "workflow.changed":
     case "execution.profile.selected":
       return false;
+    case "instructions.rejected":
+    case "instructions.revoked":
+    case "instructions.resolved":
     case "history.recorded":
     case "turn.started":
     case "turn.completed":

@@ -1,5 +1,6 @@
 /** Serializable workflow data. A validated definition remains inert until host admission. */
 import { z } from "zod";
+import { instructionDirectorySchema } from "../context/instruction-sources.ts";
 import { canonicalDigest, canonicalJson, freezeMetadata } from "../extensions/canonical.ts";
 import { identityText } from "../extensions/identity.ts";
 import { definitionValueSchema, validateDefinitionValue } from "./definition-values.ts";
@@ -75,6 +76,7 @@ export const workflowNodeSchema = z.discriminatedUnion("kind", [
     ...common,
     kind: z.literal("model"),
     instruction: z.string().min(1).max(16384),
+    instructionDirectory: instructionDirectorySchema.optional(),
     model,
   }),
   z.strictObject({

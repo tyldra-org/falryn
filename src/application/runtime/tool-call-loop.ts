@@ -259,6 +259,15 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
           });
         }
 
+        if (continued.kind === "failed")
+          return settleClassified({
+            coordinator,
+            turnId: input.turnId,
+            configurationGeneration: input.configurationGeneration,
+            iterations: iteration,
+            results,
+            classified: { kind: "unavailable", reason: continued.reason },
+          });
         if (continued.kind === "stop") {
           const current = coordinator.get(input.turnId);
           if (current?.status === "terminal") {

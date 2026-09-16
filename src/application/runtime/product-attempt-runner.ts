@@ -863,6 +863,7 @@ export function createProductAttemptRunner(
       const continuation: { terminal: ProviderStreamConsumeOutcome | null } = { terminal: null };
 
       const gateway = createProductToolGateway({
+        ...(input.instructionsCurrent ? { instructionsCurrent: input.instructionsCurrent } : {}),
         trust: {
           inspect: (id) =>
             options.capabilities?.entries.find((entry) => entry.capabilityId === id)?.trust ?? null,
@@ -1092,6 +1093,13 @@ export function createProductAttemptRunner(
             scopeId: null,
           },
           async run(signal) {
+            if (input.instructionsCurrent && !(await input.instructionsCurrent(signal)))
+              return {
+                value: null,
+                actual: { ...amounts, requests: 0, inputTokens: 0, outputTokens: 0, costMicros: 0 },
+                terminated: true,
+                observedEffect: "none",
+              };
             if (input.history && !input.history.current())
               throw new Error("resource-admission:history-authority-changed");
             if (signal.aborted || !processingAuthorityCurrent(options.provider, processingBinding))
@@ -1317,6 +1325,7 @@ export function createProductAttemptRunner(
         if (admitted.kind !== "completed")
           throw new Error(`resource-admission:${admitted.receipt.state}`);
         const outcome = admitted.value;
+        if (outcome === null) throw new Error("resource-admission:instruction-authority-changed");
         if (outcome.snapshot !== null && outcome.snapshot.text.length > 0) {
           assistantText.push(outcome.snapshot.text);
         }
@@ -1451,7 +1460,9 @@ export function createProductAttemptRunner(
               if (!(error instanceof Error) || !error.message.startsWith("resource-admission:"))
                 throw error;
               admissionFailure = error.message;
-              return { kind: "stop" };
+              return admissionFailure === "resource-admission:instruction-authority-changed"
+                ? { kind: "failed", reason: admissionFailure }
+                : { kind: "stop" };
             }
             continuation.terminal = continued;
             if (continued.kind !== "finished" || continued.toolProposals.length === 0) {

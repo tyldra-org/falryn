@@ -336,6 +336,7 @@ function mapFileSystemError(error: FileSystemError): { ok: false; error: Workspa
       return { ok: false, error: { code: "malformed-encoding" } };
     case "range-out-of-bounds":
       return { ok: false, error: { code: "malformed-range" } };
+    case "stale-read":
     case "stale-write":
       return { ok: false, error: { code: "stale", attempts: 1 } };
     case "permission-denied":

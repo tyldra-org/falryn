@@ -124,6 +124,7 @@ export type ContinueModelContext = {
 
 export type ContinueModelResult =
   | { readonly kind: "stop" }
+  | { readonly kind: "failed"; readonly reason: string }
   | { readonly kind: "continue"; readonly proposals: readonly ToolProposal[] };
 
 export type RunToolCallLoopInput = {

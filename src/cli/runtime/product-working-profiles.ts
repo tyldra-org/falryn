@@ -11,6 +11,7 @@ import {
   createProfileControl,
   type ProfileControl,
 } from "../../application/configuration/profile-control.ts";
+import { refreshRuntimeInstructions } from "../../application/context/product-instructions.ts";
 import { scopeProviderContinuations } from "../../application/providers/continuation-scope.ts";
 import { inspectProcessingRoute } from "../../application/providers/processing-controls.ts";
 import type { ProductAgentRuntime } from "../../application/runtime/product-agent-runtime.ts";
@@ -393,6 +394,7 @@ export function productWorkingProfileSessions(
       restartRequired: environmentContext.restartRequired,
     });
     const reload = startConfigurationReloadWatcher(graph, globals, {
+      onSourcesChanged: (signal) => refreshRuntimeInstructions(binding.runtime, signal),
       onInvalidation: async (signal) => {
         await service.transitions.sourcesChanged(signal);
         await environment.inspect();

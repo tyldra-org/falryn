@@ -238,8 +238,9 @@ bound to the local actor, canonical workspace roots, exact inventory generation,
 trust policy, and relevant configuration. Restart reuses only a matching record.
 Changed files, permissions, user/profile configuration, or workspace identity
 invalidate approval. Project configuration uses the reviewed bytes and rechecks
-the generation on reload. MCP, hook, skill, and instruction activation remain
+the generation on reload. Automatic skill and instruction discovery remains
 unavailable; workspace approval does not grant tool permissions or a sandbox.
+Explicit registered instruction paths use the source admission described below.
 
 Headless `falryn run` requires a matching decision when project loaders exist.
 Otherwise it returns `workspace.trust-required` without prompting. There is no
@@ -253,6 +254,100 @@ levels, and 30 seconds. Malformed, unreadable, linked, escaped, changing, or
 over-limit declarations and failed decision writes keep project loaders disabled.
 The decision contains hashes and redacted labels, not file contents or credentials.
 After correcting a failure or change, reopen interactively to review again.
+
+## Instruction sources and generations
+
+The main terminal session, headless `falryn run`, child agents and model workflow
+steps share an instruction-source owner. User or working-profile configuration
+can explicitly register files in `instructions.sources`. Automatic ancestor-file
+discovery, skill invocation and prompt-template expansion remain separate loader
+work. Merely installing a package does not activate its instruction body.
+
+For example, author this in the version-2 user `settings.jsonc` document. It
+registers one file relative to the effective configuration home:
+
+```json
+{
+  "schemaVersion": 2,
+  "defaults": {
+    "context": {
+      "instructions": {
+        "sources": {
+          "version": 1,
+          "entries": [{
+            "root": "configuration",
+            "path": "AGENTS.md",
+            "scope": "",
+            "enabled": true,
+            "references": [],
+            "conflicts": []
+          }]
+        }
+      }
+    }
+  }
+}
+```
+
+A workspace entry names an admitted workspace root and a normalized relative
+path. `scope` is its applicable subtree, or the empty string for that root.
+Project settings cannot register new paths. Project files require current
+workspace trust; registering a file never grants tool or executable authority.
+References and declared conflicts name other registered files relative to the
+declaring file. Absolute paths, parent traversal, symlinks, missing references
+and reference cycles are refused. Reads compare the opened file descriptor with
+the inspected revision before and after reading. Arbitrary prose contradictions are not
+mechanically detected.
+
+Compatible instructions compose in deterministic order. Source priority rises
+from built-in and configured origins through user CLAUDE/AGENTS/FALRYN to project
+CLAUDE/AGENTS/FALRYN. Project ancestors precede descendants. Source choice never
+changes its instruction role. The shared resolver also handles skill and prompt
+metadata: equal-priority skill collisions and ambiguous prompt aliases require
+a choice; an explicit prompt declaration replaces only its exact same-package
+conventional identity. Their automatic loaders and command dispatch are not
+activated by this registration setting.
+
+`instructions.preferences` is a version-1 object with `choices` and `restrictions`
+arrays. A choice contains `kind`, `name` and `source`. For instructions, `name` is
+`<root identity>:<subtree>` or `user:<subtree>`; `source` is the normalized identity
+digest shown in provenance. Skill and prompt choices use their local or qualified
+name. Restriction entries contain `source`, `user` and `automatic` booleans and
+can only narrow invocation eligibility. Missing or malformed eligibility is
+unavailable. Explicitly save preferences in user, project or profile settings;
+reset the key with the existing configuration reset command. The application
+owner also supports volatile session selection and reset without writing files.
+The object writer validates saved controls; `config set` does not accept these
+objects as a JSON command-line string. A graphical source picker is not shipped.
+Missing, disabled or revoked explicit choices report unavailable with alternatives.
+
+Each admitted turn binds complete UTF-8 bytes, identities, digests, scope and
+generation before provider dispatch. Children and model workflow nodes resolve
+their own admitted root/subtree and execution identity; optional
+`instructionDirectory` narrows that subtree. Deterministic workflow steps add no
+model call. Edits affect subsequent composition, while current provider inputs
+retain their exact bytes. Current trust, enablement, scope and restriction checks
+can still stop new provider requests and tool effects. Malformed replacement
+content retains the last complete generation with the rejected source and reason.
+
+The existing file watcher coalesces notifications for 100 ms, starts a rescan
+within one second of a continuous burst, and rereads periodically every 30 seconds
+to recover missed notifications. Admission also performs a full bounded scan.
+Reload uses shared product resources. Source reads are limited to 1 MiB each,
+admitted content to 8 MiB, metadata and parsed-content caches to 16 MiB each,
+and reference depth to 64. The source publication queue admits at most 64 pending
+operations with a 30-second deadline. Inspection pages contain at most 100 entries
+or 256 KiB; this is not a total catalog quota. Registration and preference documents
+accept at most 1,024 entries. Required content that cannot fit the prompt budget
+fails instead of being silently truncated.
+
+Native `instructions.resolved`, `instructions.rejected` and `instructions.revoked` facts retain bounded,
+body-free provenance for JSONL, replay, export and transcript notices. Provider
+history retains effective content under the existing history policy. Generation
+and content digests are separate, so an unchanged rescan or inspection does not
+report new effective instruction content. Parsed products are keyed by source,
+content digest and configuration generation; expanded arguments and rendered
+sensitive prompts are never cached by this owner.
 
 ## Executable sandbox policy
 

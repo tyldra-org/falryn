@@ -87,6 +87,7 @@ export type ProductToolEffectLedger = Map<
 >;
 
 export type ProductToolGatewayOptions = {
+  readonly instructionsCurrent?: (signal: AbortSignal) => Promise<boolean>;
   readonly historyArtifacts?: ArtifactStorePort;
   readonly toolHost?: import("../../domain/tools/index.ts").HostPlatform;
   readonly sandbox?: SandboxInvocationPort;
@@ -302,6 +303,8 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     inheritedTask?: ProductTaskResources,
     depth = 0,
   ): Promise<ToolInvocationOutcome> {
+    if (options.instructionsCurrent && !(await options.instructionsCurrent(request.signal)))
+      return { status: "unavailable", effect: "none", reason: "instruction-authority-changed" };
     const key = JSON.stringify([
       options.correlation.workspaceId,
       options.correlation.sessionId,
@@ -783,6 +786,16 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       scopes,
       signal: request.signal,
       async run(signal, publishReceipt) {
+        if (options.instructionsCurrent && !(await options.instructionsCurrent(signal)))
+          return {
+            value: {
+              status: "unavailable",
+              reason: "instruction-authority-changed",
+              effect: "none",
+            } as const,
+            terminated: true,
+            observedEffect: "none",
+          };
         if (
           request.composition !== undefined &&
           options.runner.hasBinding?.(manifest.capabilityId) !== true
@@ -925,8 +938,16 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
             }),
           };
         }
-        const executeNative = (): Promise<ToolInvocationOutcome> =>
-          options.runner
+        const executeNative = async (): Promise<ToolInvocationOutcome> => {
+          if (options.instructionsCurrent && !(await options.instructionsCurrent(signal))) {
+            finished.resolve();
+            return {
+              status: "unavailable",
+              effect: "none",
+              reason: "instruction-authority-changed",
+            };
+          }
+          return options.runner
             .execute({
               ...nativeRequest,
               taskResources: task,
@@ -970,7 +991,14 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
                     afterAdmission(run: (signal: AbortSignal) => Promise<ToolInvocationOutcome>) {
                       if (deferred.run !== undefined)
                         throw new Error("duplicate deferred orchestration action");
-                      deferred.run = run;
+                      deferred.run = async (signal) =>
+                        options.instructionsCurrent && !(await options.instructionsCurrent(signal))
+                          ? {
+                              status: "unavailable",
+                              effect: "none",
+                              reason: "instruction-authority-changed",
+                            }
+                          : run(signal);
                     },
                   }),
               ...(options.attemptId === undefined || options.correlation.workspaceId === null
@@ -1017,6 +1045,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
               }),
             )
             .finally(() => finished.resolve());
+        };
         const sandboxed =
           options.sandbox === undefined
             ? { value: await executeNative(), receipts: [] }

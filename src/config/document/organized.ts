@@ -16,6 +16,7 @@ export function documentSettingPath(key: string, scope: ConfigurationScope): str
   if (key === "tools.sandbox") return "policy.sandbox";
   const prefix = scope === "profile" ? "overrides" : "defaults";
   if (key.startsWith("diagnostics.")) return `${prefix}.privacy.${key}`;
+  if (key.startsWith("instructions.")) return `${prefix}.context.${key}`;
   if (key.startsWith("agents.")) return `${prefix}.capabilities.${key}`;
   if (key.startsWith("packages.")) return `${prefix}.capabilities.${key}`;
   if (

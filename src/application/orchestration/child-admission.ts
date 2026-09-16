@@ -182,7 +182,7 @@ function guardResources(
     if (!target || target.workspaceId !== authority.workspaceId)
       return task.refusal("authority-denied");
     const permitted =
-      target.kind === "session-history"
+      target.kind === "session-history" || target.kind === "instruction-source"
         ? effect === "observation" &&
           target.configurationGeneration === authority.configurationGeneration
         : target.kind === "provider"
