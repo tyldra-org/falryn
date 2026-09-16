@@ -553,16 +553,20 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       options.trust?.inspect(String(ready.entry.manifest.capabilityId))?.eligible !== true
     )
       return { status: "denied", reason: "ecosystem-trust-required", effect: "none" };
+    const gateSequences = new Map<string, number>();
     const observe = async (
       stage: "validation" | "policy" | "confirmation" | "pre-hook" | "post-hook" | "schedule",
       decision: string,
     ) => {
+      const baseId = `${request.invocationId}:gate:${stage}${transformed ? ":transformed" : ""}`;
+      const sequence = (gateSequences.get(baseId) ?? 0) + 1;
+      gateSequences.set(baseId, sequence);
       const saved = await history.record(
         options.turnId,
         {
           version: 1,
           type: "gate",
-          id: `${request.invocationId}:gate:${stage}${transformed ? ":transformed" : ""}`,
+          id: sequence === 1 ? baseId : `${baseId}:${sequence}`,
           generation: Number(options.registry.generation),
           invocationId: String(request.invocationId),
           proposalId: request.toolCallId,
@@ -620,7 +624,10 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     if (pre.kind !== "allowed" && pre.kind !== "confirmation-required") {
       return {
         status: "denied",
-        reason: `pre-hook-${pre.kind}`,
+        reason:
+          pre.kind === "denied"
+            ? redactor.redactText(`pre-hook-denied:${pre.hookId}:${pre.reason}`, 256)
+            : `pre-hook-${pre.kind}`,
         effect: "none",
       };
     }
@@ -666,6 +673,17 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         resolved.status !== "accepted"
       )
         return { status: "denied", reason: "hook-confirmation-required", effect: "none" };
+      authorized = {
+        ok: true,
+        value: {
+          ...authorized.value,
+          confirmation: {
+            required: true,
+            confirmationId: confirmation.confirmationId,
+            observed: "confirmed",
+          },
+        },
+      };
     }
     if (request.signal.aborted) return { status: "cancelled", effect: "none" };
 

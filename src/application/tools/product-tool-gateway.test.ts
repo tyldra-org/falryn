@@ -1317,3 +1317,21 @@ test("hook confirmation can narrow an allowed observation and cannot revive refu
   expect(hooks).toBe(0);
   expect(g.dispatched).toEqual([]);
 });
+
+test("policy and hook confirmations retain distinct receipts for the same normalized intent", async () => {
+  const f = hookGateway([preHook(() => ({ kind: "request-confirmation", reason: "extra check" }))]);
+  expect(
+    (
+      await f.gateway.execute(
+        f.request("write_files", {
+          targets: [{ path: "confirmed.ts", kind: "create", text: "ok" }],
+        }),
+      )
+    ).status,
+  ).toBe("completed");
+  const gates = await f.gates();
+  expect(
+    gates.filter((gate) => gate.stage === "confirmation").map((gate) => gate.decision),
+  ).toEqual(["confirmed", "hook-accepted"]);
+  expect(new Set(gates.map((gate) => gate.id)).size).toBe(gates.length);
+});

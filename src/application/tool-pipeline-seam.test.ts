@@ -243,7 +243,10 @@ describe("tool pipeline seam #48–#53", () => {
       envelope: envelopeFor(authorized, "after-capability-invocation", record.outcome),
       signal: new AbortController().signal,
     });
-    expect(post.kind).toBe("illegal-rewrite");
+    expect(post).toMatchObject({
+      kind: "recorded",
+      failures: [{ hookId: "rewrite.fail", reason: "invalid-hook-decision" }],
+    });
     expect(enveloped.result.status).toBe("failed");
   });
 });
