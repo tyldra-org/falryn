@@ -18,7 +18,7 @@ export function extensionCatalogLines(payload: ExtensionCatalogReport): readonly
     `catalog: ${payload.page.catalog}; generation ${payload.page.generation}; ${payload.page.total} entries; ${payload.page.omitted} omitted`,
     ...payload.page.entries.map(
       (entry) =>
-        `${entry.contribution.nativeKind} ${entry.contribution.namespace}/${entry.contribution.localId}: ${entry.enabled ? "enabled" : "disabled"}; ${entry.reason}; owner ${entry.contribution.owner.digest}`,
+        `${entry.contribution.nativeKind} ${entry.contribution.namespace}/${entry.contribution.localId}: ${entry.enabled ? "enabled" : "disabled"}; ${entry.reason}${entry.hookHealth ? `; hook ${entry.hookHealth.status}; failures ${entry.hookHealth.failures ?? "unknown"}; generation ${entry.hookHealth.generation}` : ""}; owner ${entry.contribution.owner.digest}`,
     ),
     ...(payload.page.next === null ? [] : [`next: ${JSON.stringify(payload.page.next)}`]),
   ];

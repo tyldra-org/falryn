@@ -3,6 +3,11 @@ import { canonicalJson, freezeMetadata } from "../../domain/extensions/canonical
 import { HOOK_LIMITS, parseHookEnvelope } from "../../domain/extensions/hook-points.ts";
 import { type ClockPort, deadlineAt, instant } from "../../domain/foundation/index.ts";
 import { NO_RETRY, workUnitId } from "../../domain/orchestration/work.ts";
+import {
+  type HookHandlerFacts,
+  hookHandlerFactsSchema,
+  safeHookFailureCode,
+} from "../../domain/tools/hook-evidence.ts";
 import { validateToolHookDecision } from "../../domain/tools/tool-hook-decision.ts";
 import { hookIdentity } from "../../domain/tools/tool-hook-order.ts";
 import {
@@ -52,6 +57,7 @@ export type HookInvocationResult = {
   readonly decision?: ToolHookDecision;
   readonly reason?: string;
   readonly cleanup: "complete" | "uncertain" | "not-started";
+  readonly handlerFacts?: HookHandlerFacts;
 };
 
 /** Own cancellation, late-result fencing and a bounded join for every handler kind. */
@@ -92,6 +98,10 @@ export async function invokeHook(input: {
     },
   });
   let active: Promise<HookInvocationResult> | undefined;
+  let facts: HookHandlerFacts | undefined;
+  let invalidFacts = false;
+  let sealed = false;
+  const evidence = () => (facts ? { handlerFacts: facts } : {});
   const run = async (ownerSignal: AbortSignal): Promise<HookInvocationResult> => {
     resourceSignal = ownerSignal;
     const combined = AbortSignal.any([signal, ownerSignal]);
@@ -106,6 +116,21 @@ export async function invokeHook(input: {
           signal: combined,
           expiresAt: input.expiresAt,
           resourceTaskId: input.task?.id ?? "builtin-test",
+          report(value) {
+            if (sealed) return;
+            const checked = hookHandlerFactsSchema.safeParse(value);
+            const kind = hook.registration?.handler.kind;
+            const expected =
+              kind === "external-command-v1"
+                ? "process"
+                : kind === "http-v1" || kind === "mcp-tool-v1"
+                  ? "remote"
+                  : kind === "prompt-evaluator-v1" || kind === "agent-evaluator-v1"
+                    ? "model"
+                    : null;
+            if (!checked.success || checked.data.kind !== expected) invalidFacts = true;
+            else facts = freezeMetadata(checked.data);
+          },
         });
       })
       .then(
@@ -113,6 +138,7 @@ export async function invokeHook(input: {
           if (combined.aborted || Number(clock.now()) >= input.expiresAt)
             return { reason: stopped(), cleanup: "complete" };
           try {
+            if (invalidFacts) return { reason: "invalid-handler-evidence", cleanup: "complete" };
             return {
               decision: validateToolHookDecision(value, snapshot, hook.registration),
               cleanup: "complete",
@@ -127,7 +153,7 @@ export async function invokeHook(input: {
             reason: combined.aborted
               ? stopped()
               : error instanceof HookExecutionError
-                ? error.code
+                ? safeHookFailureCode(error.code)
                 : "threw",
             cleanup: uncertain ? "uncertain" : "complete",
           };
@@ -144,7 +170,7 @@ export async function invokeHook(input: {
           .waitUntil(instant(input.expiresAt), deadlineSignal)
           .then((): HookInvocationResult => ({ reason: stopped(), cleanup: "uncertain" })),
       ]);
-      if (finished) return result;
+      if (finished) return { ...result, ...evidence() };
       control.abort();
       // Drain may outlive the individual deadline, but never the enclosing chain's cleanup ceiling.
       await Promise.race([
@@ -154,8 +180,13 @@ export async function invokeHook(input: {
           timer.signal,
         ),
       ]);
-      return { reason: stopped(), cleanup: finished && !uncertain ? "complete" : "uncertain" };
+      return {
+        reason: stopped(),
+        cleanup: finished && !uncertain ? "complete" : "uncertain",
+        ...evidence(),
+      };
     } finally {
+      sealed = true;
       timer.abort();
       control.abort();
     }
@@ -163,7 +194,11 @@ export async function invokeHook(input: {
   if (!input.task) {
     if (hook.registration?.handler.kind !== "builtin")
       return { reason: "hook-resources-unavailable", cleanup: "not-started" };
-    return run(signal);
+    return run(signal).catch(() => ({
+      reason: "hook-handler-failed",
+      cleanup: "uncertain",
+      ...evidence(),
+    }));
   }
   const identity = `hook:${createHash("sha256")
     .update(JSON.stringify([envelope.invocationId, envelope.phase, hookIdentity(hook)]))
@@ -220,7 +255,14 @@ export async function invokeHook(input: {
     return execution.kind === "completed"
       ? execution.value
       : { reason: `hook-admission-${execution.receipt.state}`, cleanup: "not-started" };
+  } catch {
+    return {
+      reason: "hook-admission-failed",
+      cleanup: active ? "uncertain" : "not-started",
+      ...evidence(),
+    };
   } finally {
+    sealed = true;
     timer.abort();
     control.abort();
   }

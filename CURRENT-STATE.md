@@ -2567,6 +2567,33 @@ dispatch, and invalid or late post-decisions cannot rewrite the native result.
 SQLite reopen, export and replay read these facts without dispatching hooks.
 The existing 32-registration, recursion, response and native task limits apply.
 
+Each hook binding counts consecutive failures. A success clears its streak before
+three failures; the third failure quarantines further execution. Required pre-tool
+hooks then refuse dispatch, while post-tool observers report warnings and preserve
+the subject outcome. Uncertain cleanup fences further invocation immediately.
+There are no automatic retries. Trusted built-in bindings keep health with their
+registry; native package bindings persist it in SQLite migration 0029, keyed by
+hook identity and the validated activation/contribution digest. Restart and registry
+republication preserve quarantine; old or late completions cannot clear it.
+
+`extension catalog` reports native hook health, failure count and activation
+generation in human and JSON output without executing handlers. A fresh, confirmed
+`package enable` request with `nativeActivation`, the current activation revision
+and selected contribution digests revalidates authority and creates a new health
+generation. Preview and replay of a previous operation do not reset health;
+reactivation cannot restore revoked trust or disabled scope implicitly.
+
+Hook receipts retain point/source identities, captured generation, elapsed and
+cleanup facts, health and remediation. External process transport, exit/signal,
+response decoding and omitted stream-byte counts remain separate; unknown effects
+stay unknown. Raw stdout/stderr, input, headers, prompts and nested exceptions are
+excluded from diagnostics. Strict remote/model receipt variants use nullable
+usage and effect uncertainty; their live adapters remain unavailable. Queue and
+overflow receipts retain the captured binding. Failure receipts become transcript
+notices, including passive replay/export. Audit or health-store failure refuses
+required gates; after native settlement, persistence failure remains visible
+without re-executing the subject or changing its recorded observed effect.
+
 Package preparation rejects unknown hook points, versions, fields and invalid
 handler/mode combinations. External entrypoints require inventory digest locks.
 `falryn extension inspect <directory> --format json` reports the declared point,

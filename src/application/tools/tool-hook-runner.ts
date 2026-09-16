@@ -1,6 +1,8 @@
 import { matchesHookFilters } from "../../domain/extensions/hook-filters.ts";
 import { type HookBudgetClass, hookBudgetClass } from "../../domain/extensions/hook-handlers.ts";
 import { HOOK_BUDGETS } from "../../domain/extensions/hook-points.ts";
+import { type HookFailureEvidence, safeHookFailureCode } from "../../domain/tools/hook-evidence.ts";
+import { inspectHookHealth } from "../../domain/tools/hook-health.ts";
 import { hookIdentity } from "../../domain/tools/tool-hook-order.ts";
 import type { ProductTaskResources } from "../orchestration/product-resources.ts";
 import { invokeHook, snapshotHookEnvelope } from "./tool-hook-invocation.ts";
@@ -68,7 +70,11 @@ export type ToolHookRunner = {
 
 export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRunner {
   const emit = (fact: ToolLifecycleFact): void => {
-    options.onFact?.(fact);
+    try {
+      options.onFact?.(fact);
+    } catch {
+      /* A diagnostic listener cannot own execution. */
+    }
   };
 
   const runPoint = async (
@@ -89,7 +95,14 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
       return [
         { hookId: "runner", decision: { kind: "allow" }, failed: { reason: checked.reason } },
       ];
-    if (hooks.length && input.onPlan && !(await input.onPlan(hooks.map(hookIdentity))))
+    const plan = async () => {
+      try {
+        return (await input.onPlan?.(hooks.map(hookIdentity))) ?? true;
+      } catch {
+        return false;
+      }
+    };
+    if (hooks.length && input.onPlan && !(await plan()))
       return [
         {
           hookId: "runner",
@@ -130,8 +143,36 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
         cleanup,
         elapsedMs: Math.max(0, Number(at()) - began),
       });
-      const publish = async (record: RecordedHookDecision, task = input.task) => {
-        await input.onDecision?.(record, task);
+      const publish = async (
+        record: RecordedHookDecision,
+        task = input.task,
+      ): Promise<RecordedHookDecision> => {
+        // Queue/filter receipts carry the captured binding even before invocation.
+        if (!record.evidence && hook.health)
+          record = {
+            ...record,
+            evidence: {
+              point,
+              sourceIdentity: hook.sourceIdentity ?? null,
+              source: hook.source ?? "builtin",
+              handler: registration.handler.kind,
+              health: inspectHookHealth(hook.health),
+              handlerFacts: null,
+              diagnosticPolicy: "facts-only",
+              remediation: record.failed ? "inspect-handler" : "none",
+            },
+          };
+        try {
+          await input.onDecision?.(record, task);
+        } catch {
+          record = {
+            ...record,
+            failed: { reason: "hook-audit-unavailable" },
+            ...(record.evidence
+              ? { evidence: { ...record.evidence, remediation: "restore-audit-store" } }
+              : {}),
+          };
+        }
         emit({
           kind: "hook-decided",
           at: at(),
@@ -140,6 +181,7 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
           hookId: id,
           decisionKind: record.failed ? "failed" : record.decision.kind,
         });
+        return record;
       };
       if (!matchesHookFilters(registration, envelope.catalog)) {
         const skipped: RecordedHookDecision = {
@@ -147,29 +189,77 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
           decision: { kind: "allow" },
           execution: execution("skipped", "not-started"),
         };
-        recorded.push(skipped);
-        await publish(skipped);
+        recorded.push(await publish(skipped));
         continue;
       }
       const run = async (
         task = input.task,
         onStarted?: () => void,
       ): Promise<RecordedHookDecision> => {
-        const result = await invokeHook({
-          hook,
-          envelope,
-          clock: options.clock,
-          expiresAt: deadline,
-          cleanupExpiresAt,
-          signal: input.signal,
-          ...(onStarted ? { onStarted } : {}),
-          ...(task ? { task } : {}),
-        });
+        if (!hook.health) throw new Error("unbound hook health");
+        let health = inspectHookHealth(hook.health);
+        const blocked =
+          health.status === "quarantined"
+            ? "hook-quarantined"
+            : health.status === "cleanup-uncertain"
+              ? "hook-cleanup-uncertain"
+              : health.status === "unavailable"
+                ? "hook-health-unavailable"
+                : null;
+        const result = blocked
+          ? { reason: blocked, cleanup: "not-started" as const }
+          : await invokeHook({
+              hook,
+              envelope,
+              clock: options.clock,
+              expiresAt: deadline,
+              cleanupExpiresAt,
+              signal: input.signal,
+              ...(onStarted ? { onStarted } : {}),
+              ...(task ? { task } : {}),
+            });
         if (registration.mode !== "async") spent[budgetClass] += Math.max(0, Number(at()) - began);
+        if (result.cleanup !== "not-started") {
+          try {
+            const saved = hook.health.settle(
+              result.cleanup === "uncertain" ? "uncertain" : result.reason ? "failure" : "success",
+            );
+            health = saved.ok
+              ? inspectHookHealth(hook.health)
+              : { generation: hook.health.generation, status: "unavailable", failures: null };
+          } catch {
+            health = { generation: hook.health.generation, status: "unavailable", failures: null };
+          }
+        }
+        const failure = result.reason
+          ? safeHookFailureCode(result.reason)
+          : health.status === "unavailable"
+            ? "hook-health-unavailable"
+            : null;
+        const evidence: HookFailureEvidence = {
+          point,
+          sourceIdentity: hook.sourceIdentity ?? null,
+          source: hook.source ?? "builtin",
+          handler: registration.handler.kind,
+          health,
+          handlerFacts: result.handlerFacts ?? null,
+          diagnosticPolicy: "facts-only",
+          remediation:
+            health.status === "unavailable"
+              ? "restore-audit-store"
+              : health.status === "cleanup-uncertain"
+                ? "inspect-cleanup"
+                : health.status === "quarantined"
+                  ? "reactivate-validated-source"
+                  : failure
+                    ? "inspect-handler"
+                    : "none",
+        };
         return {
           hookId: id,
+          evidence,
           decision: result.decision ?? { kind: "allow" },
-          ...(result.reason ? { failed: { reason: result.reason } } : {}),
+          ...(failure ? { failed: { reason: failure } } : {}),
           execution: execution(
             result.cleanup === "not-started" ? "not-started" : "settled",
             result.cleanup,
@@ -204,19 +294,14 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
           execution: execution(admitted ? "queued" : "dropped", "not-started"),
           ...(admitted ? {} : { failed: { reason: "hook-observer-unavailable" } }),
         };
-        recorded.push(record);
-        try {
-          await publish(record);
-          admitted?.start();
-        } catch (error) {
-          admitted?.cancel();
-          throw error;
-        }
+        const published = await publish(record);
+        recorded.push(published);
+        if (published.failed?.reason === "hook-audit-unavailable") admitted?.cancel();
+        else admitted?.start();
         continue;
       }
-      const record = await run();
+      const record = await publish(await run());
       recorded.push(record);
-      await publish(record);
       if (
         (record.failed && failurePostureForHookPoint(point) === "fail-closed") ||
         ((record.decision.kind === "deny" || record.decision.kind === "veto") &&

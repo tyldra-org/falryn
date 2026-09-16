@@ -1,6 +1,7 @@
 import { MIGRATION_0027 } from "../sessions/activation-schema.ts";
 import { MIGRATION_0026 } from "../sessions/history-schema.ts";
 import { MIGRATION_0028 } from "../workspace/profile-preferences.ts";
+
 /**
  * Migration `0001`, checked against a real database and against the domain.
  *
@@ -11,7 +12,6 @@ import { MIGRATION_0028 } from "../workspace/profile-preferences.ts";
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
-
 import { EFFECT_CERTAINTIES, TERMINAL_OUTCOME_KINDS } from "../../domain/orchestration/index.ts";
 import { INITIAL_SCHEMA_VERSION } from "../../domain/storage/index.ts";
 import type { LocalPath } from "../../domain/workspace/index.ts";
@@ -19,6 +19,7 @@ import { ARTIFACT_PROVENANCE_SCHEMA_VERSION } from "../artifacts/artifact-proven
 import { ARTIFACT_SCHEMA_VERSION } from "../artifacts/artifact-schema.ts";
 import { LOOM_SCHEMA_VERSION } from "../artifacts/loom-schema.ts";
 import { SCRATCH_RESOURCE_SCHEMA_VERSION } from "../artifacts/scratch-resource-schema.ts";
+import { MIGRATION_0029 } from "../extensions/hook-health-repository.ts";
 import { MIGRATION_0014 } from "../extensions/package-lifecycle-repository.ts";
 import {
   temporaryRoot as makeTemporaryRoot,
@@ -112,6 +113,7 @@ describe("a fresh database", () => {
       MIGRATION_0026.version,
       MIGRATION_0027.version,
       MIGRATION_0028.version,
+      MIGRATION_0029.version,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -237,6 +239,7 @@ describe("a fresh database", () => {
       MIGRATION_0026.version,
       MIGRATION_0027.version,
       MIGRATION_0028.version,
+      MIGRATION_0029.version,
     ]);
     expect(
       upgraded.read(

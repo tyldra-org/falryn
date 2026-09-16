@@ -1,5 +1,6 @@
 /** Compact inspection facts. Neither a catalog entry nor a handle grants execution authority. */
 import { z } from "zod";
+import { hookHealthSnapshotSchema } from "../tools/hook-health.ts";
 import {
   canonicalDigest,
   canonicalJson,
@@ -60,6 +61,7 @@ const catalogEntryFields = z.strictObject({
   preferred: z.boolean(),
   explicitOnly: z.boolean(),
   health: z.enum(["healthy", "degraded", "unknown"]),
+  hookHealth: hookHealthSnapshotSchema.optional(),
   trust: z.enum(["accepted", "required", "revoked", "expired", "unknown"]),
   availability: z.enum(["available", "unavailable"]),
   reason: identityText,
