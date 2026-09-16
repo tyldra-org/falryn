@@ -57,3 +57,41 @@ test("working profile inspection displays the shared receipt in a native scrolla
   await shell.pressEscape();
   expect(await shell.frame()).not.toContain("owner-23");
 });
+
+test("environment inspection uses the shared receipt without invoking reload", async () => {
+  const actions: string[] = [];
+  const submission = {
+    ...UNAVAILABLE_SUBMISSION,
+    environment: {
+      async execute(action: "inspect" | "reload") {
+        actions.push(action);
+        return {
+          kind: "environment" as const,
+          inspection: {
+            state: "active" as const,
+            generation: "env-generation",
+            configurationGeneration: 2,
+            prepared: null,
+            code: "environment-applied",
+            effects: "none" as const,
+            outdated: false,
+            ineligibleMappings: [],
+            sources: [],
+          },
+          restartRequired: ["retained-service"],
+          transition: null,
+        };
+      },
+    },
+  };
+  using shell = await mount(
+    <ShellApp theme={THEME} model={MODEL} onExit={() => {}} submission={submission} />,
+    { shape: { columns: 100, rows: 34 } },
+  );
+  await shell.frame();
+  await shell.press("p", { ctrl: true });
+  await shell.type("environment.inspect");
+  await shell.press("\r");
+  expect(await shell.frame("env-generation")).toContain("Scoped environment");
+  expect(actions).toEqual(["inspect"]);
+});

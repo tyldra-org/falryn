@@ -130,6 +130,8 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
           ];
     case "model":
       return result.payload === null ? [] : modelSettingsLines(result.payload).map(safe);
+    case "env.inspect":
+    case "env.reload":
     case "profile":
     case "config.migrate":
     case "package":

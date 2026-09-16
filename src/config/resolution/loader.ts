@@ -1,3 +1,4 @@
+import { ENVIRONMENT_KEY } from "../../domain/process/environment.ts";
 import { inspectGeneration } from "./inspection.ts";
 /**
  * The configuration load lifecycle, end to end.
@@ -116,6 +117,8 @@ export type ConfigurationLoaderOptions = {
 };
 
 export type LoadRequest = {
+  /** Admitted user preparation only. Bootstrap discovery always uses the original host port. */
+  readonly preparedEnvironment?: EnvironmentPort;
   /** Product startup supplies inspected bytes; null explicitly disables project settings. */
   readonly projectText?: string | null;
   readonly privateProjectText?: string | null;
@@ -387,7 +390,10 @@ export function createConfigurationLoader(
         file: null,
         profile: null,
       };
-      const environment = readEnvironmentLayer(options.registry, options.environment);
+      const environment = readEnvironmentLayer(
+        options.registry,
+        request.preparedEnvironment ?? options.environment,
+      );
       pushSupplied(reports, issues, layers, environmentSource, environment, "environment");
 
       const overrideSource: ConfigurationSource = {
@@ -437,7 +443,12 @@ export function createConfigurationLoader(
         });
       }
 
+      const environmentLayers = layers.flatMap((layer) => {
+        const value = layer.values[ENVIRONMENT_KEY];
+        return value === undefined ? [] : [{ source: layer.source, value }];
+      });
       const record: ConfigurationGenerationRecord = freezeConfiguration({
+        ...(environmentLayers.length ? { environmentLayers } : {}),
         workingProfile: working.selection,
         generation: nextGeneration(
           current,
@@ -460,6 +471,7 @@ export function createConfigurationLoader(
         changes.length === 0 &&
         (prepared?.generation ?? null) === publishedSourceGeneration &&
         JSON.stringify({
+          environmentLayers,
           workingProfile: working.selection,
           sources: reports,
           provenance: composed.provenance,
@@ -467,6 +479,7 @@ export function createConfigurationLoader(
           issues,
         }) ===
           JSON.stringify({
+            environmentLayers: current.environmentLayers ?? [],
             workingProfile: current.workingProfile,
             sources: current.sources,
             provenance: current.provenance,

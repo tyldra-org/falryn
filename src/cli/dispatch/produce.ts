@@ -98,6 +98,17 @@ export async function produce(
   onMutationStart?: () => void,
 ): Promise<RunCommandResult> {
   switch (command) {
+    case "env.inspect":
+    case "env.reload": {
+      const { runEnvironment } = await import("../commands/environment.ts");
+      if (command === "env.reload") onMutationStart?.();
+      return runEnvironment(
+        services,
+        command === "env.inspect" ? "inspect" : "reload",
+        globals,
+        signal,
+      );
+    }
     case "profile":
     case "config.migrate": {
       if (options.workingConfigurationArgs === undefined)

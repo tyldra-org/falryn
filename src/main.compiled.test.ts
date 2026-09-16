@@ -156,6 +156,35 @@ test.skipIf(!built)(
   },
 );
 
+test.skipIf(!built)(
+  "compiled environment controls are inert, structured-only and provider-independent",
+  async () => {
+    const root = await temporaryRoot();
+    await mkdir(join(root, ".falryn"));
+    await writeFile(
+      join(root, ".falryn", "falryn.jsonc"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumReaderSchemaVersion: 2,
+        defaults: {
+          execution: {
+            environment: { set: { SECRET_FIXTURE: "never-project-this-value", EMPTY: "" } },
+          },
+        },
+      }),
+    );
+    await writeFile(join(root, ".falryn", "env.zsh"), "exit 91");
+    for (const action of ["inspect", "reload"]) {
+      const result = spawnCompiled(root, ["env", action, "--format", "json"]);
+      expect(result.exitCode, result.stderr).toBe(EXIT_CODES.COMPLETED);
+      expect(result.stdout).toContain(action === "inspect" ? "unavailable" : "active");
+      expect(result.stdout).not.toContain("never-project-this-value");
+      expect(result.stdout).not.toContain("SECRET_FIXTURE");
+    }
+    expect((await readdir(root)).filter((name) => name.startsWith(".zsh"))).toEqual([]);
+  },
+);
+
 if (selectedSmokeTarget !== undefined) {
   test("requires the selected standalone executable to exist", () => {
     // The regular suite records a missing binary as skipped for source-only

@@ -230,7 +230,7 @@ describe("artifact bytes", () => {
     // would be a second answer to where artifact bytes live. The package
     // adapter is exempt because it writes packages, not artifacts; that its
     // own bytes stay in one module is asserted separately below.
-    const byteWriters = /\b(fs\.open|open\(|writeFile|createWriteStream|Bun\.write)\b/;
+    const byteWriters = /\b(writeFile|createWriteStream|Bun\.write)\b/;
     const offenders: string[] = [];
     for (const file of await sourceFiles()) {
       if (
@@ -241,7 +241,27 @@ describe("artifact bytes", () => {
       ) {
         continue;
       }
-      if (byteWriters.test(await readSource(file))) {
+      const source = await readSource(file);
+      // Opening a PTY through a port is not a file write. A source snapshot's
+      // read-only descriptor is also allowed; writable filesystem opens are not.
+      let writableOpen = false;
+      if (source.includes("node:fs") && /\bopen\b/.test(source)) {
+        for (const call of source.matchAll(/\b(?:fs\.)?open\s*\(([^)]*)\)/g)) {
+          const flags = (call[1] ?? "")
+            .split(",")
+            .slice(1)
+            .join(",")
+            .trim()
+            .replace(/,$/, "")
+            .trim();
+          if (
+            !/^["']rs?["']$/.test(flags) &&
+            !/^constants\.O_RDONLY(?:\s*\|\s*constants\.O_(?:NOFOLLOW|NONBLOCK))*$/.test(flags)
+          )
+            writableOpen = true;
+        }
+      }
+      if (byteWriters.test(source) || writableOpen) {
         offenders.push(file);
       }
     }

@@ -162,6 +162,7 @@ class HostManagedService {
   private readonly ownedProcesses: OwnedProcessRegistry | undefined;
   private sandboxLaunch: SandboxLaunch | null = null;
   private sandboxRefusal: SandboxReceipt | null = null;
+  private launchAuthorization: AbortController | null = null;
 
   constructor(
     private readonly request: ManagedServiceRequest,
@@ -293,7 +294,7 @@ class HostManagedService {
     };
   }
 
-  private spawnGeneration(previousGeneration: ServiceGeneration | null): void {
+  private async spawnGeneration(previousGeneration: ServiceGeneration | null): Promise<void> {
     const generation =
       this.generation === null ? serviceGeneration.from(1) : nextServiceGeneration(this.generation);
     this.generation = generation;
@@ -312,6 +313,45 @@ class HostManagedService {
     this.readinessDecoder = new TextDecoder();
     this.clearReadinessTimer();
     this.clearIdleTimer();
+
+    if (this.request.authorizeLaunch) {
+      const controller = new AbortController();
+      this.launchAuthorization?.abort();
+      this.launchAuthorization = controller;
+      const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]);
+      let onAbort!: () => void;
+      const cancelled = new Promise<boolean>((resolve) => {
+        onAbort = () => resolve(false);
+        signal.addEventListener("abort", onAbort, { once: true });
+      });
+      const authorize = this.request.authorizeLaunch;
+      const allowed = await Promise.race([
+        Promise.resolve()
+          .then(() => authorize(signal))
+          .catch(() => false),
+        cancelled,
+      ]);
+      signal.removeEventListener("abort", onAbort);
+      if (
+        !allowed ||
+        signal.aborted ||
+        this.generation !== generation ||
+        this.state !== "starting"
+      ) {
+        if (this.generation === generation) {
+          if (this.state === "starting") this.state = "failed";
+          this.emit({ kind: "failed", reason: "spawn-failed", generation });
+          this.resolveStart(
+            err({
+              kind: "managed-service",
+              code: "spawn-failed",
+              detail: "launch-authority-unavailable",
+            }),
+          );
+        }
+        return;
+      }
+    }
 
     try {
       this.sandboxLaunch = null;
@@ -569,6 +609,7 @@ class HostManagedService {
   private async stopCurrent(
     reason: "requested" | "idle" | "shutdown",
   ): Promise<Result<ManagedServiceStopReport, ManagedServiceError>> {
+    this.launchAuthorization?.abort();
     const child = this.child;
     const exitPromise = this.exitPromise;
     const generation = this.generation;

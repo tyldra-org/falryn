@@ -4,9 +4,11 @@ import {
   prepareSessionSelection,
 } from "../../application/sessions/session-activation.ts";
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
+import { createEnvironmentProcessContext } from "./environment-process-context.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { productToolHost } from "./product-tool-host.ts";
 import { createProductSandbox } from "./sandbox-configuration.ts";
+import { standaloneEnvironment } from "./standalone-environment.ts";
 /**
  * Headless `falryn run` coding command (#708).
  *
@@ -413,6 +415,7 @@ export async function runCoding(
           ...(options.signal === undefined ? {} : { signal: options.signal }),
         });
   let productArtifactSession: ProductArtifactSession | null = null;
+  let environmentRuntime: Awaited<ReturnType<typeof standaloneEnvironment>> | null = null;
   let mainPeer: import("../../application/orchestration/peer-mailbox.ts").PeerMailbox | null = null;
 
   try {
@@ -607,6 +610,17 @@ export async function runCoding(
       sandbox,
       ...(options.ownedProcesses === undefined ? {} : { ownedProcesses: options.ownedProcesses }),
     };
+    const environmentContext = createEnvironmentProcessContext();
+    if (options.globals) {
+      environmentRuntime = await standaloneEnvironment(
+        graph,
+        options.globals,
+        options.signal,
+        options.ownedProcesses,
+      );
+      await environmentRuntime.control.execute("reload", options.signal);
+    }
+    const scopedProcesses = environmentRuntime?.context ?? environmentContext;
     let providerAdapter = options.providerAdapter;
     let providerCatalog = options.providerCatalog ?? null;
     let providerUnavailableCode = providerAdapter === null ? "provider-not-attached" : null;
@@ -681,7 +695,7 @@ export async function runCoding(
       scratch: productArtifactSession.scratch,
       generation,
       fileSystem: graph.fileSystem,
-      commands: createHostCommandRunner(ownedProcessOptions),
+      commands: scopedProcesses.commands(createHostCommandRunner(ownedProcessOptions)),
       workspaceRoot,
       ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
       ...(productLoom === undefined ? {} : { loom: productLoom }),
@@ -693,7 +707,9 @@ export async function runCoding(
     const processTools = composeProductProcessTools({
       generation,
       tasks: productArtifactSession.tasks,
-      capture: options.processCapture ?? createHostProcessCapturePort(captureOptions),
+      capture: scopedProcesses.capture(
+        options.processCapture ?? createHostProcessCapturePort(captureOptions),
+      ),
       workspaceCwd: String(workspaceRoot),
       ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
       ...(productLoom === undefined ? {} : { loom: productLoom }),
@@ -710,13 +726,16 @@ export async function runCoding(
     const gitTools = composeProductGitTools({
       generation,
       git: createHostGitPort({
-        capture: createHostProcessCapturePort(captureOptions),
+        capture: scopedProcesses.gitCapture(createHostProcessCapturePort(captureOptions)),
         clock: graph.clock,
       }),
       gitExecutable: "/usr/bin/git",
+      resolveExecutable: scopedProcesses.gitExecutable,
       startPath: String(workspaceRoot),
     });
-    const managedServices = createHostManagedServicePort(ownedProcessOptions);
+    const managedServices = scopedProcesses.services(
+      createHostManagedServicePort(ownedProcessOptions),
+    );
     const languageTools = composeProductLanguageTools({
       configuration: () =>
         languageServiceConfiguration(
@@ -1035,6 +1054,7 @@ export async function runCoding(
       [...trustEvents, ...attempted.events],
     );
   } finally {
+    environmentRuntime?.close();
     await mainPeer?.close();
     if (options.ownedProcesses === undefined) await productArtifactSession?.close();
     configReload?.dispose();

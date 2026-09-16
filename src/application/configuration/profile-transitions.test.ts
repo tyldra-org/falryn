@@ -101,6 +101,29 @@ function fixture(overrides: Partial<ProfileTransitionPorts> = {}) {
   return { service, preview, apply, state, calls, facts, owner, resources, candidate, ports };
 }
 
+test("prepared source validation refuses publication and recovery never repeats preparation", async () => {
+  const f = fixture();
+  const owner = f.ports.owners[0];
+  if (!owner) throw new Error("fixture-owner-missing");
+  const prepare = owner.prepare;
+  Object.assign(owner, {
+    prepare: async (...args: Parameters<typeof prepare>) => ({
+      ...(await prepare(...args)),
+      validate: async () => false,
+    }),
+  });
+  await f.preview();
+  const result = await f.apply();
+  expect(result).toMatchObject({
+    kind: "receipt",
+    receipt: { stage: "rejected", code: "preparation-input-changed", publishedGeneration: null },
+  });
+  expect(f.calls).toEqual(["prepare:models", "release:models"]);
+  await f.service.inspect();
+  expect(f.calls).toEqual(["prepare:models", "release:models"]);
+  f.resources.close();
+});
+
 test("preview is inert; exact scope and candidate are required; receipts distinguish publication and acknowledgement", async () => {
   const f = fixture();
   expect((await f.preview()).kind).toBe("preview");
@@ -118,6 +141,7 @@ test("preview is inert; exact scope and candidate are required; receipts disting
   expect((await f.apply()).kind).toBe("receipt");
   expect(f.calls).toEqual(["prepare:models", "publish", "ack:models"]);
   expect(f.facts.map((fact) => fact.stage)).toEqual([
+    "preparing",
     "prepared",
     "published",
     "published",

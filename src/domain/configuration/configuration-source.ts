@@ -168,6 +168,11 @@ export type WorkingProfileSelection = {
 
 /** One composed, cross-validated configuration. */
 export type ConfigurationGenerationRecord = {
+  /** Private in-memory inputs; inspection and event projections never include their values. */
+  readonly environmentLayers?: readonly {
+    readonly source: ConfigurationSource;
+    readonly value: ConfigurationValue;
+  }[];
   readonly workingProfile?: WorkingProfileSelection;
   readonly generation: ConfigurationGeneration;
   readonly values: ConfigurationValues;

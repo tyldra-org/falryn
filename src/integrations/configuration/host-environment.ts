@@ -18,6 +18,7 @@ import { type LocalPath, parseLocalPath } from "../../domain/workspace/index.ts"
 
 export function createHostEnvironment(): EnvironmentPort {
   return {
+    raw: (name) => process.env[name] ?? null,
     get(name: string): string | null {
       const value = process.env[name];
       // An exported-but-empty variable reads as unset. A shell produces that

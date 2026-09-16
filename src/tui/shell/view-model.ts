@@ -129,7 +129,7 @@ export type OverlayRoute =
   | { readonly kind: "none" }
   | { readonly kind: "help" }
   | { readonly kind: "model-settings" }
-  | { readonly kind: "profile-result"; readonly text: string }
+  | { readonly kind: "profile-result"; readonly text: string; readonly title?: string }
   /**
    * The palette, and what has been typed into it.
    *

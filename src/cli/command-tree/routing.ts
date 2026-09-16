@@ -83,6 +83,8 @@ export function commandFrom(
   }
   if (group === "profile")
     return ["list", "show", "use", "default"].includes(action ?? "") ? "profile" : null;
+  if (group === "env")
+    return action === "inspect" ? "env.inspect" : action === "reload" ? "env.reload" : null;
   if (group === "config") {
     switch (action) {
       case "migrate":

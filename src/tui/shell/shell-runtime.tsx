@@ -170,6 +170,31 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     [options.submission],
   );
   const profile = useSessionOperation(profileControl, dispatch, "Working profile");
+  const environmentControl = useCallback(
+    async (argument: string | null, signal: AbortSignal) => {
+      const action = argument?.trim() || "inspect";
+      if (action !== "inspect" && action !== "reload")
+        return { message: "Use /env inspect, /env reload, or /env cancel." };
+      const control = options.submission?.environment;
+      if (!control) return { message: "Environment controls are unavailable." };
+      const binding = options.submission?.binding?.();
+      const result = await control.execute(action, signal);
+      if (binding !== options.submission?.binding?.())
+        return { message: "Environment action settled in the previous session." };
+      dispatch({
+        kind: "open-overlay",
+        route: {
+          kind: "profile-result",
+          title: "Scoped environment",
+          text: JSON.stringify(result, null, 2),
+        },
+      });
+      return { message: "Environment result. Scroll to inspect; Escape closes." };
+    },
+    [options.submission],
+  );
+  const environment = useSessionOperation(environmentControl, dispatch, "Environment");
+  const cancelEnvironment = environment.cancel;
   const compact = useSessionOperation(options.submission?.compact, dispatch, "Compaction");
   const cancelProfile = profile.cancel;
   const cancelCompact = compact.cancel;
@@ -181,7 +206,12 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         workspaceController: options.workspaceController ?? null,
         sessionNavigationController: options.sessionNavigationController ?? null,
         sessionCreation: options.sessionCreation ?? null,
-        peerPending: peerPending || sessionExport.pending || compact.pending || profile.pending,
+        peerPending:
+          peerPending ||
+          sessionExport.pending ||
+          compact.pending ||
+          profile.pending ||
+          environment.pending,
       }),
     [
       state,
@@ -193,6 +223,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       sessionExport.pending,
       compact.pending,
       profile.pending,
+      environment.pending,
     ],
   );
   const commandStateRef = useRef(commandState);
@@ -550,6 +581,11 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         else profile.run(slash.argument);
         return;
       }
+      if (slash.commandId === "environment.inspect") {
+        if (slash.argument === "cancel") cancelEnvironment();
+        else environment.run(slash.argument);
+        return;
+      }
       if (slash.commandId === "session.export") {
         sessionExport.run(slash.argument);
         return;
@@ -725,6 +761,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     })();
   }, [
     fileProbe,
+    environment.run,
+    cancelEnvironment,
     sessionExport.run,
     compact.run,
     profile.run,
@@ -756,6 +794,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       }
 
       switch (id) {
+        case "environment.inspect":
+          return environment.run(null);
         case "profile.inspect":
           return profile.run(null);
         case "session.export":
@@ -850,6 +890,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           if (cancelSessionExport()) return true;
           if (cancelCompact()) return true;
           if (cancelProfile()) return true;
+          if (cancelEnvironment()) return true;
           if (peerAction.current) {
             peerAction.current.abort();
             peerAction.current = null;
@@ -897,9 +938,11 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     },
     [
       sessionExport.run,
+      environment.run,
       compact.run,
       profile.run,
       cancelProfile,
+      cancelEnvironment,
       cancelCompact,
       cancelSessionExport,
       options.onExit,

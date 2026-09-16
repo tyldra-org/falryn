@@ -1,4 +1,8 @@
 import { randomUUID } from "node:crypto";
+import {
+  createEnvironmentControl,
+  type EnvironmentControl,
+} from "../../application/configuration/environment-control.ts";
 import type {
   ProfileTransitionOwner,
   ProfileTransitions,
@@ -10,11 +14,17 @@ import {
 import { scopeProviderContinuations } from "../../application/providers/continuation-scope.ts";
 import type { ProductAgentRuntime } from "../../application/runtime/product-agent-runtime.ts";
 import type { ProductAdmissionBinding } from "../../application/runtime/product-live-turn.ts";
+import { createTurnEventJournal } from "../../application/runtime/turn-event-journal.ts";
 import type { ConfigurationGenerationRecord } from "../../domain/configuration/index.ts";
-import { configurationGeneration } from "../../domain/foundation/index.ts";
+import { configurationGeneration, streamId } from "../../domain/foundation/index.ts";
+import { createInMemoryEventStore } from "../../domain/sessions/index.ts";
 import { runWorkingConfiguration } from "../commands/profile.ts";
 import type { GlobalOptions } from "../options.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
+import {
+  createEnvironmentProcessContext,
+  type EnvironmentProcessContext,
+} from "./environment-process-context.ts";
 import { modelPreferencesFrom } from "./model-configuration.ts";
 import {
   loadProductConfiguration,
@@ -28,10 +38,13 @@ import {
   type ProductProviderConnectionOptions,
   type ProductProviderConnections,
 } from "./product-provider-connections.ts";
+import { productScopedEnvironment } from "./scoped-environment.ts";
 import type { Services } from "./services.ts";
 import { workspaceProfilePreference } from "./workspace-profile-preferences.ts";
 
 export type WorkingProfileSession = {
+  startEnvironment(signal?: AbortSignal): Promise<void>;
+  readonly environment: EnvironmentControl;
   readonly control: ProfileControl;
   readonly provider: ProductProviderConnectionHandoff;
   readonly modelSettings: ReturnType<typeof composeProductModelSettings>;
@@ -49,6 +62,8 @@ export type WorkingProfileSessionFactory = (
     connections: ProductProviderConnections,
     provider: Extract<ProductProviderConnectionHandoff, { kind: "ready" }>,
   ) => ProductAgentRuntime,
+  environmentContext?: EnvironmentProcessContext,
+  deferEnvironment?: boolean,
 ) => Promise<WorkingProfileSession>;
 
 /** Host factory shared by interactive and embeddable session composition. */
@@ -58,7 +73,12 @@ export function productWorkingProfileSessions(
   providerOptions: ProductProviderConnectionOptions,
   additionalOwners: readonly ProfileTransitionOwner[] = [],
 ): WorkingProfileSessionFactory {
-  return async (runtime, compose) => {
+  return async (
+    runtime,
+    compose,
+    environmentContext = createEnvironmentProcessContext(),
+    deferEnvironment = false,
+  ) => {
     const history = await runtime.journal.replay();
     if (history.kind !== "rebuilt" && history.kind !== "empty")
       throw new Error("profile-recovery-unavailable");
@@ -97,6 +117,12 @@ export function productWorkingProfileSessions(
       sessionId: String(runtime.correlation.sessionId),
       workspaceId: String(runtime.correlation.workspaceId),
     };
+    const environment = productScopedEnvironment(
+      graph,
+      scope.sessionId,
+      providerOptions.ownedProcesses,
+    );
+    environmentContext.install(environment.capture);
     let binding: ProductAdmissionBinding = {
       runtime,
       preferences: modelPreferencesFrom(initial.values),
@@ -153,14 +179,26 @@ export function productWorkingProfileSessions(
         };
       },
       async prepare(candidate, _resources, signal) {
-        if (candidate.record.generation === binding.generation)
+        const keepsUnavailableProvider =
+          currentProvider.kind !== "ready" &&
+          !candidate.changes.some((change) =>
+            ["models.", "providers.", "agents."].some((prefix) =>
+              String(change.path).startsWith(prefix),
+            ),
+          );
+        if (candidate.record.generation === binding.generation || keepsUnavailableProvider)
           return {
             release: async () => {},
-            acknowledge: async (generation) => ({
-              state: "applied",
-              generation,
-              code: "binding-unchanged",
-            }),
+            acknowledge: async (generation, current, abort) => {
+              if (abort.aborted || !current())
+                return { state: "pending", generation: null, code: "stale-acknowledgement" };
+              binding = {
+                ...binding,
+                generation: candidate.record.generation,
+                preferences: modelPreferencesFrom(candidate.record.values),
+              };
+              return { state: "applied", generation, code: "binding-unchanged" };
+            },
           };
 
         const connections = composeProductProviderConnections(graph, globals, {
@@ -218,7 +256,7 @@ export function productWorkingProfileSessions(
       async prepare(candidate) {
         const changed = candidate.changes.some(
           (change) =>
-            !["models.", "providers.", "agents."].some((prefix) =>
+            !["models.", "providers.", "agents.", "execution.environment"].some((prefix) =>
               String(change.path).startsWith(prefix),
             ),
         );
@@ -253,20 +291,76 @@ export function productWorkingProfileSessions(
         }),
       }),
     };
-    const service = composeProductProfileTransitions({
+    const transitionOptions = {
+      environment,
       graph,
       scope,
       request,
       resources,
       journal: runtime.journal,
       correlation: runtime.correlation,
-      owners: [modelOwner, retainedOwners, packageOwner, ...additionalOwners],
       policyRevision: () => "user-profile-control-v1",
       // Model slash authorization is attached by its policy owner; absence denies it.
-      authorize: (actor) => !closed && actor === "user",
+      authorize: (actor: "user" | "model") => !closed && actor === "user",
+    };
+    const startup = composeProductProfileTransitions({
+      ...transitionOptions,
+      // An empty default binding has no external preparation or recovery fact.
+      // Keep its initialization out of the user's durable conversation.
+      ...(!initial.outcome.record.environmentLayers?.length
+        ? {
+            journal: createTurnEventJournal({
+              eventStore: createInMemoryEventStore(),
+              clock: graph.clock,
+              streamId: streamId.from(`environment-default:${scope.sessionId}`),
+              correlation: runtime.correlation,
+            }),
+          }
+        : {}),
+      preserveSelection: true,
+      owners: [environment.owner],
+    });
+    // Initial admission prepares only this new owner, never unrelated reload owners.
+    let initialPreparation: Promise<void> | null = null;
+    const startEnvironment = (signal?: AbortSignal) =>
+      (initialPreparation ??= (async () => {
+        await createEnvironmentControl({
+          ...startup,
+          scope,
+          inspect: environment.inspect,
+          restartRequired: environmentContext.restartRequired,
+        }).execute("reload", signal);
+        startup.transitions.invalidate();
+        const record = graph.loader.current();
+        if (record && record.generation !== binding.generation) {
+          binding = {
+            ...binding,
+            generation: record.generation,
+            preferences: modelPreferencesFrom(record.values),
+          };
+          if (initialProvider.kind === "ready") {
+            const next = compose(record, initialConnections, initialProvider);
+            binding = { ...binding, runtime: next };
+            releases.add(async () => next.closeBindings());
+          }
+        }
+      })());
+    if (!deferEnvironment) await startEnvironment();
+    const service = composeProductProfileTransitions({
+      ...transitionOptions,
+      owners: [environment.owner, modelOwner, retainedOwners, packageOwner, ...additionalOwners],
+    });
+    const environmentControl = createEnvironmentControl({
+      ...service,
+      scope,
+      inspect: environment.inspect,
+      restartRequired: environmentContext.restartRequired,
     });
     const reload = startConfigurationReloadWatcher(graph, globals, {
-      onInvalidation: service.transitions.sourcesChanged,
+      onInvalidation: async (signal) => {
+        await service.transitions.sourcesChanged(signal);
+        await environment.inspect();
+      },
     });
     const settings = () =>
       composeProductModelSettings(
@@ -335,13 +429,16 @@ export function productWorkingProfileSessions(
       ...service,
       scope,
       control,
+      environment: environmentControl,
+      startEnvironment,
       get provider() {
         return currentProvider;
       },
       modelSettings: { execute: (input, signal) => settings().execute(input, signal) },
-      capture: () => binding,
+      capture: () => ({ ...binding, runScope: environmentContext.scope() }),
       close: async () => {
         closed = true;
+        environment.close();
         service.transitions.invalidate();
         reload.dispose();
         resources.close();
