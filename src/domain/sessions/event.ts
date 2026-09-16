@@ -1,4 +1,5 @@
 import type { CompositionProvenance } from "../capabilities/composition.ts";
+import type { ProfileTransitionReceipt } from "../configuration/profile-transition.ts";
 import type { CatalogHistory } from "../extensions/catalog-history.ts";
 import type { SandboxReceipt } from "../security/sandbox.ts";
 import type { HistoryPayload } from "./history.ts";
@@ -60,6 +61,7 @@ export const EVENT_KINDS = [
   "workflow.changed",
   "history.recorded",
   "model.processing.recorded",
+  "configuration.transition.recorded",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -367,7 +369,14 @@ export type WorkQueueChangedEvent = Envelope<"work.queue.changed", SessionCorrel
 
 export type HistoryRecordedEvent = Envelope<"history.recorded", TurnCorrelation, HistoryPayload>;
 
+export type ConfigurationTransitionRecordedEvent = Envelope<
+  "configuration.transition.recorded",
+  SessionCorrelation,
+  ProfileTransitionReceipt
+>;
+
 export type RuntimeEvent =
+  | ConfigurationTransitionRecordedEvent
   | HistoryRecordedEvent
   | Envelope<"workflow.changed", SessionCorrelation, WorkflowReceipt>
   | WorkQueueChangedEvent

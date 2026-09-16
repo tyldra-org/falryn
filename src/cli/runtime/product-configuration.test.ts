@@ -52,6 +52,7 @@ describe("configurationGenerationFromLoadOutcome", () => {
       applicationClass: "live",
     };
     const resolved = configurationGenerationFromLoadOutcome(outcome, {
+      preview: async () => ({ kind: "cancelled" }),
       validate: async () => [],
       load: async () => outcome,
       current: () => null,
@@ -62,7 +63,12 @@ describe("configurationGenerationFromLoadOutcome", () => {
   test("falls back to the first generation when nothing is retained", () => {
     const resolved = configurationGenerationFromLoadOutcome(
       { kind: "rejected", issues: [], sources: [], retained: null },
-      { validate: async () => [], load: async () => ({ kind: "cancelled" }), current: () => null },
+      {
+        preview: async () => ({ kind: "cancelled" }),
+        validate: async () => [],
+        load: async () => ({ kind: "cancelled" }),
+        current: () => null,
+      },
     );
     expect(resolved).toBe(configurationGeneration.from(0));
   });

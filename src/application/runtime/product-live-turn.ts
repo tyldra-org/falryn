@@ -168,7 +168,17 @@ export type ProductLiveTurnExecutor = {
   run(input: ProductLiveTurnInput): Promise<ProductLiveTurnResult>;
 };
 
+export type ProductAdmissionBinding = {
+  readonly runtime: ProductAgentRuntime;
+  readonly catalog: ModelCatalog | null;
+  readonly preferences: import("../../providers/configuration/policy-schema.ts").ModelPreferences;
+  readonly generation: ConfigurationGeneration;
+};
+
 export type ProductLiveTurnExecutorOptions = {
+  /** Captured synchronously once per admission; old work never reads a newer binding. */
+  readonly admissionBinding?: () => ProductAdmissionBinding;
+
   readonly resumed?: boolean;
   readonly historyParents?: import("../sessions/conversation-history.ts").ConversationHistoryPorts["parents"];
   readonly checkpointEvents?: EventStorePort;
@@ -179,7 +189,10 @@ export type ProductLiveTurnExecutorOptions = {
   readonly modelPreferences?: () => import("../../providers/configuration/policy-schema.ts").ModelPreferences;
   readonly modelConfigurationGeneration?: () => ConfigurationGeneration;
   readonly runtime: ProductAgentRuntime;
-  readonly refreshRuntime?: (signal: AbortSignal) => Promise<ProductAgentRuntime>;
+  readonly refreshRuntime?: (
+    signal: AbortSignal,
+    captured?: ProductAgentRuntime,
+  ) => Promise<ProductAgentRuntime>;
   readonly clock: ClockPort;
   readonly providerCatalog: ModelCatalog | null;
   readonly contextSource?: ProductContextSource;
@@ -276,11 +289,11 @@ export function productModelPolicy(
 export function createProductLiveTurnExecutor(
   options: ProductLiveTurnExecutorOptions,
 ): ProductLiveTurnExecutor {
-  let runtime = options.runtime;
-  const producer = runtime.attachments.turnProducer;
-  const correlation = runtime.correlation;
+  const publishedRuntime = options.runtime;
+  const producer = publishedRuntime.attachments.turnProducer;
+  const correlation = publishedRuntime.correlation;
   let activeProfile = options.initialExecutionProfile ?? "agent";
-  const providerIdentity = runtime.providerAdapter?.identity ?? null;
+  const providerIdentity = publishedRuntime.providerAdapter?.identity ?? null;
   const initialCatalogModel = options.providerCatalog?.models.find(
     (model) => model.availability !== "unavailable",
   )?.modelId;
@@ -302,9 +315,9 @@ export function createProductLiveTurnExecutor(
       ? createLiveCheckpoint({
           events: options.checkpointEvents,
           artifacts: options.artifacts,
-          streamId: runtime.streamId,
+          streamId: publishedRuntime.streamId,
           correlation,
-          journal: runtime.journal,
+          journal: publishedRuntime.journal,
           clock: options.clock,
           durable: options.checkpointDurable === true,
           authorize: (event, artifact) =>
@@ -562,7 +575,8 @@ export function createProductLiveTurnExecutor(
     modelSelection: {
       get: () => activeModel,
       async select(identity) {
-        const catalog = options.providerCatalog;
+        const binding = options.admissionBinding?.();
+        const catalog = binding === undefined ? options.providerCatalog : binding.catalog;
         if (catalog === null) {
           return {
             ok: false,
@@ -570,7 +584,7 @@ export function createProductLiveTurnExecutor(
             message: "the selected provider has no usable model catalog",
           };
         }
-        const provider = runtime.requireProviderAdapter();
+        const provider = (binding?.runtime ?? publishedRuntime).requireProviderAdapter();
         if (
           !provider.ok ||
           identity.providerProfileId !== provider.value.identity.profileId ||
@@ -622,7 +636,7 @@ export function createProductLiveTurnExecutor(
       ? {}
       : {
           async compact(request: CheckpointRequest, signal: AbortSignal) {
-            const resources = runtime.resources.openTask(
+            const resources = publishedRuntime.resources.openTask(
               String(correlation.configurationGeneration),
             );
             try {
@@ -633,6 +647,10 @@ export function createProductLiveTurnExecutor(
           },
         }),
     async run(rawInput) {
+      const binding = options.admissionBinding?.();
+      let runtime = binding?.runtime ?? publishedRuntime;
+      const providerCatalog = binding === undefined ? options.providerCatalog : binding.catalog;
+
       const requestInput =
         rawInput.prompt.trim() === "" && (rawInput.attachmentSelection?.attachments.length ?? 0) > 0
           ? { ...rawInput, prompt: "Read the attached resources." }
@@ -646,18 +664,30 @@ export function createProductLiveTurnExecutor(
               requestInput.childAdmission.scope.signal,
             ]),
           };
-      const modelPreferences = options.modelPreferences?.();
+      const modelPreferences = binding?.preferences ?? options.modelPreferences?.();
       const generation =
-        options.modelConfigurationGeneration?.() ?? correlation.configurationGeneration;
+        binding?.generation ??
+        options.modelConfigurationGeneration?.() ??
+        correlation.configurationGeneration;
+      const admittedProvider = binding?.runtime.providerAdapter?.identity ?? providerIdentity;
+      const admittedCatalogModel =
+        binding?.catalog?.models.find((model) => model.availability !== "unavailable")?.modelId ??
+        initialCatalogModel;
+      if (
+        binding &&
+        activeModelExplicit &&
+        activeModel?.providerProfileId !== admittedProvider?.profileId
+      )
+        activeModelExplicit = false;
       if (!activeModelExplicit)
         activeModel =
           modelPreferences?.roles.default ??
-          (providerIdentity === null || initialCatalogModel === undefined
+          (admittedProvider === null || admittedCatalogModel === undefined
             ? null
             : {
-                providerProfileId: providerIdentity.profileId,
-                providerId: providerIdentity.providerId,
-                modelId: initialCatalogModel,
+                providerProfileId: admittedProvider.profileId,
+                providerId: admittedProvider.providerId,
+                modelId: admittedCatalogModel,
               });
       const selectedModel = activeModel;
       const sessionFailure = await startSession();
@@ -714,6 +744,7 @@ export function createProductLiveTurnExecutor(
         try {
           const candidate = await options.refreshRuntime(
             input.signal ?? new AbortController().signal,
+            runtime,
           );
           if (
             candidate.attachments.turnProducer !== producer ||
@@ -1055,23 +1086,23 @@ export function createProductLiveTurnExecutor(
         }
         const attemptRunner = runtime.requireAttemptRunner();
         const policy =
-          options.providerCatalog === null
+          providerCatalog === null
             ? null
             : productModelPolicy(
                 provider.value,
-                options.providerCatalog,
+                providerCatalog,
                 executionPolicy,
                 selectedModel,
                 modelPreferences,
               );
-        if (!attemptRunner.ok || options.providerCatalog === null || policy === null) {
+        if (!attemptRunner.ok || providerCatalog === null || policy === null) {
           return settleFailure(
             input,
             {
               kind: "unavailable",
               code: "runtime.attempt-runner-required",
               message:
-                options.providerCatalog === null
+                providerCatalog === null
                   ? "the selected provider has no usable model catalog"
                   : policy === null
                     ? "the selected provider catalog contains no model"
@@ -1100,13 +1131,13 @@ export function createProductLiveTurnExecutor(
               destinationId: provider.value.identity.destinationId,
               transportCompatibilityId: provider.value.identity.transportCompatibilityId,
               transportCompatibility: provider.value.transportCompatibility,
-              modelTransportCompatibility: options.providerCatalog.models.flatMap((model) => {
+              modelTransportCompatibility: providerCatalog.models.flatMap((model) => {
                 const plan = provider.value.transportCompatibilityFor(model.modelId);
                 return plan === null ? [] : [{ modelId: model.modelId, plan }];
               }),
               requestInputModalities: provider.value.requestInputModalities,
               requestResponseDensityControls: provider.value.requestResponseDensityControls ?? [],
-              catalog: options.providerCatalog,
+              catalog: providerCatalog,
             },
           ],
           journal: runtime.journal,
@@ -1130,7 +1161,7 @@ export function createProductLiveTurnExecutor(
           modelInput.messages,
           modelInput.tools,
           modelInput.budgets,
-          options.providerCatalog.models.find((model) => model.modelId === selectedModel?.modelId),
+          providerCatalog.models.find((model) => model.modelId === selectedModel?.modelId),
         );
         if (historyBudget.reason)
           return settleFailure(
@@ -1144,7 +1175,7 @@ export function createProductLiveTurnExecutor(
           );
         checkpoint?.capture(
           modelInput,
-          options.providerCatalog?.models.find((model) => model.modelId === selectedModel?.modelId),
+          providerCatalog?.models.find((model) => model.modelId === selectedModel?.modelId),
           prepared.receipt?.generation ?? "static",
         );
         const attempted = await attemptPolicy.run({

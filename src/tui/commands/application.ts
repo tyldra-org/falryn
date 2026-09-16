@@ -171,6 +171,15 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
       state.hasScrollableContent ? AVAILABLE : unavailable("nothing is scrollable yet"),
   },
   {
+    id: "profile.inspect",
+    title: "Working profile",
+    description: "Inspect, preview and apply this session’s working profile.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["profile", "configuration"],
+    availability: () => AVAILABLE,
+  },
+  {
     id: "model.settings",
     title: "Model roles",
     description: "Inspect and configure shared model role defaults and overrides.",

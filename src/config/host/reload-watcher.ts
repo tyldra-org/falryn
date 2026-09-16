@@ -19,7 +19,7 @@ export type FileChangeSubscriber = (
 ) => Promise<{ readonly dispose: () => void }>;
 
 export type ConfigurationReloadWatcherOptions = {
-  readonly loader: ConfigurationLoader;
+  readonly loader: Pick<ConfigurationLoader, "load">;
   readonly loadRequest: LoadRequest;
   readonly watchedPaths: readonly LocalPath[];
   readonly clock: ClockPort;

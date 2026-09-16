@@ -16,7 +16,7 @@ application. The current command surface includes:
 | falryn run [--mode ask\|plan\|debug\|agent] <prompt> | Run one headless coding turn through the selected execution profile and provider |
 | falryn doctor | Run bounded environment and local-storage diagnostics |
 | falryn config show / validate / path / set / reset / migrate | Inspect, validate, update, or remove a scoped configuration override |
-| falryn profile list / show / default | Inspect working profiles and explicitly save the global default |
+| falryn profile list / show / default / use | Inspect working profiles, save defaults, or request an exact session target |
 | falryn provider list / add / use / configure / test / login / logout / remove | Manage local provider profiles and credentials |
 | falryn data backup / inspect / restore / diagnostics / retention / gc / reset / uninstall | Inspect, preserve, repair, retain, collect, or preview/apply confirmed removal of Falryn-owned local data |
 | falryn workspace list / show / save / load | Inspect or persist named workspace sets |
@@ -49,9 +49,9 @@ existing consumers and scope restrictions. Version-one files retain their paths
 and whole-value model-policy behavior until explicit migration. New documents
 write `schemaVersion: 2` and `minimumReaderSchemaVersion: 2`.
 
-`--profile` selects a working setup; otherwise `profiles.default` or the reserved
-`default` identity selects it. A missing `profiles/default.jsonc` is virtual and
-creates nothing. The loader also accepts an explicit personal workspace
+`--profile` selects a working setup; otherwise a saved personal workspace
+preference, `profiles.default`, or the reserved `default` identity selects it.
+A missing `profiles/default.jsonc` is virtual and creates nothing. The loader also accepts an explicit personal workspace
 association from its caller, below an explicit selection. Missing named profiles,
 malformed defaults, cycles, case ambiguity and ancestry beyond eight files fail.
 Each profile ID is at most 64 characters. The immutable generation reports
@@ -67,6 +67,39 @@ Version-two model preferences inherit by declared field and identity; model
 changes reset omitted thinking to provider default. Model actions edit their
 selected source, so route, membership and processing resets reveal inheritance.
 Provider account, endpoint and executable definitions remain global in version two.
+
+Interactive sessions expose `/profile` for inspection, `/profile use <id>` for
+an inert preview, and `/profile apply <candidate-id>` for explicit application of
+that exact candidate. `/profile default <id>` saves a future-session default;
+`/profile workspace <id>` saves a personal preference keyed by workspace identity
+in SQLite. `/profile workspace reset` removes that preference. These saves do not
+switch the active session. Standalone `falryn profile use <id>` refuses without
+a supported exact session transport and provides launch guidance.
+
+Preview reports redacted source/value changes, processing preferences and each
+preparation owner's requirements, costs and application class. Apply prepares
+under the shared resource owner, checks source and generation revisions, then
+publishes and records individual acknowledgements. A required failure retains
+the previous generation. Receipts distinguish a saved file revision, published
+generation and applied, pending, unavailable, failed or restart-required owners.
+Session-construction owners can refuse with `new-session-required`; unsupported
+privacy/offline settings do not acquire behavior merely from a profile name.
+
+Active turns, children and workflows retain their captured model routes and
+generations. New admissions use the acknowledged binding. Provider credentials
+are checked again before requests; opaque continuations are isolated per binding.
+Existing process and storage owners retain their construction settings and report
+restart requirements when affected. Missing optional package declarations remain
+visible and their values are omitted by the configuration resolver.
+
+Escape or `/profile cancel` requests cancellation. Before publication the attempt
+releases its own prepared resources. After publication the receipt retains actual
+acknowledgements; `/profile reconcile` observes existing owners without repeating
+preparation. File observation invalidates reviewed candidates without executing
+setup. Resuming a session re-resolves its recorded selection under current trust
+and a new generation; historical receipts are not proof of current application.
+Model-originated profile controls require a policy owner and are denied by the
+current product host. SDK callers use the same transition service and receipts.
 
 A working profile differs from a provider connection (account and destination),
 `run --mode` (execution behavior), and a browser profile (browser-owned state).

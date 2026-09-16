@@ -1,5 +1,6 @@
 import { sessionExportControl } from "./commands/session-export-control.ts";
 import { runTaskCommitPlan } from "./commands/task-commit-plan-commands.ts";
+import { productWorkingProfileSessions } from "./runtime/product-working-profiles.ts";
 import { createProductSandbox } from "./runtime/sandbox-configuration.ts";
 /**
  * One invocation, start to finish.
@@ -524,6 +525,11 @@ async function launchShell(
         try {
           if (productArtifactSession !== null) {
             productAttachments = await composeProductShellAttachments({
+              workingProfileSession: productWorkingProfileSessions(graph, globals, {
+                modelCatalogs: productArtifactSession.modelCatalogs,
+                providerContinuations: productArtifactSession.providerContinuations,
+                ...(governance.ownedProcesses ? { ownedProcesses: governance.ownedProcesses } : {}),
+              }),
               exportSession: (session, resources) =>
                 sessionExportControl(() => graph, session, resources),
               configurationValues: () => graph.loader.current()?.values ?? configuration,

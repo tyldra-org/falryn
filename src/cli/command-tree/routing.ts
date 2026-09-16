@@ -82,7 +82,7 @@ export function commandFrom(
     }
   }
   if (group === "profile")
-    return ["list", "show", "default"].includes(action ?? "") ? "profile" : null;
+    return ["list", "show", "use", "default"].includes(action ?? "") ? "profile" : null;
   if (group === "config") {
     switch (action) {
       case "migrate":

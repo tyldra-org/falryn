@@ -16,6 +16,7 @@ import { createDeterministicProviderAdapter } from "../../providers/index.ts";
 import {
   composeProductAgentRuntime,
   type ProductAgentRuntimePorts,
+  productAgentHost,
 } from "./product-agent-runtime.ts";
 import type { ToolRunnerPort } from "./tool-call-loop.ts";
 import type { AttemptRunnerPort } from "./turn-attempt-policy.ts";
@@ -38,6 +39,37 @@ function ports(overrides: Partial<ProductAgentRuntimePorts> = {}): ProductAgentR
 }
 
 describe("composeProductAgentRuntime", () => {
+  test("shared hosts settle old and new turns through their captured generation owners", () => {
+    const terminal: string[] = [];
+    const a = composeProductAgentRuntime(ports({ onTerminal: () => terminal.push("a") }));
+    if (!a.ok) throw new Error(a.error.code);
+    const next = { ...correlation, configurationGeneration: configurationGeneration.from(1) };
+    const b = composeProductAgentRuntime(
+      ports({
+        correlation: next,
+        host: { ...productAgentHost(a.value), correlation: next },
+        onTerminal: () => terminal.push("b"),
+      }),
+    );
+    if (!b.ok) throw new Error(b.error.code);
+    for (const [id, bound] of [
+      ["a", correlation],
+      ["b", next],
+    ] as const) {
+      a.value.turnCoordinator.start({ ...bound, turnId: turnId.from(id) });
+      for (const command of ["begin-orienting", "cancel"] as const)
+        expect(
+          b.value.turnCoordinator.apply({
+            turnId: turnId.from(id),
+            configurationGeneration: bound.configurationGeneration,
+            command,
+          }).ok,
+        ).toBe(true);
+    }
+    expect(terminal).toEqual(["a", "b"]);
+    a.value.closeBindings();
+    b.value.closeBindings();
+  });
   test("fails closed when required ports are missing", () => {
     const base = ports();
     expect(

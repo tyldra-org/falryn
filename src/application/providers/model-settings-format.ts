@@ -18,9 +18,11 @@ export function modelSettingsLines(result: ModelSettingsResult): readonly string
         ...(result.receipt === null
           ? []
           : [
-              result.receipt.publication === "failed"
-                ? "Saved; configuration reload failed. Inspect before retrying. Application is pending."
-                : `Configuration generation ${result.receipt.generation}; applies to subsequent work.`,
+              `Publication: ${result.receipt.publication}; generation: ${result.receipt.generation ?? "none"}; application: ${result.receipt.application}.`,
+              ...(result.receipt.transition?.owners.map(
+                (owner) =>
+                  `${owner.owner}: ${owner.state}; generation ${owner.generation ?? "none"}; ${owner.code}.`,
+              ) ?? []),
             ]),
         ...(result.backup === null ? [] : [`Recovery copy: ${result.backup}`]),
       ];

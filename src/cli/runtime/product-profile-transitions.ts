@@ -1,0 +1,134 @@
+import { createHash, randomUUID } from "node:crypto";
+import {
+  createProfileTransitions,
+  type ProfileTransitionOwner,
+  type ProfileTransitionScope,
+} from "../../application/configuration/index.ts";
+import type { ProductTaskResources } from "../../application/orchestration/product-resources.ts";
+import type { TurnEventJournal } from "../../application/runtime/turn-event-journal.ts";
+import { inspectGeneration } from "../../config/index.ts";
+import type { ConfigurationGenerationRecord } from "../../domain/configuration/index.ts";
+import { configurationGeneration } from "../../domain/foundation/index.ts";
+import type { SessionCorrelation } from "../../domain/sessions/index.ts";
+import type { ProductConfigurationLoadRequest } from "./product-configuration.ts";
+import type { Services } from "./services.ts";
+
+const digest = (value: unknown) => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+
+/** Revision token is opaque; callers do not need private source locations to perform CAS. */
+export function profileSourceRevision(record: ConfigurationGenerationRecord | null): string {
+  return digest(record?.sources ?? []);
+}
+
+/** One session's host adapter. The graph must own this session's independent loader. */
+export function composeProductProfileTransitions(options: {
+  readonly graph: Services;
+  readonly scope: ProfileTransitionScope;
+  readonly request: ProductConfigurationLoadRequest;
+  readonly resources: ProductTaskResources;
+  readonly journal: TurnEventJournal;
+  readonly correlation: SessionCorrelation;
+  readonly owners: readonly ProfileTransitionOwner[];
+  readonly policyRevision: () => string;
+  readonly authorize: Parameters<typeof createProfileTransitions>[0]["authorize"];
+}) {
+  const { graph } = options;
+  const current = () => ({
+    profile: graph.loader.current()?.workingProfile?.id ?? null,
+    generation: Number(graph.loader.current()?.generation ?? 0),
+    sources: profileSourceRevision(graph.loader.current()),
+    policy: options.policyRevision(),
+  });
+  const transitions = createProfileTransitions({
+    scope: options.scope,
+    owners: options.owners,
+    resources: options.resources,
+    deadlineMs: Math.max(
+      1,
+      Math.floor(Math.min(30_000, options.resources.remaining("wallTimeMs"))),
+    ),
+    maxOwners: 64,
+    current,
+    authorize: options.authorize,
+    newIdentity: randomUUID,
+    async resolve(profile, signal) {
+      const project = await graph.workspaceTrust.project(signal);
+      const projectRevision = digest(project);
+      const loadRequest = {
+        configurationRoot: graph.configurationRoot,
+        legacyConfigurationRoot: graph.legacyConfigurationRoot,
+        workspaceRoot: graph.workspaceRoot,
+        profile,
+        overrides: options.request.overrides,
+        projectText: project.text,
+        privateProjectText: project.privateText ?? null,
+      };
+      const loaded = await graph.loader.preview(loadRequest, signal);
+      if (loaded.kind !== "candidate" && loaded.kind !== "unchanged")
+        return {
+          kind: "refused",
+          code: loaded.kind === "publish-failed" ? loaded.code : `configuration-${loaded.kind}`,
+        };
+      const validate = async (abort: AbortSignal) => {
+        if (abort.aborted || digest(await graph.workspaceTrust.project(abort)) !== projectRevision)
+          return false;
+        // Re-read even an unchanged candidate: selecting the current profile is
+        // still a review of exact source, package and environment facts.
+        const observed = await graph.loader.preview(loadRequest, abort);
+        return (
+          (observed.kind === "candidate" || observed.kind === "unchanged") &&
+          digest(observed.record) === digest(loaded.record)
+        );
+      };
+      return {
+        record: loaded.record,
+        changes: loaded.kind === "candidate" ? loaded.changes : [],
+        inspection:
+          loaded.kind === "candidate"
+            ? loaded.inspection
+            : inspectGeneration(graph.registry, loaded.record),
+        sourceRevision: profileSourceRevision(loaded.record),
+        effectiveInputChanged:
+          loaded.kind === "candidate" &&
+          loaded.changes.some(
+            (change) =>
+              !String(change.path).startsWith("diagnostics.") &&
+              !String(change.path).startsWith("interface."),
+          ),
+        validate,
+        async publish(abort) {
+          if (!(await validate(abort))) return null;
+          const outcome = loaded.kind === "candidate" ? await loaded.publish(abort) : loaded;
+          return outcome.kind === "published" || outcome.kind === "unchanged"
+            ? Number(outcome.record.generation)
+            : null;
+        },
+      };
+    },
+    async record(receipt) {
+      const result = await options.journal.persist([
+        {
+          kind: "configuration.transition.recorded",
+          correlation: {
+            ...options.correlation,
+            configurationGeneration: configurationGeneration.from(
+              receipt.publishedGeneration ?? receipt.previousGeneration,
+            ),
+          },
+          payload: receipt,
+        },
+      ]);
+      return result.kind === "persisted";
+    },
+    async recover() {
+      const replay = await options.journal.replay();
+      if (replay.kind === "empty") return null;
+      if (replay.kind !== "rebuilt") throw new Error("profile-recovery-unavailable");
+      const last = replay.events.findLast(
+        (event) => event.kind === "configuration.transition.recorded",
+      );
+      return last?.kind === "configuration.transition.recorded" ? last.payload : null;
+    },
+  });
+  return { transitions, current };
+}

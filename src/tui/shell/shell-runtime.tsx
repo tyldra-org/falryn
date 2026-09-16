@@ -150,7 +150,28 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     dispatch,
     "Session export",
   );
+  const profileControl = useCallback(
+    async (argument: string | null, signal: AbortSignal) => {
+      const control = options.submission?.workingProfile;
+      if (!control) return { message: "Working profile controls are unavailable." };
+      const binding = options.submission?.binding?.();
+      const result = await control(argument, signal);
+      if (options.submission?.binding?.() !== binding)
+        return {
+          message:
+            "Profile action settled in the previous session; inspect that session's receipt.",
+        };
+      dispatch({
+        kind: "open-overlay",
+        route: { kind: "profile-result", text: JSON.stringify(result, null, 2) },
+      });
+      return { message: "Working profile result. Scroll to inspect; Escape closes." };
+    },
+    [options.submission],
+  );
+  const profile = useSessionOperation(profileControl, dispatch, "Working profile");
   const compact = useSessionOperation(options.submission?.compact, dispatch, "Compaction");
+  const cancelProfile = profile.cancel;
   const cancelCompact = compact.cancel;
   const cancelSessionExport = sessionExport.cancel;
   const blocks = options.transcriptBlocks ?? NO_BLOCKS;
@@ -160,7 +181,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         workspaceController: options.workspaceController ?? null,
         sessionNavigationController: options.sessionNavigationController ?? null,
         sessionCreation: options.sessionCreation ?? null,
-        peerPending: peerPending || sessionExport.pending || compact.pending,
+        peerPending: peerPending || sessionExport.pending || compact.pending || profile.pending,
       }),
     [
       state,
@@ -171,6 +192,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       peerPending,
       sessionExport.pending,
       compact.pending,
+      profile.pending,
     ],
   );
   const commandStateRef = useRef(commandState);
@@ -523,6 +545,11 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return;
       }
 
+      if (slash.commandId === "profile.inspect") {
+        if (slash.argument === "cancel") cancelProfile();
+        else profile.run(slash.argument);
+        return;
+      }
       if (slash.commandId === "session.export") {
         sessionExport.run(slash.argument);
         return;
@@ -700,6 +727,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     fileProbe,
     sessionExport.run,
     compact.run,
+    profile.run,
+    cancelProfile,
     briefControls,
     options.midTurn,
     outputControls,
@@ -727,6 +756,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       }
 
       switch (id) {
+        case "profile.inspect":
+          return profile.run(null);
         case "session.export":
           return sessionExport.run(null);
         case "compact.preview":
@@ -818,6 +849,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         case "app.cancel": {
           if (cancelSessionExport()) return true;
           if (cancelCompact()) return true;
+          if (cancelProfile()) return true;
           if (peerAction.current) {
             peerAction.current.abort();
             peerAction.current = null;
@@ -866,6 +898,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     [
       sessionExport.run,
       compact.run,
+      profile.run,
+      cancelProfile,
       cancelCompact,
       cancelSessionExport,
       options.onExit,

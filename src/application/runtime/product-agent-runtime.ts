@@ -67,7 +67,13 @@ import { createTurnEventJournal } from "./turn-event-journal.ts";
 
 export type ProductAgentHost = Pick<
   ProductAgentRuntime,
-  "sessionRuntime" | "turnCoordinator" | "journal" | "attachments" | "streamId" | "correlation"
+  | "sessionRuntime"
+  | "turnCoordinator"
+  | "journal"
+  | "attachments"
+  | "streamId"
+  | "correlation"
+  | "turnLifecycle"
 >;
 export function productAgentHost(runtime: ProductAgentRuntime): ProductAgentHost {
   return {
@@ -77,6 +83,7 @@ export function productAgentHost(runtime: ProductAgentRuntime): ProductAgentHost
     attachments: runtime.attachments,
     streamId: runtime.streamId,
     correlation: runtime.correlation,
+    turnLifecycle: runtime.turnLifecycle,
   };
 }
 
@@ -148,6 +155,9 @@ export type ProductAgentPortResult<Value> =
   | { readonly ok: false; readonly error: ProductAgentRuntimeError };
 
 export type ProductAgentRuntime = {
+  readonly turnLifecycle: ReturnType<typeof createGenerationTurnLifecycle>;
+  /** Release only this composition's bindings, not the shared session or resources. */
+  closeBindings(): void;
   readonly historyEvents: EventStorePort;
   recomposeTools(bundle: ProductToolBundle): ProductAgentRuntimeComposeResult;
   childAdmission(
@@ -268,12 +278,9 @@ export function composeProductAgentRuntime(
   const providerAdapter = ports.providerAdapter ?? null;
 
   const sessionRuntime = ports.host?.sessionRuntime ?? createSessionRuntime();
-  const turnCoordinator =
-    ports.host?.turnCoordinator ??
-    createTurnCoordinator({
-      ...(ports.canComplete ? { canComplete: ports.canComplete } : {}),
-      ...(ports.onTerminal ? { onTerminal: ports.onTerminal } : {}),
-    });
+  const turnLifecycle = ports.host?.turnLifecycle ?? createGenerationTurnLifecycle();
+  const releaseLifecycle = turnLifecycle.register(ports.correlation.configurationGeneration, ports);
+  const turnCoordinator = ports.host?.turnCoordinator ?? createTurnCoordinator(turnLifecycle);
   const journal =
     ports.host?.journal ??
     createTurnEventJournal({
@@ -329,6 +336,8 @@ export function composeProductAgentRuntime(
     });
 
   const runtime: ProductAgentRuntime = {
+    turnLifecycle,
+    closeBindings: releaseLifecycle,
     historyEvents: ports.eventStore,
     recomposeTools(bundle) {
       if (bundle.registry.generation !== ports.correlation.configurationGeneration)
@@ -450,3 +459,29 @@ export type ProductAgentSessionIds = {
   readonly traceId: TraceId;
   readonly configurationGeneration: ConfigurationGeneration;
 };
+
+/** A recomposed host settles each turn through the callbacks of its captured generation. */
+function createGenerationTurnLifecycle() {
+  type Hooks = Pick<ProductAgentRuntimePorts, "canComplete" | "onTerminal">;
+  type Turn = Parameters<NonNullable<Hooks["onTerminal"]>>[0];
+  const generations = new Map<ConfigurationGeneration, Hooks>();
+  return {
+    register(generation: ConfigurationGeneration, hooks: Hooks) {
+      generations.set(generation, hooks);
+      return () => {
+        if (generations.get(generation) === hooks) generations.delete(generation);
+      };
+    },
+    canComplete(turn: Turn) {
+      return (
+        generations.get(turn.configurationGeneration)?.canComplete?.(turn) ?? {
+          allowed: true,
+          effect: "none" as const,
+        }
+      );
+    },
+    onTerminal(turn: Turn) {
+      generations.get(turn.configurationGeneration)?.onTerminal?.(turn);
+    },
+  };
+}

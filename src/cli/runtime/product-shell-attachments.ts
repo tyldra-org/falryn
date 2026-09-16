@@ -1,5 +1,6 @@
 import { checkpointControl } from "../../application/compression/checkpoint-request.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
+import { productAgentHost } from "../../application/runtime/product-agent-runtime.ts";
 import {
   activationRefused,
   createSessionTransitionGuard,
@@ -10,8 +11,11 @@ import {
 } from "../../application/sessions/session-activation.ts";
 import type { ConfigurationValues } from "../../domain/configuration/index.ts";
 import type { SessionId } from "../../domain/foundation/index.ts";
+import { agentRegistryFrom } from "./agent-configuration.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
+import { modelPreferencesFrom } from "./model-configuration.ts";
 import { productToolHost } from "./product-tool-host.ts";
+import type { WorkingProfileSessionFactory } from "./product-working-profiles.ts";
 import { createProductSandbox } from "./sandbox-configuration.ts";
 import { sessionManagedServices } from "./session-managed-services.ts";
 /**
@@ -104,6 +108,7 @@ import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  readonly workingProfileSession?: WorkingProfileSessionFactory;
   readonly records?: Pick<
     import("./product-artifact-session.ts").ProductArtifactSession["records"],
     "sessions" | "turns"
@@ -428,28 +433,52 @@ export async function composeProductShellAttachments(
               },
             );
       const { tasks, artifacts, modelConfigurationGeneration } = ports;
-      const compose =
+      const compose = (
+        runtimePorts: Parameters<typeof composeProductAgentRuntime>[0],
+        profile?: {
+          record: import("../../domain/configuration/index.ts").ConfigurationGenerationRecord;
+          connections: import("./product-provider-connections.ts").ProductProviderConnections;
+          provider: Extract<
+            import("./product-provider-connections.ts").ProductProviderConnectionHandoff,
+            { kind: "ready" }
+          >;
+        },
+      ) =>
         tasks && artifacts
-          ? (runtimePorts: Parameters<typeof composeProductAgentRuntime>[0]) =>
-              composeDelegatedAgentRuntime(runtimePorts, {
-                tasks,
-                ...(ports.workflows ? { workflows: ports.workflows } : {}),
-                ...(ports.workflowQuestions ? { workflowQuestions: ports.workflowQuestions } : {}),
-                ...(ports.joins ? { joins: ports.joins } : {}),
-                ...(ports.peers ? { peers: ports.peers } : {}),
-                artifacts,
-                ...(ports.agentRegistry ? { registry: ports.agentRegistry } : {}),
-                ...(ports.resolveAgentProvider
-                  ? { resolveProvider: ports.resolveAgentProvider }
-                  : {}),
-                providerCatalog:
-                  ports.provider?.kind === "ready" ? ports.provider.session.catalog : null,
-                ...(ports.modelPreferences ? { preferences: ports.modelPreferences } : {}),
-                ...(modelConfigurationGeneration
-                  ? { configurationGeneration: () => Number(modelConfigurationGeneration()) }
-                  : {}),
-              })
-          : composeProductAgentRuntime;
+          ? composeDelegatedAgentRuntime(runtimePorts, {
+              tasks,
+              artifacts,
+              ...(ports.workflows ? { workflows: ports.workflows } : {}),
+              ...(ports.workflowQuestions ? { workflowQuestions: ports.workflowQuestions } : {}),
+              ...(ports.joins ? { joins: ports.joins } : {}),
+              ...(ports.peers ? { peers: ports.peers } : {}),
+              ...(profile
+                ? {
+                    registry: agentRegistryFrom(profile.record.values),
+                    preferences: () => modelPreferencesFrom(profile.record.values),
+                    configurationGeneration: () => Number(profile.record.generation),
+                    resolveProvider: async (id: string, signal: AbortSignal) => {
+                      const resolved = await profile.connections.resolveProfile(id, signal);
+                      return resolved.kind === "ready"
+                        ? { adapter: resolved.adapter, catalog: resolved.session.catalog }
+                        : { reason: resolved.code };
+                    },
+                  }
+                : {
+                    ...(ports.agentRegistry ? { registry: ports.agentRegistry } : {}),
+                    ...(ports.resolveAgentProvider
+                      ? { resolveProvider: ports.resolveAgentProvider }
+                      : {}),
+                    ...(ports.modelPreferences ? { preferences: ports.modelPreferences } : {}),
+                    ...(modelConfigurationGeneration
+                      ? { configurationGeneration: () => Number(modelConfigurationGeneration()) }
+                      : {}),
+                  }),
+              providerCatalog:
+                profile?.provider.session.catalog ??
+                (ports.provider?.kind === "ready" ? ports.provider.session.catalog : null),
+            })
+          : composeProductAgentRuntime(runtimePorts);
       const initialTools =
         productTools === null
           ? null
@@ -528,7 +557,47 @@ export async function composeProductShellAttachments(
           return null;
         }
       }
+      const profileSession = await ports.workingProfileSession?.(
+        composed.value,
+        (record, connections, provider) => {
+          const correlation = {
+            ...composed.value.correlation,
+            configurationGeneration: record.generation,
+          };
+          const tools =
+            initialTools === null
+              ? null
+              : mergeProductToolBundles(record.generation, [initialTools]);
+          const next = compose(
+            {
+              eventStore: ports.eventStore,
+              clock: ports.clock,
+              streamId: composed.value.streamId,
+              correlation,
+              host: { ...productAgentHost(composed.value), correlation },
+              resources: composed.value.resources,
+              providerAdapter: provider.adapter,
+              ...(ports.artifacts ? { historyArtifacts: ports.artifacts } : {}),
+              ...(ports.toolConfirmation ? { toolConfirmation: ports.toolConfirmation } : {}),
+              ...(tools
+                ? {
+                    ...productToolHost(),
+                    toolRegistry: tools.registry,
+                    capabilityRegistry: tools.capabilityRegistry,
+                    toolCatalog: tools.catalog,
+                    toolRunner: tools.runner,
+                    sandbox,
+                  }
+                : {}),
+            },
+            { record, connections, provider },
+          );
+          if (!next.ok) throw new Error(next.error.code);
+          return next.value;
+        },
+      );
       const executor = createProductLiveTurnExecutor({
+        ...(profileSession ? { admissionBinding: profileSession.capture } : {}),
         ...(selection ? { resumed: true, historyParents: selection.parents } : {}),
         checkpointEvents: ports.eventStore,
         checkpointDurable: ports.artifacts !== undefined,
@@ -544,7 +613,8 @@ export async function composeProductShellAttachments(
         ...(ports.publishNativePackages === undefined || productTools === null
           ? {}
           : {
-              async refreshRuntime(signal: AbortSignal) {
+              async refreshRuntime(signal: AbortSignal, captured = publishedRuntime) {
+                const generation = captured.correlation.configurationGeneration;
                 const publication = await ports.publishNativePackages?.(
                   generation,
                   signal,
@@ -555,7 +625,7 @@ export async function composeProductShellAttachments(
                   productTools,
                   publication.tools,
                 ]);
-                const next = publishedRuntime.recomposeTools(tools);
+                const next = captured.recomposeTools(tools);
                 if (!next.ok) throw new Error(next.error.code);
                 publishedRuntime = next.value;
                 return publishedRuntime;
@@ -577,7 +647,9 @@ export async function composeProductShellAttachments(
       });
       prepared = true;
       return {
+        profileSession,
         async close() {
+          await profileSession?.close();
           await sessionServices.close();
           await peer?.close();
         },
@@ -649,6 +721,16 @@ export async function composeProductShellAttachments(
   const exportSession = ports.exportSession;
   const submission = {
     binding: () => `${active.sessionId}:${activationGeneration}`,
+    workingProfile: (
+      argument: string | null,
+      signal: AbortSignal,
+      actor: "user" | "model" = "user",
+    ) =>
+      active.profileSession?.control(argument, AbortSignal.any([hostSignal, signal]), actor) ??
+      Promise.resolve({ kind: "refused", code: "profile-controls-unavailable" }),
+    get workingProfiles() {
+      return active.profileSession;
+    },
     compact: checkpointControl(
       async (request, signal) => {
         const release = enter("prompt");
@@ -694,7 +776,9 @@ export async function composeProductShellAttachments(
           : active.peer;
       return executePeerAction(selected, input, "user", signal);
     },
-    ...(ports.modelSettings === undefined ? {} : { modelSettings: ports.modelSettings }),
+    get modelSettings() {
+      return active.profileSession?.modelSettings ?? ports.modelSettings;
+    },
     brief,
     output,
     executionProfile: {
@@ -958,6 +1042,9 @@ export async function composeProductShellAttachments(
     },
     controls: {
       ...providerControls(ports.provider),
+      get models() {
+        return providerControls(active.profileSession?.provider ?? ports.provider).models;
+      },
       get activeSessionId() {
         return String(active.sessionId);
       },
@@ -971,7 +1058,9 @@ export async function composeProductShellAttachments(
         ];
       },
       get resources() {
-        const resources = providerControls(ports.provider).resources;
+        const resources = providerControls(
+          active.profileSession?.provider ?? ports.provider,
+        ).resources;
         const catalog = active.extensionCatalog;
         if (catalog === undefined) return resources;
         return [

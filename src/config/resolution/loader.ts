@@ -1,3 +1,4 @@
+import { inspectGeneration } from "./inspection.ts";
 /**
  * The configuration load lifecycle, end to end.
  *
@@ -19,6 +20,7 @@
  */
 
 import {
+  type ConfigurationChange,
   type ConfigurationGenerationRecord,
   type ConfigurationIssue,
   type ConfigurationLayerContext,
@@ -86,6 +88,8 @@ const SCOPE_BY_KIND: Readonly<Record<ConfigurationSourceKind, ConfigurationScope
 };
 
 export type ConfigurationLoaderOptions = {
+  /** Initial session generation supplied by its host; later publications increment it. */
+  readonly firstGeneration?: ConfigurationGeneration;
   readonly registry: ConfigurationRegistryPort;
   readonly declarations: readonly ConfigurationKeyDeclaration[];
   readonly fileSystem: FileSystemPort;
@@ -127,7 +131,22 @@ export type LoadRequest = {
   readonly overrides?: Readonly<Record<string, string>>;
 };
 
+export type ConfigurationCandidate = {
+  readonly kind: "candidate";
+  readonly inspection: import("../../domain/configuration/index.ts").ConfigurationInspection;
+  readonly record: ConfigurationGenerationRecord;
+  readonly changes: readonly ConfigurationChange[];
+  readonly applicationClass: ConfigurationApplicationClass;
+  /** One-use publication of these exact bytes against the captured generation. */
+  publish(signal?: AbortSignal): Promise<ConfigurationLoadOutcome>;
+};
+export type ConfigurationPreviewOutcome =
+  | ConfigurationCandidate
+  | Exclude<ConfigurationLoadOutcome, { kind: "published" }>;
+
 export type ConfigurationLoader = {
+  /** Resolve without publication or runtime preparation. */
+  preview(request: LoadRequest, signal?: AbortSignal): Promise<ConfigurationPreviewOutcome>;
   /** Composes proposed bytes in isolation; never publishes into the running product. */
   validate(
     request: LoadRequest,
@@ -146,9 +165,14 @@ export function createConfigurationLoader(
   let current: ConfigurationGenerationRecord | null = null;
   let sequence: Sequence = FIRST_SEQUENCE;
   let publishedSourceGeneration: string | null = null;
+  let publishing = false;
 
-  return {
+  const loader: ConfigurationLoader = {
     current: () => current,
+    async load(request, signal) {
+      const candidate = await loader.preview(request, signal);
+      return candidate.kind === "candidate" ? candidate.publish(signal) : candidate;
+    },
     async validate(request, candidate, signal) {
       const fileSystem: FileSystemPort = {
         ...initialOptions.fileSystem,
@@ -211,7 +235,11 @@ export function createConfigurationLoader(
       return [{ kind: "invalid-value", severity: "error", path: "", allowed: [] }];
     },
 
-    async load(request: LoadRequest, signal?: AbortSignal): Promise<ConfigurationLoadOutcome> {
+    async preview(
+      request: LoadRequest,
+      signal?: AbortSignal,
+    ): Promise<ConfigurationPreviewOutcome> {
+      const previous = current;
       if (isAborted(signal)) {
         return { kind: "cancelled" };
       }
@@ -385,26 +413,36 @@ export function createConfigurationLoader(
         return { kind: "rejected", issues, sources: reports, retained: current };
       }
 
+      const sourceRevisions: { file: LocalPath; revision: string | null }[] = [];
       for (const read of working.reads) {
         if (
           read.source.file === null ||
-          read.source.revision == null ||
           (read.source.kind === "project-file" && request.projectText !== undefined) ||
           (read.source.kind === "private-project-file" && request.privateProjectText !== undefined)
         )
           continue;
         const latest = await initialOptions.fileSystem.stat(read.source.file, signal);
-        if (!latest.ok || latest.value?.revision !== read.source.revision)
+        if (
+          read.source.revision != null &&
+          (!latest.ok || latest.value?.revision !== read.source.revision)
+        )
           return {
             kind: "publish-failed",
             code: "configuration-source-changed",
             retained: current,
           };
+        sourceRevisions.push({
+          file: read.source.file,
+          revision: latest.ok ? (latest.value?.revision ?? null) : null,
+        });
       }
 
       const record: ConfigurationGenerationRecord = freezeConfiguration({
         workingProfile: working.selection,
-        generation: nextGeneration(current, FIRST_CONFIGURATION_GENERATION),
+        generation: nextGeneration(
+          current,
+          initialOptions.firstGeneration ?? FIRST_CONFIGURATION_GENERATION,
+        ),
         values: composed.values,
         provenance: composed.provenance,
         overridden: composed.overridden,
@@ -442,24 +480,53 @@ export function createConfigurationLoader(
       }
 
       const applicationClass = strongestApplicationClass(changes);
-      const appended = await appendGenerationEvent(
-        options,
-        record.generation,
+      let consumed = false;
+      return {
+        kind: "candidate",
+        record,
+        changes,
         applicationClass,
-        sequence,
-        signal,
-      );
-      if (!appended.ok) {
-        return { kind: "publish-failed", code: appended.code, retained: current };
-      }
-      sequence = nextSequence(sequence);
-      current = record;
-      publishedSourceGeneration = prepared?.generation ?? null;
-      prepared?.publish();
-
-      return { kind: "published", record, changes, applicationClass };
+        inspection: inspectGeneration(options.registry, record),
+        async publish(abort) {
+          const failed = (code: string): ConfigurationLoadOutcome => ({
+            kind: "publish-failed",
+            code,
+            retained: current,
+          });
+          if (consumed || current !== previous) return failed("configuration-generation-changed");
+          if (publishing) return failed("configuration-publication-busy");
+          if (isAborted(abort)) return { kind: "cancelled" };
+          publishing = true;
+          consumed = true;
+          try {
+            for (const source of sourceRevisions) {
+              const latest = await initialOptions.fileSystem.stat(source.file, abort);
+              if ((latest.ok ? (latest.value?.revision ?? null) : null) !== source.revision)
+                return failed("configuration-source-changed");
+            }
+            if (isAborted(abort)) return { kind: "cancelled" };
+            if (current !== previous) return failed("configuration-generation-changed");
+            const appended = await appendGenerationEvent(
+              options,
+              record.generation,
+              applicationClass,
+              sequence,
+              abort,
+            );
+            if (!appended.ok) return failed(appended.code);
+            sequence = nextSequence(sequence);
+            current = record;
+            publishedSourceGeneration = prepared?.generation ?? null;
+            prepared?.publish();
+            return { kind: "published", record, changes, applicationClass };
+          } finally {
+            publishing = false;
+          }
+        },
+      };
     },
   };
+  return loader;
 }
 
 function pushSupplied(

@@ -108,8 +108,10 @@ export {
   V0_1_CROSS_FIELD_RULES,
 } from "./resolution/keys.ts";
 export type {
+  ConfigurationCandidate,
   ConfigurationLoader,
   ConfigurationLoaderOptions,
+  ConfigurationPreviewOutcome,
   LoadRequest,
 } from "./resolution/loader.ts";
 export { createConfigurationLoader } from "./resolution/loader.ts";

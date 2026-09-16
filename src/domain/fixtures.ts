@@ -406,6 +406,27 @@ export function everyEventKind(): readonly RuntimeEvent[] {
       },
     },
     modelProcessingRecorded(15),
+    {
+      ...spine({
+        eventId: "event-profile-transition",
+        sequence: 16,
+        idempotencyKey: "key-profile-transition",
+      }),
+      kind: "configuration.transition.recorded",
+      correlation: FIXTURE_SESSION_CORRELATION,
+      payload: {
+        sessionId: String(FIXTURE_SESSION_CORRELATION.sessionId),
+        workspaceId: String(FIXTURE_SESSION_CORRELATION.workspaceId),
+        candidateId: "candidate-fixture",
+        profile: "work",
+        previousGeneration: 0,
+        publishedGeneration: 1,
+        savedFileRevision: null,
+        stage: "settled",
+        code: "partial",
+        owners: [{ owner: "models", state: "pending", generation: 0, code: "next-turn" }],
+      },
+    },
   ];
 }
 

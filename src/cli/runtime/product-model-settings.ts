@@ -40,6 +40,14 @@ export function composeProductModelSettings(
   services: Services,
   globals: GlobalOptions,
   main?: () => RoleRoute | null,
+  transitions?: {
+    afterSave(
+      revision: string,
+      signal?: AbortSignal,
+    ): Promise<
+      import("../../domain/configuration/profile-transition.ts").ProfileTransitionReceipt | null
+    >;
+  },
 ) {
   const scope = globals.profile === null ? "user" : "profile";
   const request = {
@@ -57,6 +65,27 @@ export function composeProductModelSettings(
     return path.value;
   };
   const readConfiguration = async (signal?: AbortSignal) => {
+    if (transitions) {
+      const project = await services.workspaceTrust.project(signal);
+      const outcome = await services.loader.preview(
+        {
+          ...request,
+          legacyConfigurationRoot: services.legacyConfigurationRoot,
+          projectText: project.text,
+          privateProjectText: project.privateText ?? null,
+        },
+        signal,
+      );
+      if (outcome.kind !== "candidate" && outcome.kind !== "unchanged")
+        throw new Error(
+          "Configuration is unavailable; repair it before changing model preferences.",
+        );
+      return {
+        trust: project.report,
+        values: outcome.record.values,
+        generation: outcome.record.generation,
+      };
+    }
     const loaded = await loadProductConfiguration(
       services,
       productConfigurationLoadRequest(globals),
@@ -190,6 +219,20 @@ export function composeProductModelSettings(
             );
       if (result.kind === "written") {
         try {
+          if (transitions) {
+            const transition = await transitions.afterSave(result.revision, signal);
+            return {
+              kind: "written",
+              revision: result.revision,
+              receipt: {
+                ...result,
+                transition,
+                publication: transition?.publishedGeneration == null ? "failed" : "published",
+                generation: transition?.publishedGeneration ?? null,
+                application: transition?.code === "applied" ? "applied" : "pending",
+              },
+            };
+          }
           const loaded = await readConfiguration(signal);
           return {
             kind: "written",

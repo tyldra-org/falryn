@@ -27,6 +27,7 @@ import type { GlobalOptions } from "../options.ts";
 import type { CommandResultOf } from "../output/result.ts";
 import { validateProductConfigurationCandidate } from "../runtime/product-configuration.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
+import { workspaceProfilePreference } from "../runtime/workspace-profile-preferences.ts";
 import {
   errorsFrom,
   MUTATION_NOT_OBSERVED,
@@ -89,11 +90,18 @@ export async function runConfigShow(
   }
   const { loader, registry, configurationRoot, legacyConfigurationRoot, workspaceRoot } =
     services();
+  const preference =
+    options.profile === null ? await workspaceProfilePreference(services(), signal) : null;
+  if (preference && !preference.ok)
+    return resultFor<"config.show", ConfigShowPayload>("config.show", null, [
+      fromUnknown(new Error(preference.error.code), { operation: "read workspace profile" }),
+    ]);
   const outcome = await loader.load({
     configurationRoot,
     legacyConfigurationRoot,
     workspaceRoot,
     profile: options.profile,
+    workspaceProfile: preference?.ok ? preference.value.profile : null,
     overrides,
   });
 
@@ -140,11 +148,18 @@ export async function runConfigValidate(
     ]);
   }
   const { loader, configurationRoot, legacyConfigurationRoot, workspaceRoot } = services();
+  const preference =
+    options.profile === null ? await workspaceProfilePreference(services(), signal) : null;
+  if (preference && !preference.ok)
+    return resultFor<"config.validate", ConfigValidatePayload>("config.validate", null, [
+      fromUnknown(new Error(preference.error.code), { operation: "read workspace profile" }),
+    ]);
   const outcome = await loader.load({
     configurationRoot,
     legacyConfigurationRoot,
     workspaceRoot,
     profile: options.profile,
+    workspaceProfile: preference?.ok ? preference.value.profile : null,
     overrides,
   });
 

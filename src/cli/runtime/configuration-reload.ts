@@ -37,6 +37,8 @@ export function startConfigurationReloadWatcher(
     readonly signal?: AbortSignal;
     readonly loadRequest?: ProductConfigurationLoadRequest;
     readonly subscribe?: FileChangeSubscriber;
+    /** Session transition owner handles invalidation without preparing or publishing. */
+    readonly onInvalidation?: () => void;
   } = {},
 ): ConfigurationReloadHandle {
   const loadRequest = options.loadRequest ?? productConfigurationLoadRequest(globals);
@@ -65,10 +67,14 @@ export function startConfigurationReloadWatcher(
   const streams = options.streams;
   return createConfigurationReloadWatcher({
     loader: {
-      validate: graph.loader.validate,
-      current: graph.loader.current,
-      load: async (_request, signal) =>
-        (await loadProductConfiguration(graph, loadRequest, signal)).outcome,
+      load: async (_request, signal) => {
+        if (options.onInvalidation) {
+          options.onInvalidation();
+          const record = graph.loader.current();
+          return record ? { kind: "unchanged", record } : { kind: "cancelled" };
+        }
+        return (await loadProductConfiguration(graph, loadRequest, signal)).outcome;
+      },
     },
     loadRequest: {
       configurationRoot: graph.configurationRoot,
