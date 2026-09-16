@@ -52,6 +52,16 @@ import type { ExecutionProfileCompletion, ExecutionProfileId } from "./execution
 /** One semantic fact the turn loop records. Effects are facts, never re-run. */
 export type TurnLifecycleFact =
   | {
+      readonly kind: "instructions.rejected";
+      readonly correlation: TurnCorrelation;
+      readonly payload: import("../context/instruction-source-receipt.ts").InstructionRejection;
+    }
+  | {
+      readonly kind: "instructions.resolved" | "instructions.revoked";
+      readonly correlation: TurnCorrelation;
+      readonly payload: import("../context/instruction-source-receipt.ts").InstructionSourceReceipt;
+    }
+  | {
       readonly kind: "configuration.transition.recorded";
       readonly correlation: SessionCorrelation;
       readonly payload: ProfileTransitionReceipt;
@@ -138,6 +148,15 @@ export function factIdentity(fact: TurnLifecycleFact): string {
     case "history.recorded":
       return `history:${createHash("sha256")
         .update(JSON.stringify([fact.correlation.sessionId, fact.payload.id]))
+        .digest("hex")}`;
+    case "instructions.rejected":
+      return `instruction-rejected:${createHash("sha256")
+        .update(JSON.stringify([fact.correlation.turnId, fact.payload]))
+        .digest("hex")}`;
+    case "instructions.revoked":
+    case "instructions.resolved":
+      return `instructions:${createHash("sha256")
+        .update(JSON.stringify([fact.kind, fact.correlation.turnId, fact.payload.generation]))
         .digest("hex")}`;
     case "session.started":
       return `session:${fact.correlation.sessionId}:started`;
@@ -254,6 +273,11 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
       };
       return event;
     }
+    case "instructions.rejected":
+      return { ...spine, kind: fact.kind, correlation: fact.correlation, payload: fact.payload };
+    case "instructions.revoked":
+    case "instructions.resolved":
+      return { ...spine, kind: fact.kind, correlation: fact.correlation, payload: fact.payload };
     case "configuration.transition.recorded":
       return { ...spine, kind: fact.kind, correlation: fact.correlation, payload: fact.payload };
     case "model.processing.recorded":
@@ -348,6 +372,9 @@ export type ReplayedInvocation = {
  * the event stream appear here.
  */
 export type ReplayedTurn = {
+  readonly instructionFailure?: import("../context/instruction-source-receipt.ts").InstructionRejection;
+  readonly instructionAuthority?: "admitted" | "revoked";
+  readonly instructions?: import("../context/instruction-source-receipt.ts").InstructionSourceReceipt;
   readonly turnId: TurnId;
   readonly correlation: TurnCorrelation;
   readonly startedAt: Timestamp | null;
@@ -395,6 +422,9 @@ type MutableInvocation = {
 };
 
 type MutableTurn = {
+  instructionFailure?: import("../context/instruction-source-receipt.ts").InstructionRejection;
+  instructionAuthority?: "admitted" | "revoked";
+  instructions?: import("../context/instruction-source-receipt.ts").InstructionSourceReceipt;
   turnId: TurnId;
   correlation: TurnCorrelation;
   startedAt: Timestamp | null;
@@ -486,6 +516,15 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
         attempt.binding = event.payload.binding ?? null;
         break;
       }
+      case "instructions.rejected":
+        ensureTurn(turns, turnOrder, event.correlation).instructionFailure = event.payload;
+        break;
+      case "instructions.revoked":
+      case "instructions.resolved":
+        ensureTurn(turns, turnOrder, event.correlation).instructions = event.payload;
+        ensureTurn(turns, turnOrder, event.correlation).instructionAuthority =
+          event.kind === "instructions.revoked" ? "revoked" : "admitted";
+        break;
       case "model.processing.recorded": {
         const turn = ensureTurn(turns, turnOrder, event.correlation);
         let attempt = turn.attempts.get(event.modelAttemptId);
@@ -632,6 +671,13 @@ function ensureTurn(
 
 function freezeTurn(turn: MutableTurn): ReplayedTurn {
   return {
+    ...(turn.instructionFailure ? { instructionFailure: turn.instructionFailure } : {}),
+    ...(turn.instructions
+      ? {
+          instructions: turn.instructions,
+          instructionAuthority: turn.instructionAuthority ?? "admitted",
+        }
+      : {}),
     turnId: turn.turnId,
     correlation: turn.correlation,
     startedAt: turn.startedAt,

@@ -139,3 +139,56 @@ describe("configuration reload watcher", () => {
     expect(loader.current()?.values["diagnostics.level"]).toBe("info");
   });
 });
+
+test("continuous notifications cannot postpone a full rescan beyond the maximum debounce", async () => {
+  const subscribe = createManualFileChangeSubscriber();
+  let scans = 0;
+  const watcher = createConfigurationReloadWatcher({
+    loader: {
+      async load() {
+        scans++;
+        return { kind: "cancelled" };
+      },
+    },
+    loadRequest: { configurationRoot: CONFIG_ROOT, workspaceRoot: null, profile: null },
+    watchedPaths: [CONFIG_ROOT],
+    clock: createManualClock(),
+    subscribe,
+    coalesceMs: 100,
+    maxCoalesceMs: 40,
+    onReload() {},
+  });
+  const storm = setInterval(() => subscribe.trigger(), 5);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    expect(scans).toBeGreaterThan(0);
+  } finally {
+    clearInterval(storm);
+    watcher.dispose();
+  }
+});
+test("a lost subscription recovers through periodic full rereads and stops on disposal", async () => {
+  let scans = 0;
+  const watcher = createConfigurationReloadWatcher({
+    loader: {
+      async load() {
+        scans++;
+        return { kind: "cancelled" };
+      },
+    },
+    loadRequest: { configurationRoot: CONFIG_ROOT, workspaceRoot: null, profile: null },
+    watchedPaths: [CONFIG_ROOT],
+    clock: createManualClock(),
+    subscribe: async () => {
+      throw new Error("lost subscription");
+    },
+    rescanMs: 20,
+    onReload() {},
+  });
+  await new Promise((resolve) => setTimeout(resolve, 90));
+  watcher.dispose();
+  const final = scans;
+  expect(final).toBeGreaterThan(1);
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  expect(scans).toBe(final);
+});

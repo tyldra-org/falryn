@@ -1,3 +1,4 @@
+import { refreshRuntimeInstructions } from "../../application/context/product-instructions.ts";
 import { processProductResources } from "../../application/orchestration/product-resources.ts";
 import {
   type PreparedSessionSelection,
@@ -65,6 +66,7 @@ import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import type { BriefReceipt } from "../../domain/compression/index.ts";
 import type { CredentialReference } from "../../domain/configuration/index.ts";
 import type { PromptSectionInput } from "../../domain/context/index.ts";
+import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { projectCatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import {
   type FalrynError,
@@ -112,6 +114,7 @@ import { attachResultEvents } from "../output/result-events.ts";
 import type { CliStreams } from "../output/streams.ts";
 import { agentRegistryFrom } from "./agent-configuration.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
+import { composeInstructionSources } from "./instruction-sources.ts";
 import { modelPreferencesFrom } from "./model-configuration.ts";
 import {
   openProductArtifactSession,
@@ -149,6 +152,8 @@ export type CodingRunArguments = {
 export type CodingRunPayload = {
   readonly activation?: string;
   readonly history?: import("../../application/runtime/product-live-turn.ts").ProductLiveTurnResult["history"];
+  readonly instructionFailure?: import("../../application/runtime/product-live-turn.ts").ProductLiveTurnResult["instructionFailure"];
+  readonly instructions?: import("../../application/runtime/product-live-turn.ts").ProductLiveTurnResult["instructions"];
   readonly sandbox?: string;
   readonly workspaceTrust?: import("../../domain/security/workspace-trust.ts").WorkspaceTrustReport;
   readonly prompt: string;
@@ -406,10 +411,16 @@ export async function runCoding(
       trustEvents,
     );
   }
+  let instructionRuntime:
+    | import("../../application/runtime/product-agent-runtime.ts").ProductAgentRuntime
+    | null = null;
   const configReload =
     options.globals === undefined
       ? null
       : startConfigurationReloadWatcher(graph, options.globals, {
+          onSourcesChanged: async (signal) => {
+            if (instructionRuntime) await refreshRuntimeInstructions(instructionRuntime, signal);
+          },
           ...(options.reloadDiagnostics === undefined
             ? {}
             : { streams: options.reloadDiagnostics }),
@@ -836,6 +847,10 @@ export async function runCoding(
           );
     const composed = composeDelegatedAgentRuntime(
       {
+        instructions: {
+          owner: composeInstructionSources(graph),
+          scope: { root: canonicalDigest({ root: workspaceRoot }), directory: "", kind: "main" },
+        },
         eventStore: productArtifactSession.eventStore,
         historyArtifacts: options.artifacts ?? productArtifactSession.artifacts,
         clock: graph.clock,
@@ -973,6 +988,7 @@ export async function runCoding(
       const restored = await composed.value.attachments.turnProducer.refreshFromStore();
       if (!restored.ok) throw new Error("activation.transcript-unavailable");
     }
+    instructionRuntime = composed.value;
     const executor = createProductLiveTurnExecutor({
       ...(selection ? { resumed: true, historyParents: selection.parents } : {}),
       checkpointEvents: productArtifactSession.eventStore,
@@ -1054,6 +1070,10 @@ export async function runCoding(
         workspaceTrust: graph.workspaceTrust.current(),
         contextPackItems: attempted.contextPackItems,
         ...(attempted.history ? { history: attempted.history } : {}),
+        ...(attempted.instructionFailure
+          ? { instructionFailure: attempted.instructionFailure }
+          : {}),
+        ...(attempted.instructions ? { instructions: attempted.instructions } : {}),
         contextPlannerOwner,
         indexFreshness,
         indexOwner,

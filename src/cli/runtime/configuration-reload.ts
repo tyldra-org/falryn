@@ -1,3 +1,4 @@
+import { configuredInstructionSourcesSchema } from "./instruction-configuration.ts";
 /**
  * Live configuration reload for long-lived CLI surfaces (#729).
  *
@@ -13,7 +14,7 @@ import {
   type FileChangeSubscriber,
 } from "../../config/index.ts";
 import type { ConfigurationLoadOutcome } from "../../domain/configuration/index.ts";
-import { parentPath } from "../../domain/workspace/index.ts";
+import { joinPath, parentPath } from "../../domain/workspace/index.ts";
 import { createHostFileChangeSubscriber } from "../../integrations/index.ts";
 import type { GlobalOptions } from "../options.ts";
 import { type CliStreams, writeDiagnosticLine } from "../output/streams.ts";
@@ -37,12 +38,27 @@ export function startConfigurationReloadWatcher(
     readonly signal?: AbortSignal;
     readonly loadRequest?: ProductConfigurationLoadRequest;
     readonly subscribe?: FileChangeSubscriber;
+    readonly onSourcesChanged?: (signal?: AbortSignal) => void | Promise<void>;
     /** Session transition owner handles invalidation without preparing or publishing. */
     readonly onInvalidation?: (signal?: AbortSignal) => void | Promise<void>;
   } = {},
 ): ConfigurationReloadHandle {
   const loadRequest = options.loadRequest ?? productConfigurationLoadRequest(globals);
+  const instructionSources = configuredInstructionSourcesSchema.safeParse(
+    graph.loader.current()?.values["instructions.sources"] ?? { version: 1, entries: [] },
+  );
+  const instructionFiles = instructionSources.success
+    ? instructionSources.data.entries.flatMap((entry) => {
+        const root =
+          entry.root === "configuration"
+            ? graph.configurationRoot
+            : graph.workspaceSet?.roots.find((candidate) => candidate.name === entry.root)?.path;
+        const file = root ? joinPath(root, ...entry.path.split("/")) : null;
+        return file?.ok ? [file.value] : [];
+      })
+    : [];
   const files = [
+    ...instructionFiles,
     ...(graph.loader
       .current()
       ?.sources.flatMap((entry) => (entry.source.file === null ? [] : [entry.source.file])) ?? []),
@@ -70,11 +86,14 @@ export function startConfigurationReloadWatcher(
       load: async (_request, signal) => {
         if (options.onInvalidation) {
           await options.onInvalidation(signal);
+          await options.onSourcesChanged?.(signal);
           const record = graph.loader.current();
           return record ? { kind: "unchanged", record } : { kind: "cancelled" };
         }
         try {
-          return (await loadProductConfiguration(graph, loadRequest, signal)).outcome;
+          const loaded = await loadProductConfiguration(graph, loadRequest, signal);
+          await options.onSourcesChanged?.(signal);
+          return loaded.outcome;
         } catch {
           return {
             kind: "publish-failed",

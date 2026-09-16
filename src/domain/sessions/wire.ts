@@ -1,5 +1,9 @@
 import { compositionProvenanceSchema } from "../capabilities/composition.ts";
 import { profileTransitionReceiptSchema } from "../configuration/profile-transition.ts";
+import {
+  instructionRejectionSchema,
+  instructionSourceReceiptSchema,
+} from "../context/instruction-source-receipt.ts";
 import { workflowReceiptSchema } from "../orchestration/workflow-state.ts";
 import {
   MAX_SANDBOX_LAUNCHES,
@@ -451,6 +455,18 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
     correlation: turnCorrelationSchema,
     payload: modelAttemptStartedPayloadSchema,
   }),
+  z.strictObject({
+    ...envelopeSpine,
+    kind: z.literal("instructions.rejected"),
+    correlation: turnCorrelationSchema,
+    payload: instructionRejectionSchema,
+  }),
+  z.strictObject({
+    ...envelopeSpine,
+    kind: z.enum(["instructions.resolved", "instructions.revoked"]),
+    correlation: turnCorrelationSchema,
+    payload: instructionSourceReceiptSchema,
+  }),
   z
     .object({
       ...envelopeSpine,
@@ -612,6 +628,10 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
       };
     case "turn.completed":
       return { outcome: outcomeToJson(event.payload.outcome) };
+    case "instructions.rejected":
+    case "instructions.revoked":
+    case "instructions.resolved":
+      return { ...event.payload };
     case "model.processing.recorded":
       return { receipt: event.payload.receipt };
     case "model.attempt.completed":

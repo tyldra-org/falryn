@@ -62,6 +62,9 @@ export const EVENT_KINDS = [
   "history.recorded",
   "model.processing.recorded",
   "configuration.transition.recorded",
+  "instructions.resolved",
+  "instructions.revoked",
+  "instructions.rejected",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -376,6 +379,16 @@ export type ConfigurationTransitionRecordedEvent = Envelope<
 >;
 
 export type RuntimeEvent =
+  | Envelope<
+      "instructions.rejected",
+      TurnCorrelation,
+      import("../context/instruction-source-receipt.ts").InstructionRejection
+    >
+  | Envelope<
+      "instructions.resolved" | "instructions.revoked",
+      TurnCorrelation,
+      import("../context/instruction-source-receipt.ts").InstructionSourceReceipt
+    >
   | ConfigurationTransitionRecordedEvent
   | HistoryRecordedEvent
   | Envelope<"workflow.changed", SessionCorrelation, WorkflowReceipt>

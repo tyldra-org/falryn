@@ -54,6 +54,7 @@ import type {
   ProductContextReceipt,
   ProductContextSource,
 } from "../context/product-context-source.ts";
+import { prepareProductInstructions } from "../context/product-instructions.ts";
 import { attemptModelInputFromPrompt } from "../context/product-model-input.ts";
 import {
   admitResourceAttachments,
@@ -86,6 +87,11 @@ export type ProductLiveTurnInput = {
 };
 
 export type ProductLiveTurnResult = {
+  readonly instructionFailure?: {
+    readonly code: string;
+    readonly sources: readonly import("../../domain/context/instruction-sources.ts").SourceDecision[];
+  };
+  readonly instructions?: import("../context/instruction-source-owner.ts").InstructionSourceReceipt;
   readonly history?: {
     readonly throughSequence: number;
     readonly checkpointId: string | null;
@@ -577,6 +583,7 @@ export function createProductLiveTurnExecutor(
           | "contextGeneration"
           | "recalledMemories"
           | "memoryAdmission"
+          | "instructionFailure"
         >
       >,
     policy: EffectiveExecutionPolicy,
@@ -598,6 +605,7 @@ export function createProductLiveTurnExecutor(
         ? fields.message
         : `${fields.message}; turn completion failed (${completed.error.code})`,
       response: "",
+      ...(fields.instructionFailure ? { instructionFailure: fields.instructionFailure } : {}),
       terminalOutcome: outcome,
       contextPackItems: fields.contextPackItems ?? 0,
       modelAttempts: fields.modelAttempts ?? 0,
@@ -1020,6 +1028,82 @@ export function createProductLiveTurnExecutor(
                 executionPolicy,
               );
           }
+          const instructionPreparation =
+            runtime.instructions === null
+              ? null
+              : await prepareProductInstructions({
+                  instructions: runtime.instructions,
+                  execution: String(input.turnId),
+                  workspaceId: String(correlation.workspaceId),
+                  configurationGeneration: String(generation),
+                  resources: taskResources,
+                  signal: input.signal ?? new AbortController().signal,
+                });
+          if (instructionPreparation && !instructionPreparation.ok && runtime.instructions) {
+            const recorded = await runtime.journal.persist(
+              [
+                {
+                  kind: "instructions.rejected",
+                  correlation: { ...correlation, turnId: input.turnId },
+                  payload: {
+                    scope: { ...runtime.instructions.scope, execution: String(input.turnId) },
+                    configuration: String(generation),
+                    code: instructionPreparation.code,
+                    observedGeneration: instructionPreparation.observedGeneration ?? null,
+                    rejectedSource: instructionPreparation.rejectedSource ?? null,
+                    sources: [...instructionPreparation.sources],
+                  },
+                },
+              ],
+              AbortSignal.timeout(30000),
+            );
+            return settleFailure(
+              input,
+              {
+                kind: "unavailable",
+                instructionFailure: {
+                  code: instructionPreparation.code,
+                  sources: instructionPreparation.sources,
+                },
+                code:
+                  recorded.kind === "persisted"
+                    ? `instructions.${instructionPreparation.code}`
+                    : "instructions.history-unavailable",
+                message: "The selected instruction sources could not be admitted.",
+              },
+              executionPolicy,
+            );
+          }
+          const instructionBinding = instructionPreparation?.ok
+            ? instructionPreparation.binding
+            : null;
+          if (
+            instructionBinding &&
+            (instructionBinding.receipt.sources.length > 0 ||
+              instructionBinding.receipt.previousGeneration !== null ||
+              instructionBinding.receipt.reload === "rejected")
+          ) {
+            const recorded = await runtime.journal.persist(
+              [
+                {
+                  kind: "instructions.resolved",
+                  correlation: { ...correlation, turnId: input.turnId },
+                  payload: instructionBinding.receipt,
+                },
+              ],
+              input.signal,
+            );
+            if (recorded.kind !== "persisted")
+              return settleFailure(
+                input,
+                {
+                  kind: "failed",
+                  code: "instructions.history-unavailable",
+                  message: "Instruction provenance could not be retained.",
+                },
+                executionPolicy,
+              );
+          }
           const prepared =
             options.contextSource === undefined
               ? {
@@ -1146,6 +1230,7 @@ export function createProductLiveTurnExecutor(
               ...(input.otherSections ?? []),
               ...attachments.value,
               ...prepared.sections,
+              ...(instructionBinding?.sections ?? []),
               ...(memorySection === null ? [] : [memorySection]),
               ...(briefed?.ok ? [briefed.value.section] : []),
               ...(input.responsePolicySection === undefined ? [] : [input.responsePolicySection]),
@@ -1280,6 +1365,40 @@ export function createProductLiveTurnExecutor(
             providerCatalog?.models.find((model) => model.modelId === selectedModel?.modelId),
             prepared.receipt?.generation ?? "static",
           );
+          if (
+            instructionBinding &&
+            !(await instructionBinding.current(input.signal ?? new AbortController().signal))
+          ) {
+            const revoked = await runtime.journal.persist(
+              [
+                {
+                  kind: "instructions.revoked",
+                  correlation: { ...correlation, turnId: input.turnId },
+                  payload: instructionBinding.receipt,
+                },
+              ],
+              AbortSignal.timeout(30000),
+            );
+            return settleFailure(
+              input,
+              {
+                kind: "unavailable",
+                code:
+                  revoked.kind === "persisted"
+                    ? "instructions.authority-changed"
+                    : "instructions.history-unavailable",
+                message: "Instruction authority changed before provider dispatch.",
+              },
+              executionPolicy,
+            );
+          }
+          let instructionAuthorityLost = false;
+          const instructionsCurrent = async (signal: AbortSignal) => {
+            const current =
+              instructionBinding === null || (await instructionBinding.current(signal));
+            if (!current) instructionAuthorityLost = true;
+            return current;
+          };
           const attempted = await attemptPolicy.run({
             ...(input.processing === undefined ? {} : { processing: input.processing }),
             taskResources,
@@ -1287,8 +1406,25 @@ export function createProductLiveTurnExecutor(
             configurationGeneration: generation,
             signal: input.signal ?? new AbortController().signal,
             intent: input.intent ?? executionPolicy.workIntent,
-            modelInput: modelInput,
+            modelInput: {
+              ...modelInput,
+              ...(instructionBinding ? { instructionsCurrent } : {}),
+            },
           });
+          let instructionHistoryFailed = false;
+          if (instructionAuthorityLost && instructionBinding) {
+            const revoked = await runtime.journal.persist(
+              [
+                {
+                  kind: "instructions.revoked",
+                  correlation: { ...correlation, turnId: input.turnId },
+                  payload: instructionBinding.receipt,
+                },
+              ],
+              AbortSignal.timeout(30000),
+            );
+            instructionHistoryFailed = revoked.kind !== "persisted";
+          }
           const attemptOutcome =
             attempted.turn?.status === "terminal" && attempted.turn.outcome !== null
               ? attempted.turn.outcome
@@ -1317,7 +1453,8 @@ export function createProductLiveTurnExecutor(
             attempted.kind === "completed" &&
             executionPolicy.completion === "durable-plan" &&
             planArtifactId === null;
-          const terminalOutcome = planArtifactFailed ? FAILED : attemptOutcome;
+          const terminalOutcome =
+            planArtifactFailed || instructionHistoryFailed ? FAILED : attemptOutcome;
           const completed = await producer.completeTurn({
             turnId: input.turnId,
             sessionId: correlation.sessionId,
@@ -1345,6 +1482,7 @@ export function createProductLiveTurnExecutor(
                 });
           return result({
             kind: succeeded ? "completed" : "failed",
+            ...(instructionBinding ? { instructions: instructionBinding.receipt } : {}),
             history: {
               throughSequence: history.value.throughSequence,
               checkpointId: history.value.checkpointId,
@@ -1357,18 +1495,22 @@ export function createProductLiveTurnExecutor(
             },
             code: succeeded
               ? "completed"
-              : planArtifactFailed
-                ? "execution-profile.plan-artifact-failed"
-                : `runtime.attempt-${attempted.kind}`,
+              : instructionHistoryFailed
+                ? "instructions.history-unavailable"
+                : planArtifactFailed
+                  ? "execution-profile.plan-artifact-failed"
+                  : `runtime.attempt-${attempted.kind}`,
             message: succeeded
               ? "turn completed"
-              : planArtifactFailed
-                ? "model attempt completed but the reviewable plan artifact could not be retained"
-                : !completed.ok
-                  ? `turn settled as ${attempted.kind}; completion failed (${completed.error.code})`
-                  : !refreshed.ok
-                    ? `turn settled as ${attempted.kind}; durable replay failed (${refreshed.error.code})`
-                    : `turn settled as ${attempted.kind}`,
+              : instructionHistoryFailed
+                ? "Instruction revocation could not be retained."
+                : planArtifactFailed
+                  ? "model attempt completed but the reviewable plan artifact could not be retained"
+                  : !completed.ok
+                    ? `turn settled as ${attempted.kind}; completion failed (${completed.error.code})`
+                    : !refreshed.ok
+                      ? `turn settled as ${attempted.kind}; durable replay failed (${refreshed.error.code})`
+                      : `turn settled as ${attempted.kind}`,
             response,
             terminalOutcome,
             contextPackItems: planned.value.plan.pack.items.length,

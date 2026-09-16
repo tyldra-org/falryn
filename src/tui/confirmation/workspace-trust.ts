@@ -20,7 +20,7 @@ export function workspaceTrustPrompt(report: WorkspaceTrustReport): Confirmation
     effect: "Proceed saves this generation and permits project settings to apply.",
     alternatives: [
       "Refuse keeps project loaders disabled and opens the shell for safe inspection.",
-      "MCP, hooks, skills and instruction activation remain unavailable.",
+      "Automatic skill and instruction discovery remains unavailable. Source registration grants no tool authority.",
       "Workspace approval is not an OS sandbox or a tool permission.",
       ...(report.inventory?.loaders.map(
         (loader) => `${loader.label}: ${loader.family}, ${loader.activation}`,

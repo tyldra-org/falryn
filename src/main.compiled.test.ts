@@ -861,3 +861,25 @@ test.skipIf(!built)(
   },
   10_000,
 );
+
+test("compiled headless composition admits registered instructions with native provenance", async () => {
+  const root = await temporaryRoot();
+  const binary = join(root, EXECUTABLE_NAME);
+  const entry = join(dirname(import.meta.path), "cli/runtime/instruction-compiled.fixtures.ts");
+  const compiled = Bun.spawnSync(
+    [process.execPath, "build", entry, "--compile", "--outfile", binary],
+    { stdout: "pipe", stderr: "pipe" },
+  );
+  expect(compiled.exitCode, compiled.stderr.toString()).toBe(0);
+  const run = Bun.spawnSync([binary, join(root, "home")], {
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { PATH: process.env.PATH ?? "", HOME: root },
+  });
+  expect(run.exitCode, run.stderr.toString()).toBe(0);
+  expect(JSON.parse(run.stdout.toString())).toEqual({
+    outcome: "completed",
+    admitted: true,
+    sources: 1,
+  });
+}, 30000);

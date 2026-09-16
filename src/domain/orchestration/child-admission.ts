@@ -33,6 +33,11 @@ export type ChildWorkTarget =
       readonly configurationGeneration: string;
     }
   | {
+      readonly kind: "instruction-source";
+      readonly workspaceId: string;
+      readonly configurationGeneration: string;
+    }
+  | {
       readonly kind: "provider";
       readonly workspaceId: string;
       readonly binding: ChildProviderBinding;

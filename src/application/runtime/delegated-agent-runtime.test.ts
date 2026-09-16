@@ -4,7 +4,9 @@ import { removeTemporaryRoots } from "../../data/fixtures.ts";
 import { createAgentJoinStore } from "../../data/orchestration/agent-join-store.ts";
 import { createMailboxRepository } from "../../data/orchestration/mailbox-store.ts";
 import { createCapabilityRegistry } from "../../domain/capabilities/index.ts";
-import { canonicalDigest } from "../../domain/extensions/canonical.ts";
+import { sourceFixture } from "../../domain/context/instruction-sources.fixtures.ts";
+import { EMPTY_SOURCE_PREFERENCES } from "../../domain/context/instruction-sources.ts";
+import { bytesDigest, canonicalDigest } from "../../domain/extensions/canonical.ts";
 import {
   configurationGeneration,
   instant,
@@ -36,7 +38,11 @@ import {
   type ModelRequest,
 } from "../../providers/index.ts";
 import { capabilityEntryFromTool } from "../capabilities/product-capability-registry.ts";
+import { createInstructionSourceOwner } from "../context/instruction-source-owner.ts";
+import type { ProductInstructions } from "../context/product-instructions.ts";
+import { agentDefinitionSchema } from "../orchestration/agent-definition.ts";
 import { createAgentJoins } from "../orchestration/agent-joins.ts";
+import { createAgentRegistry, starterAgentRegistrations } from "../orchestration/agent-registry.ts";
 import {
   type SealedAgentResult,
   sealedAgentResultSchema,
@@ -108,7 +114,12 @@ async function run(
   script: (request: ModelRequest, index: number) => DeterministicProviderScript,
   options: Partial<
     Pick<DelegatedRuntimeOptions, "preferences" | "resolveProvider" | "registry">
-  > & { nativeDenied?: boolean; withPeers?: boolean; processing?: boolean } = {},
+  > & {
+    nativeDenied?: boolean;
+    withPeers?: boolean;
+    processing?: boolean;
+    instructions?: ProductInstructions;
+  } = {},
   nativeEffect: "observation" | "mutation" | "external" = "observation",
   native?: {
     name: string;
@@ -205,6 +216,7 @@ async function run(
   const repository = createMailboxRepository(f.database);
   const composed = composeDelegatedAgentRuntime(
     {
+      ...(options.instructions ? { instructions: options.instructions } : {}),
       historyArtifacts: f.artifacts,
       eventStore: f.events,
       clock: f.clock,
@@ -751,4 +763,74 @@ test("main session Fast never becomes a delegated role preference", async () => 
   expect(
     new Set(observed.requests.map((request) => JSON.stringify(request.processing?.admission))).size,
   ).toBe(observed.requests.length);
+});
+
+test("a child resolves its declared subtree after a parent edit while the parent retains its admitted bytes", async () => {
+  let rootText = "ROOT_ORIGINAL";
+  const root = sourceFixture("AGENTS.md");
+  const docs = sourceFixture("docs/AGENTS.md", { scope: "docs" });
+  const excluded = sourceFixture("src/AGENTS.md", { scope: "src" });
+  const snapshots: unknown[] = [];
+  const owner = createInstructionSourceOwner({
+    async scan() {
+      return {
+        configuration: "0",
+        workspace: "workspace",
+        sources: [
+          { ...root, digest: bytesDigest(new TextEncoder().encode(rootText)) },
+          docs,
+          excluded,
+        ],
+        preferences: EMPTY_SOURCE_PREFERENCES,
+      };
+    },
+    async read(source) {
+      return new TextEncoder().encode(
+        source.identity.path === "AGENTS.md" ? rootText : source.identity.path,
+      );
+    },
+    async current() {
+      return true;
+    },
+  });
+  const registry = createAgentRegistry(
+    starterAgentRegistrations().map((registration) => {
+      const parsed = agentDefinitionSchema.parse(registration.definition);
+      if (parsed.identity.localId !== "general") return registration;
+      const { identity, ...descriptor } = parsed;
+      const replacement = { ...descriptor, instructionDirectory: "docs" };
+      return {
+        ...registration,
+        definition: {
+          ...replacement,
+          identity: { ...identity, descriptorDigest: canonicalDigest(replacement) },
+        },
+      };
+    }),
+  );
+  const { result, requests } = await run(
+    (_request, index) => {
+      snapshots.push(owner.snapshot());
+      if (index === 0) {
+        rootText = "ROOT_EDITED";
+        return launch("general", "Read docs instructions", []);
+      }
+      return { kind: "text", text: index === 1 ? generalResult : "Parent completed." };
+    },
+    {
+      registry,
+      instructions: { owner, scope: { root: "workspace", directory: "", kind: "main" } },
+    },
+  );
+  expect(result.terminalOutcome.kind).toBe("completed");
+  expect(requests).toHaveLength(3);
+  const inputs = requests.map((request) => JSON.stringify(request.messages));
+  expect(inputs[0]).toContain("ROOT_ORIGINAL");
+  expect(inputs[1]).toContain("ROOT_EDITED");
+  expect(inputs[1]).toContain("docs/AGENTS.md");
+  expect(inputs[1]).not.toContain("src/AGENTS.md");
+  expect(inputs[2]).toContain("ROOT_ORIGINAL");
+  expect(inputs[2]).not.toContain("ROOT_EDITED");
+  expect(result.instructions?.scope.kind).toBe("main");
+  expect(snapshots[0]).not.toEqual(snapshots[1]);
 });

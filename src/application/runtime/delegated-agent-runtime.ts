@@ -13,6 +13,7 @@ import { WORK_INTENTS } from "../../providers/configuration/roles.ts";
 import type { ModelCatalog } from "../../providers/index.ts";
 import type { ProviderAdapterPort } from "../../providers/protocol/port.ts";
 import { reasoningControlFor } from "../../providers/routing/routing.ts";
+import { narrowInstructionScope } from "../context/product-instructions.ts";
 import { validateAgentArtifacts } from "../orchestration/agent-context.ts";
 import {
   type AgentRegistry,
@@ -213,6 +214,15 @@ export function composeDelegatedAgentRuntime(
           run,
           {
             ...childBase,
+            ...(ports.instructions
+              ? {
+                  instructions: narrowInstructionScope(
+                    ports.instructions,
+                    "child",
+                    run.prepared.definition.definition.instructionDirectory,
+                  ),
+                }
+              : {}),
             providerAdapter: provider.adapter,
             streamId: streamId.from(`agent:${String(childSession)}`),
             correlation: { ...ports.correlation, sessionId: childSession },

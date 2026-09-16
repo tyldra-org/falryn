@@ -71,6 +71,7 @@ import {
 import { composePeerTool } from "../../application/tools/peer-tool.ts";
 import { composeProductIndexLifecycle } from "../../application/workspace/index.ts";
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
+import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { projectCatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import {
   type ClockPort,
@@ -114,6 +115,11 @@ import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  readonly instructionSources?: (
+    configuration: () =>
+      | import("../../domain/configuration/index.ts").ConfigurationGenerationRecord
+      | null,
+  ) => import("../../application/context/instruction-source-owner.ts").InstructionSourceOwner;
   readonly authorizeMcp?: (signal: AbortSignal) => Promise<boolean>;
   readonly workingProfileSession?: WorkingProfileSessionFactory;
   readonly records?: Pick<
@@ -521,6 +527,20 @@ export async function composeProductShellAttachments(
               ...(native === undefined ? [] : [native.tools]),
             ]);
       const composed = compose({
+        ...(ports.instructionSources && ports.workspaceSet
+          ? {
+              instructions: {
+                owner: ports.instructionSources(
+                  () => profileSession?.configuration() ?? ports.sandboxConfiguration?.() ?? null,
+                ),
+                scope: {
+                  root: canonicalDigest({ root: primaryWorkspaceRoot(ports.workspaceSet).path }),
+                  directory: "",
+                  kind: "main" as const,
+                },
+              },
+            }
+          : {}),
         eventStore: ports.eventStore,
         ...(ports.artifacts === undefined ? {} : { historyArtifacts: ports.artifacts }),
         clock: ports.clock,
@@ -612,6 +632,7 @@ export async function composeProductShellAttachments(
               correlation,
               host: { ...productAgentHost(composed.value), correlation },
               resources: composed.value.resources,
+              ...(composed.value.instructions ? { instructions: composed.value.instructions } : {}),
               providerAdapter: provider.adapter,
               ...(ports.artifacts ? { historyArtifacts: ports.artifacts } : {}),
               ...(ports.toolConfirmation ? { toolConfirmation: ports.toolConfirmation } : {}),

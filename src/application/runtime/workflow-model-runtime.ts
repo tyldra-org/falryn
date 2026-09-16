@@ -1,3 +1,4 @@
+import { narrowInstructionScope } from "../context/product-instructions.ts";
 /** Model nodes use the ordinary live-turn executor under a narrowed child admission. */
 
 import type { ArtifactStorePort } from "../../domain/artifacts/artifact.ts";
@@ -94,6 +95,15 @@ export async function executeWorkflowModel(options: {
     const childSession = sessionId.from(`workflow-model:${identity}`);
     const tools = mergeProductToolBundles(ports.correlation.configurationGeneration, []);
     const runtime = composeProductAgentRuntime({
+      ...(ports.instructions
+        ? {
+            instructions: narrowInstructionScope(
+              ports.instructions,
+              "workflow",
+              node.instructionDirectory,
+            ),
+          }
+        : {}),
       toolRegistry: tools.registry,
       toolCatalog: tools.catalog,
       toolRunner: tools.runner,

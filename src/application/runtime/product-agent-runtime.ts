@@ -88,6 +88,7 @@ export function productAgentHost(runtime: ProductAgentRuntime): ProductAgentHost
 }
 
 export type ProductAgentRuntimePorts = {
+  readonly instructions?: import("../context/product-instructions.ts").ProductInstructions;
   readonly historyArtifacts?: ArtifactStorePort;
   readonly host?: ProductAgentHost;
   readonly sandbox?: SandboxInvocationPort;
@@ -155,6 +156,7 @@ export type ProductAgentPortResult<Value> =
   | { readonly ok: false; readonly error: ProductAgentRuntimeError };
 
 export type ProductAgentRuntime = {
+  readonly instructions: import("../context/product-instructions.ts").ProductInstructions | null;
   readonly turnLifecycle: ReturnType<typeof createGenerationTurnLifecycle>;
   /** Release only this composition's bindings, not the shared session or resources. */
   closeBindings(): void;
@@ -336,6 +338,7 @@ export function composeProductAgentRuntime(
     });
 
   const runtime: ProductAgentRuntime = {
+    instructions: ports.instructions ?? null,
     turnLifecycle,
     closeBindings: releaseLifecycle,
     historyEvents: ports.eventStore,

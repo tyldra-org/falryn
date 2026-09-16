@@ -47,6 +47,8 @@ import type { TurnEventJournalPort } from "../turn-event-journal.ts";
 
 /** Immutable provider input shared by every retry/fallback for one turn. */
 export type AttemptModelInput = {
+  /** Source content stays pinned while current authority gates each new effect. */
+  readonly instructionsCurrent?: (signal: AbortSignal) => Promise<boolean>;
   readonly history?: import("../../sessions/conversation-history.ts").ConversationHistorySnapshot;
   readonly messages: readonly ModelMessage[];
   readonly tools: readonly ModelToolDefinition[];
