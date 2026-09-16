@@ -15,6 +15,7 @@ import { planReachabilityGc } from "../../data/lifecycle/reachability-gc.ts";
 import { createSqliteEventStore } from "../../data/sessions/event-store.ts";
 import { createRecordRepositories } from "../../data/sessions/repositories.ts";
 import { artifactId } from "../../domain/artifacts/index.ts";
+import { hookDecisionBinding } from "../../domain/extensions/hook-protocol.ts";
 import { createInMemoryPackageWriter } from "../../domain/extensions/index.ts";
 import {
   configurationGeneration,
@@ -1293,4 +1294,118 @@ test("cancellation during the store read must not disclose denied inline evidenc
   const page = await reader.page({ streamId: f.stream, afterSequence: null }, abort.signal);
   expect(authorizations).toBeGreaterThan(0);
   expect(JSON.stringify(page)).not.toContain(f.sentinel);
+});
+
+test("hook decisions and effective intent survive SQLite reopen and headless export without dispatch", async () => {
+  const f = await fixture();
+  const entry = createToolRegistryEntry(
+    {
+      namespace: "test",
+      name: "hook_write",
+      version: 1,
+      source: "builtin",
+      title: "Write",
+      description: "Write a bounded fixture",
+      effect: "mutation",
+      capabilityKind: "filesystem",
+      platforms: [],
+      limits: defaultToolLimits(),
+      concurrency: defaultConcurrencyContract(),
+      resultProjection: defaultProjectionContract(),
+    },
+    {
+      inputSchema: z.strictObject({ text: z.string() }),
+      outputSchema: z.strictObject({ written: z.boolean() }),
+    },
+  );
+  if (!entry.ok) throw new Error(entry.error.code);
+  const registry = createToolRegistry(f.correlation.configurationGeneration, [entry.value]);
+  let calls = 0;
+  const hooks = createToolHookRegistry(f.correlation.configurationGeneration, [
+    {
+      id: "change",
+      priority: 0,
+      point: "before-capability-invocation",
+      run: (envelope) => {
+        calls++;
+        return {
+          kind: "transform",
+          binding: hookDecisionBinding(envelope.catalog),
+          input: { text: "accepted" },
+        };
+      },
+    },
+    {
+      id: "observe",
+      priority: 0,
+      point: "after-capability-invocation",
+      run: () => {
+        calls++;
+        return { kind: "observe", annotations: { private: "HOOK_SECRET_CANARY" } };
+      },
+    },
+  ]);
+  if (!registry.ok || !hooks.ok) throw new Error("fixture registry");
+  const gateway = createProductToolGateway({
+    clock: f.services.clock,
+    taskResources: f.resources,
+    registry: registry.value,
+    hooks: hooks.value,
+    journal: f.journal,
+    correlation: f.correlation,
+    turnId: f.turn,
+    disclosedToolNames: new Set(["hook_write"]),
+    effectLedger: new Map(),
+    historyArtifacts: f.durable.artifacts,
+    confirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+    runner: {
+      execute: async (request) => {
+        await writeFile(join(f.home, "hook-effect.txt"), String(request.input.text));
+        return { status: "completed", effect: "completed", output: { written: true } };
+      },
+    },
+  });
+  expect(
+    (
+      await gateway.execute({
+        invocationId: invocationId.from("durable-hook"),
+        toolCallId: "durable-hook",
+        toolName: "hook_write",
+        capabilityId: entry.value.manifest.capabilityId,
+        version: 1,
+        effect: "mutation",
+        input: { text: "original" },
+        signal: new AbortController().signal,
+      })
+    ).status,
+  ).toBe("completed");
+  expect(await Bun.file(join(f.home, "hook-effect.txt")).text()).toBe("accepted");
+  await f.durable.close();
+  const reopened = await openProductArtifactSession(f.services);
+  if (!reopened) throw new Error("restart failed");
+  cleanups.push(() => reopened.close());
+  const page = await createHistoryReader({
+    events: reopened.eventStore,
+    artifacts: reopened.artifacts,
+    authorize: () => true,
+  }).page({ streamId: f.stream, afterSequence: null });
+  if (!page.ok) throw new Error(page.code);
+  const gates = page.items.flatMap((item) =>
+    item.event?.kind === "history.recorded" && item.event.payload.type === "gate"
+      ? [item.event.payload]
+      : [],
+  );
+  expect(gates.filter((gate) => gate.hook)).toHaveLength(2);
+  const admitted = gates.find((gate) => gate.decision === "transformed");
+  expect(admitted?.originalInputDigest).not.toBe(admitted?.admittedInputDigest);
+  expect(JSON.stringify(page)).not.toContain("HOOK_SECRET_CANARY");
+  const exported = await runExport(() => f.services, {
+    selection: { kind: "sessions", sessionIds: [f.correlation.sessionId], includeSensitive: false },
+    write: true,
+    name: exportName.from("hook-history"),
+  });
+  expect(exported.outcome.kind).toBe("completed");
+  if (!exported.payload?.bundle) throw new Error("missing export");
+  expect(await Bun.file(exported.payload.bundle.path).text()).not.toContain("HOOK_SECRET_CANARY");
+  expect(calls).toBe(2);
 });

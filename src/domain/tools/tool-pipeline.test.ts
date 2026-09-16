@@ -157,3 +157,16 @@ describe("tool pipeline binding", () => {
     ).toBe("none");
   });
 });
+
+test("separate hook effects retain uncertainty while the subject remains completed", () => {
+  const subject = {
+    status: "completed" as const,
+    effect: "completed" as const,
+    output: {},
+    hookEffects: [
+      { invocationId: "hook:separate", status: "uncertain" as const, effect: "uncertain" as const },
+    ],
+  };
+  expect(effectOfToolOutcome(subject)).toBe("uncertain");
+  expect(subject.status).toBe("completed");
+});

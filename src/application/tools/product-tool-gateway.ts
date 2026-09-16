@@ -9,6 +9,7 @@ import {
 } from "../../domain/security/sandbox.ts";
 import { withHookCatalog } from "../../domain/tools/tool-hook-envelope.ts";
 import { createSessionHistory, historyDigest } from "../sessions/session-history.ts";
+import { createToolHookJournal, type HookToolEffect } from "./product-tool-hook-journal.ts";
 /**
  * Non-bypassable product tool lifecycle used by the live model loop (#786).
  *
@@ -24,6 +25,7 @@ import {
   deadlineAt,
   duration,
   instant,
+  invocationId,
   type TurnId,
 } from "../../domain/foundation/index.ts";
 import type {
@@ -35,7 +37,9 @@ import type { SessionCorrelation, TurnLifecycleFact } from "../../domain/session
 import {
   authorizeToolInvocation,
   confirmationInputFingerprint,
+  createFocusedConfirmationRequest,
   type FocusedConfirmationRequest,
+  resolveFocusedConfirmation,
   type ToolHookEnvelope,
   type ToolHookRegistry,
   type ToolInvocationOutcome,
@@ -78,6 +82,7 @@ export type ProductToolEffectLedger = Map<
   {
     readonly fingerprint: string;
     readonly outcome: Promise<ToolInvocationOutcome>;
+    admittedInput?: Readonly<Record<string, unknown>>;
   }
 >;
 
@@ -130,6 +135,7 @@ function hookEnvelope(
   options: ProductToolGatewayOptions,
   point: ToolHookEnvelope["point"],
   outcome: ToolInvocationOutcome | null,
+  recursionDepth = 0,
 ): ToolHookEnvelope {
   const deadline = request.processTask?.deadline;
   return withHookCatalog(
@@ -141,7 +147,7 @@ function hookEnvelope(
       catalogGeneration: options.registry.generation,
       registrationGeneration: options.hooks.generation,
       deadline: deadline === undefined ? null : deadlineAt(instant(deadline)),
-      recursionDepth: 0,
+      recursionDepth,
       reentryKey: `${request.invocationId}:${point}`,
       payload: request.input,
       observedOutcome: outcome,
@@ -289,40 +295,44 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     ...(options.historyArtifacts === undefined ? {} : { artifacts: options.historyArtifacts }),
   });
 
-  return {
-    async execute(request) {
-      const key = JSON.stringify([
-        options.correlation.workspaceId,
-        options.correlation.sessionId,
-        options.turnId,
-        request.invocationId,
-      ]);
-      const fingerprint = confirmationInputFingerprint(
-        request.capabilityId,
-        {
-          input: request.input,
-          version: request.version,
-          toolCallId: request.toolCallId,
-          catalogGeneration: options.registry.generation,
-          policyGeneration: options.correlation.configurationGeneration,
-        },
-        request.effect,
-      );
-      const prior = options.effectLedger.get(key);
-      if (prior) {
-        if (prior.fingerprint !== fingerprint)
-          return { status: "malformed", reason: "invocation-identity-conflict", effect: "none" };
-        const refusal = replayRefusal(request);
-        if (refusal) return refusal;
-        const outcome = await prior.outcome;
-        return replayRefusal(request) ?? outcome;
-      }
-      // Publish ownership before the first asynchronous journal/confirmation completes.
-      const outcome = invoke(request);
-      options.effectLedger.set(key, { fingerprint, outcome });
-      return outcome;
-    },
-  };
+  return { execute: (request) => admit(request) };
+
+  async function admit(
+    request: ToolRunnerRequest,
+    inheritedTask?: ProductTaskResources,
+    depth = 0,
+  ): Promise<ToolInvocationOutcome> {
+    const key = JSON.stringify([
+      options.correlation.workspaceId,
+      options.correlation.sessionId,
+      options.turnId,
+      request.invocationId,
+    ]);
+    const fingerprint = confirmationInputFingerprint(
+      request.capabilityId,
+      {
+        input: request.input,
+        version: request.version,
+        toolCallId: request.toolCallId,
+        catalogGeneration: options.registry.generation,
+        policyGeneration: options.correlation.configurationGeneration,
+      },
+      request.effect,
+    );
+    const prior = options.effectLedger.get(key);
+    if (prior) {
+      if (prior.fingerprint !== fingerprint)
+        return { status: "malformed", reason: "invocation-identity-conflict", effect: "none" };
+      const refusal = replayRefusal({ ...request, input: prior.admittedInput ?? request.input });
+      if (refusal) return refusal;
+      const outcome = await prior.outcome;
+      return replayRefusal({ ...request, input: prior.admittedInput ?? request.input }) ?? outcome;
+    }
+    // Publish ownership before the first asynchronous journal/confirmation completes.
+    const outcome = invoke(request, inheritedTask, depth);
+    options.effectLedger.set(key, { fingerprint, outcome });
+    return outcome;
+  }
   function replayRefusal(request: ToolRunnerRequest): ToolInvocationOutcome | null {
     if (request.signal.aborted) return { status: "cancelled", effect: "none" };
     if (
@@ -371,8 +381,16 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       return { status: "denied", reason: "replay-policy-denied", effect: "none" };
     return null;
   }
-  async function invoke(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
-    const task = options.taskResources ?? resources.openTask(String(options.registry.generation));
+  async function invoke(
+    request: ToolRunnerRequest,
+    inheritedTask?: ProductTaskResources,
+    depth = 0,
+  ): Promise<ToolInvocationOutcome> {
+    const task =
+      inheritedTask ??
+      options.taskResources ??
+      resources.openTask(String(options.registry.generation));
+    const effects: HookToolEffect[] = [];
     try {
       const recorded = await history.record(
         options.turnId,
@@ -396,7 +414,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       );
       if (!recorded.committed || recorded.evidence.availability === "unavailable")
         return { status: "unavailable", reason: "proposal-journal-unavailable", effect: "none" };
-      const outcome = await execute(request, task);
+      const outcome = await execute(request, task, depth, effects);
       const settled = await history.record(
         options.turnId,
         {
@@ -430,14 +448,47 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           effect: outcome.effect,
           reason: "history-settlement-unavailable",
         };
-      return outcome;
+      // A completed hook callback only proposes work. After the subject's durable
+      // settlement, each proposal gets its own normal admission and shared task budget.
+      const hookEffects: NonNullable<ToolInvocationOutcome["hookEffects"]>[number][] = [];
+      for (const effect of effects) {
+        const entry = options.registry.resolveByName(effect.request.name);
+        if (!entry) continue; // Unknown/disallowed proposals are recorded by the hook receipt.
+        const observed = await admit(
+          {
+            invocationId: invocationId.from(effect.id),
+            toolCallId: effect.id,
+            toolName: effect.request.name,
+            capabilityId: entry.manifest.capabilityId,
+            version: entry.manifest.version,
+            effect: entry.manifest.effect,
+            input: effect.request.arguments,
+            signal: request.signal,
+          },
+          task,
+          depth + 1,
+        );
+        hookEffects.push({
+          invocationId: effect.id,
+          status: observed.status,
+          effect: observed.effect,
+        });
+      }
+      if (hookEffects.length === 0) return outcome;
+      return {
+        ...outcome,
+        hookEffects,
+        ...("output" in outcome ? { output: { ...outcome.output, hookEffects } } : {}),
+      };
     } finally {
-      if (options.taskResources === undefined) task.close();
+      if (inheritedTask === undefined && options.taskResources === undefined) task.close();
     }
   }
   async function execute(
     request: ToolRunnerRequest,
     historyTask: ProductTaskResources,
+    depth: number,
+    effects: HookToolEffect[],
   ): Promise<ToolInvocationOutcome> {
     if (request.signal.aborted) {
       return { status: "cancelled", effect: "none" };
@@ -470,7 +521,9 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         effect: "none",
       };
     }
-    const ready = validated.value[0];
+    let ready = validated.value[0];
+    const originalInputDigest = historyDigest(JSON.stringify(ready.input));
+    let transformed = false;
     if (
       ready.entry.manifest.capabilityId !== request.capabilityId ||
       ready.entry.manifest.version !== request.version ||
@@ -509,7 +562,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         {
           version: 1,
           type: "gate",
-          id: `${request.invocationId}:gate:${stage}`,
+          id: `${request.invocationId}:gate:${stage}${transformed ? ":transformed" : ""}`,
           generation: Number(options.registry.generation),
           invocationId: String(request.invocationId),
           proposalId: request.toolCallId,
@@ -517,6 +570,8 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           decision,
           declaredEffect: ready.effect,
           cancelled: request.signal.aborted,
+          originalInputDigest,
+          admittedInputDigest: historyDigest(JSON.stringify(ready.input)),
         },
         "{}",
         historyTask,
@@ -525,7 +580,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     };
     if (!(await observe("validation", "accepted")))
       return { status: "unavailable", reason: "validation-history-unavailable", effect: "none" };
-    const authorized = await authorize(ready, options, request.signal, observe);
+    let authorized = await authorize(ready, options, request.signal, observe);
     if (authorized === null)
       return { status: "unavailable", reason: "policy-history-unavailable", effect: "none" };
     if (!authorized.ok) {
@@ -539,24 +594,90 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       };
     }
 
+    const hookJournal = createToolHookJournal({
+      history,
+      resources: historyTask,
+      turnId: options.turnId,
+      request,
+      registry: options.registry,
+      disclosedToolNames: options.disclosedToolNames,
+      effects,
+    });
+    const preEnvelope = hookEnvelope(
+      { ...request, input: ready.input, effect: ready.effect },
+      options,
+      "before-capability-invocation",
+      null,
+      depth,
+    );
     const pre = await hookRunner.runPre({
-      envelope: hookEnvelope(
-        { ...request, input: ready.input, effect: ready.effect },
-        options,
-        "before-capability-invocation",
-        null,
-      ),
+      envelope: preEnvelope,
+      onDecision: hookJournal.record(preEnvelope),
       signal: request.signal,
     });
-    if (!(await observe("pre-hook", pre.kind)))
+    if (!(await observe("pre-hook", pre.kind)) || !hookJournal.committed)
       return { status: "unavailable", reason: "hook-history-unavailable", effect: "none" };
-    if (pre.kind !== "allowed") {
+    if (pre.kind !== "allowed" && pre.kind !== "confirmation-required") {
       return {
         status: "denied",
         reason: `pre-hook-${pre.kind}`,
         effect: "none",
       };
     }
+
+    if (pre.input) {
+      const revised = validateAndNormalizeInvocations({
+        ...(options.toolHost === undefined ? {} : { host: options.toolHost }),
+        registry: options.registry,
+        maxQueued: 1,
+        nextInvocationId: () => request.invocationId,
+        proposals: [
+          {
+            toolCallId: request.toolCallId,
+            name: request.toolName,
+            arguments: { ...ready.input, ...pre.input },
+            version: request.version,
+          },
+        ],
+      });
+      if (!revised.ok || !revised.value[0])
+        return { status: "malformed", reason: "hook-transform-invalid-input", effect: "none" };
+      ready = revised.value[0];
+      transformed = true;
+      if (!(await observe("validation", "transformed")))
+        return { status: "unavailable", reason: "transform-history-unavailable", effect: "none" };
+      // No confirmation from the original intent is carried into this admission.
+      authorized = await authorize(ready, options, request.signal, observe);
+      if (!authorized?.ok)
+        return { status: "denied", reason: "hook-transform-not-authorized", effect: "none" };
+    }
+    if (pre.kind === "confirmation-required") {
+      const confirmation = createFocusedConfirmationRequest(ready);
+      const answer = await options.confirmation?.resolve(confirmation, request.signal);
+      const resolved = resolveFocusedConfirmation({
+        request: confirmation,
+        invocation: ready,
+        confirmation:
+          answer?.kind === "confirmed" ? { confirmationId: answer.confirmationId } : null,
+        refused: answer?.kind === "refused",
+      });
+      if (
+        !(await observe("confirmation", `hook-${resolved.status}`)) ||
+        resolved.status !== "accepted"
+      )
+        return { status: "denied", reason: "hook-confirmation-required", effect: "none" };
+    }
+    if (request.signal.aborted) return { status: "cancelled", effect: "none" };
+
+    const owned = options.effectLedger.get(
+      JSON.stringify([
+        options.correlation.workspaceId,
+        options.correlation.sessionId,
+        options.turnId,
+        request.invocationId,
+      ]),
+    );
+    if (owned) owned.admittedInput = ready.input;
 
     const started = await persist(
       options,
@@ -949,17 +1070,20 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       exactText,
       historyTask,
     );
+    const postEnvelope = hookEnvelope(
+      { ...request, input: ready.input, effect: ready.effect },
+      options,
+      "after-capability-invocation",
+      outcome,
+      depth,
+    );
     const post = await hookRunner.runPost({
-      envelope: hookEnvelope(
-        { ...request, input: ready.input, effect: ready.effect },
-        options,
-        "after-capability-invocation",
-        outcome,
-      ),
+      envelope: postEnvelope,
+      onDecision: hookJournal.record(postEnvelope),
       signal: request.signal,
     });
 
-    const postRecorded = await observe("post-hook", post.kind);
+    const postRecorded = (await observe("post-hook", post.kind)) && hookJournal.committed;
     const sandboxReceipts = outcome.sandbox?.map((receipt) => ({
       ...receipt,
       readRoots: receipt.readRoots.map((root) => redactor.redactText(root, 1_024)),
@@ -1041,6 +1165,12 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     const projection = {
       ...enveloped.projection,
       history: { ...evidence, id: `${request.invocationId}:exact-result` },
+      hooks: {
+        before: pre.kind,
+        after: post.kind,
+        warnings: [...hookJournal.warnings, ...(post.kind === "recorded" ? post.failures : [])],
+        effectInvocations: effects.map((effect) => effect.id),
+      },
     };
     const projected = projectedOutcome(
       enveloped.result.status,

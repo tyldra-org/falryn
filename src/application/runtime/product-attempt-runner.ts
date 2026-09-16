@@ -40,6 +40,7 @@ import {
   type SessionCorrelation,
 } from "../../domain/sessions/index.ts";
 import {
+  effectOfToolOutcome,
   foldToolEffects,
   type ToolHookRegistry,
   type ToolInvocationRecord,
@@ -356,26 +357,7 @@ function factFromToolLoop(outcome: ToolCallLoopOutcome): AttemptFact {
       message: "parent-child-integration-incomplete",
     };
   const effect = foldToolEffects(
-    outcome.results.map((record) => {
-      const result = record.outcome;
-      switch (result.status) {
-        case "completed":
-          return "completed";
-        case "failed":
-        case "cancelled":
-        case "timed-out":
-        case "partial":
-          return result.effect;
-        case "uncertain":
-          return "uncertain";
-        case "denied":
-        case "unavailable":
-        case "malformed":
-          return "none";
-        default:
-          return assertNever(result, "unhandled tool result effect");
-      }
-    }),
+    outcome.results.map((record) => effectOfToolOutcome(record.outcome)),
   );
   switch (outcome.kind) {
     case "completed":
@@ -451,27 +433,7 @@ function factFromToolLoop(outcome: ToolCallLoopOutcome): AttemptFact {
 }
 
 function effectFromToolResults(outcome: ToolCallLoopOutcome): EffectCertainty {
-  return foldToolEffects(
-    outcome.results.map((record) => {
-      switch (record.outcome.status) {
-        case "completed":
-          return "completed";
-        case "failed":
-        case "cancelled":
-        case "timed-out":
-        case "partial":
-          return record.outcome.effect;
-        case "uncertain":
-          return "uncertain";
-        case "denied":
-        case "unavailable":
-        case "malformed":
-          return "none";
-        default:
-          return assertNever(record.outcome, "unhandled retained tool effect");
-      }
-    }),
-  );
+  return foldToolEffects(outcome.results.map((record) => effectOfToolOutcome(record.outcome)));
 }
 
 function retainToolHistory(fact: AttemptFact, outcome: ToolCallLoopOutcome): AttemptFact {

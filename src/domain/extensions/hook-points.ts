@@ -242,7 +242,7 @@ export const HOOK_POINTS = Object.freeze({
   ),
   "before-capability-invocation": point(tool, "tool.gateway", "pre", "gate", {
     evaluatorGate: true,
-    mutableFields: ["annotations"],
+    mutableFields: ["annotations", "input"],
   }),
   "after-capability-invocation": point(tool.extend(terminal), "tool.gateway", "post", "observe"),
   "capability.disclose.before": point(

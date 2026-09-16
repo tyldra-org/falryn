@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { canonicalJson, freezeMetadata } from "../../domain/extensions/canonical.ts";
 import { HOOK_LIMITS, parseHookEnvelope } from "../../domain/extensions/hook-points.ts";
+import { validateToolHookDecision } from "../../domain/tools/tool-hook-decision.ts";
 /**
  * Run built-in tool hooks at capability-invocation points (#53).
  *
@@ -41,6 +43,7 @@ export type ToolHookRunnerOptions = {
 export type RunToolHooksInput = {
   readonly envelope: ToolHookEnvelope;
   readonly signal: AbortSignal;
+  readonly onDecision?: (decision: RecordedHookDecision) => Promise<void>;
 };
 
 export type PreHookRunResult =
@@ -87,7 +90,10 @@ async function invokeHook(
       catalog.registrationGeneration !== registryGeneration ||
       catalog.ownerGeneration !== Number(envelope.catalogGeneration) ||
       catalog.subjectId !== String(envelope.invocationId) ||
-      catalog.payload.capabilityId !== String(envelope.capabilityId)
+      catalog.payload.capabilityId !== String(envelope.capabilityId) ||
+      catalog.payload.inputDigest !==
+        createHash("sha256").update(JSON.stringify(envelope.payload)).digest("hex") ||
+      envelope.phase !== phaseForHookPoint(envelope.point)
     )
       return { ok: false, reason: "hook-envelope-mismatch" };
     canonicalJson(envelope);
@@ -116,7 +122,15 @@ async function invokeHook(
     const result = await Promise.race([
       Promise.resolve()
         .then(() => (signal.aborted ? Promise.reject(new Error("cancelled")) : run(snapshot)))
-        .then((decision) => ({ ok: true, decision }) as const),
+        .then((decision): HookInvokeResult => {
+          if (signal.aborted) return { ok: false, reason: "cancelled" };
+          if (Number(clock.now()) >= Number(expiresAt)) return { ok: false, reason: "timed-out" };
+          try {
+            return { ok: true, decision: validateToolHookDecision(decision, snapshot) };
+          } catch {
+            return { ok: false, reason: "invalid-hook-decision" };
+          }
+        }),
       clock
         .waitUntil(expiresAt, controller.signal)
         .then((outcome) =>
@@ -162,11 +176,13 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
         Number(options.registry.generation),
       );
       if (!result.ok) {
-        recorded.push({
+        const record: RecordedHookDecision = {
           hookId: hook.id,
           decision: { kind: "allow" },
           failed: { reason: result.reason },
-        });
+        };
+        recorded.push(record);
+        await input.onDecision?.(record);
         emit({
           kind: "hook-decided",
           at: at(),
@@ -180,7 +196,9 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
         }
         continue;
       }
-      recorded.push({ hookId: hook.id, decision: result.decision });
+      const record = { hookId: hook.id, decision: result.decision };
+      recorded.push(record);
+      await input.onDecision?.(record);
       emit({
         kind: "hook-decided",
         at: at(),
@@ -189,7 +207,10 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
         hookId: hook.id,
         decisionKind: result.decision.kind,
       });
-      if (result.decision.kind === "deny" && phaseForHookPoint(point) === "pre") {
+      if (
+        (result.decision.kind === "deny" || result.decision.kind === "veto") &&
+        phaseForHookPoint(point) === "pre"
+      ) {
         break;
       }
     }
