@@ -130,6 +130,44 @@ test("preview is inert; exact scope and candidate are required; receipts disting
   expect(await f.apply()).toEqual({ kind: "refused", code: "candidate-missing" });
 });
 
+test("delayed source notifications preserve current previews and reject changed sources", async () => {
+  const f = fixture();
+  await f.preview();
+  await f.service.sourcesChanged();
+  expect(f.calls).toEqual([]);
+  expect((await f.apply()).kind).toBe("receipt");
+  expect(f.facts.at(-1)?.code).toBe("applied");
+
+  const stale = fixture();
+  await stale.preview();
+  stale.candidate.validate = async () => false;
+  await stale.service.sourcesChanged();
+  expect(await stale.apply()).toEqual({ kind: "refused", code: "candidate-missing" });
+  expect(stale.calls).toEqual([]);
+});
+
+test("an old source observation cannot invalidate a newer review or published acknowledgement", async () => {
+  const f = fixture();
+  await f.preview();
+  let finish!: (valid: boolean) => void;
+  f.candidate.validate = () =>
+    new Promise((resolve) => {
+      finish = resolve;
+    });
+  const observation = f.service.sourcesChanged();
+  f.candidate.validate = async () => true;
+  await f.preview();
+  finish(false);
+  await observation;
+  f.ports.record = async () => {
+    await f.service.sourcesChanged();
+    return true;
+  };
+  const result = await f.apply();
+  expect(result.kind === "receipt" && result.receipt.code).toBe("applied");
+  expect(f.calls).toEqual(["prepare:models", "publish", "ack:models"]);
+});
+
 test("required preparation failure keeps A and releases only this attempt's acquired resources", async () => {
   const f = fixture();
   const owners = [

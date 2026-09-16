@@ -129,6 +129,8 @@ export type ProfileTransitions = {
   ): Promise<ProfileTransitionOutcome>;
   inspect(): Promise<ProfileTransitionReceipt | null>;
   reconcile(actor: "user" | "model", signal?: AbortSignal): Promise<ProfileTransitionOutcome>;
+  /** File notifications may arrive late. Invalidate only a still-held, changed candidate. */
+  sourcesChanged(signal?: AbortSignal): Promise<void>;
   /** Invalidate reviewed candidates only; observation never prepares resources. */
   invalidate(): void;
 };

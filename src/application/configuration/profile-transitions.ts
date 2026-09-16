@@ -43,6 +43,22 @@ export function createProfileTransitions(ports: ProfileTransitionPorts): Profile
   }
 
   return {
+    async sourcesChanged(signal) {
+      const selected = reviewed;
+      if (selected === null) return;
+      const abort = AbortSignal.any([
+        AbortSignal.timeout(ports.deadlineMs),
+        ...(signal ? [signal] : []),
+      ]);
+      const valid = await bounded(selected.candidate.validate(abort), abort).catch(() => false);
+      // A notification describes a source observation, not a new authority epoch.
+      // Applying candidates perform their own source CAS; never revoke a newer
+      // preview or an already published owner's acknowledgement with an old event.
+      if (!valid && reviewed === selected) {
+        epoch++;
+        reviewed = null;
+      }
+    },
     invalidate() {
       epoch++;
       reviewed = null;

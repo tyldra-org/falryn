@@ -266,7 +266,7 @@ export function productWorkingProfileSessions(
       authorize: (actor) => !closed && actor === "user",
     });
     const reload = startConfigurationReloadWatcher(graph, globals, {
-      onInvalidation: service.transitions.invalidate,
+      onInvalidation: service.transitions.sourcesChanged,
     });
     const settings = () =>
       composeProductModelSettings(
