@@ -239,6 +239,7 @@ export type FileSystemErrorCode =
   | "oversized"
   | "malformed-encoding"
   | "stale-write"
+  | "stale-read"
   | "publication-uncertain"
   | "io-failure"
   | "unsupported"
@@ -355,13 +356,16 @@ export type FileSystemPort = {
    *
    * The adapter returns the bytes actually available at the tail. This is the
    * bounded primitive used to preserve a large source without loading it all
-   * into the reader's inline result.
+   * into the reader's inline result. When a condition is supplied, the opened
+   * file must match that inspected revision before and after reading. A path
+   * replacement cannot satisfy the condition merely by restoring its old name.
    */
   readBytesRange(
     path: LocalPath,
     offset: number,
     maximumBytes: number,
     signal?: AbortSignal,
+    condition?: { readonly expectedRevision: string },
   ): Promise<Result<Uint8Array, FileSystemError>>;
 
   /**

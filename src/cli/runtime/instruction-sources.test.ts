@@ -370,7 +370,8 @@ test("host source reads have an allocation bound even when a file grows after st
       async readBytes() {
         throw new Error("unbounded source read");
       },
-      async readBytesRange(_path, offset, length) {
+      async readBytesRange(_path, offset, length, _signal, condition) {
+        expect(condition?.expectedRevision).toBeDefined();
         expect(offset).toBe(0);
         lengths.push(length);
         return { ok: true, value: new Uint8Array(length) };
@@ -385,5 +386,30 @@ test("host source reads have an allocation bound even when a file grows after st
   });
   expect(result).toMatchObject({ ok: false, code: "instruction-source-byte-limit" });
   expect(lengths).toEqual([1048577]);
+  expect(owner.snapshot()).toBeNull();
+});
+
+test("a short range read cannot become a complete instruction body", async () => {
+  const f = await fixture();
+  const graph = f.services();
+  await graph.workspaceTrust.resolve(async () => "proceed");
+  await loadProductConfiguration(graph, productConfigurationLoadRequest(f.globals));
+  const owner = composeInstructionSources({
+    ...graph,
+    fileSystem: {
+      ...graph.fileSystem,
+      async readBytesRange() {
+        return { ok: true, value: new TextEncoder().encode("ROOT") };
+      },
+    },
+  });
+  expect(
+    await owner.prepare({
+      root: canonicalDigest({ root: f.root.path }),
+      directory: "",
+      execution: "short-source",
+      kind: "main",
+    }),
+  ).toMatchObject({ ok: false, code: "source-content-changed" });
   expect(owner.snapshot()).toBeNull();
 });

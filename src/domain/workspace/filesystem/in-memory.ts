@@ -267,7 +267,7 @@ export function createInMemoryFileSystem(
       );
     },
 
-    async readBytesRange(path, offset, maximumBytes, signal) {
+    async readBytesRange(path, offset, maximumBytes, signal, condition) {
       if (signal?.aborted === true) {
         return cancelled(path, "read-bytes-range");
       }
@@ -296,6 +296,8 @@ export function createInMemoryFileSystem(
           operation: "read-bytes-range",
         });
       }
+      if (condition && entryFor(path)?.revision !== condition.expectedRevision)
+        return err({ kind: "filesystem", code: "stale-read", path, operation: "read-bytes-range" });
       const bytes =
         node.bytes === undefined
           ? Uint8Array.from(Buffer.from(node.text ?? "", "utf8"))

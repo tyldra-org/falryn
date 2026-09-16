@@ -295,7 +295,8 @@ Project settings cannot register new paths. Project files require current
 workspace trust; registering a file never grants tool or executable authority.
 References and declared conflicts name other registered files relative to the
 declaring file. Absolute paths, parent traversal, symlinks, missing references
-and reference cycles are refused. Arbitrary prose contradictions are not
+and reference cycles are refused. Reads compare the opened file descriptor with
+the inspected revision before and after reading. Arbitrary prose contradictions are not
 mechanically detected.
 
 Compatible instructions compose in deterministic order. Source priority rises

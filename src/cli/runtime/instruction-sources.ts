@@ -239,15 +239,21 @@ export function composeInstructionSources(
       0,
       INSTRUCTION_SOURCE_LIMITS.sourceBytes + 1,
       signal,
+      { expectedRevision: before.revision },
     );
     if (!bytes.ok)
       throw new Error(
-        bytes.error.code === "oversized" ? "instruction-source-byte-limit" : "source-unreadable",
+        bytes.error.code === "oversized"
+          ? "instruction-source-byte-limit"
+          : bytes.error.code === "stale-read"
+            ? "source-content-changed"
+            : "source-unreadable",
       );
     if (bytes.value.byteLength > INSTRUCTION_SOURCE_LIMITS.sourceBytes)
       throw new Error("instruction-source-byte-limit");
     const after = await probe(root, path, signal);
-    if (after.revision !== before.revision) throw new Error("source-content-changed");
+    if (after.revision !== before.revision || bytes.value.byteLength !== before.byteLength)
+      throw new Error("source-content-changed");
     return bytes.value;
   }
   return owner;

@@ -355,6 +355,26 @@ describe("reading bytes", () => {
   });
 });
 
+test("conditional range reads bind the opened descriptor and refuse a replacement file", async () => {
+  const path = at("conditional.bin");
+  await fs.writeFile(path, "original");
+  const before = await fileSystem.stat(path);
+  if (!before.ok || !before.value) throw new Error("fixture stat");
+  const condition = { expectedRevision: before.value.revision };
+  expect(await fileSystem.readBytesRange(path, 0, 9, undefined, condition)).toEqual({
+    ok: true,
+    value: new TextEncoder().encode("original"),
+  });
+  await fs.rename(path, at("old.bin"));
+  await fs.writeFile(path, "replaced");
+  expect(await fileSystem.readBytesRange(path, 0, 9, undefined, condition)).toMatchObject({
+    ok: false,
+    error: { code: "stale-read" },
+  });
+  // Both success and refusal close the descriptor, including on Windows.
+  await fs.unlink(path);
+});
+
 describe("writing bytes", () => {
   test("a failure observing a completed replacement is uncertain, not a failed write", async () => {
     const path = at("settings.jsonc");
