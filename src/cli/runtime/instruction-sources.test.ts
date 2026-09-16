@@ -356,3 +356,34 @@ test("registered references resolve beside the declaring file without changing a
   expect(request).toContain("RELATIVE_GUIDANCE");
   expect(request.indexOf("RELATIVE_GUIDANCE")).toBeLessThan(request.indexOf("ROOT_FALRYN_RULE"));
 });
+
+test("host source reads have an allocation bound even when a file grows after stat", async () => {
+  const f = await fixture();
+  const graph = f.services();
+  await graph.workspaceTrust.resolve(async () => "proceed");
+  await loadProductConfiguration(graph, productConfigurationLoadRequest(f.globals));
+  const lengths: number[] = [];
+  const owner = composeInstructionSources({
+    ...graph,
+    fileSystem: {
+      ...graph.fileSystem,
+      async readBytes() {
+        throw new Error("unbounded source read");
+      },
+      async readBytesRange(_path, offset, length) {
+        expect(offset).toBe(0);
+        lengths.push(length);
+        return { ok: true, value: new Uint8Array(length) };
+      },
+    },
+  });
+  const result = await owner.prepare({
+    root: canonicalDigest({ root: f.root.path }),
+    directory: "",
+    execution: "growing-source",
+    kind: "main",
+  });
+  expect(result).toMatchObject({ ok: false, code: "instruction-source-byte-limit" });
+  expect(lengths).toEqual([1048577]);
+  expect(owner.snapshot()).toBeNull();
+});

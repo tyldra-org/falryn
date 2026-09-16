@@ -231,18 +231,23 @@ export function composeInstructionSources(
   }
   async function read(root: LocalPath, path: LocalPath, signal: AbortSignal): Promise<Uint8Array> {
     const before = await probe(root, path, signal);
-    const bytes = await graph.fileSystem.readBytes(
+    if (before.byteLength > INSTRUCTION_SOURCE_LIMITS.sourceBytes)
+      throw new Error("instruction-source-byte-limit");
+    // A size check alone cannot bound a file that grows while it is being read.
+    const bytes = await graph.fileSystem.readBytesRange(
       path,
-      INSTRUCTION_SOURCE_LIMITS.sourceBytes,
+      0,
+      INSTRUCTION_SOURCE_LIMITS.sourceBytes + 1,
       signal,
     );
     if (!bytes.ok)
       throw new Error(
         bytes.error.code === "oversized" ? "instruction-source-byte-limit" : "source-unreadable",
       );
-    const after = await graph.fileSystem.stat(path, signal);
-    if (!after.ok || after.value?.revision !== before.revision)
-      throw new Error("source-content-changed");
+    if (bytes.value.byteLength > INSTRUCTION_SOURCE_LIMITS.sourceBytes)
+      throw new Error("instruction-source-byte-limit");
+    const after = await probe(root, path, signal);
+    if (after.revision !== before.revision) throw new Error("source-content-changed");
     return bytes.value;
   }
   return owner;
