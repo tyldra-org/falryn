@@ -13,6 +13,7 @@ import {
 } from "../../domain/foundation/index.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
 import type { GlobalOptions } from "../options.ts";
+import { createRecordingCliStreams } from "../output/streams.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
 import {
   configurationGenerationFromLoadOutcome,
@@ -174,4 +175,46 @@ describe("loadProductConfiguration", () => {
     expect(second.outcome.kind).toBe("published");
     expect(second.generation).toBe(configurationGeneration.from(1));
   });
+});
+
+test("background configuration read failure retains the binding and reports a refusal", async () => {
+  const graph = createServiceProvider(GLOBALS, {
+    home: localPath("/home/tester"),
+    platform: "darwin",
+    environment: createStaticEnvironment({}),
+    currentDirectory: localPath("/workspace"),
+    fileSystem: createInMemoryFileSystem(),
+  })();
+  await loadProductConfiguration(graph, productConfigurationLoadRequest(GLOBALS));
+  const retained = graph.loader.current();
+  const streams = createRecordingCliStreams();
+  let changed: () => void = () => {};
+  const watcher = startConfigurationReloadWatcher(
+    {
+      ...graph,
+      loader: {
+        ...graph.loader,
+        load: async () => {
+          throw new Error("unreadable personal state");
+        },
+      },
+    },
+    GLOBALS,
+    {
+      streams,
+      subscribe: async (_paths, notify) => {
+        changed = notify;
+        return { dispose() {} };
+      },
+    },
+  );
+  try {
+    changed();
+    const deadline = Date.now() + 2000;
+    while (streams.diagnosticWrites().length === 0 && Date.now() < deadline) await Bun.sleep(5);
+    expect(streams.diagnosticWrites().join("")).toContain("Configuration could not be read");
+    expect(graph.loader.current()).toBe(retained);
+  } finally {
+    watcher.dispose();
+  }
 });

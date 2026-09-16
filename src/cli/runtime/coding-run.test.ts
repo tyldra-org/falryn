@@ -265,7 +265,7 @@ describe("runCoding", () => {
     expect(unsupported.payload?.providerRequests).toBe(0);
   });
 
-  test("refuses a live turn when the durable product event store cannot open", async () => {
+  test("refuses a live turn when personal state is unusable before durable composition", async () => {
     const home = await mkdtemp(join(tmpdir(), "falryn-run-no-store-"));
     homes.push(home);
     const stateFile = join(home, "state-is-a-file");
@@ -300,7 +300,7 @@ describe("runCoding", () => {
 
     expect(result.outcome).toEqual({ kind: "failed", effect: "none" });
     expect(result.payload).toMatchObject({ stage: "compose-failed", eventCount: 0 });
-    expect(result.errors[0]?.code).toBe("runtime.durable-event-store-required");
+    expect(result.errors[0]?.code).toBe("runtime.configuration-unavailable");
   });
 
   test("hosts a turn then fails closed without a provider", async () => {

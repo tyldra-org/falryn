@@ -73,7 +73,15 @@ export function startConfigurationReloadWatcher(
           const record = graph.loader.current();
           return record ? { kind: "unchanged", record } : { kind: "cancelled" };
         }
-        return (await loadProductConfiguration(graph, loadRequest, signal)).outcome;
+        try {
+          return (await loadProductConfiguration(graph, loadRequest, signal)).outcome;
+        } catch {
+          return {
+            kind: "publish-failed",
+            code: "configuration-read-failed",
+            retained: graph.loader.current(),
+          };
+        }
       },
     },
     loadRequest: {
@@ -122,7 +130,9 @@ function reportReloadOutcome(
     case "publish-failed":
       writeDiagnosticLine(
         streams,
-        `Configuration was valid but could not be recorded (${outcome.code}). The previous generation remains in effect.`,
+        outcome.code === "configuration-read-failed"
+          ? "Configuration could not be read. The previous generation remains in effect."
+          : `Configuration was valid but could not be recorded (${outcome.code}). The previous generation remains in effect.`,
       );
       return;
     case "cancelled":
