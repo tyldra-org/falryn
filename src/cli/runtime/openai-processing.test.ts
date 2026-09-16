@@ -10,6 +10,33 @@ const register = (home: string) => {
   homes.push(home);
 };
 
+test("typed processing controls save through the real writer and restart into a single downgraded OpenAI request", async () => {
+  const journey = await openAiProcessingJourney(
+    { dialect: "responses", mode: "fast", tier: "default", throughControls: true },
+    register,
+  );
+  expect(journey.controlResults[0]).toMatchObject({
+    kind: "processing-inspection",
+    selection: { preference: { mode: "standard" } },
+  });
+  expect(journey.controlResults[1]).toMatchObject({ kind: "written" });
+  expect(journey.controlResults[2]).toMatchObject({
+    kind: "processing-inspection",
+    selection: { preference: { mode: "fast" } },
+  });
+  expect(journey.bodies).toHaveLength(1);
+  expect(journey.bodies[0]).toMatchObject({
+    model: "gpt-5.6-sol",
+    service_tier: "fast",
+    reasoning: { effort: "medium" },
+  });
+  expect(journey.receipts).toHaveLength(1);
+  expect(journey.receipts[0]).toMatchObject({
+    actualMode: "standard",
+    binding: { preference: { mode: "fast" } },
+  });
+});
+
 test.each(["chat", "responses"] as const)(
   "real OpenAI %s processing preserves the request and records actual tiers",
   async (dialect) => {

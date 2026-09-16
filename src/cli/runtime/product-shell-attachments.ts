@@ -1,5 +1,6 @@
 import { checkpointControl } from "../../application/compression/checkpoint-request.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
+import { withProcessingSession } from "../../application/providers/model-settings.ts";
 import { productAgentHost } from "../../application/runtime/product-agent-runtime.ts";
 import {
   activationRefused,
@@ -590,6 +591,7 @@ export async function composeProductShellAttachments(
           return null;
         }
       }
+      let sessionExecutor: ReturnType<typeof createProductLiveTurnExecutor> | null = null;
       profileSession = await ports.workingProfileSession?.(
         composed.value,
         (record, connections, provider) => {
@@ -630,6 +632,7 @@ export async function composeProductShellAttachments(
         },
         environmentContext,
         selection !== undefined,
+        () => sessionExecutor?.processing.inspect().override ?? undefined,
       );
       const executor = createProductLiveTurnExecutor({
         ...(profileSession ? { admissionBinding: profileSession.capture } : {}),
@@ -680,6 +683,7 @@ export async function composeProductShellAttachments(
           ? {}
           : { initialModel: selectedModel }),
       });
+      sessionExecutor = executor;
       prepared = true;
       return {
         profileSession,
@@ -760,7 +764,14 @@ export async function composeProductShellAttachments(
   };
   let unsubscribePeer: (() => void) | null = null;
   const exportSession = ports.exportSession;
+  const processingSettings = new WeakMap<
+    ReturnType<typeof createProductLiveTurnExecutor>,
+    import("../../application/providers/model-settings.ts").ModelSettingsService
+  >();
   const submission = {
+    get processing() {
+      return active.executor.processing;
+    },
     environment: {
       execute: (action: "inspect" | "reload", signal?: AbortSignal) => {
         const control = active.profileSession?.environment;
@@ -825,7 +836,19 @@ export async function composeProductShellAttachments(
       return executePeerAction(selected, input, "user", signal);
     },
     get modelSettings() {
-      return active.profileSession?.modelSettings ?? ports.modelSettings;
+      const service = active.profileSession?.modelSettings ?? ports.modelSettings;
+      if (service === undefined) return undefined;
+      let attached = processingSettings.get(active.executor);
+      if (!attached) {
+        const captured = active.executor;
+        attached = withProcessingSession(
+          service,
+          captured.processing,
+          () => active.executor === captured && !hostSignal.aborted,
+        );
+        processingSettings.set(active.executor, attached);
+      }
+      return attached;
     },
     brief,
     output,

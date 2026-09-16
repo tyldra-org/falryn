@@ -45,6 +45,7 @@ export type ProductSubmissionPortOptions = {
 };
 
 export type ProductSubmissionPort = SubmissionPort & {
+  readonly processing?: import("../../application/providers/processing-controls.ts").ProcessingSessionControl;
   readonly modelSettings?:
     | import("../../application/providers/model-settings.ts").ModelSettingsService
     | undefined;
@@ -79,6 +80,7 @@ export function createProductSubmissionPort(
   };
 
   return {
+    processing: options.executor.processing,
     brief,
     output,
     executionProfile,

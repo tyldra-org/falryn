@@ -428,13 +428,47 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
         () => {},
       )
       .command(
-        lenientPositionals ? "model [action]" : "model <action>",
+        lenientPositionals
+          ? "model [action] [processing-action]"
+          : "model <action> [processing-action]",
         "Inspect or edit shared model role settings.",
         (group) =>
           group
             .positional("action", {
               type: "string",
-              choices: ["roles", "configure", "reset", "migrate", "clear"],
+              choices: ["roles", "configure", "reset", "migrate", "clear", "processing"],
+            })
+            .positional("processing-action", {
+              type: "string",
+              choices: ["inspect", "set", "reset"],
+            })
+            .option("mode", {
+              type: "string",
+              choices: ["provider-default", "standard", "fast"],
+              describe: "Requested processing speed; keeps model and thinking",
+            })
+            .option("fallback", {
+              type: "string",
+              choices: ["stop", "allow-standard"],
+              describe: "Local rejection policy; provider downgrade remains possible",
+            })
+            .option("scope", {
+              type: "array",
+              string: true,
+              choices: ["session", "user", "profile"],
+              describe: "One explicit processing scope; session requires an authorized live host",
+            })
+            .option("role", {
+              type: "string",
+              describe: "Configured role whose processing preference is saved",
+            })
+            .option("revision", {
+              type: "string",
+              describe: "Expected saved file revision; absent means no file",
+            })
+            .option("target-session", {
+              type: "string",
+              describe: "Authorized live session identity",
             })
             .option("input", {
               type: "string",
@@ -824,8 +858,57 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     | import("../application/providers/model-settings.ts").ModelSettingsRequest
     | undefined;
   if (command === "model") {
+    if (parsed.action !== "processing" && parsed["processing-action"] !== undefined)
+      return {
+        kind: "invalid",
+        message: "Only model processing accepts inspect|set|reset as a second action.",
+      };
     let request: unknown = { kind: "inspect" };
-    if (parsed.input !== undefined) {
+    if (parsed.action === "processing" && parsed.input === undefined) {
+      if (parsed.scope?.length !== 1 || !parsed["processing-action"])
+        return {
+          kind: "invalid",
+          message:
+            "Use model processing inspect|set|reset --scope session|user|profile; set also requires --mode.",
+        };
+      const scope = parsed.scope[0];
+      if (
+        (scope === "session" && parsed.role !== undefined) ||
+        (scope !== "session" && parsed["target-session"] !== undefined)
+      )
+        return {
+          kind: "invalid",
+          message: "Session identity and saved role cannot cross processing scopes.",
+        };
+      request = {
+        kind: `processing-${parsed["processing-action"]}`,
+        scope:
+          scope === "session"
+            ? {
+                kind: scope,
+                ...(parsed["target-session"] === undefined
+                  ? {}
+                  : { sessionId: parsed["target-session"] }),
+              }
+            : {
+                kind: scope,
+                ...(parsed.role === undefined
+                  ? {}
+                  : { target: { kind: "role", role: parsed.role } }),
+              },
+        ...(parsed["processing-action"] === "set"
+          ? { preference: { mode: parsed.mode, fallback: parsed.fallback ?? "stop" } }
+          : {}),
+        ...(parsed.revision === undefined
+          ? {}
+          : { expectedRevision: parsed.revision === "absent" ? null : parsed.revision }),
+      };
+      if (
+        parsed["processing-action"] !== "set" &&
+        (parsed.mode !== undefined || parsed.fallback !== undefined)
+      )
+        return { kind: "invalid", message: "Only processing set accepts --mode and --fallback." };
+    } else if (parsed.input !== undefined) {
       const loaded = await loadTaskInputFile(parsed.input);
       if (!loaded.ok) return { kind: "invalid", message: loaded.error };
       try {
@@ -841,16 +924,23 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     const checked = modelSettingsRequestSchema.safeParse(request);
     if (!checked.success) return { kind: "invalid", message: "Invalid model settings request." };
     const matches =
-      parsed.action === "roles"
-        ? checked.data.kind === "inspect"
-        : parsed.action === "configure"
-          ? checked.data.kind === "edit" && checked.data.edit.kind !== "reset"
-          : parsed.action === "reset"
-            ? checked.data.kind === "edit" && checked.data.edit.kind === "reset"
-            : parsed.action === "migrate"
-              ? checked.data.kind === "preview-migration" || checked.data.kind === "apply-migration"
-              : parsed.action === "clear" &&
-                (checked.data.kind === "preview-clear" || checked.data.kind === "apply-clear");
+      parsed.action === "processing"
+        ? (parsed["processing-action"] === undefined ||
+            checked.data.kind === `processing-${parsed["processing-action"]}`) &&
+          (checked.data.kind === "processing-inspect" ||
+            checked.data.kind === "processing-set" ||
+            checked.data.kind === "processing-reset")
+        : parsed.action === "roles"
+          ? checked.data.kind === "inspect"
+          : parsed.action === "configure"
+            ? checked.data.kind === "edit" && checked.data.edit.kind !== "reset"
+            : parsed.action === "reset"
+              ? checked.data.kind === "edit" && checked.data.edit.kind === "reset"
+              : parsed.action === "migrate"
+                ? checked.data.kind === "preview-migration" ||
+                  checked.data.kind === "apply-migration"
+                : parsed.action === "clear" &&
+                  (checked.data.kind === "preview-clear" || checked.data.kind === "apply-clear");
     if (!matches)
       return { kind: "invalid", message: "The model action does not match its input request." };
     modelArgs = checked.data;

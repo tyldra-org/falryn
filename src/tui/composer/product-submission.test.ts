@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createProcessingSessionControl } from "../../application/providers/processing-controls.ts";
 
 import type { ProductLiveTurnExecutor } from "../../application/runtime/index.ts";
 import {
@@ -45,6 +46,7 @@ function executor(run: ProductLiveTurnExecutor["run"]): ProductLiveTurnExecutor 
   let profileId: "ask" | "plan" | "debug" | "agent" = "agent";
   let selected = modelSelection("model-default");
   return {
+    processing: createProcessingSessionControl("test", () => null).control,
     executionProfile: {
       get: () => profileId,
       async select(nextProfileId) {
@@ -231,6 +233,7 @@ describe("product submission port", () => {
   test("delegates mode selection to the same live-turn executor", async () => {
     let selected = "agent" as "ask" | "plan" | "debug" | "agent";
     const live: ProductLiveTurnExecutor = {
+      processing: createProcessingSessionControl("test", () => null).control,
       executionProfile: {
         get: () => selected,
         async select(profileId) {
@@ -269,6 +272,7 @@ describe("product submission port", () => {
     let selected = modelSelection("model-default");
     const observed: string[] = [];
     const live: ProductLiveTurnExecutor = {
+      processing: createProcessingSessionControl("test", () => null).control,
       executionProfile: {
         get: () => "agent",
         async select(profileId) {

@@ -350,6 +350,37 @@ describe.if(built)("the standalone executable", () => {
     },
     30_000,
   );
+  test("processing controls persist and project the actual provider tier through compiled boundaries", async () => {
+    const binary = join(bootstrapDirectory, "processing-controls");
+    const built = Bun.spawnSync(
+      [
+        process.execPath,
+        "build",
+        join(import.meta.dir, "cli/runtime/processing-controls-fixtures.ts"),
+        "--compile",
+        "--outfile",
+        binary,
+      ],
+      { stdout: "pipe", stderr: "pipe", timeout: 30_000 },
+    );
+    expect(built.exitCode, built.stderr.toString()).toBe(0);
+    const child = Bun.spawnSync([binary], { stdout: "pipe", stderr: "pipe", timeout: 20_000 });
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    const observed = JSON.parse(child.stdout.toString());
+    expect(observed).toMatchObject({
+      outcome: { kind: "completed" },
+      controls: ["processing-inspection", "written", "processing-inspection"],
+      request: { model: "gpt-5.6-sol", tier: "fast", reasoning: { effort: "medium" } },
+      requests: 1,
+      receipts: [{ requested: "fast", actual: "standard" }],
+      replayEqual: true,
+      modelOutcomes: 1,
+    });
+    expect(observed.transcript).toHaveLength(1);
+    expect(JSON.stringify(observed.transcript)).toContain("actual: standard");
+    expect(observed.jsonl).toHaveLength(1);
+    expect(observed.jsonl[0]).toContain('"actualMode":"standard"');
+  }, 60_000);
   test.skipIf(createHostSandbox().probe().status !== "available")(
     "native activation and model invocation survive compiled boundaries",
     async () => {

@@ -25,6 +25,21 @@ function productWithDistinctFast(maxConcurrent = 1) {
   return product;
 }
 
+test("session processing applies to admitted main compression without enabling a helper", async () => {
+  const product = productWithDistinctFast();
+  Object.assign(product.preferences.roles.default, { processing: { mode: "standard" } });
+  expect(product.executor.processing.change({ mode: "fast" }).kind).toBe("processing-changed");
+  const result = await product.executor.run({
+    prompt: "Summarize the requirement",
+    intent: "compression",
+    turnId: turnId.from("session-processing-compression"),
+  });
+  expect(result.kind).toBe("completed");
+  expect(product.requests).toHaveLength(1);
+  expect(product.requests[0]?.processing?.preference.mode).toBe("fast");
+  expect(product.requests[0]?.modelId).toBe(product.preferences.roles.default.modelId);
+});
+
 test.each(["coding", "read", "toolRouting", "edit", "compression"] as const)(
   "admitted %s stays on main with captured processing and visible usage",
   async (intent) => {

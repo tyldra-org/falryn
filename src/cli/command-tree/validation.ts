@@ -29,6 +29,9 @@ export function isRawArguments(value: unknown): value is RawArguments {
     Array.isArray(positional) &&
     positional.every((item) => typeof item === "string" || typeof item === "number") &&
     optionalString(field("action")) &&
+    optionalString(field("processing-action")) &&
+    optionalString(field("fallback")) &&
+    optionalString(field("role")) &&
     (classes === undefined ||
       (Array.isArray(classes) && classes.every((item) => typeof item === "string"))) &&
     optionalString(field("confirm")) &&

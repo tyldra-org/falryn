@@ -528,7 +528,34 @@ including premium admission, actual-tier journal receipts, quota and cancellatio
 Continuation fixtures preserve prompt-cache affinity, stateless/stateful tool
 results and native tool-search replay across Fast-to-Standard changes. Live
 account access and latency gains have not been measured. Other providers retain
-ordinary behavior through this contract. There is no `/fast` control yet.
+ordinary behavior through this contract.
+
+`/model` includes Processing speed. `/fast` inspects without submitting a request;
+`/fast on` requests Fast, `/fast off` explicitly requests Standard, and
+`/fast reset` removes the session override. The palette uses the same actions.
+The default scope is the current session's main model and its next admitted
+request. Active turns and children retain captured processing. Child and workflow
+routes use their own defaults; a transient main setting does not grant premium
+child work. Inspection shows exact account/model/thinking, eligibility and known
+price bounds or uncertainty, with Stop/Allow Standard as a separate fallback
+preference. Unknown prices cannot establish a hard spending cap.
+
+`falryn model processing inspect|set|reset --scope session|user|profile` exposes
+the shared actions. Set requires `--mode provider-default|standard|fast` and
+accepts `--fallback stop|allow-standard`. Saved mutations require `--revision`
+from inspection (`absent` for a missing file); `--role` targets a role's preference.
+Session mutation requires an attached authorized host; a standalone command
+cannot change another live process by supplying its session ID. Reset removes
+only the selected processing preference. Saved changes retain ordinary publication
+and pending/applied receipts. Model/account transitions revalidate processing
+before replacing the active binding.
+
+The status distinguishes next-request preference from active/last actual speed.
+Transcript, JSONL and durable history project the same bounded provider receipt;
+unknown and successful Standard downgrades remain visible. Preference edits do
+not emit completed attempts or model-switch events. Host model-service query,
+preference and receipt declarations are available to later SDK/protocol consumers;
+those transports are not enabled by these controls.
 
 The Command Code catalog contains the 62 execution IDs currently published by
 its Provider API, with names and context limits from the model endpoint and

@@ -17,7 +17,11 @@ export async function runModel(
   onMutationStart?: () => void,
 ): Promise<CommandResultOf<"model", ModelSettingsResult>> {
   const mutation =
-    request.kind === "edit" || request.kind === "apply-clear" || request.kind === "apply-migration";
+    request.kind === "edit" ||
+    request.kind === "apply-clear" ||
+    request.kind === "apply-migration" ||
+    request.kind === "processing-set" ||
+    request.kind === "processing-reset";
   if (mutation) onMutationStart?.();
   const payload = await composeProductModelSettings(services(), globals).execute(request, signal);
   const errors =

@@ -6,6 +6,7 @@ import {
   reflectionValue,
 } from "../../application/memory/reflection.fixtures.ts";
 import { createProductResources as reflectionResources } from "../../application/orchestration/product-resources.ts";
+import { processingProduct } from "../../application/runtime/product-processing.fixture.ts";
 import { createHistoryReader } from "../../application/sessions/history-reader.ts";
 import {
   sessionStarted as reflectionSessionStarted,
@@ -1867,6 +1868,7 @@ describe("runCoding", () => {
 
   test("runs model and registered agent nodes through their ordinary runtimes", async () => {
     const seeded = await seededHome();
+    await writeFile(join(seeded.primary, "processing-evidence.txt"), "evidence");
     const requests: ModelRequest[] = [];
     const services = providerFor(seeded)(globalsFor(seeded));
     const handle = { id: "mixed-workflow", generation: "one" };
@@ -1877,7 +1879,17 @@ describe("runCoding", () => {
       argumentsSchema: { type: "object", properties: {}, additionalProperties: false },
       nodes: [
         {
+          key: "inspect",
+          kind: "action",
+          capability: "builtin:workspace/list_dir@1",
+          effect: "observation",
+          input: { path: { from: "literal", value: "." } },
+          resultPath: ["entries", 0, "logical"],
+          resultSchema: { type: "string" },
+        },
+        {
           key: "interpret",
+          dependencies: ["inspect"],
           kind: "model",
           instruction: "Return the JSON string verified.",
           resultSchema: { type: "string" },
@@ -1896,7 +1908,7 @@ describe("runCoding", () => {
       ],
       outputs: { findings: { from: "node", node: "review" } },
     };
-    const adapter = createDeterministicProviderAdapter({
+    const scripted = createDeterministicProviderAdapter({
       onRequest: (request) => requests.push(request),
       script: (_request, index) => {
         if (index === 0)
@@ -1927,6 +1939,36 @@ describe("runCoding", () => {
         return { kind: "text", text: "Workflow settled." };
       },
     });
+    const qualified = processingProduct();
+    const adapter = {
+      ...qualified.adapter,
+      modelCapabilities:
+        scripted.modelCapabilities?.map((capability) => ({
+          ...capability,
+          pricing: qualified.state.pricing,
+        })) ?? [],
+      stream: scripted.stream,
+    };
+    const route = qualified.preferences.roles.default;
+    await writeFile(
+      join(seeded.home, "config", "falryn.jsonc"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumReaderSchemaVersion: 2,
+        defaults: {
+          models: {
+            policy: {
+              processing: { mode: "standard" },
+              roles: {
+                default: { ...route, processing: { mode: "fast" } },
+                subagents: { default: { ...route, processing: { mode: "provider-default" } } },
+                workflows: { default: { ...route, processing: { mode: "standard" } } },
+              },
+            },
+          },
+        },
+      }),
+    );
     const result = await runCoding(
       services,
       { promptParts: ["Execute a workflow with a model step and an Explorer review"] },
@@ -1946,7 +1988,31 @@ describe("runCoding", () => {
       });
       expect(requests).toHaveLength(4);
       expect(requests[1]?.tools).toHaveLength(0);
-      expect(record.ok && record.value.nodes.map((node) => node.attempts)).toEqual([1, 1]);
+      expect(record.ok && record.value.nodes.map((node) => node.attempts)).toEqual([1, 1, 1]);
+      expect(requests.map((request) => request.processing?.preference.mode)).toEqual([
+        "fast",
+        "standard",
+        "provider-default",
+        "fast",
+      ]);
+      expect(
+        new Set(requests.map((request) => JSON.stringify(request.processing?.admission))).size,
+      ).toBe(4);
+      const heads = reopened.eventStore.streamHeads(100);
+      if (!heads.ok) throw new Error("No event streams");
+      const receipts = [];
+      for (const head of heads.value) {
+        const events = await reopened.eventStore.readFrom(
+          { streamId: head.streamId, afterSequence: null },
+          1000,
+        );
+        if (!events.ok) throw new Error("Cannot replay processing receipts");
+        receipts.push(
+          ...events.value.filter((event) => event.kind === "model.processing.recorded"),
+        );
+      }
+      expect(receipts).toHaveLength(4);
+      expect(requests).toHaveLength(4);
     } finally {
       await reopened.close();
     }

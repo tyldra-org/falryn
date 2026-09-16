@@ -29,6 +29,41 @@ const GLOBALS: GlobalOptions = {
   version: false,
 };
 
+test("processing CLI requires one scope and typed mutation inputs", async () => {
+  const set = await parseInvocation([
+    "model",
+    "processing",
+    "set",
+    "--scope",
+    "user",
+    "--mode",
+    "fast",
+    "--fallback",
+    "allow-standard",
+    "--revision",
+    "absent",
+  ]);
+  expect(set).toMatchObject({
+    kind: "run",
+    modelArgs: {
+      kind: "processing-set",
+      scope: { kind: "user" },
+      preference: { mode: "fast", fallback: "allow-standard" },
+      expectedRevision: null,
+    },
+  });
+  for (const args of [
+    ["inspect"],
+    ["set", "--scope", "session"],
+    ["set", "--scope", "user", "--mode", "turbo"],
+    ["reset", "--scope", "session", "--mode", "fast"],
+    ["inspect", "--scope", "user", "--target-session", "other"],
+    ["inspect", "--scope", "user", "--scope", "profile"],
+    ["unknown", "--scope", "session"],
+  ])
+    expect((await parseInvocation(["model", "processing", ...args])).kind).toBe("invalid");
+});
+
 test("working profile saves and resets stay local across restart, including membership and processing", async () => {
   const home = await mkdtemp(join(tmpdir(), "falryn-working-models-"));
   try {

@@ -31,6 +31,10 @@ export function StatusLine(props: StatusLineProps): ReactNode {
   // usable amount. Hints are the half that can be shortened: they are a
   // reminder, and the status is the answer.
   const statusRoom = Math.max(8, terminal.columns - hintWidth - 2);
+  const processing = props.model.processing;
+  const message = processing
+    ? `${props.model.message} · ${processing.active ? "Active" : "Last"} speed ${processing.actual}; next ${processing.requested}`
+    : props.model.message;
 
   return (
     <box flexDirection="row" justifyContent="space-between">
@@ -38,7 +42,7 @@ export function StatusLine(props: StatusLineProps): ReactNode {
         <StatusMark status={props.model.status} maxColumns={statusRoom} />
         {props.model.message === "" ? null : (
           <Line color="mutedForeground" typography="muted" maxColumns={statusRoom} untrusted>
-            {props.model.message}
+            {message}
           </Line>
         )}
       </box>

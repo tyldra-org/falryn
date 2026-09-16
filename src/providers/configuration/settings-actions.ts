@@ -25,6 +25,11 @@ export const modelSelectionTargetSchema = z.discriminatedUnion("kind", [
 ]);
 export const modelSettingsEditSchema = z.discriminatedUnion("kind", [
   z.strictObject({
+    kind: z.literal("processing-route"),
+    target: modelSelectionTargetSchema,
+    processing: processingPreferenceSchema.optional(),
+  }),
+  z.strictObject({
     kind: z.literal("processing-default"),
     processing: processingPreferenceSchema.optional(),
   }),
@@ -46,6 +51,15 @@ export const modelSettingsEditSchema = z.discriminatedUnion("kind", [
   }),
 ]);
 export type ModelSettingsEdit = z.infer<typeof modelSettingsEditSchema>;
+export function configuredModelRoute(preferences: ModelPreferences, target: ModelSelectionTarget) {
+  let value: unknown = preferences;
+  for (const key of modelPreferencePath(target)) {
+    if (value === null || typeof value !== "object" || !Object.hasOwn(value, key)) return null;
+    value = Reflect.get(value, key);
+  }
+  const parsed = roleRouteBaseSchema.strip().safeParse(value);
+  return parsed.success ? parsed.data : null;
+}
 export function modelPreferencePath(target: ModelSelectionTarget): readonly string[] {
   switch (target.kind) {
     case "role":
@@ -71,6 +85,10 @@ export function editModelPreferences(
   edit: ModelSettingsEdit,
 ): ModelPreferences {
   const candidate = structuredClone(preferences);
+  if (edit.kind === "processing-route" && configuredModelRoute(preferences, edit.target) === null) {
+    if (edit.processing === undefined) return candidate;
+    throw new Error("Configure a model route before changing its processing preference.");
+  }
   const path =
     edit.kind === "processing-default"
       ? ["processing"]
@@ -78,9 +96,11 @@ export function editModelPreferences(
         ? ["roles", "subagents", "agents", edit.id, "preset"]
         : edit.kind === "use"
           ? ["roles", "fast", "use", edit.option]
-          : modelPreferencePath(edit.target);
+          : edit.kind === "processing-route"
+            ? [...modelPreferencePath(edit.target), "processing"]
+            : modelPreferencePath(edit.target);
   const value =
-    edit.kind === "processing-default"
+    edit.kind === "processing-default" || edit.kind === "processing-route"
       ? edit.processing
       : edit.kind === "configure"
         ? edit.route
