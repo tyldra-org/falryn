@@ -23,6 +23,7 @@ const inputSchema = z.object({
 export async function nativeProductJourney(
   input: z.infer<typeof inputSchema>,
   beforeFirstRequest?: () => Promise<void>,
+  afterRun?: () => Promise<void>,
 ) {
   const workspace = join(input.home, "workspace");
   await mkdir(workspace, { recursive: true });
@@ -72,6 +73,7 @@ export async function nativeProductJourney(
       },
     },
   );
+  await afterRun?.();
   const session = await openProductArtifactSession(services());
   if (!session) throw new Error("native-fixture-store-unavailable");
   try {

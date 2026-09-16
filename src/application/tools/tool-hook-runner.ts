@@ -1,7 +1,10 @@
-import { createHash } from "node:crypto";
-import { canonicalJson, freezeMetadata } from "../../domain/extensions/canonical.ts";
-import { HOOK_LIMITS, parseHookEnvelope } from "../../domain/extensions/hook-points.ts";
-import { validateToolHookDecision } from "../../domain/tools/tool-hook-decision.ts";
+import { matchesHookFilters } from "../../domain/extensions/hook-filters.ts";
+import { type HookBudgetClass, hookBudgetClass } from "../../domain/extensions/hook-handlers.ts";
+import { HOOK_BUDGETS } from "../../domain/extensions/hook-points.ts";
+import { hookIdentity } from "../../domain/tools/tool-hook-order.ts";
+import type { ProductTaskResources } from "../orchestration/product-resources.ts";
+import { invokeHook, snapshotHookEnvelope } from "./tool-hook-invocation.ts";
+import { admitHookObserver } from "./tool-hook-observers.ts";
 /**
  * Run built-in tool hooks at capability-invocation points (#53).
  *
@@ -9,18 +12,11 @@ import { validateToolHookDecision } from "../../domain/tools/tool-hook-decision.
  * follow the hook point's fail-closed / fail-open posture.
  */
 
+import type { ClockPort, Instant } from "../../domain/foundation/index.ts";
 import {
-  addDuration,
-  type ClockPort,
-  duration,
-  type Instant,
-} from "../../domain/foundation/index.ts";
-import {
-  DEFAULT_TOOL_HOOK_TIMEOUT_MS,
   failurePostureForHookPoint,
   hooksForPoint,
   isRecursionDenied,
-  MAX_TOOL_HOOK_TIMEOUT_MS,
   type PostHookSettlement,
   type PreHookSettlement,
   phaseForHookPoint,
@@ -40,10 +36,19 @@ export type ToolHookRunnerOptions = {
   readonly onFact?: (fact: ToolLifecycleFact) => void;
 };
 
+export type HookChainBudget = { startedAt: number; spent: Record<HookBudgetClass, number> };
+
 export type RunToolHooksInput = {
+  readonly budget?: HookChainBudget;
   readonly envelope: ToolHookEnvelope;
   readonly signal: AbortSignal;
-  readonly onDecision?: (decision: RecordedHookDecision) => Promise<void>;
+  readonly onDecision?: (
+    decision: RecordedHookDecision,
+    resources?: ProductTaskResources,
+  ) => Promise<void>;
+  readonly onPlan?: (order: readonly string[]) => Promise<boolean>;
+  readonly task?: ProductTaskResources;
+  readonly resourceOwner?: object;
 };
 
 export type PreHookRunResult =
@@ -61,95 +66,7 @@ export type ToolHookRunner = {
   runPost(input: RunToolHooksInput): Promise<PostHookRunResult>;
 };
 
-function timeoutMs(requested: number | undefined): number {
-  if (requested === undefined || !Number.isSafeInteger(requested) || requested < 1) {
-    return DEFAULT_TOOL_HOOK_TIMEOUT_MS;
-  }
-  return Math.min(requested, MAX_TOOL_HOOK_TIMEOUT_MS);
-}
-
-type HookInvokeResult =
-  | { readonly ok: true; readonly decision: RecordedHookDecision["decision"] }
-  | { readonly ok: false; readonly reason: string };
-
-async function invokeHook(
-  run: ToolHookRegistry["hooks"][number]["run"],
-  envelope: ToolHookEnvelope,
-  clock: ClockPort,
-  budgetMs: number,
-  signal: AbortSignal,
-  registryGeneration: number,
-): Promise<HookInvokeResult> {
-  if (signal.aborted) return { ok: false, reason: "cancelled" };
-  let snapshot: ToolHookEnvelope;
-  try {
-    const catalog = parseHookEnvelope(envelope.catalog);
-    if (
-      catalog.point !== envelope.point ||
-      catalog.registrationGeneration !== Number(envelope.registrationGeneration) ||
-      catalog.registrationGeneration !== registryGeneration ||
-      catalog.ownerGeneration !== Number(envelope.catalogGeneration) ||
-      catalog.subjectId !== String(envelope.invocationId) ||
-      catalog.payload.capabilityId !== String(envelope.capabilityId) ||
-      catalog.payload.inputDigest !==
-        createHash("sha256").update(JSON.stringify(envelope.payload)).digest("hex") ||
-      envelope.phase !== phaseForHookPoint(envelope.point)
-    )
-      return { ok: false, reason: "hook-envelope-mismatch" };
-    canonicalJson(envelope);
-    const text = JSON.stringify(envelope);
-    if (Buffer.byteLength(text) > HOOK_LIMITS.inputBytes)
-      return { ok: false, reason: "hook-input-too-large" };
-    snapshot = freezeMetadata(JSON.parse(text)) as ToolHookEnvelope;
-  } catch {
-    return { ok: false, reason: "invalid-hook-envelope" };
-  }
-  const remaining =
-    envelope.deadline === null
-      ? budgetMs
-      : Math.min(budgetMs, Number(envelope.deadline.expiresAt) - Number(clock.now()));
-  if (remaining <= 0) return { ok: false, reason: "timed-out" };
-  const expiresAt = addDuration(clock.now(), duration(remaining));
-  const controller = new AbortController();
-  const onAbort = (): void => {
-    controller.abort();
-  };
-  signal.addEventListener("abort", onAbort, { once: true });
-  if (signal.aborted) {
-    controller.abort();
-  }
-  try {
-    const result = await Promise.race([
-      Promise.resolve()
-        .then(() => (signal.aborted ? Promise.reject(new Error("cancelled")) : run(snapshot)))
-        .then((decision): HookInvokeResult => {
-          if (signal.aborted) return { ok: false, reason: "cancelled" };
-          if (Number(clock.now()) >= Number(expiresAt)) return { ok: false, reason: "timed-out" };
-          try {
-            return { ok: true, decision: validateToolHookDecision(decision, snapshot) };
-          } catch {
-            return { ok: false, reason: "invalid-hook-decision" };
-          }
-        }),
-      clock
-        .waitUntil(expiresAt, controller.signal)
-        .then((outcome) =>
-          outcome === "reached"
-            ? ({ ok: false, reason: "timed-out" } as const)
-            : ({ ok: false, reason: "cancelled" } as const),
-        ),
-    ]);
-    return result;
-  } catch {
-    return { ok: false, reason: "threw" };
-  } finally {
-    controller.abort();
-    signal.removeEventListener("abort", onAbort);
-  }
-}
-
 export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRunner {
-  const budget = timeoutMs(options.timeoutMs);
   const emit = (fact: ToolLifecycleFact): void => {
     options.onFact?.(fact);
   };
@@ -166,53 +83,146 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
       invocationId: input.envelope.invocationId,
     });
     const recorded: RecordedHookDecision[] = [];
-    for (const hook of hooksForPoint(options.registry, point)) {
-      const result = await invokeHook(
-        hook.run,
-        input.envelope,
-        options.clock,
-        budget,
-        input.signal,
-        Number(options.registry.generation),
-      );
-      if (!result.ok) {
-        const record: RecordedHookDecision = {
-          hookId: hook.id,
+    const hooks = hooksForPoint(options.registry, point);
+    const checked = snapshotHookEnvelope(input.envelope, Number(options.registry.generation));
+    if (!checked.ok)
+      return [
+        { hookId: "runner", decision: { kind: "allow" }, failed: { reason: checked.reason } },
+      ];
+    if (hooks.length && input.onPlan && !(await input.onPlan(hooks.map(hookIdentity))))
+      return [
+        {
+          hookId: "runner",
           decision: { kind: "allow" },
-          failed: { reason: result.reason },
-        };
-        recorded.push(record);
-        await input.onDecision?.(record);
+          failed: { reason: "hook-plan-unavailable" },
+        },
+      ];
+    const envelope = checked.snapshot;
+    const started = input.budget?.startedAt ?? Number(at());
+    const expiresAt = Math.min(
+      started + HOOK_BUDGETS.mixedChainMs,
+      envelope.deadline?.expiresAt ?? Number.POSITIVE_INFINITY,
+      input.task?.expiresAt ?? Number.POSITIVE_INFINITY,
+    );
+    const spent = input.budget?.spent ?? { local: 0, remote: 0, evaluator: 0 };
+    for (const [position, hook] of hooks.entries()) {
+      const registration = hook.registration;
+      if (!registration) throw new Error("unvalidated hook registry");
+      const id = hookIdentity(hook);
+      const budgetClass = hookBudgetClass(registration.handler);
+      const limits = HOOK_BUDGETS[budgetClass];
+      const began = Number(at());
+      const cleanupExpiresAt = Math.min(expiresAt, began + limits.chainMs - spent[budgetClass]);
+      const deadline = Math.min(
+        cleanupExpiresAt,
+        began +
+          Math.min(
+            limits.maximumMs,
+            registration.timeoutMs ?? options.timeoutMs ?? limits.defaultMs,
+          ),
+      );
+      const execution = (
+        state: NonNullable<RecordedHookDecision["execution"]>["state"],
+        cleanup: NonNullable<RecordedHookDecision["execution"]>["cleanup"],
+      ) => ({
+        position,
+        state,
+        cleanup,
+        elapsedMs: Math.max(0, Number(at()) - began),
+      });
+      const publish = async (record: RecordedHookDecision, task = input.task) => {
+        await input.onDecision?.(record, task);
         emit({
           kind: "hook-decided",
           at: at(),
           point,
-          invocationId: input.envelope.invocationId,
-          hookId: hook.id,
-          decisionKind: "failed",
+          invocationId: envelope.invocationId,
+          hookId: id,
+          decisionKind: record.failed ? "failed" : record.decision.kind,
         });
-        if (failurePostureForHookPoint(point) === "fail-closed") {
-          break;
+      };
+      if (!matchesHookFilters(registration, envelope.catalog)) {
+        const skipped: RecordedHookDecision = {
+          hookId: id,
+          decision: { kind: "allow" },
+          execution: execution("skipped", "not-started"),
+        };
+        recorded.push(skipped);
+        await publish(skipped);
+        continue;
+      }
+      const run = async (
+        task = input.task,
+        onStarted?: () => void,
+      ): Promise<RecordedHookDecision> => {
+        const result = await invokeHook({
+          hook,
+          envelope,
+          clock: options.clock,
+          expiresAt: deadline,
+          cleanupExpiresAt,
+          signal: input.signal,
+          ...(onStarted ? { onStarted } : {}),
+          ...(task ? { task } : {}),
+        });
+        if (registration.mode !== "async") spent[budgetClass] += Math.max(0, Number(at()) - began);
+        return {
+          hookId: id,
+          decision: result.decision ?? { kind: "allow" },
+          ...(result.reason ? { failed: { reason: result.reason } } : {}),
+          execution: execution(
+            result.cleanup === "not-started" ? "not-started" : "settled",
+            result.cleanup,
+          ),
+        };
+      };
+      if (registration.mode === "async") {
+        const reservedMs = Math.max(0, Math.min(cleanupExpiresAt, deadline + 1_000) - began);
+        spent[budgetClass] += reservedMs;
+        const admitted = admitHookObserver({
+          owner: input.resourceOwner,
+          task: input.task,
+          session: envelope.catalog.correlation.sessionId ?? "unknown",
+          payloadBytes: Buffer.byteLength(JSON.stringify(envelope)),
+          run: async (task, started) => {
+            await publish(await run(task, started), task);
+          },
+          failed: () =>
+            emit({
+              kind: "hook-decided",
+              at: at(),
+              point,
+              invocationId: envelope.invocationId,
+              hookId: id,
+              decisionKind: "failed",
+            }),
+        });
+        if (!admitted) spent[budgetClass] -= reservedMs;
+        const record: RecordedHookDecision = {
+          hookId: id,
+          decision: { kind: "allow" },
+          execution: execution(admitted ? "queued" : "dropped", "not-started"),
+          ...(admitted ? {} : { failed: { reason: "hook-observer-unavailable" } }),
+        };
+        recorded.push(record);
+        try {
+          await publish(record);
+          admitted?.start();
+        } catch (error) {
+          admitted?.cancel();
+          throw error;
         }
         continue;
       }
-      const record = { hookId: hook.id, decision: result.decision };
+      const record = await run();
       recorded.push(record);
-      await input.onDecision?.(record);
-      emit({
-        kind: "hook-decided",
-        at: at(),
-        point,
-        invocationId: input.envelope.invocationId,
-        hookId: hook.id,
-        decisionKind: result.decision.kind,
-      });
+      await publish(record);
       if (
-        (result.decision.kind === "deny" || result.decision.kind === "veto") &&
-        phaseForHookPoint(point) === "pre"
-      ) {
+        (record.failed && failurePostureForHookPoint(point) === "fail-closed") ||
+        ((record.decision.kind === "deny" || record.decision.kind === "veto") &&
+          phaseForHookPoint(point) === "pre")
+      )
         break;
-      }
     }
     return recorded;
   };

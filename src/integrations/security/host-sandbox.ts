@@ -56,7 +56,11 @@ export function createHostSandbox(
   const now = options.now ?? Date.now;
   const scopes = new AsyncLocalStorage<Scope>();
   const probe = (): SandboxProbe => {
-    if (process.platform !== "darwin" || process.arch !== "arm64" || release() !== "25.6.0")
+    const helperDigest = new Map([
+      ["25.6.0", "abc5bb136d6b5cce8fa85d789f78e3326c51ca60cae637b2064adfb67a1dcd9a"],
+      ["27.0.0", "58839ef01b4eef8aac0d2aa8f9d1c074ae45aafe3533965b030672450064acc8"],
+    ]).get(release());
+    if (process.platform !== "darwin" || process.arch !== "arm64" || helperDigest === undefined)
       return {
         platform: `${process.platform}-${process.arch}`,
         adapter: null,
@@ -72,7 +76,7 @@ export function createHostSandbox(
         (stat.mode & 0o111) === 0 ||
         stat.size > 256 * 1_024 ||
         createHash("sha256").update(readFileSync(SEATBELT_EXECUTABLE)).digest("hex") !==
-          "abc5bb136d6b5cce8fa85d789f78e3326c51ca60cae637b2064adfb67a1dcd9a"
+          helperDigest
       )
         throw new Error("untrusted-helper");
       return {
@@ -292,7 +296,7 @@ export function createHostSandbox(
           writeRoots,
           expanded: expansion !== undefined && expansion !== null,
           limitations: [
-            "Qualified only for Darwin 25.6.0 arm64; sandbox-exec is deprecated.",
+            "Qualified only for pinned Darwin 25.6.0 and 27.0.0 arm64; sandbox-exec is deprecated.",
             "Read access also includes the executable, /System/Library, /usr/lib, /Library/Apple and the root-directory entry.",
             "Metadata for admitted-root ancestors is readable to resolve filesystem aliases.",
             "Named hardware queries and own-process metadata are allowed; numeric sysctl and ptrace syscalls are denied.",

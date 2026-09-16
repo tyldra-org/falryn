@@ -848,6 +848,7 @@ export async function runCoding(
         },
         ...(providerAdapter !== undefined && providerAdapter !== null ? { providerAdapter } : {}),
         ...productToolHost(),
+        ...(productTools.hooks ? { toolHooks: productTools.hooks } : {}),
         toolRegistry: productTools.registry,
         capabilityRegistry: productTools.capabilityRegistry,
         toolCatalog: productTools.catalog,

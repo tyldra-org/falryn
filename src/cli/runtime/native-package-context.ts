@@ -9,6 +9,10 @@ import type { CatalogRepositories } from "../../data/extensions/catalog-reposito
 import { rootChild } from "../../data/index.ts";
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import { catalogEntryKey } from "../../domain/extensions/catalog.ts";
+import {
+  HOOK_COMMAND_PROTOCOL,
+  hookCommandContract,
+} from "../../domain/extensions/hook-command-profile.ts";
 import type { InstalledPackage } from "../../domain/extensions/lifecycle.ts";
 import {
   type NativeActivation,
@@ -17,6 +21,7 @@ import {
 } from "../../domain/extensions/native-activation.ts";
 import { PACKAGE_TOOL_PROTOCOL } from "../../domain/extensions/package-health.ts";
 import { type ScopeControl, scopeControlKey } from "../../domain/extensions/scope-controls.ts";
+import { qualifiedHookPython } from "../../integrations/extensions/host-hook-command.ts";
 import { createHostPackageCache } from "../../integrations/extensions/host-package-cache.ts";
 import { validateHealthExecutable } from "../../integrations/extensions/host-package-health.ts";
 import { FALRYN_VERSION } from "../version.ts";
@@ -126,11 +131,17 @@ export function createNativePackageContext(options: {
     signal: AbortSignal,
   ) {
     if (!qualified()) throw new ExtensionInputError("native-tool-host-unavailable");
+    const inspected = await inspect(installed, signal);
+    const selected = inspected.prepared.contributions.find(
+      (entry) => entry.identityDigest === contribution,
+    );
+    if (!selected) throw new ExtensionInputError("native-contribution-missing");
+    const isHook = selected.identity.nativeKind === "hook";
     const admitted = await createPackageExecutionAdmission({
       packages: records.packages,
       bytes,
       host,
-      protocol: PACKAGE_TOOL_PROTOCOL,
+      protocol: isHook ? HOOK_COMMAND_PROTOCOL : PACKAGE_TOOL_PROTOCOL,
       authority: (installed, contribution, signal) =>
         admission(control, installed, contribution, signal),
     })(
@@ -142,11 +153,12 @@ export function createNativePackageContext(options: {
       },
       signal,
     );
-    const inspected = await inspect(installed, signal);
-    const selected = inspected.prepared.contributions.find(
-      (entry) => entry.identityDigest === contribution,
-    );
-    if (!selected) throw new ExtensionInputError("native-contribution-missing");
+    if (isHook) {
+      hookCommandContract(admitted.declaration);
+      if (!qualifiedHookPython())
+        throw new ExtensionInputError("hook-execution-profile-unavailable");
+      return admitted;
+    }
     packageToolContract(selected);
     const executable = admitted.snapshot.files.find(
       (file) => file.path === admitted.declaration.execution?.executable,

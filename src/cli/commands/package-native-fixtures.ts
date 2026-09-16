@@ -2,10 +2,14 @@ import { expect } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
-import { preparePackageCliFixture } from "./package-health-fixtures.ts";
+import { type ExtraPackageFixture, preparePackageCliFixture } from "./package-health-fixtures.ts";
 
-export async function prepareNativeCliFixture(command: readonly string[], root: string) {
-  const fixture = await preparePackageCliFixture(command, root, "healthy", true);
+export async function prepareNativeCliFixture(
+  command: readonly string[],
+  root: string,
+  extra?: ExtraPackageFixture,
+) {
+  const fixture = await preparePackageCliFixture(command, root, "healthy", true, extra);
   const intent = {
     operationId: randomUUID(),
     packageId: "fixture",
@@ -13,7 +17,7 @@ export async function prepareNativeCliFixture(command: readonly string[], root: 
     nativeActivation: {
       scope: "user",
       expectedRevision: 0,
-      contributions: [fixture.contribution],
+      contributions: [fixture.contribution, ...fixture.extraContributions],
     },
   };
   const preview = await fixture.invoke(["package", "enable"], intent, packageReceiptSchema);
@@ -42,13 +46,15 @@ export async function prepareNativeCliFixture(command: readonly string[], root: 
       }),
     }),
   );
-  expect(catalog.page.entries.filter((entry) => entry.availability === "available")).toEqual([
-    expect.objectContaining({ availability: "available", reason: "native-owner-bound" }),
-  ]);
+  expect(catalog.page.entries.filter((entry) => entry.availability === "available")).toHaveLength(
+    1 + fixture.extraContributions.length,
+  );
   expect(
     catalog.page.entries.find((entry) => entry.reason === "scope-disabled")?.binding,
   ).toBeNull();
-  const binding = catalog.page.entries.find((entry) => entry.availability === "available")?.binding;
+  const binding = catalog.page.entries.find(
+    (entry) => entry.availability === "available" && entry.binding?.actionId.includes("@"),
+  )?.binding;
   expect(binding).not.toBeNull();
   const name = binding?.actionId.split("/").at(-1)?.split("@")[0];
   if (!name) throw new Error("missing native name");

@@ -614,8 +614,16 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       null,
       depth,
     );
+    const hookBudget = {
+      startedAt: Number(options.clock.now()),
+      spent: { local: 0, remote: 0, evaluator: 0 },
+    };
     const pre = await hookRunner.runPre({
+      budget: hookBudget,
       envelope: preEnvelope,
+      task: historyTask,
+      resourceOwner: resources,
+      onPlan: hookJournal.plan(preEnvelope),
       onDecision: hookJournal.record(preEnvelope),
       signal: request.signal,
     });
@@ -1096,7 +1104,11 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       depth,
     );
     const post = await hookRunner.runPost({
+      budget: hookBudget,
       envelope: postEnvelope,
+      task: historyTask,
+      resourceOwner: resources,
+      onPlan: hookJournal.plan(postEnvelope),
       onDecision: hookJournal.record(postEnvelope),
       signal: request.signal,
     });

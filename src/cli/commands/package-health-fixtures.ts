@@ -5,16 +5,23 @@ import { join } from "node:path";
 import { z } from "zod";
 import { pluginManifest } from "../../application/extensions/package-fixtures.ts";
 import { CONFIGURATION_FILE_NAME } from "../../config/index.ts";
-import { canonicalDigest } from "../../domain/extensions/canonical.ts";
+import { bytesDigest, canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
 import { packageHealthResultSchema } from "../../domain/extensions/package-health.ts";
 import { nativeHealthFixture } from "../../integrations/extensions/package-health-fixtures.ts";
 
+export type ExtraPackageFixture = {
+  declarations: readonly import("zod").infer<
+    typeof import("../../domain/extensions/manifest.ts").contributionDeclarationSchema
+  >[];
+  files: Readonly<Record<string, string>>;
+};
 export async function preparePackageCliFixture(
   command: readonly string[],
   root: string,
   mode = "healthy",
   tool = false,
+  extra?: ExtraPackageFixture,
 ) {
   const source = join(root, "package");
   await mkdir(source);
@@ -29,15 +36,27 @@ export async function preparePackageCliFixture(
   if (mode === "cancel" && fixture.declaration.execution)
     fixture.declaration.execution.resources.startupMs = 5000;
   await writeFile(join(source, "health-peer"), fixture.bytes);
+  for (const [path, text] of Object.entries(extra?.files ?? {}))
+    await writeFile(join(source, path), text);
   await writeFile(
     join(source, "plugin.json"),
     JSON.stringify(
       pluginManifest({
         version: 1,
         contributions: tool
-          ? [fixture.declaration, { ...fixture.declaration, id: "disabled" }]
+          ? [
+              fixture.declaration,
+              { ...fixture.declaration, id: "disabled" },
+              ...(extra?.declarations ?? []),
+            ]
           : [fixture.declaration],
-        files: [{ path: "health-peer", digest: fixture.digest }],
+        files: [
+          { path: "health-peer", digest: fixture.digest },
+          ...Object.entries(extra?.files ?? {}).map(([path, text]) => ({
+            path,
+            digest: bytesDigest(new TextEncoder().encode(text)),
+          })),
+        ],
       }),
     ),
   );
@@ -83,7 +102,10 @@ export async function preparePackageCliFixture(
     if (!decoded.success)
       throw new Error(`health command failed: ${stdout} ${new TextDecoder().decode(child.stderr)}`);
     expect(stdout).not.toContain("HEALTH-SECRET-NEVER-IN-CHILD");
-    return schema.parse(decoded.data.payload);
+    const parsed = schema.safeParse(decoded.data.payload);
+    if (!parsed.success)
+      throw new Error(`fixture command ${args.join(" ")}: ${JSON.stringify(decoded.data.payload)}`);
+    return parsed.data;
   }
   const install = {
     packageId: "fixture",
@@ -148,7 +170,7 @@ export async function preparePackageCliFixture(
       }),
     }),
   );
-  expect(catalog.page.entries).toHaveLength(tool ? 2 : 1);
+  expect(catalog.page.entries).toHaveLength((tool ? 2 : 1) + (extra?.declarations.length ?? 0));
   const catalogMs = performance.now() - catalogStart;
   const warmCatalogStart = performance.now();
   await invoke(["extension", "catalog"], { action: "catalog" }, z.object({ page: z.unknown() }));
@@ -178,7 +200,22 @@ export async function preparePackageCliFixture(
     );
     expect(changed.status).toBe("applied");
   }
-  return { invoke, contribution, source, environment, catalogMs, warmCatalogMs, scope, installed };
+  return {
+    invoke,
+    contribution,
+    source,
+    environment,
+    catalogMs,
+    warmCatalogMs,
+    scope,
+    installed,
+    extraContributions: catalog.page.entries
+      .filter((entry) => {
+        const id = z.object({ localId: z.string() }).parse(entry.contribution).localId;
+        return extra?.declarations.some((d) => d.id === id);
+      })
+      .map((entry) => canonicalDigest(entry.contribution)),
+  };
 }
 
 export async function packageHealthCliJourney(

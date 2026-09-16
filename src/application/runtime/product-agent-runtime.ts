@@ -345,6 +345,7 @@ export function composeProductAgentRuntime(
       return composeProductAgentRuntime({
         ...ports,
         host: productAgentHost(runtime),
+        ...(bundle.hooks ? { toolHooks: bundle.hooks } : {}),
         toolRegistry: bundle.registry,
         toolRunner: bundle.runner,
         toolCatalog: bundle.catalog,

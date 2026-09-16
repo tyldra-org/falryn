@@ -150,7 +150,7 @@ export function createHostProcessCapturePort(
             ...(request.cwd === undefined ? {} : { cwd: request.cwd }),
             ...ownedTreeSpawnOptions(),
             env: launch.environment,
-            stdin: "ignore",
+            stdin: request.stdin === undefined ? "ignore" : new Uint8Array(request.stdin),
             stdout: "pipe",
             stderr: "pipe",
             signal: controller.signal,

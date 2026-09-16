@@ -8,10 +8,15 @@ import {
 } from "../../domain/extensions/catalog.ts";
 import { catalogFixture } from "../../domain/extensions/catalog-fixtures.ts";
 import { resolveExtensionCatalog } from "../../domain/extensions/catalog-resolution.ts";
+import {
+  HOOK_COMMAND_PROTOCOL,
+  HOOK_PYTHON_PROFILE,
+} from "../../domain/extensions/hook-command-profile.ts";
 import type { NativeActivation } from "../../domain/extensions/native-activation.ts";
 import { PACKAGE_TOOL_PROTOCOL } from "../../domain/extensions/package-health.ts";
 import { configurationGeneration } from "../../domain/foundation/index.ts";
 import { isClosedProductToolSchema } from "../tools/product-tool-schema.ts";
+import { createNativeHookOwner } from "./native-hook-owner.ts";
 import {
   createNativeRegistrationPublisher,
   type NativeRegistrationOwner,
@@ -25,7 +30,7 @@ import {
 } from "./package-fixtures.ts";
 import { preparePackage } from "./prepare-package.ts";
 
-async function fixture(dependency = false) {
+async function fixture(dependency = false, hook = false) {
   const schema = {
     type: "object",
     properties: { answer: { type: "integer" } },
@@ -37,10 +42,27 @@ async function fixture(dependency = false) {
       pluginManifest({
         version: 1,
         contributions: ["good", "disabled"].map((id) => ({
-          kind: "tool",
+          kind: hook ? "hook" : "tool",
           namespace: "fixture",
           id,
           description: "Read the fixture answer",
+          ...(hook
+            ? {
+                hook: {
+                  version: 1,
+                  point: "before-capability-invocation",
+                  pointVersion: 1,
+                  mode: "sync",
+                  handler: {
+                    kind: "external-command-v1",
+                    executable: "python3.9",
+                    argv: [],
+                    entrypoint: "peer",
+                    executionProfile: HOOK_PYTHON_PROFILE,
+                  },
+                },
+              }
+            : {}),
           ...(dependency && id === "good" ? { dependencies: ["disabled"] } : {}),
           family: "read",
           inputSchema: schema,
@@ -56,8 +78,8 @@ async function fixture(dependency = false) {
           execution: {
             mode: "governed",
             executable: "peer",
-            loader: "native",
-            protocolVersion: PACKAGE_TOOL_PROTOCOL,
+            loader: hook ? "python" : "native",
+            protocolVersion: hook ? HOOK_COMMAND_PROTOCOL : PACKAGE_TOOL_PROTOCOL,
             compatibility: {},
             resources: executionResources,
           },
@@ -110,7 +132,7 @@ async function fixture(dependency = false) {
     contributions: prepared.package.contributions.map((entry) => entry.identityDigest),
     revision: 1,
   };
-  const owner = createNativeToolOwner({
+  const owner = (hook ? createNativeHookOwner : createNativeToolOwner)({
     qualified: () => true,
     execute: async () => {
       throw new Error("registration must never execute");
@@ -270,4 +292,31 @@ test("missing runners and forged families cannot replace a complete publication"
     expect(() => publisher.publish(input)).toThrow();
     expect(publisher.current()).toBe(prior);
   }
+});
+
+test("hook dependency errors reject the candidate while bound generations remain immutable", async () => {
+  const { owner, input } = await fixture(false, true);
+  let broken = false;
+  const publisher = createNativeRegistrationPublisher([
+    {
+      ...owner,
+      register(context) {
+        const result = owner.register(context);
+        return broken && result.status === "registered" && result.hook
+          ? { ...result, hook: { ...result.hook, after: ["missing"] } }
+          : result;
+      },
+    },
+  ]);
+  const prior = publisher.publish(input);
+  expect(prior.tools.hooks?.hooks).toHaveLength(1);
+  const captured = prior.tools.hooks;
+  broken = true;
+  expect(() => publisher.publish(input)).toThrow("missing-hook-dependency");
+  expect(publisher.current()).toBe(prior);
+  broken = false;
+  const next = publisher.publish(input);
+  expect(Number(next.tools.hooks?.generation)).toBeGreaterThan(Number(captured?.generation));
+  expect(prior.tools.hooks).toBe(captured);
+  expect(captured?.hooks).toHaveLength(1);
 });

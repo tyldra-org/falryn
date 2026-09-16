@@ -237,7 +237,9 @@ describe("artifact bytes", () => {
         !isProduct(file) ||
         CONTROLS.includes(file) ||
         file === BLOB_ADAPTER ||
-        file === "integrations/extensions/host-packages.ts"
+        file === "integrations/extensions/host-packages.ts" ||
+        // Read-only per-invocation hook staging owns no artifact or export writes.
+        file === "integrations/extensions/host-hook-command.ts"
       ) {
         continue;
       }
@@ -369,7 +371,8 @@ describe("an export package", () => {
         !isProduct(file) ||
         CONTROLS.includes(file) ||
         file === PACKAGE_ADAPTER ||
-        file === "integrations/filesystem/host-blobs.ts"
+        file === "integrations/filesystem/host-blobs.ts" ||
+        file === "integrations/extensions/host-hook-command.ts"
       ) {
         continue;
       }

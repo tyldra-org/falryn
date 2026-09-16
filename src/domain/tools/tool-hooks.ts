@@ -7,6 +7,8 @@
  * later owners.
  */
 
+import { freezeMetadata } from "../extensions/canonical.ts";
+import { type HookRegistration, hookRegistrationSchema } from "../extensions/hook-handlers.ts";
 import {
   HOOK_BUDGETS,
   HOOK_LIMITS,
@@ -24,6 +26,7 @@ import type {
 } from "../foundation/identity.ts";
 import { assertNever, err, ok, type Result } from "../foundation/result.ts";
 import type { DiagnosticLevel } from "../terminal/diagnostics.ts";
+import { type HookOrderMetadata, resolveHookOrder } from "./tool-hook-order.ts";
 import type { ToolInvocationOutcome } from "./tool-pipeline.ts";
 
 /** Schema version this build writes for tool-hook registries. */
@@ -102,14 +105,24 @@ export type ToolHookDecision = ToolHookPreDecision | ToolHookPostDecision | Hook
 
 export type ToolHookFn = (
   envelope: ToolHookEnvelope,
+  context: ToolHookContext,
 ) => ToolHookDecision | Promise<ToolHookDecision>;
 
-export type RegisteredToolHook = {
+export type ToolHookContext = {
+  readonly signal: AbortSignal;
+  readonly expiresAt: number;
+  readonly resourceTaskId: string;
+};
+
+export type RegisteredToolHook = HookOrderMetadata & {
   readonly id: string;
   readonly point: ToolHookPoint;
   readonly priority: number;
   readonly pointVersion?: 1;
   readonly run: ToolHookFn;
+  readonly registration?: HookRegistration;
+  /** Explicit revocation only. Replacing a registry does not abort this signal. */
+  readonly revoked?: AbortSignal;
 };
 
 export type ToolHookRegistryError =
@@ -118,7 +131,9 @@ export type ToolHookRegistryError =
         | "unknown-hook-point"
         | "incompatible-hook-version"
         | "hook-publisher-unavailable"
-        | "invalid-hook-declaration";
+        | "invalid-hook-declaration"
+        | "missing-hook-dependency"
+        | "hook-dependency-cycle";
       readonly id: string;
     }
   | { readonly code: "duplicate-hook"; readonly id: string }
@@ -138,21 +153,13 @@ export function hooksForPoint(
   registry: ToolHookRegistry,
   point: ToolHookPoint,
 ): readonly RegisteredToolHook[] {
-  return orderToolHooks(registry.hooks.filter((hook) => hook.point === point));
+  return registry.hooks.filter((hook) => hook.point === point);
 }
 
 export function orderToolHooks(
   hooks: readonly RegisteredToolHook[],
 ): readonly RegisteredToolHook[] {
-  return [...hooks].sort((left, right) => {
-    if (left.priority !== right.priority) {
-      return right.priority - left.priority;
-    }
-    if (left.id !== right.id) {
-      return left.id < right.id ? -1 : 1;
-    }
-    return 0;
-  });
+  return resolveHookOrder(hooks).hooks;
 }
 
 export function createToolHookRegistry(
@@ -172,7 +179,19 @@ export function createToolHookRegistry(
       });
     if (
       Object.keys(hook).some(
-        (key) => !["id", "point", "pointVersion", "priority", "run"].includes(key),
+        (key) =>
+          ![
+            "id",
+            "point",
+            "pointVersion",
+            "priority",
+            "run",
+            "owner",
+            "source",
+            "after",
+            "registration",
+            "revoked",
+          ].includes(key),
       ) ||
       typeof hook.run !== "function"
     )
@@ -185,10 +204,11 @@ export function createToolHookRegistry(
     if (!Number.isSafeInteger(hook.priority)) {
       return err({ code: "invalid-priority", id: hook.id });
     }
-    if (seen.has(hook.id)) {
+    const identity = `${hook.owner ?? "builtin"}/${hook.id}`;
+    if (seen.has(identity)) {
       return err({ code: "duplicate-hook", id: hook.id });
     }
-    seen.add(hook.id);
+    seen.add(identity);
     const count = (perPoint.get(hook.point) ?? 0) + 1;
     if (count > MAX_TOOL_HOOKS_PER_POINT) {
       return err({
@@ -199,15 +219,41 @@ export function createToolHookRegistry(
     }
     perPoint.set(hook.point, count);
   }
+  const checkedOrder = resolveHookOrder(hooks);
+  if (checkedOrder.error) return err(checkedOrder.error);
+  const prepared: RegisteredToolHook[] = [];
+  for (const hook of hooks) {
+    const parsed = hookRegistrationSchema.safeParse(
+      hook.registration ?? {
+        version: 1,
+        point: hook.point,
+        pointVersion: 1,
+        handler: { kind: "builtin", id: hook.id },
+        mode: "sync",
+      },
+    );
+    if (
+      !parsed.success ||
+      parsed.data.point !== hook.point ||
+      (hook.revoked !== undefined && !(hook.revoked instanceof AbortSignal))
+    )
+      return err({ code: "invalid-hook-declaration", id: hook.id });
+    prepared.push(
+      Object.freeze({
+        ...hook,
+        pointVersion: TOOL_HOOK_SCHEMA_VERSION,
+        after: Object.freeze([...(hook.after ?? [])]),
+        registration: freezeMetadata(parsed.data),
+      }),
+    );
+  }
+  const ordered = resolveHookOrder(prepared);
+  if (ordered.error) return err(ordered.error);
   return ok(
     Object.freeze({
       schemaVersion: TOOL_HOOK_SCHEMA_VERSION,
       generation,
-      hooks: Object.freeze(
-        orderToolHooks(
-          hooks.map((hook) => Object.freeze({ ...hook, pointVersion: TOOL_HOOK_SCHEMA_VERSION })),
-        ),
-      ),
+      hooks: Object.freeze(ordered.hooks),
     }),
   );
 }
@@ -292,6 +338,12 @@ export type RecordedHookDecision = {
   readonly hookId: string;
   readonly decision: ToolHookDecision;
   readonly failed?: { readonly reason: string };
+  readonly execution?: {
+    readonly position: number;
+    readonly state: "settled" | "skipped" | "not-started" | "queued" | "dropped";
+    readonly cleanup: "complete" | "uncertain" | "not-started";
+    readonly elapsedMs: number;
+  };
 };
 
 /**
@@ -306,6 +358,7 @@ export function settlePreHookDecisions(
   const transformed = new Set<string>();
   let confirmation: { readonly reason: string; readonly hookId: string } | null = null;
   for (const item of recorded) {
+    if (item.execution?.state === "skipped" || item.execution?.state === "queued") continue;
     if (item.failed !== undefined) {
       return {
         kind: "failed-closed",
@@ -394,6 +447,7 @@ export function settlePostHookDecisions(
   const followUps: (ToolHookFollowUp & { readonly hookId: string })[] = [];
   const failures: { readonly hookId: string; readonly reason: string }[] = [];
   for (const item of recorded) {
+    if (item.execution?.state === "skipped" || item.execution?.state === "queued") continue;
     if (item.failed !== undefined) {
       failures.push({ hookId: item.hookId, reason: item.failed.reason });
       continue;

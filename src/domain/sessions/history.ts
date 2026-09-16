@@ -121,6 +121,17 @@ export const historyPayloadSchema = z.discriminatedUnion("type", [
           inputDigest: digest,
           decisionDigest: digest,
           effectInvocationId: identity.optional(),
+          order: z.array(identity).max(32).optional(),
+          configurationGeneration: z.int().nonnegative().optional(),
+          catalogGeneration: z.int().nonnegative().optional(),
+          execution: z
+            .strictObject({
+              position: z.int().min(0).max(31),
+              state: z.enum(["settled", "skipped", "not-started", "queued", "dropped"]),
+              cleanup: z.enum(["complete", "uncertain", "not-started"]),
+              elapsedMs: z.int().nonnegative(),
+            })
+            .optional(),
         })
         .optional(),
       originalInputDigest: digest.optional(),

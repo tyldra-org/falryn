@@ -1,5 +1,9 @@
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import type { DependencyCandidate } from "../../domain/extensions/dependencies.ts";
+import {
+  HOOK_COMMAND_PROTOCOL,
+  hookCommandContract,
+} from "../../domain/extensions/hook-command-profile.ts";
 import type {
   InstalledPackage,
   PackageBytes,
@@ -175,7 +179,10 @@ export function createPackageExecutionAdmission(options: PackageAdmissionOptions
         const authority = await options.authority(installed, dependency.identityDigest, signal);
         if (!authority.trusted || !authority.enabled || dependency.compatibility !== "compatible")
           throw new ExtensionInputError("contribution-dependency-disabled");
-        if (dependency.mode !== "declarative")
+        if (
+          dependency.mode !== "declarative" &&
+          !(options.protocol === HOOK_COMMAND_PROTOCOL && dependency.identity.nativeKind === "hook")
+        )
           throw new ExtensionInputError("dependency-runtime-unavailable");
         authorities.push({ id: dependency.identityDigest, authority });
         const child = contributionDeclarationSchema.parse(dependency.declaration);
@@ -192,7 +199,8 @@ export function createPackageExecutionAdmission(options: PackageAdmissionOptions
         throw new ExtensionInputError("contribution-incompatible");
       if (selected.mode !== "governed" || !declaration.execution)
         throw new ExtensionInputError("governed-execution-required");
-      if (declaration.execution.loader !== "native")
+      if (options.protocol === HOOK_COMMAND_PROTOCOL) hookCommandContract(declaration);
+      else if (declaration.execution.loader !== "native")
         throw new ExtensionInputError("health-loader-unavailable");
       if (declaration.execution.protocolVersion !== options.protocol)
         throw new ExtensionInputError("health-protocol-unavailable");

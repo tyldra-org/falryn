@@ -99,6 +99,7 @@ describe("process capture request contracts", () => {
   });
 
   test.each([
+    ["oversized stdin", { ...BASE, stdin: new Uint8Array(65537) }, "invalid-stdin"],
     ["relative executable", { ...BASE, executable: "sh" }, "invalid-executable"],
     ["relative working directory", { ...BASE, cwd: "workspace" }, "invalid-working-directory"],
     [
