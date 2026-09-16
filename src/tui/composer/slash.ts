@@ -30,6 +30,7 @@ export type ComposerSlashAlias = {
  * without inventing a parallel catalog.
  */
 export const WORKSPACE_SLASH_ALIASES: readonly ComposerSlashAlias[] = [
+  { forms: ["/env"], commandId: "environment.inspect", argument: "profile" },
   { forms: ["/profile"], commandId: "profile.inspect", argument: "profile" },
   { forms: ["/export"], commandId: "session.export", argument: "layout-name" },
   { forms: ["/compact"], commandId: "compact.preview", argument: "layout-name" },

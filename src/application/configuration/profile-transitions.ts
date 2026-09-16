@@ -222,6 +222,8 @@ export function createProfileTransitions(ports: ProfileTransitionPorts): Profile
         if (abort.aborted) return await reject("cancelled");
         if (!current() || !(await bounded(candidate.validate(abort), abort)))
           return await reject("configuration-changed");
+        if (!(await save(receipt("preparing", "preparation-admitted"))))
+          return await reject("receipt-store-unavailable");
         for (const [index, owner] of ports.owners.entries()) {
           const plan = preview.owners[index];
           if (plan === undefined) throw new Error("Missing owner plan.");
@@ -247,6 +249,7 @@ export function createProfileTransitions(ports: ProfileTransitionPorts): Profile
               inputBytes: 0,
               amounts: {
                 operations: 1,
+                ...(plan.bufferedBytes ? { bufferedBytes: plan.bufferedBytes } : {}),
                 ...(plan.preparation === "connection" ? { requests: 1 } : {}),
               },
               unit: {
@@ -272,7 +275,11 @@ export function createProfileTransitions(ports: ProfileTransitionPorts): Profile
                     observedEffect: "completed",
                   };
                 }
-                return { value, terminated: true, observedEffect: "none" };
+                return {
+                  value,
+                  terminated: value.terminated ?? true,
+                  observedEffect: value.observedEffect ?? "none",
+                };
               },
             })
             .then((result) =>
@@ -298,6 +305,10 @@ export function createProfileTransitions(ports: ProfileTransitionPorts): Profile
           return await reject("receipt-store-unavailable");
         if (abort.aborted || !current() || !(await bounded(candidate.validate(abort), abort)))
           return await reject(abort.aborted ? "cancelled" : "configuration-changed");
+        for (const entry of prepared) {
+          if (entry.value.validate && !(await bounded(entry.value.validate(abort), abort)))
+            return await reject("preparation-input-changed");
+        }
         if (!current()) return await reject("configuration-changed");
         published = await candidate.publish(abort, current);
         if (published === null) return await reject("publication-refused");

@@ -213,6 +213,7 @@ export function createWorkspaceInventory(options: {
         if (`${canonicalRoot}/.falryn/falryn.jsonc` !== options.userConfiguration)
           await visit(".falryn/falryn.jsonc", "settings", 0, "file");
         await visit(".falryn/local/falryn.local.jsonc", "settings", 0, "file");
+        await visit(".falryn/env.zsh", "environment", 0, "file");
         await visit("AGENTS.md", "instructions", 0, "file");
         await visit(".falryn/instructions", "instructions", 0, "directory");
         await visit("mcp.json", "mcp", 0, "file");

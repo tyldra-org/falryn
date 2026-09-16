@@ -17,6 +17,7 @@ application. The current command surface includes:
 | falryn doctor | Run bounded environment and local-storage diagnostics |
 | falryn config show / validate / path / set / reset / migrate | Inspect, validate, update, or remove a scoped configuration override |
 | falryn profile list / show / default / use | Inspect working profiles, save defaults, or request an exact session target |
+| falryn env inspect / reload | Inspect or explicitly prepare this invocation's scoped child environment |
 | falryn provider list / add / use / configure / test / login / logout / remove | Manage local provider profiles and credentials |
 | falryn data backup / inspect / restore / diagnostics / retention / gc / reset / uninstall | Inspect, preserve, repair, retain, collect, or preview/apply confirmed removal of Falryn-owned local data |
 | falryn workspace list / show / save / load | Inspect or persist named workspace sets |
@@ -103,6 +104,71 @@ current product host. SDK callers use the same transition service and receipts.
 
 A working profile differs from a provider connection (account and destination),
 `run --mode` (execution behavior), and a browser profile (browser-owned state).
+
+### Scoped child environments
+
+The registered `execution.environment` object lives under `defaults.execution`
+in user/project files and `overrides.execution` in profiles. It accepts `set`,
+`unset`, `pathPrepend`, `pathAppend`, `inheritedNames`, `operationNames`,
+`allowProject`, and an optional `preparation` descriptor. Missing fields inherit;
+empty strings remain real child values. Setting and unsetting the same name in
+one layer is invalid. Relative PATH entries resolve against the declaring file.
+Project settings cannot broaden inherited names or operation permissions.
+
+For example, a version-two user document can contain:
+
+```json
+{
+  "schemaVersion": 2,
+  "minimumReaderSchemaVersion": 2,
+  "defaults": {
+    "execution": {
+      "environment": {
+        "inheritedNames": ["PATH"],
+        "set": { "EDITOR": "vi" },
+        "operationNames": ["LANG"]
+      }
+    }
+  }
+}
+```
+
+Script execution requires an explicit descriptor such as
+`{"interpreter":"/bin/zsh","exports":["PATH"],"required":true}`. Its default
+user source is `env.zsh` beneath the resolved configuration home; project
+preparation uses the exact trusted `.falryn/env.zsh`. Presence alone executes
+nothing. Falryn does not edit shell startup files or mutate `process.env`.
+Zsh preparation qualifies the local 5.9 interpreter at `/bin/zsh` or
+`/usr/bin/zsh`; unsupported or missing interpreters are unavailable. Noninteractive
+`-d -f` skips user startup files; the system `/etc/zshenv` remains possible.
+These flags do not provide OS isolation: the existing sandbox policy still applies.
+
+The session owner applies allowed inheritance, user preparation and edits,
+project preparation and edits, then profile ancestry and permitted operation
+edits. Consumer restrictions apply last. Only eligible user exports with
+registered runtime mappings enter configuration precedence; bootstrap roots
+and credential stores retain their original inputs. Project exports never enter
+the configuration bridge. Process tools require explicitly allowed operation
+names; Git keeps its restrictive environment and resolves its executable before
+each invocation using the captured PATH.
+
+`/env inspect`, `/env reload` and `/env cancel` operate on the current interactive
+session. The standalone commands affect only their own invocation. Inspection
+is inert and exposes opaque generation/status facts, rejected mapping names and
+actual retained process identities, never values. Reload uses the profile
+transition owner, with one 30-second deadline including admission, no automatic
+retry, 64-KiB source and diagnostic bounds, and a 64-entry/32-KiB environment.
+Captured source bytes and strictly framed declared exports prevent partial
+output or source replacement from publishing an environment.
+
+New work captures an immutable environment binding. Active asynchronous work,
+PTYs and managed services retain their values; later launches still recheck live
+authority. Required failures retain the old generation and block new dependent
+launches. Optional failures omit the complete script delta and report degradation.
+Watchers and receipt recovery never replay scripts. Resume prepares only after
+the selected session is committed. Preparation bytes remain in memory; the safe
+transition receipt records admission, publication and owner acknowledgement.
+
 To inspect or select a working setup:
 
 ```sh

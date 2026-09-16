@@ -328,3 +328,36 @@ platformTest("service restart rechecks policy and retains the pre-launch refusal
     sandbox: { state: "refused", effectiveMode: null, pid: null },
   });
 });
+
+platformTest(
+  "managed restart rechecks authority and stopped pending admission cannot launch late",
+  async () => {
+    const port = createHostManagedServicePort();
+    let checks = 0;
+    const request = serviceRequest("environment-revocation", "printf 'ready\\n'; IFS= read line", {
+      authorizeLaunch: async () => ++checks === 1,
+    });
+    const started = await port.start(request);
+    expect(started.ok).toBe(true);
+    if (!started.ok) throw new Error("Fixture unavailable");
+    expect((await port.stop(started.value.serviceId, started.value.generation)).ok).toBe(true);
+    expect((await port.start(request)).ok).toBe(false);
+    expect(checks).toBe(2);
+
+    let release!: (allowed: boolean) => void;
+    const pendingRequest = serviceRequest("pending-environment", "printf 'ready\\n'", {
+      authorizeLaunch: () =>
+        new Promise<boolean>((resolve) => {
+          release = resolve;
+        }),
+    });
+    const pending = port.start(pendingRequest);
+    await waitUntil(() => release !== undefined);
+    const snapshot = port.snapshot(pendingRequest.serviceId);
+    if (!snapshot) throw new Error("Pending generation missing");
+    await port.stop(snapshot.serviceId, snapshot.generation);
+    release(true);
+    expect((await pending).ok).toBe(false);
+    expect(port.snapshot(snapshot.serviceId)?.state).toBe("stopped");
+  },
+);

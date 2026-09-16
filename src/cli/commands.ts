@@ -284,6 +284,12 @@ export function stoppedResult(
         "profile" | "config.migrate",
         import("./commands/profile.ts").WorkingConfigurationPayload
       >(command, null, [], outcome, effect);
+    case "env.inspect":
+    case "env.reload":
+      return resultFor<
+        "env.inspect" | "env.reload",
+        import("./commands/environment.ts").EnvironmentPayload
+      >(command, null, [], outcome, effect);
     case "compact":
       return resultFor<"compact", CheckpointOutcome>("compact", null, [], outcome, effect);
     case "model":
@@ -332,6 +338,10 @@ export function stoppedResult(
  * text rather than a result — dispatch resolves them before any command runs.
  */
 export type RunCommandResult =
+  | CommandResultOf<
+      "env.inspect" | "env.reload",
+      import("./commands/environment.ts").EnvironmentPayload
+    >
   | CommandResultOf<
       "profile" | "config.migrate",
       import("./commands/profile.ts").WorkingConfigurationPayload

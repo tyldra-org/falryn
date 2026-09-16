@@ -209,6 +209,8 @@ export type ManagedServiceRestartPolicy = {
 };
 
 export type ManagedServiceRequest = {
+  /** Host-owned live authority checked for every generation, including automatic restarts. */
+  readonly authorizeLaunch?: (signal: AbortSignal) => Promise<boolean>;
   readonly serviceId: ManagedServiceId;
   /** Stable protocol identity, such as `lsp` or `mcp`. */
   readonly protocol: string;

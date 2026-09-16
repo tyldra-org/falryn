@@ -169,6 +169,7 @@ export type ProductLiveTurnExecutor = {
 };
 
 export type ProductAdmissionBinding = {
+  readonly runScope?: <T>(work: () => Promise<T>) => Promise<T>;
   readonly runtime: ProductAgentRuntime;
   readonly catalog: ModelCatalog | null;
   readonly preferences: import("../../providers/configuration/policy-schema.ts").ModelPreferences;
@@ -648,116 +649,69 @@ export function createProductLiveTurnExecutor(
         }),
     async run(rawInput) {
       const binding = options.admissionBinding?.();
-      let runtime = binding?.runtime ?? publishedRuntime;
-      const providerCatalog = binding === undefined ? options.providerCatalog : binding.catalog;
+      const inScope = binding?.runScope ?? (<T>(work: () => Promise<T>) => work());
+      return inScope(async () => {
+        let runtime = binding?.runtime ?? publishedRuntime;
+        const providerCatalog = binding === undefined ? options.providerCatalog : binding.catalog;
 
-      const requestInput =
-        rawInput.prompt.trim() === "" && (rawInput.attachmentSelection?.attachments.length ?? 0) > 0
-          ? { ...rawInput, prompt: "Read the attached resources." }
-          : rawInput;
-      const input = !isAdmittedChild(requestInput.childAdmission)
-        ? requestInput
-        : {
-            ...requestInput,
-            signal: AbortSignal.any([
-              requestInput.signal ?? new AbortController().signal,
-              requestInput.childAdmission.scope.signal,
-            ]),
-          };
-      const modelPreferences = binding?.preferences ?? options.modelPreferences?.();
-      const generation =
-        binding?.generation ??
-        options.modelConfigurationGeneration?.() ??
-        correlation.configurationGeneration;
-      const admittedProvider = binding?.runtime.providerAdapter?.identity ?? providerIdentity;
-      const admittedCatalogModel =
-        binding?.catalog?.models.find((model) => model.availability !== "unavailable")?.modelId ??
-        initialCatalogModel;
-      if (
-        binding &&
-        activeModelExplicit &&
-        activeModel?.providerProfileId !== admittedProvider?.profileId
-      )
-        activeModelExplicit = false;
-      if (!activeModelExplicit)
-        activeModel =
-          modelPreferences?.roles.default ??
-          (admittedProvider === null || admittedCatalogModel === undefined
-            ? null
-            : {
-                providerProfileId: admittedProvider.profileId,
-                providerId: admittedProvider.providerId,
-                modelId: admittedCatalogModel,
-              });
-      const selectedModel = activeModel;
-      const sessionFailure = await startSession();
-      if (sessionFailure !== null) {
-        return sessionFailure;
-      }
-      const executionPolicy = resolveExecutionProfile(activeProfile, generation);
-      if (
-        input.childAdmission &&
-        (!isAdmittedChild(input.childAdmission) ||
-          input.childAdmission.scope.signal.aborted ||
-          input.childAdmission.authority.workspaceId !== String(correlation.workspaceId) ||
-          input.childAdmission.authority.configurationGeneration !== String(generation) ||
-          input.childAdmission.resources.remaining("wallTimeMs") === 0)
-      ) {
-        return result({
-          kind: "unavailable",
-          code: "child-admission.stale-parent",
-          message:
-            "Child admission is cancelled, expired or belongs to another workspace generation",
-          response: "",
-          terminalOutcome: FAILED,
-          contextPackItems: 0,
-          modelAttempts: 0,
-          toolResults: 0,
-          disclosedTools: 0,
-          contextStatus: "static",
-          contextGeneration: null,
-          recalledMemories: 0,
-          memoryAdmission: "skipped",
-          executionProfile: executionPolicy.profileId,
-        });
-      }
-      if (executionPolicy.completion === "durable-plan" && options.artifacts === undefined) {
-        return result({
-          kind: "unavailable",
-          code: "execution-profile.plan-artifact-required",
-          message: "Plan profile requires durable artifact storage",
-          response: "",
-          terminalOutcome: FAILED,
-          contextPackItems: 0,
-          modelAttempts: 0,
-          toolResults: 0,
-          disclosedTools: 0,
-          contextStatus: "static",
-          contextGeneration: null,
-          recalledMemories: 0,
-          memoryAdmission: "skipped",
-          executionProfile: executionPolicy.profileId,
-        });
-      }
-
-      if (options.refreshRuntime) {
-        try {
-          const candidate = await options.refreshRuntime(
-            input.signal ?? new AbortController().signal,
-            runtime,
-          );
-          if (
-            candidate.attachments.turnProducer !== producer ||
-            candidate.correlation !== runtime.correlation
-          )
-            throw new Error("native-runtime-host-mismatch");
-          runtime = candidate;
-        } catch {
+        const requestInput =
+          rawInput.prompt.trim() === "" &&
+          (rawInput.attachmentSelection?.attachments.length ?? 0) > 0
+            ? { ...rawInput, prompt: "Read the attached resources." }
+            : rawInput;
+        const input = !isAdmittedChild(requestInput.childAdmission)
+          ? requestInput
+          : {
+              ...requestInput,
+              signal: AbortSignal.any([
+                requestInput.signal ?? new AbortController().signal,
+                requestInput.childAdmission.scope.signal,
+              ]),
+            };
+        const modelPreferences = binding?.preferences ?? options.modelPreferences?.();
+        const generation =
+          binding?.generation ??
+          options.modelConfigurationGeneration?.() ??
+          correlation.configurationGeneration;
+        const admittedProvider = binding?.runtime.providerAdapter?.identity ?? providerIdentity;
+        const admittedCatalogModel =
+          binding?.catalog?.models.find((model) => model.availability !== "unavailable")?.modelId ??
+          initialCatalogModel;
+        if (
+          binding &&
+          activeModelExplicit &&
+          activeModel?.providerProfileId !== admittedProvider?.profileId
+        )
+          activeModelExplicit = false;
+        if (!activeModelExplicit)
+          activeModel =
+            modelPreferences?.roles.default ??
+            (admittedProvider === null || admittedCatalogModel === undefined
+              ? null
+              : {
+                  providerProfileId: admittedProvider.profileId,
+                  providerId: admittedProvider.providerId,
+                  modelId: admittedCatalogModel,
+                });
+        const selectedModel = activeModel;
+        const sessionFailure = await startSession();
+        if (sessionFailure !== null) {
+          return sessionFailure;
+        }
+        const executionPolicy = resolveExecutionProfile(activeProfile, generation);
+        if (
+          input.childAdmission &&
+          (!isAdmittedChild(input.childAdmission) ||
+            input.childAdmission.scope.signal.aborted ||
+            input.childAdmission.authority.workspaceId !== String(correlation.workspaceId) ||
+            input.childAdmission.authority.configurationGeneration !== String(generation) ||
+            input.childAdmission.resources.remaining("wallTimeMs") === 0)
+        ) {
           return result({
             kind: "unavailable",
-            code: "extensions.refresh-failed",
+            code: "child-admission.stale-parent",
             message:
-              "The current native catalog could not be published. Inspect extension catalog state before retrying.",
+              "Child admission is cancelled, expired or belongs to another workspace generation",
             response: "",
             terminalOutcome: FAILED,
             contextPackItems: 0,
@@ -771,71 +725,11 @@ export function createProductLiveTurnExecutor(
             executionProfile: executionPolicy.profileId,
           });
         }
-      }
-      const taskResources =
-        input.childAdmission?.resources ?? runtime.resources.openTask(String(generation));
-      try {
-        const history = await createConversationHistoryReader({
-          ...(options.historyParents ? { parents: options.historyParents } : {}),
-          events: runtime.historyEvents,
-          ...(options.artifacts ? { artifacts: options.artifacts } : {}),
-          streamId: runtime.streamId,
-          correlation,
-          authorize: (_event, artifact) =>
-            artifact === null ||
-            artifact.sensitivity === "public" ||
-            artifact.sensitivity === "user-content",
-        }).read({ currentTurnId: input.turnId }, taskResources, input.signal);
-        if (!history.ok)
+        if (executionPolicy.completion === "durable-plan" && options.artifacts === undefined) {
           return result({
             kind: "unavailable",
-            code: `history.${history.code}`,
-            message: `Required conversation history is unavailable (${history.code}). Inspect retained session evidence before retrying.`,
-            response: "",
-            terminalOutcome: FAILED,
-            contextPackItems: 0,
-            modelAttempts: 0,
-            toolResults: 0,
-            disclosedTools: 0,
-            contextStatus: "static",
-            contextGeneration: null,
-            recalledMemories: 0,
-            memoryAdmission: "skipped",
-          });
-        const attachments = await admitResourceAttachments(
-          input.attachmentSelection ?? { attachments: [], mentions: [] },
-          options.resources,
-          taskResources,
-          input.signal ?? new AbortController().signal,
-        );
-        if (!attachments.ok)
-          return result({
-            kind: "unavailable",
-            code: `context.${attachments.error.code}`,
-            message: `Selected resources could not be admitted (${attachments.error.code})`,
-            response: "",
-            terminalOutcome: FAILED,
-            contextPackItems: 0,
-            modelAttempts: 0,
-            toolResults: 0,
-            disclosedTools: 0,
-            contextStatus: "static",
-            contextGeneration: null,
-            recalledMemories: 0,
-            memoryAdmission: "skipped",
-          });
-        const startedTurn = await producer.startTurn({
-          turnId: input.turnId,
-          sessionId: correlation.sessionId,
-          workspaceId: correlation.workspaceId,
-          traceId: correlation.traceId,
-          configurationGeneration: generation,
-        });
-        if (!startedTurn.ok) {
-          return result({
-            kind: "failed",
-            code: `producer.${startedTurn.error.code}`,
-            message: `turn could not start (${startedTurn.error.code})`,
+            code: "execution-profile.plan-artifact-required",
+            message: "Plan profile requires durable artifact storage",
             response: "",
             terminalOutcome: FAILED,
             contextPackItems: 0,
@@ -850,46 +744,117 @@ export function createProductLiveTurnExecutor(
           });
         }
 
-        const recordedInput = await createSessionHistory({
-          journal: runtime.journal,
-          correlation,
-          ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts }),
-        }).record(
-          input.turnId,
-          {
-            version: 1,
-            type: "message",
-            messageId: `${input.turnId}:user`,
-            part: 0,
-            id: `${input.turnId}:user`,
-            generation: Number(generation),
-            role: "user",
-            attemptId: null,
-            completion: "complete",
-            relations: attachments.value.map((section) => ({
-              type: "source" as const,
-              id: `source-${historyDigest(section.source).slice(8)}`,
-              generation: Number(generation),
-            })),
-          },
-          input.prompt,
-          taskResources,
-          input.signal,
-        );
-        if (!recordedInput.committed || recordedInput.evidence.availability === "unavailable")
-          return settleFailure(
-            input,
-            {
-              kind: "failed",
-              code: "history.input-unavailable",
-              message: "The admitted input could not be retained.",
-            },
-            executionPolicy,
+        if (options.refreshRuntime) {
+          try {
+            const candidate = await options.refreshRuntime(
+              input.signal ?? new AbortController().signal,
+              runtime,
+            );
+            if (
+              candidate.attachments.turnProducer !== producer ||
+              candidate.correlation !== runtime.correlation
+            )
+              throw new Error("native-runtime-host-mismatch");
+            runtime = candidate;
+          } catch {
+            return result({
+              kind: "unavailable",
+              code: "extensions.refresh-failed",
+              message:
+                "The current native catalog could not be published. Inspect extension catalog state before retrying.",
+              response: "",
+              terminalOutcome: FAILED,
+              contextPackItems: 0,
+              modelAttempts: 0,
+              toolResults: 0,
+              disclosedTools: 0,
+              contextStatus: "static",
+              contextGeneration: null,
+              recalledMemories: 0,
+              memoryAdmission: "skipped",
+              executionProfile: executionPolicy.profileId,
+            });
+          }
+        }
+        const taskResources =
+          input.childAdmission?.resources ?? runtime.resources.openTask(String(generation));
+        try {
+          const history = await createConversationHistoryReader({
+            ...(options.historyParents ? { parents: options.historyParents } : {}),
+            events: runtime.historyEvents,
+            ...(options.artifacts ? { artifacts: options.artifacts } : {}),
+            streamId: runtime.streamId,
+            correlation,
+            authorize: (_event, artifact) =>
+              artifact === null ||
+              artifact.sensitivity === "public" ||
+              artifact.sensitivity === "user-content",
+          }).read({ currentTurnId: input.turnId }, taskResources, input.signal);
+          if (!history.ok)
+            return result({
+              kind: "unavailable",
+              code: `history.${history.code}`,
+              message: `Required conversation history is unavailable (${history.code}). Inspect retained session evidence before retrying.`,
+              response: "",
+              terminalOutcome: FAILED,
+              contextPackItems: 0,
+              modelAttempts: 0,
+              toolResults: 0,
+              disclosedTools: 0,
+              contextStatus: "static",
+              contextGeneration: null,
+              recalledMemories: 0,
+              memoryAdmission: "skipped",
+            });
+          const attachments = await admitResourceAttachments(
+            input.attachmentSelection ?? { attachments: [], mentions: [] },
+            options.resources,
+            taskResources,
+            input.signal ?? new AbortController().signal,
           );
+          if (!attachments.ok)
+            return result({
+              kind: "unavailable",
+              code: `context.${attachments.error.code}`,
+              message: `Selected resources could not be admitted (${attachments.error.code})`,
+              response: "",
+              terminalOutcome: FAILED,
+              contextPackItems: 0,
+              modelAttempts: 0,
+              toolResults: 0,
+              disclosedTools: 0,
+              contextStatus: "static",
+              contextGeneration: null,
+              recalledMemories: 0,
+              memoryAdmission: "skipped",
+            });
+          const startedTurn = await producer.startTurn({
+            turnId: input.turnId,
+            sessionId: correlation.sessionId,
+            workspaceId: correlation.workspaceId,
+            traceId: correlation.traceId,
+            configurationGeneration: generation,
+          });
+          if (!startedTurn.ok) {
+            return result({
+              kind: "failed",
+              code: `producer.${startedTurn.error.code}`,
+              message: `turn could not start (${startedTurn.error.code})`,
+              response: "",
+              terminalOutcome: FAILED,
+              contextPackItems: 0,
+              modelAttempts: 0,
+              toolResults: 0,
+              disclosedTools: 0,
+              contextStatus: "static",
+              contextGeneration: null,
+              recalledMemories: 0,
+              memoryAdmission: "skipped",
+              executionProfile: executionPolicy.profileId,
+            });
+          }
 
-        for (const section of attachments.value) {
-          const sourceId = `source-${historyDigest(section.source).slice(8)}`;
-          const captured = await createSessionHistory({
+          const recordedInput = await createSessionHistory({
             journal: runtime.journal,
             correlation,
             ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts }),
@@ -897,408 +862,448 @@ export function createProductLiveTurnExecutor(
             input.turnId,
             {
               version: 1,
-              type: "source",
-              id: `${input.turnId}:${sourceId}`,
-              sourceId,
+              type: "message",
+              messageId: `${input.turnId}:user`,
+              part: 0,
+              id: `${input.turnId}:user`,
               generation: Number(generation),
-              relations: [{ type: "source", id: sourceId, generation: Number(generation) }],
+              role: "user",
+              attemptId: null,
+              completion: "complete",
+              relations: attachments.value.map((section) => ({
+                type: "source" as const,
+                id: `source-${historyDigest(section.source).slice(8)}`,
+                generation: Number(generation),
+              })),
             },
-            section.content,
+            input.prompt,
             taskResources,
             input.signal,
           );
-          if (!captured.committed || captured.evidence.availability === "unavailable")
+          if (!recordedInput.committed || recordedInput.evidence.availability === "unavailable")
             return settleFailure(
               input,
               {
                 kind: "failed",
-                code: "history.source-unavailable",
-                message: "Selected source evidence could not be retained.",
+                code: "history.input-unavailable",
+                message: "The admitted input could not be retained.",
               },
               executionPolicy,
             );
-        }
-        const prepared =
-          options.contextSource === undefined
-            ? {
-                candidates: options.contextCandidates?.() ?? [],
-                sections: [] as readonly PromptSectionInput[],
-                receipt: null,
-              }
-            : await options.contextSource.prepare(input.prompt, input.signal);
-        if (prepared.receipt?.status === "cancelled") {
-          return settleFailure(
-            input,
-            {
-              kind: "failed",
-              code: "context.cancelled",
-              message: "context preparation was cancelled",
-              contextStatus: "cancelled",
-              contextGeneration: prepared.receipt.generation,
-            },
-            executionPolicy,
-            { kind: "cancelled", effect: "none" },
-          );
-        }
 
-        const recalled = options.memory?.recallBeforeTurn({
-          workspaceId: correlation.workspaceId,
-          task: input.prompt,
-          ...(input.signal === undefined ? {} : { signal: input.signal }),
-        });
-        const memorySection: PromptSectionInput | null =
-          recalled?.ok === true
-            ? recalled.value.memorySection
-            : options.memory === undefined
+          for (const section of attachments.value) {
+            const sourceId = `source-${historyDigest(section.source).slice(8)}`;
+            const captured = await createSessionHistory({
+              journal: runtime.journal,
+              correlation,
+              ...(options.artifacts === undefined ? {} : { artifacts: options.artifacts }),
+            }).record(
+              input.turnId,
+              {
+                version: 1,
+                type: "source",
+                id: `${input.turnId}:${sourceId}`,
+                sourceId,
+                generation: Number(generation),
+                relations: [{ type: "source", id: sourceId, generation: Number(generation) }],
+              },
+              section.content,
+              taskResources,
+              input.signal,
+            );
+            if (!captured.committed || captured.evidence.availability === "unavailable")
+              return settleFailure(
+                input,
+                {
+                  kind: "failed",
+                  code: "history.source-unavailable",
+                  message: "Selected source evidence could not be retained.",
+                },
+                executionPolicy,
+              );
+          }
+          const prepared =
+            options.contextSource === undefined
+              ? {
+                  candidates: options.contextCandidates?.() ?? [],
+                  sections: [] as readonly PromptSectionInput[],
+                  receipt: null,
+                }
+              : await options.contextSource.prepare(input.prompt, input.signal);
+          if (prepared.receipt?.status === "cancelled") {
+            return settleFailure(
+              input,
+              {
+                kind: "failed",
+                code: "context.cancelled",
+                message: "context preparation was cancelled",
+                contextStatus: "cancelled",
+                contextGeneration: prepared.receipt.generation,
+              },
+              executionPolicy,
+              { kind: "cancelled", effect: "none" },
+            );
+          }
+
+          const recalled = options.memory?.recallBeforeTurn({
+            workspaceId: correlation.workspaceId,
+            task: input.prompt,
+            ...(input.signal === undefined ? {} : { signal: input.signal }),
+          });
+          const memorySection: PromptSectionInput | null =
+            recalled?.ok === true
+              ? recalled.value.memorySection
+              : options.memory === undefined
+                ? null
+                : {
+                    id: "memory",
+                    role: "memory",
+                    source: "memory:#720",
+                    content: `Memory unavailable (${recalled?.error.code ?? "unavailable"}).`,
+                    required: false,
+                    available: false,
+                  };
+          const recalledMemories = recalled?.ok === true ? recalled.value.recalledCount : 0;
+
+          if (input.briefRequest !== undefined && input.responsePolicySection !== undefined) {
+            return settleFailure(
+              input,
+              {
+                kind: "failed",
+                code: "brief.conflicting-policy",
+                message: "Brief and comparison response policies cannot both be active",
+                contextStatus: prepared.receipt?.status ?? "static",
+                contextGeneration: prepared.receipt?.generation ?? null,
+                recalledMemories,
+              },
+              executionPolicy,
+            );
+          }
+          const briefRequest =
+            input.briefRequest === undefined
               ? null
               : {
-                  id: "memory",
-                  role: "memory",
-                  source: "memory:#720",
-                  content: `Memory unavailable (${recalled?.error.code ?? "unavailable"}).`,
-                  required: false,
-                  available: false,
+                  ...input.briefRequest,
+                  need: briefNeedAfterContext(input.briefRequest.need, {
+                    status: prepared.receipt?.status ?? "static",
+                    candidateCount: prepared.candidates.length,
+                  }),
                 };
-        const recalledMemories = recalled?.ok === true ? recalled.value.recalledCount : 0;
+          const briefed =
+            briefRequest === null
+              ? null
+              : createBriefComposer().projectForTurn(input.turnId, briefRequest);
+          if (briefed !== null && !briefed.ok) {
+            return settleFailure(
+              input,
+              {
+                kind: "failed",
+                code: `brief.${briefed.error.code}`,
+                message: `Brief could not prepare the response policy (${briefed.error.code})`,
+                contextStatus: prepared.receipt?.status ?? "static",
+                contextGeneration: prepared.receipt?.generation ?? null,
+                recalledMemories,
+              },
+              executionPolicy,
+            );
+          }
 
-        if (input.briefRequest !== undefined && input.responsePolicySection !== undefined) {
-          return settleFailure(
-            input,
-            {
-              kind: "failed",
-              code: "brief.conflicting-policy",
-              message: "Brief and comparison response policies cannot both be active",
-              contextStatus: prepared.receipt?.status ?? "static",
-              contextGeneration: prepared.receipt?.generation ?? null,
-              recalledMemories,
-            },
+          const registry = runtime.toolRegistry;
+          const capabilityRegistry = runtime.capabilityRegistry;
+          if (registry === null || capabilityRegistry === null) {
+            return settleFailure(
+              input,
+              {
+                kind: "unavailable",
+                code: "runtime.capability-registry-required",
+                message: "the capability or executable tool registry is unavailable",
+              },
+              executionPolicy,
+            );
+          }
+          const disclosure = discloseProductTools(capabilityRegistry, registry, {
             executionPolicy,
-          );
-        }
-        const briefRequest =
-          input.briefRequest === undefined
-            ? null
-            : {
-                ...input.briefRequest,
-                need: briefNeedAfterContext(input.briefRequest.need, {
-                  status: prepared.receipt?.status ?? "static",
-                  candidateCount: prepared.candidates.length,
+            consumer: "native-model",
+            task: input.prompt,
+            intent: input.intent ?? executionPolicy.workIntent,
+            healthEvidence: {
+              now: options.clock.now(),
+              runtime: {
+                attemptRunner: runtime.attemptRunner === null ? "missing" : "available",
+                provider: runtime.providerAdapter === null ? "missing" : "available",
+                workspace: "available",
+              },
+            },
+          });
+          const planned = createContextPlanner().composeTurn({
+            turnId: input.turnId,
+            sessionId: correlation.sessionId,
+            workspaceId: correlation.workspaceId,
+            configurationGeneration: generation,
+            task: input.prompt,
+            candidates: prepared.candidates,
+            tools: disclosure.promptTools,
+            otherSections: [
+              executionProfileSection(executionPolicy),
+              ...(input.otherSections ?? []),
+              ...attachments.value,
+              ...prepared.sections,
+              ...(memorySection === null ? [] : [memorySection]),
+              ...(briefed?.ok ? [briefed.value.section] : []),
+              ...(input.responsePolicySection === undefined ? [] : [input.responsePolicySection]),
+            ],
+          });
+          if (!planned.ok) {
+            return settleFailure(
+              input,
+              {
+                kind: "failed",
+                code: "context.planner-failed",
+                message: `context planner could not compose (${
+                  "code" in planned.error ? planned.error.code : "failed"
+                })`,
+                disclosedTools: disclosure.receipt.disclosed.length,
+                contextStatus: prepared.receipt?.status ?? "static",
+                contextGeneration: prepared.receipt?.generation ?? null,
+                recalledMemories,
+              },
+              executionPolicy,
+            );
+          }
+
+          const provider = runtime.requireProviderAdapter();
+          if (!provider.ok) {
+            return settleFailure(
+              input,
+              {
+                kind: "unavailable",
+                code: "provider.adapter-required",
+                message: "the selected provider connection is unavailable",
+                contextPackItems: planned.value.plan.pack.items.length,
+                disclosedTools: disclosure.receipt.disclosed.length,
+                contextStatus: prepared.receipt?.status ?? "static",
+                contextGeneration: prepared.receipt?.generation ?? null,
+                recalledMemories,
+              },
+              executionPolicy,
+            );
+          }
+          const attemptRunner = runtime.requireAttemptRunner();
+          const policy =
+            providerCatalog === null
+              ? null
+              : productModelPolicy(
+                  provider.value,
+                  providerCatalog,
+                  executionPolicy,
+                  selectedModel,
+                  modelPreferences,
+                );
+          if (!attemptRunner.ok || providerCatalog === null || policy === null) {
+            return settleFailure(
+              input,
+              {
+                kind: "unavailable",
+                code: "runtime.attempt-runner-required",
+                message:
+                  providerCatalog === null
+                    ? "the selected provider has no usable model catalog"
+                    : policy === null
+                      ? "the selected provider catalog contains no model"
+                      : "the product attempt runner is unavailable",
+                contextPackItems: planned.value.plan.pack.items.length,
+                disclosedTools: disclosure.receipt.disclosed.length,
+                contextStatus: prepared.receipt?.status ?? "static",
+                contextGeneration: prepared.receipt?.generation ?? null,
+                recalledMemories,
+              },
+              executionPolicy,
+            );
+          }
+
+          const attemptPolicy = createTurnAttemptPolicy({
+            resources: runtime.resources,
+            clock: options.clock,
+            coordinator: runtime.turnCoordinator,
+            runner: attemptRunner.value,
+            policy,
+            catalogs: [
+              {
+                providerId: provider.value.identity.providerId,
+                profileId: provider.value.identity.profileId,
+                adapterKind: provider.value.identity.adapterKind,
+                destinationId: provider.value.identity.destinationId,
+                transportCompatibilityId: provider.value.identity.transportCompatibilityId,
+                transportCompatibility: provider.value.transportCompatibility,
+                modelTransportCompatibility: providerCatalog.models.flatMap((model) => {
+                  const plan = provider.value.transportCompatibilityFor(model.modelId);
+                  return plan === null ? [] : [{ modelId: model.modelId, plan }];
                 }),
-              };
-        const briefed =
-          briefRequest === null
-            ? null
-            : createBriefComposer().projectForTurn(input.turnId, briefRequest);
-        if (briefed !== null && !briefed.ok) {
-          return settleFailure(
-            input,
-            {
-              kind: "failed",
-              code: `brief.${briefed.error.code}`,
-              message: `Brief could not prepare the response policy (${briefed.error.code})`,
-              contextStatus: prepared.receipt?.status ?? "static",
-              contextGeneration: prepared.receipt?.generation ?? null,
-              recalledMemories,
-            },
+                requestInputModalities: provider.value.requestInputModalities,
+                requestResponseDensityControls: provider.value.requestResponseDensityControls ?? [],
+                catalog: providerCatalog,
+              },
+            ],
+            journal: runtime.journal,
+            persistTurnLifecycle: false,
+          });
+          const modelInput = attemptModelInputFromPrompt(
+            planned.value.prompt,
+            disclosure,
             executionPolicy,
+            {
+              history: history.value,
+              ...(briefed?.ok && briefRequest !== null
+                ? { brief: { request: briefRequest, projection: briefed.value.projection } }
+                : {}),
+              ...(input.maxOutputTokens === undefined
+                ? {}
+                : { maxOutputTokens: input.maxOutputTokens }),
+            },
           );
+          const historyBudget = conversationBudget(
+            modelInput.messages,
+            modelInput.tools,
+            modelInput.budgets,
+            providerCatalog.models.find((model) => model.modelId === selectedModel?.modelId),
+          );
+          if (historyBudget.reason)
+            return settleFailure(
+              input,
+              {
+                kind: "unavailable",
+                code: `history.${historyBudget.reason}`,
+                message: `The complete conversation request cannot be admitted (${historyBudget.reason}). Required evidence was retained; no provider request was sent.`,
+              },
+              executionPolicy,
+            );
+          checkpoint?.capture(
+            modelInput,
+            providerCatalog?.models.find((model) => model.modelId === selectedModel?.modelId),
+            prepared.receipt?.generation ?? "static",
+          );
+          const attempted = await attemptPolicy.run({
+            ...(input.processing === undefined ? {} : { processing: input.processing }),
+            taskResources,
+            turnId: input.turnId,
+            configurationGeneration: generation,
+            signal: input.signal ?? new AbortController().signal,
+            intent: input.intent ?? executionPolicy.workIntent,
+            modelInput: modelInput,
+          });
+          const attemptOutcome =
+            attempted.turn?.status === "terminal" && attempted.turn.outcome !== null
+              ? attempted.turn.outcome
+              : FAILED;
+          const lastAttempt = attempted.attempts.at(-1) ?? null;
+          const response = lastAttempt?.output?.text ?? "";
+          const toolResults = attempted.attempts.reduce(
+            (total, attempt) => total + (attempt.output?.toolResults ?? 0),
+            0,
+          );
+          const providerRequests = attempted.attempts.reduce(
+            (total, attempt) => total + (attempt.output?.providerRequests ?? 0),
+            0,
+          );
+          const providerUsage = aggregateAttemptUsage(
+            attempted.attempts.map((attempt) => attempt.output),
+          );
+          const briefReceipt =
+            lastAttempt?.output?.briefReceipt ??
+            (briefed?.ok ? briefed.value.projection.receipt : null);
+          const planArtifactId =
+            attempted.kind === "completed"
+              ? await retainPlan(executionPolicy, input.turnId, response, input.signal)
+              : null;
+          const planArtifactFailed =
+            attempted.kind === "completed" &&
+            executionPolicy.completion === "durable-plan" &&
+            planArtifactId === null;
+          const terminalOutcome = planArtifactFailed ? FAILED : attemptOutcome;
+          const completed = await producer.completeTurn({
+            turnId: input.turnId,
+            sessionId: correlation.sessionId,
+            workspaceId: correlation.workspaceId,
+            traceId: correlation.traceId,
+            configurationGeneration: generation,
+            outcome: terminalOutcome,
+          });
+          const refreshed = await producer.refreshFromStore();
+          const succeeded =
+            attempted.kind === "completed" &&
+            terminalOutcome.kind === "completed" &&
+            completed.ok &&
+            refreshed.ok &&
+            (executionPolicy.completion !== "durable-plan" || planArtifactId !== null);
+          const memoryAdmission =
+            !succeeded || options.memory === undefined
+              ? null
+              : options.memory.admitAfterTurn({
+                  turnId: input.turnId,
+                  workspaceId: correlation.workspaceId,
+                  task: input.prompt,
+                  outcome: terminalOutcome,
+                  ...(input.signal === undefined ? {} : { signal: input.signal }),
+                });
+          return result({
+            kind: succeeded ? "completed" : "failed",
+            history: {
+              throughSequence: history.value.throughSequence,
+              checkpointId: history.value.checkpointId,
+              projectionDigest: history.value.projectionDigest,
+              messages: history.value.messages.length,
+              bytesRead: history.value.bytesRead,
+              artifactReads: history.value.artifactReads,
+              omissions: history.value.omissions,
+              budget: historyBudget,
+            },
+            code: succeeded
+              ? "completed"
+              : planArtifactFailed
+                ? "execution-profile.plan-artifact-failed"
+                : `runtime.attempt-${attempted.kind}`,
+            message: succeeded
+              ? "turn completed"
+              : planArtifactFailed
+                ? "model attempt completed but the reviewable plan artifact could not be retained"
+                : !completed.ok
+                  ? `turn settled as ${attempted.kind}; completion failed (${completed.error.code})`
+                  : !refreshed.ok
+                    ? `turn settled as ${attempted.kind}; durable replay failed (${refreshed.error.code})`
+                    : `turn settled as ${attempted.kind}`,
+            response,
+            terminalOutcome,
+            contextPackItems: planned.value.plan.pack.items.length,
+            modelAttempts: attempted.attempts.length,
+            toolResults,
+            disclosedTools: disclosure.receipt.disclosed.length,
+            contextStatus: prepared.receipt?.status ?? "static",
+            contextGeneration: prepared.receipt?.generation ?? null,
+            recalledMemories,
+            memoryAdmission:
+              memoryAdmission === null
+                ? "skipped"
+                : memoryAdmission.ok && memoryAdmission.value.admitted
+                  ? "admitted"
+                  : memoryAdmission.ok
+                    ? "skipped"
+                    : "failed",
+            executionProfile: executionPolicy.profileId,
+            executionProfileVersion: executionPolicy.profileVersion,
+            completionCriterion: executionPolicy.completion,
+            effectiveModelRole: lastAttempt?.receipt.role ?? null,
+            effectiveReasoning: lastAttempt?.receipt.reasoning ?? null,
+            policyGeneration: Number(executionPolicy.configurationGeneration),
+            planArtifactId,
+            briefReceipt,
+            providerUsage,
+            processing: attempted.attempts.flatMap((attempt) => attempt.output?.processing ?? []),
+            providerRequests,
+          });
+        } finally {
+          if (input.childAdmission === undefined) taskResources.close();
         }
-
-        const registry = runtime.toolRegistry;
-        const capabilityRegistry = runtime.capabilityRegistry;
-        if (registry === null || capabilityRegistry === null) {
-          return settleFailure(
-            input,
-            {
-              kind: "unavailable",
-              code: "runtime.capability-registry-required",
-              message: "the capability or executable tool registry is unavailable",
-            },
-            executionPolicy,
-          );
-        }
-        const disclosure = discloseProductTools(capabilityRegistry, registry, {
-          executionPolicy,
-          consumer: "native-model",
-          task: input.prompt,
-          intent: input.intent ?? executionPolicy.workIntent,
-          healthEvidence: {
-            now: options.clock.now(),
-            runtime: {
-              attemptRunner: runtime.attemptRunner === null ? "missing" : "available",
-              provider: runtime.providerAdapter === null ? "missing" : "available",
-              workspace: "available",
-            },
-          },
-        });
-        const planned = createContextPlanner().composeTurn({
-          turnId: input.turnId,
-          sessionId: correlation.sessionId,
-          workspaceId: correlation.workspaceId,
-          configurationGeneration: generation,
-          task: input.prompt,
-          candidates: prepared.candidates,
-          tools: disclosure.promptTools,
-          otherSections: [
-            executionProfileSection(executionPolicy),
-            ...(input.otherSections ?? []),
-            ...attachments.value,
-            ...prepared.sections,
-            ...(memorySection === null ? [] : [memorySection]),
-            ...(briefed?.ok ? [briefed.value.section] : []),
-            ...(input.responsePolicySection === undefined ? [] : [input.responsePolicySection]),
-          ],
-        });
-        if (!planned.ok) {
-          return settleFailure(
-            input,
-            {
-              kind: "failed",
-              code: "context.planner-failed",
-              message: `context planner could not compose (${
-                "code" in planned.error ? planned.error.code : "failed"
-              })`,
-              disclosedTools: disclosure.receipt.disclosed.length,
-              contextStatus: prepared.receipt?.status ?? "static",
-              contextGeneration: prepared.receipt?.generation ?? null,
-              recalledMemories,
-            },
-            executionPolicy,
-          );
-        }
-
-        const provider = runtime.requireProviderAdapter();
-        if (!provider.ok) {
-          return settleFailure(
-            input,
-            {
-              kind: "unavailable",
-              code: "provider.adapter-required",
-              message: "the selected provider connection is unavailable",
-              contextPackItems: planned.value.plan.pack.items.length,
-              disclosedTools: disclosure.receipt.disclosed.length,
-              contextStatus: prepared.receipt?.status ?? "static",
-              contextGeneration: prepared.receipt?.generation ?? null,
-              recalledMemories,
-            },
-            executionPolicy,
-          );
-        }
-        const attemptRunner = runtime.requireAttemptRunner();
-        const policy =
-          providerCatalog === null
-            ? null
-            : productModelPolicy(
-                provider.value,
-                providerCatalog,
-                executionPolicy,
-                selectedModel,
-                modelPreferences,
-              );
-        if (!attemptRunner.ok || providerCatalog === null || policy === null) {
-          return settleFailure(
-            input,
-            {
-              kind: "unavailable",
-              code: "runtime.attempt-runner-required",
-              message:
-                providerCatalog === null
-                  ? "the selected provider has no usable model catalog"
-                  : policy === null
-                    ? "the selected provider catalog contains no model"
-                    : "the product attempt runner is unavailable",
-              contextPackItems: planned.value.plan.pack.items.length,
-              disclosedTools: disclosure.receipt.disclosed.length,
-              contextStatus: prepared.receipt?.status ?? "static",
-              contextGeneration: prepared.receipt?.generation ?? null,
-              recalledMemories,
-            },
-            executionPolicy,
-          );
-        }
-
-        const attemptPolicy = createTurnAttemptPolicy({
-          resources: runtime.resources,
-          clock: options.clock,
-          coordinator: runtime.turnCoordinator,
-          runner: attemptRunner.value,
-          policy,
-          catalogs: [
-            {
-              providerId: provider.value.identity.providerId,
-              profileId: provider.value.identity.profileId,
-              adapterKind: provider.value.identity.adapterKind,
-              destinationId: provider.value.identity.destinationId,
-              transportCompatibilityId: provider.value.identity.transportCompatibilityId,
-              transportCompatibility: provider.value.transportCompatibility,
-              modelTransportCompatibility: providerCatalog.models.flatMap((model) => {
-                const plan = provider.value.transportCompatibilityFor(model.modelId);
-                return plan === null ? [] : [{ modelId: model.modelId, plan }];
-              }),
-              requestInputModalities: provider.value.requestInputModalities,
-              requestResponseDensityControls: provider.value.requestResponseDensityControls ?? [],
-              catalog: providerCatalog,
-            },
-          ],
-          journal: runtime.journal,
-          persistTurnLifecycle: false,
-        });
-        const modelInput = attemptModelInputFromPrompt(
-          planned.value.prompt,
-          disclosure,
-          executionPolicy,
-          {
-            history: history.value,
-            ...(briefed?.ok && briefRequest !== null
-              ? { brief: { request: briefRequest, projection: briefed.value.projection } }
-              : {}),
-            ...(input.maxOutputTokens === undefined
-              ? {}
-              : { maxOutputTokens: input.maxOutputTokens }),
-          },
-        );
-        const historyBudget = conversationBudget(
-          modelInput.messages,
-          modelInput.tools,
-          modelInput.budgets,
-          providerCatalog.models.find((model) => model.modelId === selectedModel?.modelId),
-        );
-        if (historyBudget.reason)
-          return settleFailure(
-            input,
-            {
-              kind: "unavailable",
-              code: `history.${historyBudget.reason}`,
-              message: `The complete conversation request cannot be admitted (${historyBudget.reason}). Required evidence was retained; no provider request was sent.`,
-            },
-            executionPolicy,
-          );
-        checkpoint?.capture(
-          modelInput,
-          providerCatalog?.models.find((model) => model.modelId === selectedModel?.modelId),
-          prepared.receipt?.generation ?? "static",
-        );
-        const attempted = await attemptPolicy.run({
-          ...(input.processing === undefined ? {} : { processing: input.processing }),
-          taskResources,
-          turnId: input.turnId,
-          configurationGeneration: generation,
-          signal: input.signal ?? new AbortController().signal,
-          intent: input.intent ?? executionPolicy.workIntent,
-          modelInput: modelInput,
-        });
-        const attemptOutcome =
-          attempted.turn?.status === "terminal" && attempted.turn.outcome !== null
-            ? attempted.turn.outcome
-            : FAILED;
-        const lastAttempt = attempted.attempts.at(-1) ?? null;
-        const response = lastAttempt?.output?.text ?? "";
-        const toolResults = attempted.attempts.reduce(
-          (total, attempt) => total + (attempt.output?.toolResults ?? 0),
-          0,
-        );
-        const providerRequests = attempted.attempts.reduce(
-          (total, attempt) => total + (attempt.output?.providerRequests ?? 0),
-          0,
-        );
-        const providerUsage = aggregateAttemptUsage(
-          attempted.attempts.map((attempt) => attempt.output),
-        );
-        const briefReceipt =
-          lastAttempt?.output?.briefReceipt ??
-          (briefed?.ok ? briefed.value.projection.receipt : null);
-        const planArtifactId =
-          attempted.kind === "completed"
-            ? await retainPlan(executionPolicy, input.turnId, response, input.signal)
-            : null;
-        const planArtifactFailed =
-          attempted.kind === "completed" &&
-          executionPolicy.completion === "durable-plan" &&
-          planArtifactId === null;
-        const terminalOutcome = planArtifactFailed ? FAILED : attemptOutcome;
-        const completed = await producer.completeTurn({
-          turnId: input.turnId,
-          sessionId: correlation.sessionId,
-          workspaceId: correlation.workspaceId,
-          traceId: correlation.traceId,
-          configurationGeneration: generation,
-          outcome: terminalOutcome,
-        });
-        const refreshed = await producer.refreshFromStore();
-        const succeeded =
-          attempted.kind === "completed" &&
-          terminalOutcome.kind === "completed" &&
-          completed.ok &&
-          refreshed.ok &&
-          (executionPolicy.completion !== "durable-plan" || planArtifactId !== null);
-        const memoryAdmission =
-          !succeeded || options.memory === undefined
-            ? null
-            : options.memory.admitAfterTurn({
-                turnId: input.turnId,
-                workspaceId: correlation.workspaceId,
-                task: input.prompt,
-                outcome: terminalOutcome,
-                ...(input.signal === undefined ? {} : { signal: input.signal }),
-              });
-        return result({
-          kind: succeeded ? "completed" : "failed",
-          history: {
-            throughSequence: history.value.throughSequence,
-            checkpointId: history.value.checkpointId,
-            projectionDigest: history.value.projectionDigest,
-            messages: history.value.messages.length,
-            bytesRead: history.value.bytesRead,
-            artifactReads: history.value.artifactReads,
-            omissions: history.value.omissions,
-            budget: historyBudget,
-          },
-          code: succeeded
-            ? "completed"
-            : planArtifactFailed
-              ? "execution-profile.plan-artifact-failed"
-              : `runtime.attempt-${attempted.kind}`,
-          message: succeeded
-            ? "turn completed"
-            : planArtifactFailed
-              ? "model attempt completed but the reviewable plan artifact could not be retained"
-              : !completed.ok
-                ? `turn settled as ${attempted.kind}; completion failed (${completed.error.code})`
-                : !refreshed.ok
-                  ? `turn settled as ${attempted.kind}; durable replay failed (${refreshed.error.code})`
-                  : `turn settled as ${attempted.kind}`,
-          response,
-          terminalOutcome,
-          contextPackItems: planned.value.plan.pack.items.length,
-          modelAttempts: attempted.attempts.length,
-          toolResults,
-          disclosedTools: disclosure.receipt.disclosed.length,
-          contextStatus: prepared.receipt?.status ?? "static",
-          contextGeneration: prepared.receipt?.generation ?? null,
-          recalledMemories,
-          memoryAdmission:
-            memoryAdmission === null
-              ? "skipped"
-              : memoryAdmission.ok && memoryAdmission.value.admitted
-                ? "admitted"
-                : memoryAdmission.ok
-                  ? "skipped"
-                  : "failed",
-          executionProfile: executionPolicy.profileId,
-          executionProfileVersion: executionPolicy.profileVersion,
-          completionCriterion: executionPolicy.completion,
-          effectiveModelRole: lastAttempt?.receipt.role ?? null,
-          effectiveReasoning: lastAttempt?.receipt.reasoning ?? null,
-          policyGeneration: Number(executionPolicy.configurationGeneration),
-          planArtifactId,
-          briefReceipt,
-          providerUsage,
-          processing: attempted.attempts.flatMap((attempt) => attempt.output?.processing ?? []),
-          providerRequests,
-        });
-      } finally {
-        if (input.childAdmission === undefined) taskResources.close();
-      }
+      });
     },
   };
   return {

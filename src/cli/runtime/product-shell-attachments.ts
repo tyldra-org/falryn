@@ -12,6 +12,7 @@ import {
 import type { ConfigurationValues } from "../../domain/configuration/index.ts";
 import type { SessionId } from "../../domain/foundation/index.ts";
 import { agentRegistryFrom } from "./agent-configuration.ts";
+import { createEnvironmentProcessContext } from "./environment-process-context.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { modelPreferencesFrom } from "./model-configuration.ts";
 import { productToolHost } from "./product-tool-host.ts";
@@ -220,7 +221,7 @@ export async function composeProductShellAttachments(
     workspaceRoot:
       ports.workspaceSet === null ? null : String(primaryWorkspaceRoot(ports.workspaceSet).path),
   });
-  const commands =
+  const hostCommands =
     ports.commands ??
     createHostCommandRunner({
       sandbox,
@@ -272,6 +273,8 @@ export async function composeProductShellAttachments(
   const output = composeProductOutputControls();
 
   async function buildSession(selection?: PreparedSessionSelection, signal = hostSignal) {
+    const environmentContext = createEnvironmentProcessContext();
+    const commands = environmentContext.commands(hostCommands);
     const generation = ports.modelConfigurationGeneration?.() ?? ports.configurationGeneration;
     const sessionId =
       selection?.record.sessionId ?? sessionIdCodec.from(`session-shell-${randomUUID()}`);
@@ -312,16 +315,17 @@ export async function composeProductShellAttachments(
         : composeProductProcessTools({
             generation,
             ...(ports.tasks === undefined ? {} : { tasks: ports.tasks }),
-            capture:
+            capture: environmentContext.capture(
               ports.processCapture ??
-              createHostProcessCapturePort({
-                sandbox,
-                clock: ports.clock,
-                ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
-                ...(ports.ownedProcesses === undefined
-                  ? {}
-                  : { ownedProcesses: ports.ownedProcesses }),
-              }),
+                createHostProcessCapturePort({
+                  sandbox,
+                  clock: ports.clock,
+                  ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+                  ...(ports.ownedProcesses === undefined
+                    ? {}
+                    : { ownedProcesses: ports.ownedProcesses }),
+                }),
+            ),
             workspaceCwd: String(workspaceRoot),
             ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
             ...(ports.loom === undefined ? {} : { loom: ports.loom }),
@@ -340,19 +344,22 @@ export async function composeProductShellAttachments(
         : composeProductGitTools({
             generation,
             git: createHostGitPort({
-              capture: createHostProcessCapturePort({
-                sandbox,
-                clock: ports.clock,
-                ...(ports.ownedProcesses === undefined
-                  ? {}
-                  : { ownedProcesses: ports.ownedProcesses }),
-              }),
+              capture: environmentContext.gitCapture(
+                createHostProcessCapturePort({
+                  sandbox,
+                  clock: ports.clock,
+                  ...(ports.ownedProcesses === undefined
+                    ? {}
+                    : { ownedProcesses: ports.ownedProcesses }),
+                }),
+              ),
               clock: ports.clock,
             }),
             gitExecutable: "/usr/bin/git",
+            resolveExecutable: environmentContext.gitExecutable,
             startPath: String(workspaceRoot),
           });
-    const sessionServices = sessionManagedServices(managedServices);
+    const sessionServices = sessionManagedServices(environmentContext.services(managedServices));
     const languageTools =
       workspaceRoot === null
         ? null
@@ -595,6 +602,8 @@ export async function composeProductShellAttachments(
           if (!next.ok) throw new Error(next.error.code);
           return next.value;
         },
+        environmentContext,
+        selection !== undefined,
       );
       const executor = createProductLiveTurnExecutor({
         ...(profileSession ? { admissionBinding: profileSession.capture } : {}),
@@ -720,6 +729,13 @@ export async function composeProductShellAttachments(
   let unsubscribePeer: (() => void) | null = null;
   const exportSession = ports.exportSession;
   const submission = {
+    environment: {
+      execute: (action: "inspect" | "reload", signal?: AbortSignal) => {
+        const control = active.profileSession?.environment;
+        if (!control) return Promise.reject(new Error("environment-controls-unavailable"));
+        return control.execute(action, AbortSignal.any([hostSignal, ...(signal ? [signal] : [])]));
+      },
+    },
     binding: () => `${active.sessionId}:${activationGeneration}`,
     workingProfile: (
       argument: string | null,
@@ -956,6 +972,7 @@ export async function composeProductShellAttachments(
         active = candidate;
         activationGeneration += 1;
         committed = true;
+        await active.profileSession?.startEnvironment(signal);
         const fact: SessionActivationFact = Object.freeze({
           kind: "session.activated",
           reason: request.kind,

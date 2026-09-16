@@ -445,7 +445,7 @@ function overlayTitle(
     case "compression":
       return "Compression";
     case "profile-result":
-      return "Working profile result";
+      return route.title ?? "Working profile result";
     case "model-settings":
       return "Model roles";
     case "workspace":

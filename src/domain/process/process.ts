@@ -65,6 +65,10 @@ type CommandRequestBase = {
    * or copied into argv/environment. Callers must keep this bounded and scoped.
    */
   readonly stdinBytes?: Uint8Array | undefined;
+  /** Sensitive preparation bounds diagnostics without retaining their bytes. */
+  readonly maxDiagnosticBytes?: number;
+  readonly requireTreeCleanup?: boolean;
+  readonly strictUtf8?: boolean;
 };
 
 /**

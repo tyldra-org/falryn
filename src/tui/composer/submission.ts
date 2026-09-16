@@ -94,6 +94,7 @@ export type SubmissionOutcome =
  * while holding the user's text.
  */
 export type SubmissionPort = {
+  readonly environment?: import("../../application/configuration/environment-control.ts").EnvironmentControl;
   readonly workingProfile?: import("../../application/configuration/profile-control.ts").ProfileControl;
   readonly binding?: () => string;
   readonly compact?: import("../../application/compression/checkpoint-request.ts").CheckpointControl;

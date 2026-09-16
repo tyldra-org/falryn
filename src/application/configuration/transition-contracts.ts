@@ -30,6 +30,7 @@ export type ProfileTransitionRequest = ProfileTransitionScope & {
 };
 
 export type ProfileOwnerPlan = {
+  readonly bufferedBytes?: number;
   readonly owner: string;
   readonly required: boolean;
   readonly applicationClass: ConfigurationApplicationClass;
@@ -52,13 +53,24 @@ export type ProfileTransitionPreview = ProfileTransitionScope & {
   readonly owners: readonly ProfileOwnerPlan[];
 };
 
-export type ProfileTransitionRefusal = { readonly kind: "refused"; readonly code: string };
+export type ProfileTransitionRefusal = {
+  readonly kind: "refused";
+  readonly code: string;
+  readonly observedEffect?: "none" | "uncertain";
+  readonly terminated?: boolean;
+};
 export type ProfileTransitionOutcome =
   | { readonly kind: "receipt"; readonly receipt: ProfileTransitionReceipt }
   | ProfileTransitionRefusal;
 
 /** Host-only candidate. Configuration values never cross the public preview boundary. */
 export type ResolvedProfileTransition = {
+  readonly environmentPlan?: import("./scoped-environment.ts").EnvironmentPlan;
+  /** Import only eligible registered mappings from admitted user preparation. */
+  projectEnvironment?(
+    delta: import("../../domain/process/environment.ts").EnvironmentDelta,
+    signal: AbortSignal,
+  ): Promise<{ accepted: boolean; ineligibleMappings: readonly string[] }>;
   readonly record: ConfigurationGenerationRecord;
   readonly changes: readonly ConfigurationChange[];
   readonly inspection: ConfigurationInspection;
@@ -71,6 +83,10 @@ export type ResolvedProfileTransition = {
 };
 
 export type PreparedProfileOwner = {
+  readonly observedEffect?: "none" | "uncertain";
+  readonly terminated?: boolean;
+  /** Recheck captured local preparation inputs immediately before publication. */
+  validate?(signal: AbortSignal): Promise<boolean>;
   /** Release only resources acquired by this preparation attempt. Must be idempotent. */
   release(): Promise<void>;
   /** Transfer ownership at the declared boundary. Check current() before any late effect. */

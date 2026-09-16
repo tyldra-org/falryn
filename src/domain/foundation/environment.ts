@@ -12,6 +12,8 @@
  */
 
 export type EnvironmentPort = {
+  /** Explicit child inheritance preserves an exported empty value. Legacy configuration uses get. */
+  raw?(name: string): string | null;
   /** The variable's value, or `null` when it is unset or empty. */
   get(name: string): string | null;
 };
@@ -27,6 +29,7 @@ export function createStaticEnvironment(
   values: Readonly<Record<string, string>> = {},
 ): EnvironmentPort {
   return {
+    raw: (name) => values[name] ?? null,
     get(name: string): string | null {
       const value = values[name];
       return value === undefined || value === "" ? null : value;

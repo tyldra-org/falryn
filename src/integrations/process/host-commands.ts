@@ -38,7 +38,11 @@ import {
 import type { SandboxPort } from "../../domain/security/sandbox.ts";
 import { createHostSandbox } from "../security/host-sandbox.ts";
 import type { OwnedProcessRegistry } from "./host-owned-process-registry.ts";
-import { escalateOwnedTree, ownedTreeSpawnOptions } from "./host-process-tree.ts";
+import {
+  escalateOwnedTree,
+  ownedTreeSpawnOptions,
+  settleOwnedGroupAfterLeader,
+} from "./host-process-tree.ts";
 
 export type HostCommandRunnerOptions = {
   readonly sandbox?: SandboxPort;
@@ -77,6 +81,7 @@ export function createHostCommandRunner(options: HostCommandRunnerOptions = {}):
         let child: ReturnType<typeof Bun.spawn> | null = null;
         let treeStop: ReturnType<typeof escalateOwnedTree> | null = null;
         let leaderExited = false;
+        let groupCleanupConfirmed = true;
 
         const stopFor = (reason: StopReason): void => {
           if (ended === null) {
@@ -130,11 +135,17 @@ export function createHostCommandRunner(options: HostCommandRunnerOptions = {}):
               stopFor("output-exceeded");
             }),
             // Drained and dropped. An undrained pipe fills and stalls the child.
-            drain(spawned.stderr),
+            drain(spawned.stderr, request.maxDiagnosticBytes, () => stopFor("output-exceeded")),
           ]);
           const exitCode = await observedExit;
           if (treeStop !== null) {
             await treeStop;
+          }
+          if (request.requireTreeCleanup) {
+            const group = await settleOwnedGroupAfterLeader(spawned.pid);
+            groupCleanupConfirmed = group.cleanup?.stage !== "unconfirmed";
+            if (group.hadMembers || group.cleanup?.stage === "unconfirmed")
+              return { kind: "spawn-failed", code: "preparation-cleanup-uncertain" };
           }
 
           const stopped = stoppedOutcome(ended, request.timeoutMs, maxOutputBytes);
@@ -146,7 +157,17 @@ export function createHostCommandRunner(options: HostCommandRunnerOptions = {}):
             return { kind: "output-exceeded", maxOutputBytes };
           }
 
-          return { kind: "exited", exitCode, stdout: new TextDecoder().decode(stdoutBytes) };
+          try {
+            return {
+              kind: "exited",
+              exitCode,
+              stdout: new TextDecoder("utf-8", { fatal: request.strictUtf8 ?? false }).decode(
+                stdoutBytes,
+              ),
+            };
+          } catch {
+            return { kind: "spawn-failed", code: "invalid-output-encoding" };
+          }
         } catch (thrown) {
           const stopped = stoppedOutcome(ended, request.timeoutMs, maxOutputBytes);
           if (stopped !== null) {
@@ -161,7 +182,9 @@ export function createHostCommandRunner(options: HostCommandRunnerOptions = {}):
           if (child === null) launch.failed();
           else {
             const cleanup = treeStop === null ? null : await treeStop;
-            launch.finish(leaderExited && cleanup?.stage !== "unconfirmed");
+            launch.finish(
+              leaderExited && groupCleanupConfirmed && cleanup?.stage !== "unconfirmed",
+            );
           }
         }
       })();
@@ -173,6 +196,13 @@ export function createHostCommandRunner(options: HostCommandRunnerOptions = {}):
 type StopReason = "timed-out" | "cancelled" | "output-exceeded";
 
 function invalidRequest(request: CommandRequest): CommandOutcome | null {
+  if (
+    request.maxDiagnosticBytes !== undefined &&
+    (!Number.isSafeInteger(request.maxDiagnosticBytes) ||
+      request.maxDiagnosticBytes < 0 ||
+      request.maxDiagnosticBytes > MAX_COMMAND_OUTPUT_BYTES)
+  )
+    return { kind: "spawn-failed", code: "invalid-diagnostic-limit" };
   if (!isAbsoluteCommandPath(request.executable)) {
     return { kind: "spawn-failed", code: "invalid-executable" };
   }
@@ -279,15 +309,25 @@ function spawnFailureCode(thrown: unknown): string {
  * would stop reading while the child kept writing, and the child would then
  * block on a full pipe until something killed it.
  */
-async function drain(stream: ReadableStream<Uint8Array> | undefined): Promise<void> {
+async function drain(
+  stream: ReadableStream<Uint8Array> | undefined,
+  maximum?: number,
+  exceeded?: () => void,
+): Promise<void> {
   if (stream === undefined) {
     return;
   }
   const reader = stream.getReader();
+  let bytes = 0;
   try {
     while (true) {
-      const { done } = await reader.read();
+      const { done, value } = await reader.read();
       if (done) {
+        return;
+      }
+      bytes += value?.byteLength ?? 0;
+      if (maximum !== undefined && bytes > maximum) {
+        exceeded?.();
         return;
       }
     }

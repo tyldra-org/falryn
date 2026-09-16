@@ -11,6 +11,7 @@ export const WORKSPACE_LOADER_FAMILIES = [
   "hooks",
   "skills",
   "workflows",
+  "environment",
 ] as const;
 export const workspaceLoaderSchema = z.strictObject({
   source: digestSchema,

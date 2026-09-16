@@ -55,6 +55,7 @@ export function createWorkspaceTrust(options: {
     }
     const snapshot = read.value;
     if (snapshot.report.loaders.length === 0) {
+      admitted = null;
       report = {
         version: 1,
         status: refused ? "refused" : "empty",

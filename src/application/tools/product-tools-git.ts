@@ -186,6 +186,7 @@ function errorCode(error: { readonly code: string }): string {
 }
 
 export type ProductGitToolPorts = {
+  readonly resolveExecutable?: (signal: AbortSignal) => Promise<string | null>;
   readonly generation: ConfigurationGeneration;
   readonly git: GitPort;
   readonly gitExecutable: string;
@@ -335,7 +336,11 @@ export function composeProductGitTools(ports: ProductGitToolPorts): ProductGitTo
       if (request.signal.aborted) {
         return { status: "cancelled", effect: "none" };
       }
-      const base = baseFrom(ports, request.signal);
+      const executable = ports.resolveExecutable
+        ? await ports.resolveExecutable(request.signal)
+        : ports.gitExecutable;
+      if (executable === null) return failed("git-environment-unavailable");
+      const base = { ...baseFrom(ports, request.signal), gitExecutable: executable };
       const input = request.input;
       switch (request.toolName) {
         case "git_discover": {

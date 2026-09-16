@@ -10,7 +10,7 @@ export const profileTransitionReceiptSchema = z.object({
   previousGeneration: generation,
   publishedGeneration: generation.nullable(),
   savedFileRevision: identity.nullable(),
-  stage: z.enum(["prepared", "rejected", "published", "settled"]),
+  stage: z.enum(["preparing", "prepared", "rejected", "published", "settled"]),
   code: identity,
   owners: z
     .array(

@@ -56,6 +56,14 @@ async function setup() {
     await mkdir(path);
     await chmod(path, 0o700);
   }
+  await writeFile(
+    join(home, "config", "falryn.jsonc"),
+    JSON.stringify({
+      schemaVersion: 2,
+      minimumReaderSchemaVersion: 2,
+      defaults: { execution: { environment: { operationNames: ["PATH"] } } },
+    }),
+  );
   const globals: GlobalOptions = {
     format: "human",
     color: "never",

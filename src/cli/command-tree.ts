@@ -140,6 +140,11 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               describe: "exact session target (requires a supported host transport)",
             }),
       )
+      .command(
+        "env <action>",
+        "Inspect or explicitly reload this invocation's scoped environment.",
+        (group) => group.positional("action", { type: "string", choices: ["inspect", "reload"] }),
+      )
       .command(configCommand, "Inspect and validate effective configuration.", (group) =>
         group
           .positional("action", {

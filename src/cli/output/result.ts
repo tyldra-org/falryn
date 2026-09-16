@@ -51,6 +51,8 @@ export const COMMAND_IDS = [
   /** The no-argument invocation, which prints help until #21 lands the shell. */
   "default",
   "profile",
+  "env.inspect",
+  "env.reload",
   "config.migrate",
   "config.show",
   "config.validate",

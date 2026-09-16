@@ -180,6 +180,15 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
     availability: () => AVAILABLE,
   },
   {
+    id: "environment.inspect",
+    title: "Scoped environment",
+    description: "Inspect or explicitly reload this session's child environment.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["env", "environment", "reload"],
+    availability: () => AVAILABLE,
+  },
+  {
     id: "model.settings",
     title: "Model roles",
     description: "Inspect and configure shared model role defaults and overrides.",

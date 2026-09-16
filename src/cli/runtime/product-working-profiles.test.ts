@@ -9,17 +9,20 @@ import type {
 } from "../../application/configuration/index.ts";
 import {
   createStaticEnvironment,
+  duration,
   modelId,
   providerId,
   sessionId,
   streamId,
 } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
+import { createHostCommandRunner } from "../../integrations/process/host-commands.ts";
 import { createHostPtySessionPort } from "../../integrations/process/host-process-sessions.ts";
 import { OPENAI_RESPONSES_TRANSPORT_DEFAULT, type ProviderProfile } from "../../providers/index.ts";
 import { snapshotOf } from "../../tui/composer/index.ts";
 import { runConfigShow } from "../commands/config.ts";
 import type { GlobalOptions } from "../options.ts";
+import type { EnvironmentProcessContext } from "./environment-process-context.ts";
 import { processingResponse } from "./openai-processing-fixtures.ts";
 import { openProductArtifactSession } from "./product-artifact-session.ts";
 import {
@@ -129,6 +132,7 @@ test.each([
     const document = JSON.parse(await readFile(path, "utf8"));
     document.defaults ??= {};
     document.defaults.models ??= {};
+    document.defaults.execution = { environment: { set: { PROFILE_FIXTURE: "a" } } };
     document.defaults.models.policy = {
       processing: { mode: "fast", fallback: "allow-standard" },
       roles: {
@@ -149,6 +153,7 @@ test.each([
         schemaVersion: 2,
         minimumReaderSchemaVersion: 2,
         overrides: {
+          execution: { environment: { set: { PROFILE_FIXTURE: "b" } } },
           models: {
             policy: {
               processing: { mode: "standard" },
@@ -172,6 +177,20 @@ test.each([
     const data = await openProductArtifactSession(graph);
     if (!data) throw new Error("Durable fixture unavailable");
     const bodies: Record<string, unknown>[] = [];
+    let environmentContext: EnvironmentProcessContext | undefined;
+    const launchedValues: string[] = [];
+    const captureChild = async () => {
+      if (process.platform === "win32" || !environmentContext) return;
+      const result = await environmentContext.commands(createHostCommandRunner()).run({
+        executable: "/bin/sh",
+        argv: ["-c", 'printf "%s" "$PROFILE_FIXTURE"'],
+        environment: {},
+        timeoutMs: duration(1000),
+        maxOutputBytes: 1024,
+      });
+      if (result.kind !== "exited") throw new Error("Captured environment unavailable");
+      launchedValues.push(result.stdout);
+    };
     const authorization: (string | null)[] = [];
     let ready!: () => void;
     let release!: () => void;
@@ -299,8 +318,10 @@ test.each([
           );
         }
         if (bodies.length === (child ? 2 : 1)) {
+          await captureChild();
           ready();
           await blocked;
+          await captureChild();
         }
         const response = processingResponse("responses", "default");
         if (child && bodies.length === 2) {
@@ -382,10 +403,13 @@ test.each([
       configuration: configuration.values,
     }).resolveSelected();
     const shell = await composeProductShellAttachments({
-      workingProfileSession: productWorkingProfileSessions(graph, globals, providerOptions, [
-        mcp,
-        ...(mode === "pty" ? [processOwner] : []),
-      ]),
+      workingProfileSession: async (runtime, compose, context, defer) => {
+        environmentContext = context;
+        return productWorkingProfileSessions(graph, globals, providerOptions, [
+          mcp,
+          ...(mode === "pty" ? [processOwner] : []),
+        ])(runtime, compose, context, defer);
+      },
       eventStore: data.eventStore,
       records: data.records,
       artifacts: data.artifacts,
@@ -491,6 +515,7 @@ test.each([
       }
       release();
       expect((await first).kind).toBe("accepted");
+      if (process.platform !== "win32") expect(launchedValues).toEqual(["a", "a"]);
       expect(
         (
           await shell.submission.submit(snapshotOf("Reply again.", 2), {
@@ -627,3 +652,82 @@ test.each([
   },
   15000,
 );
+
+test("actual session environment reload works without a provider account", async () => {
+  const home = await mkdtemp(join(tmpdir(), "falryn-environment-session-"));
+  homes.push(home);
+  const workspace = join(home, "workspace");
+  const config = join(home, "config");
+  await mkdir(workspace);
+  await mkdir(config);
+  const globals: GlobalOptions = {
+    color: "never",
+    format: "json",
+    nonInteractive: true,
+    profile: null,
+    quiet: false,
+    timeoutMs: null,
+    verbose: false,
+    workspace,
+    addDirs: [],
+    help: false,
+    version: false,
+  };
+  const graph = createServiceProvider(globals, {
+    home: localPath(home),
+    currentDirectory: localPath(workspace),
+    environment: createStaticEnvironment({
+      FALRYN_CONFIG_DIR: config,
+      FALRYN_STATE_DIR: join(home, "state"),
+    }),
+  })();
+  const write = (value: string) =>
+    writeFile(
+      join(config, "falryn.jsonc"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumReaderSchemaVersion: 2,
+        defaults: { execution: { environment: { set: { FIXTURE: value } } } },
+      }),
+    );
+  await write("first");
+  await graph.ensureWorkspaceSet();
+  const configuration = await loadProductConfiguration(
+    graph,
+    productConfigurationLoadRequest(globals),
+  );
+  const data = await openProductArtifactSession(graph);
+  if (!data) throw new Error("Fixture storage unavailable");
+  const options = {
+    workingProfileSession: productWorkingProfileSessions(graph, globals, {}),
+    eventStore: data.eventStore,
+    records: data.records,
+    artifacts: data.artifacts,
+    tasks: data.tasks,
+    joins: data.joins,
+    peers: data.peers,
+    workflows: data.workflows,
+    clock: graph.clock,
+    fileSystem: graph.fileSystem,
+    workspaceSet: graph.workspaceSet,
+    configurationGeneration: configuration.generation,
+    provider: await composeProductProviderConnections(graph, globals).resolveSelected(),
+  };
+  const shell = await composeProductShellAttachments(options);
+  if (!shell?.submission.environment) throw new Error("Environment control unavailable");
+  try {
+    const first = await shell.submission.environment.execute("inspect");
+    expect(first.inspection.state).toBe("active");
+    await write("second");
+    const reloaded = await shell.submission.environment.execute("reload");
+    expect(reloaded.inspection.state).toBe("active");
+    expect(reloaded.inspection.generation, JSON.stringify(reloaded)).not.toBe(
+      first.inspection.generation,
+    );
+    expect(reloaded.transition?.kind).toBe("receipt");
+    expect(JSON.stringify(reloaded)).not.toContain('"FIXTURE"');
+  } finally {
+    await shell.close();
+    data.close();
+  }
+});
