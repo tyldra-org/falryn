@@ -14,6 +14,7 @@ import {
   type HookEnvelope,
   LIVE_TOOL_HOOK_POINTS,
 } from "../extensions/hook-points.ts";
+import type { HookDecision } from "../extensions/hook-protocol.ts";
 import type { Instant } from "../foundation/clock.ts";
 import type { Deadline } from "../foundation/deadline.ts";
 import type {
@@ -97,7 +98,7 @@ export type ToolHookPostDecision =
   | { readonly kind: "diagnostic"; readonly code: string; readonly level: DiagnosticLevel }
   | { readonly kind: "propose-follow-up"; readonly followUp: ToolHookFollowUp };
 
-export type ToolHookDecision = ToolHookPreDecision | ToolHookPostDecision;
+export type ToolHookDecision = ToolHookPreDecision | ToolHookPostDecision | HookDecision;
 
 export type ToolHookFn = (
   envelope: ToolHookEnvelope,
@@ -228,11 +229,16 @@ export type PreHookSettlement =
   | { readonly kind: "failed-closed"; readonly reason: string; readonly hookId: string }
   | {
       readonly kind: "confirmation-required";
+      readonly input?: Readonly<Record<string, unknown>>;
       readonly reason: string;
       readonly hookId: string;
       readonly annotations: readonly BoundAnnotation[];
     }
-  | { readonly kind: "allowed"; readonly annotations: readonly BoundAnnotation[] };
+  | {
+      readonly kind: "allowed";
+      readonly annotations: readonly BoundAnnotation[];
+      readonly input?: Readonly<Record<string, unknown>>;
+    };
 
 export type PostHookSettlement = {
   readonly kind: "recorded";
@@ -296,6 +302,8 @@ export function settlePreHookDecisions(
   recorded: readonly RecordedHookDecision[],
 ): PreHookSettlement | { readonly kind: "transform-conflict"; readonly key: string } {
   let annotations: readonly BoundAnnotation[] = [];
+  const input: Record<string, unknown> = {};
+  const transformed = new Set<string>();
   let confirmation: { readonly reason: string; readonly hookId: string } | null = null;
   for (const item of recorded) {
     if (item.failed !== undefined) {
@@ -307,16 +315,38 @@ export function settlePreHookDecisions(
     }
     const decision = item.decision;
     switch (decision.kind) {
+      case "veto":
       case "deny":
         return { kind: "denied", reason: decision.reason, hookId: item.hookId };
+      case "external-effect-request":
+        if (decision.request.kind === "confirmation")
+          confirmation = { reason: decision.request.reason, hookId: item.hookId };
+        break;
       case "request-confirmation":
         confirmation = { reason: decision.reason, hookId: item.hookId };
         break;
       case "allow":
         break;
+      case "observe":
       case "annotate":
       case "transform": {
-        const bound = boundAnnotations(item.hookId, decision.annotations);
+        if (decision.kind === "transform") {
+          for (const key of Object.keys(decision.annotations ?? {})) {
+            if (transformed.has(`annotations.${key}`)) return { kind: "transform-conflict", key };
+            transformed.add(`annotations.${key}`);
+          }
+          if ("input" in decision && decision.input) {
+            for (const [key, value] of Object.entries(decision.input)) {
+              if (transformed.has(`input.${key}`))
+                return { kind: "transform-conflict", key: `input.${key}` };
+              transformed.add(`input.${key}`);
+              input[key] = value;
+              if (Object.keys(input).length > 8)
+                return { kind: "failed-closed", reason: "input-patch-bound", hookId: item.hookId };
+            }
+          }
+        }
+        const bound = boundAnnotations(item.hookId, decision.annotations ?? {});
         if (!bound.ok) {
           return { kind: "failed-closed", reason: bound.error.code, hookId: item.hookId };
         }
@@ -324,6 +354,8 @@ export function settlePreHookDecisions(
         if (!merged.ok) {
           return { kind: "transform-conflict", key: merged.error.key };
         }
+        if (merged.value.length > MAX_TOOL_HOOK_ANNOTATION_KEYS)
+          return { kind: "failed-closed", reason: "annotation-bound", hookId: item.hookId };
         annotations = merged.value;
         break;
       }
@@ -344,9 +376,10 @@ export function settlePreHookDecisions(
       reason: confirmation.reason,
       hookId: confirmation.hookId,
       annotations,
+      ...(Object.keys(input).length ? { input } : {}),
     };
   }
-  return { kind: "allowed", annotations };
+  return { kind: "allowed", annotations, ...(Object.keys(input).length ? { input } : {}) };
 }
 
 /**
@@ -367,8 +400,9 @@ export function settlePostHookDecisions(
     }
     const decision = item.decision;
     switch (decision.kind) {
+      case "observe":
       case "annotate": {
-        const bound = boundAnnotations(item.hookId, decision.annotations);
+        const bound = boundAnnotations(item.hookId, decision.annotations ?? {});
         if (!bound.ok) {
           failures.push({ hookId: item.hookId, reason: bound.error.code });
           break;
@@ -378,15 +412,24 @@ export function settlePostHookDecisions(
           failures.push({ hookId: item.hookId, reason: `transform-conflict:${merged.error.key}` });
           break;
         }
+        if (merged.value.length > MAX_TOOL_HOOK_ANNOTATION_KEYS) {
+          failures.push({ hookId: item.hookId, reason: "annotation-bound" });
+          break;
+        }
         annotations.splice(0, annotations.length, ...merged.value);
         break;
       }
       case "diagnostic":
         diagnostics.push({ code: decision.code, level: decision.level, hookId: item.hookId });
         break;
+      case "external-effect-request":
+        if (decision.request.kind === "follow-up")
+          followUps.push({ ...decision.request, hookId: item.hookId });
+        break;
       case "propose-follow-up":
         followUps.push({ ...decision.followUp, hookId: item.hookId });
         break;
+      case "veto":
       case "allow":
       case "transform":
       case "request-confirmation":

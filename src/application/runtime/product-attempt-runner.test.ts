@@ -5,6 +5,7 @@ import type {
 } from "@anthropic-ai/sdk/resources/messages/messages";
 import type { GenerateContentParameters, GenerateContentResponse } from "@google/genai";
 import { DEFAULT_BRIEF_NEED, projectBrief } from "../../domain/compression/index.ts";
+import { hookDecisionBinding } from "../../domain/extensions/hook-protocol.ts";
 import {
   capabilityId,
   configurationGeneration,
@@ -235,6 +236,90 @@ test("a real provider/tool turn emits one immutable v1 pair from the admitted ho
   const replay = await product.runtime.journal.replay();
   expect(replay.kind).not.toBe("failed");
   expect(observed).toHaveLength(2);
+});
+
+test("live provider continuation consumes transformed inputs and separately admitted hook effects", async () => {
+  const observed: ToolHookEnvelope[] = [];
+  const hooks = createToolHookRegistry(configurationGeneration.from(17), [
+    {
+      id: "normalize",
+      point: "before-capability-invocation",
+      priority: 0,
+      run: (envelope) => {
+        observed.push(envelope);
+        return {
+          kind: "transform",
+          binding: hookDecisionBinding(envelope.catalog),
+          input: { path: "." },
+        };
+      },
+    },
+    {
+      id: "separate",
+      point: "after-capability-invocation",
+      priority: 0,
+      run: (envelope) => {
+        observed.push(envelope);
+        return envelope.recursionDepth === 0
+          ? {
+              kind: "external-effect-request",
+              binding: hookDecisionBinding(envelope.catalog),
+              request: { kind: "tool", name: "list_dir", arguments: { path: "." } },
+            }
+          : { kind: "observe" };
+      },
+    },
+  ]);
+  if (!hooks.ok) throw new Error(hooks.error.code);
+  const adapter = createDeterministicProviderAdapter({
+    script: (_request, index) =>
+      index === 0
+        ? {
+            kind: "tool",
+            toolCallId: "hook-list",
+            name: "list_dir",
+            argumentFragments: ['{"path":"."}'],
+          }
+        : { kind: "text", text: "Inspected." },
+  });
+  const product = setup(adapter, (base) => base, {}, hooks.value);
+  const turn = await start(product, "turn-hook-proof");
+  const runner = product.runtime.requireAttemptRunner();
+  if (!runner.ok) throw new Error(runner.error.code);
+  const result = await runner.value.run({
+    turnId: turn,
+    identity: {
+      attemptNumber: 1,
+      modelAttemptId: modelAttemptId.from("attempt-hook-proof"),
+      fallbackPosition: 0,
+      providerKey: adapter.identity.providerId,
+      modelKey: String(adapter.supportedModels[0]),
+    },
+    receipt: receipt(product),
+    boundConfigurationGeneration: generation,
+    configurationGeneration: generation,
+    signal: new AbortController().signal,
+    modelInput: {
+      messages: [{ role: "user", parts: [{ kind: "text", text: "Inspect." }] }],
+      tools: product.disclosure.modelTools,
+      output: { kind: "text" },
+      budgets: {},
+      disclosure: disclosureInput(product),
+    },
+  });
+  expect(result.fact.kind).toBe("completed");
+  expect(observed.map((event) => event.recursionDepth)).toEqual([0, 0, 1, 1]);
+  expect(observed[1]?.payload).toMatchObject({ path: "" });
+  const replay = await product.runtime.journal.replay();
+  if (replay.kind !== "rebuilt" && replay.kind !== "partial") throw new Error("missing history");
+  expect(
+    replay.events.filter(
+      (event) =>
+        event.kind === "capability.invocation.completed" &&
+        event.capabilityId === observed[0]?.capabilityId,
+    ),
+  ).toHaveLength(2);
+  expect(observed).toHaveLength(4);
 });
 
 async function start(setupResult: ReturnType<typeof setup>, id: string) {

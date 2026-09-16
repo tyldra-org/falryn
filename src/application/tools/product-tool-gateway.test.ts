@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { artifactId } from "../../domain/artifacts/index.ts";
+import { hookDecisionBinding } from "../../domain/extensions/hook-protocol.ts";
 import {
   configurationGeneration,
   createManualClock,
@@ -25,6 +26,7 @@ import {
   defaultProjectionContract,
   defaultToolLimits,
 } from "../../domain/tools/index.ts";
+import type { RegisteredToolHook } from "../../domain/tools/tool-hooks.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
 import { ed25519PackageVerifier } from "../../integrations/extensions/package-signature.ts";
 import { capabilityEntryFromTool } from "../capabilities/product-capability-registry.ts";
@@ -286,7 +288,7 @@ describe("createProductToolGateway", () => {
       ).toEqual(["capability.invocation.started", "capability.invocation.completed"]);
       expect(
         replay.events.flatMap((event) =>
-          event.kind === "history.recorded" && event.payload.type === "gate"
+          event.kind === "history.recorded" && event.payload.type === "gate" && !event.payload.hook
             ? [event.payload.stage]
             : [],
         ),
@@ -475,6 +477,89 @@ describe("createProductToolGateway", () => {
     expect((await execute("repl", "repl")).status).toBe("completed");
     expect(confirmations).toBe(1);
     expect(effects).toEqual(["observation", "interactive"]);
+  });
+
+  test("replay checks the transformed effect against current policy", async () => {
+    const { clock, journal } = setup();
+    const entry = createToolRegistryEntry(
+      {
+        namespace: "workspace",
+        name: "debug_evaluate",
+        version: 1,
+        source: "builtin",
+        title: "Evaluate expression",
+        description: "Evaluate with an effect selected from the validated context",
+        effect: "interactive",
+        capabilityKind: "dap",
+        platforms: [],
+        limits: defaultToolLimits(),
+        concurrency: defaultConcurrencyContract(),
+        resultProjection: defaultProjectionContract(),
+      },
+      {
+        inputSchema: z
+          .object({ context: z.enum(["watch", "repl"]), expression: z.string().min(1) })
+          .strict(),
+        outputSchema: z.object({ result: z.string() }).strict(),
+        effectFor: (input) => (input.context === "repl" ? "interactive" : "observation"),
+      },
+    );
+    if (!entry.ok) throw new Error(entry.error.code);
+    const registry = createToolRegistry(generation, [entry.value]);
+    if (!registry.ok) throw new Error(registry.error.code);
+    const hooks = createToolHookRegistry(generation, [
+      preHook((envelope) => ({
+        kind: "transform",
+        binding: hookDecisionBinding(envelope.catalog),
+        input: { context: "repl" },
+      })),
+    ]);
+    if (!hooks.ok) throw new Error(hooks.error.code);
+    const effects: string[] = [];
+    const deniedEffects = new Set<"interactive">();
+    let confirmations = 0;
+    const gateway = createProductToolGateway({
+      clock,
+      policy: { deniedEffects },
+      resources: createProductResources(clock),
+      registry: registry.value,
+      runner: {
+        execute: async (request) => {
+          effects.push(request.effect);
+          return { status: "completed", output: { result: "ok" }, effect: "completed" };
+        },
+      },
+      hooks: hooks.value,
+      journal,
+      correlation,
+      turnId: turn,
+      disclosedToolNames: new Set(["debug_evaluate"]),
+      confirmation: {
+        resolve: async (request) => {
+          confirmations += 1;
+          return { kind: "confirmed", confirmationId: request.confirmationId };
+        },
+      },
+      effectLedger: new Map(),
+    });
+    const execute = (context: "watch" | "repl", suffix: string) =>
+      gateway.execute({
+        invocationId: invocationId.from(`inv-${suffix}`),
+        toolCallId: `call-${suffix}`,
+        toolName: "debug_evaluate",
+        capabilityId: entry.value.manifest.capabilityId,
+        version: 1,
+        effect: "interactive",
+        input: { context, expression: "value" },
+        signal: new AbortController().signal,
+      });
+
+    expect((await execute("watch", "once")).status).toBe("completed");
+    expect(effects).toEqual(["interactive"]);
+    deniedEffects.add("interactive");
+    expect((await execute("watch", "once")).status).toBe("denied");
+    expect(effects).toHaveLength(1);
+    expect(confirmations).toBe(1);
   });
 
   test("validates strict workspace inputs before dispatch and preserves plan staleness", async () => {
@@ -816,4 +901,437 @@ test("uncertain invocations are retained without repeating an effect", async () 
   expect(first.effect).toBe("uncertain");
   expect(await gateway.execute(request)).toEqual(first);
   expect(calls).toBe(1);
+});
+
+function hookGateway(
+  hooks: readonly RegisteredToolHook[],
+  staleConfirmation = false,
+  refuseConfirmation = false,
+) {
+  const f = setup();
+  const registry = createToolHookRegistry(generation, hooks);
+  if (!registry.ok) throw new Error(registry.error.code);
+  const confirmations: string[] = [];
+  const dispatched: string[] = [];
+  const taskIds: string[] = [];
+  const resources = createProductResources(f.clock);
+  const gateway = createProductToolGateway({
+    clock: f.clock,
+    resources,
+    registry: f.tools.registry,
+    hooks: registry.value,
+    runner: {
+      execute: (request) => {
+        dispatched.push(String(request.invocationId));
+        taskIds.push(request.taskResources?.id ?? "missing");
+        return f.tools.runner.execute(request);
+      },
+    },
+    journal: f.journal,
+    correlation,
+    turnId: turn,
+    disclosedToolNames: new Set(["read_file", "write_files"]),
+    effectLedger: new Map(),
+    confirmation: {
+      resolve: async (request) => {
+        confirmations.push(request.confirmationId);
+        if (refuseConfirmation) return { kind: "refused" };
+        return {
+          kind: "confirmed",
+          confirmationId: staleConfirmation ? (confirmations[0] ?? "") : request.confirmationId,
+        };
+      },
+    },
+  });
+  const request = (name = "read_file", input: Record<string, unknown> = { path: "a.ts" }) => {
+    const entry = f.tools.registry.resolveByName(name);
+    if (!entry) throw new Error("missing tool");
+    return {
+      invocationId: invocationId.from("hook-subject"),
+      toolCallId: "hook-subject",
+      toolName: name,
+      capabilityId: entry.manifest.capabilityId,
+      version: entry.manifest.version,
+      effect: entry.manifest.effect,
+      input,
+      signal: new AbortController().signal,
+    };
+  };
+  const gates = async () => {
+    const replay = await f.journal.replay();
+    if (replay.kind !== "rebuilt" && replay.kind !== "partial") throw new Error("missing journal");
+    return replay.events.flatMap((event) =>
+      event.kind === "history.recorded" && event.payload.type === "gate" ? [event.payload] : [],
+    );
+  };
+  return { ...f, gateway, request, confirmations, dispatched, taskIds, gates };
+}
+const preHook = (run: RegisteredToolHook["run"], id = "transform"): RegisteredToolHook => ({
+  id,
+  point: "before-capability-invocation",
+  priority: 0,
+  run,
+});
+
+test.each([false, true])(
+  "changed write intent requires a fresh confirmation (stale=%s)",
+  async (stale) => {
+    const f = hookGateway(
+      [
+        preHook((envelope) => ({
+          kind: "transform",
+          binding: hookDecisionBinding(envelope.catalog),
+          input: { targets: [{ path: "b.ts", kind: "create", text: "changed" }] },
+        })),
+      ],
+      stale,
+    );
+    const result = await f.gateway.execute(
+      f.request("write_files", { targets: [{ path: "a.ts", kind: "replace", text: "original" }] }),
+    );
+    expect(f.confirmations).toHaveLength(2);
+    expect(f.confirmations[0]).not.toBe(f.confirmations[1]);
+    expect(result.status).toBe(stale ? "denied" : "completed");
+    expect(f.dispatched.length).toBe(stale ? 0 : 1);
+    expect(await f.fileSystem.readText(localPath("/work/a.ts"), 1024)).toEqual({
+      ok: true,
+      value: "export const a = 1;\n",
+    });
+    if (!stale)
+      expect(await f.fileSystem.readText(localPath("/work/b.ts"), 1024)).toEqual({
+        ok: true,
+        value: "changed",
+      });
+    const gates = await f.gates();
+    const transformed = gates.find((gate) => gate.decision === "transformed");
+    expect(transformed?.originalInputDigest).not.toBe(transformed?.admittedInputDigest);
+    expect(gates.filter((gate) => gate.hook)).toHaveLength(1);
+    expect(JSON.stringify(gates)).not.toContain('"text":"changed"');
+  },
+);
+
+test("same-field transforms conflict even when equal, and every attempted decision is retained", async () => {
+  const f = hookGateway(
+    ["one", "two"].map((id) =>
+      preHook(
+        (envelope) => ({
+          kind: "transform",
+          binding: hookDecisionBinding(envelope.catalog),
+          input: { path: "b.ts" },
+        }),
+        id,
+      ),
+    ),
+  );
+  expect(await f.gateway.execute(f.request())).toMatchObject({
+    status: "denied",
+    reason: "pre-hook-transform-conflict",
+    effect: "none",
+  });
+  expect(f.dispatched).toEqual([]);
+  expect((await f.gates()).filter((gate) => gate.hook).map((gate) => gate.hook?.hookId)).toEqual([
+    "one",
+    "two",
+  ]);
+});
+
+test.each([{ permission: "allow" }, { path: "../outside" }, { path: 5 }])(
+  "transforms cannot bypass strict schema or workspace identity: %j",
+  async (input) => {
+    const f = hookGateway([
+      preHook((envelope) => ({
+        kind: "transform",
+        input,
+        binding: hookDecisionBinding(envelope.catalog),
+      })),
+    ]);
+    expect((await f.gateway.execute(f.request())).status).not.toBe("completed");
+    // Path traversal is refused by the native normalized workspace owner, never read.
+    if (!("path" in input && input.path === "../outside")) expect(f.dispatched).toEqual([]);
+  },
+);
+
+test("stale veto, hidden-effect claims and malformed callback output fail closed", async () => {
+  for (const run of [
+    (envelope: Parameters<RegisteredToolHook["run"]>[0]) => ({
+      kind: "veto",
+      reason: "stale",
+      binding: { ...hookDecisionBinding(envelope.catalog), registrationGeneration: 999 },
+    }),
+    () => ({ kind: "observe", runProcess: ["touch", "outside"] }),
+    () => ({ kind: "observe", annotations: { secret: "x".repeat(121) } }),
+    () => ({ kind: "observe", annotations: { value: () => "secret" } }),
+  ]) {
+    const f = hookGateway([preHook(run as RegisteredToolHook["run"])]);
+    expect(await f.gateway.execute(f.request())).toMatchObject({
+      status: "denied",
+      effect: "none",
+    });
+    expect(f.dispatched).toEqual([]);
+    expect((await f.gates()).some((gate) => gate.decision === "failed:invalid-hook-decision")).toBe(
+      true,
+    );
+  }
+});
+
+test("post veto warns without rewriting completed facts, and replay never runs hooks again", async () => {
+  let calls = 0;
+  const f = hookGateway([
+    {
+      id: "late-veto",
+      priority: 0,
+      point: "after-capability-invocation",
+      run: (envelope) => {
+        calls++;
+        return { kind: "veto", reason: "undo", binding: hookDecisionBinding(envelope.catalog) };
+      },
+    },
+  ]);
+  const request = f.request();
+  const result = await f.gateway.execute(request);
+  expect(result).toMatchObject({
+    status: "completed",
+    output: { hooks: { warnings: [{ hookId: "late-veto", reason: "invalid-hook-decision" }] } },
+  });
+  expect(await f.gateway.execute(request)).toEqual(result);
+  expect(calls).toBe(1);
+  expect(f.dispatched).toHaveLength(1);
+});
+
+test("hook effects get separate ordinary confirmation, shared admission and receipts after subject settlement", async () => {
+  const f = hookGateway([
+    {
+      id: "request-write",
+      priority: 0,
+      point: "after-capability-invocation",
+      run: (envelope) => ({
+        kind: "external-effect-request",
+        binding: hookDecisionBinding(envelope.catalog),
+        request: {
+          kind: "tool",
+          name: "write_files",
+          arguments: { targets: [{ path: "effect.ts", kind: "create", text: "effect" }] },
+        },
+      }),
+    },
+  ]);
+  const request = f.request();
+  const result = await f.gateway.execute(request);
+  expect(result.status).toBe("completed");
+  expect(f.confirmations).toHaveLength(1);
+  expect(f.dispatched).toHaveLength(2);
+  expect(f.dispatched[0]).toBe("hook-subject");
+  expect(f.dispatched[1]).toStartWith("hook:");
+  expect(f.taskIds[0]).toBe(f.taskIds[1]);
+  expect(f.taskIds[0]).not.toBe("missing");
+  expect(await f.fileSystem.readText(localPath("/work/effect.ts"), 1024)).toEqual({
+    ok: true,
+    value: "effect",
+  });
+  expect(await f.gateway.execute(request)).toEqual(result);
+  expect(f.dispatched).toHaveLength(2);
+  const replay = await f.journal.replay();
+  if (replay.kind !== "rebuilt" && replay.kind !== "partial") throw new Error("missing journal");
+  const history = replay.events.flatMap((event) =>
+    event.kind === "history.recorded" ? [event.payload] : [],
+  );
+  expect(history.findIndex((p) => p.id === "hook-subject:settlement")).toBeLessThan(
+    history.findIndex((p) => p.id === `${f.dispatched[1]}:proposed`),
+  );
+  expect(
+    history.some(
+      (p) =>
+        p.type === "gate" &&
+        p.invocationId === f.dispatched[1] &&
+        p.decision === "failed:invalid-hook-decision",
+    ),
+  ).toBe(true);
+  const completions = replay.events.filter(
+    (event) => event.kind === "capability.invocation.completed",
+  );
+  expect(completions).toHaveLength(2);
+  expect(completions.every((event) => event.payload.admission?.acquired)).toBe(true);
+});
+
+test("unavailable effect request stays visible without executing an undisclosed capability", async () => {
+  const f = hookGateway([
+    {
+      id: "request-process",
+      priority: 0,
+      point: "after-capability-invocation",
+      run: (envelope) => ({
+        kind: "external-effect-request",
+        binding: hookDecisionBinding(envelope.catalog),
+        request: {
+          kind: "tool",
+          name: "run_process",
+          arguments: { command: "touch", args: ["outside"] },
+        },
+      }),
+    },
+  ]);
+  expect((await f.gateway.execute(f.request())).status).toBe("completed");
+  expect(f.dispatched).toHaveLength(1);
+  expect((await f.gates()).some((gate) => gate.decision === "external-effect-unavailable")).toBe(
+    true,
+  );
+});
+
+test("an external effect refusal has its own result without changing the successful subject", async () => {
+  const f = hookGateway(
+    [
+      {
+        id: "separate",
+        point: "after-capability-invocation",
+        priority: 0,
+        run: (envelope) => ({
+          kind: "external-effect-request",
+          binding: hookDecisionBinding(envelope.catalog),
+          request: {
+            kind: "tool",
+            name: "write_files",
+            arguments: { targets: [{ path: "outside.ts", kind: "create", text: "no" }] },
+          },
+        }),
+      },
+    ],
+    false,
+    true,
+  );
+  const result = await f.gateway.execute(f.request());
+  expect(result).toMatchObject({
+    status: "completed",
+    hookEffects: [{ status: "denied", effect: "none" }],
+  });
+  expect(f.dispatched).toHaveLength(1);
+  expect(await f.fileSystem.stat(localPath("/work/outside.ts"))).toEqual({ ok: true, value: null });
+});
+
+test.each(["account", "argv"])("changed %s cannot reuse prior confirmation", async (field) => {
+  const f = setup();
+  const entry = createToolRegistryEntry(
+    {
+      namespace: "test",
+      name: "external",
+      version: 1,
+      source: "builtin",
+      title: "External",
+      description: "Confirmation boundary fixture",
+      effect: "external",
+      capabilityKind: "process",
+      platforms: [],
+      limits: defaultToolLimits(),
+      concurrency: defaultConcurrencyContract(),
+      resultProjection: defaultProjectionContract(),
+    },
+    {
+      inputSchema: z.strictObject({ account: z.string(), argv: z.array(z.string()) }),
+      outputSchema: z.strictObject({}),
+    },
+  );
+  if (!entry.ok) throw new Error(entry.error.code);
+  const registry = createToolRegistry(generation, [entry.value]);
+  const hooks = createToolHookRegistry(generation, [
+    preHook((envelope) => ({
+      kind: "transform",
+      binding: hookDecisionBinding(envelope.catalog),
+      input: field === "account" ? { account: "second" } : { argv: ["changed"] },
+    })),
+  ]);
+  if (!registry.ok || !hooks.ok) throw new Error("fixture registry");
+  const confirmations: string[] = [];
+  let dispatched = 0;
+  const gateway = createProductToolGateway({
+    clock: f.clock,
+    resources: createProductResources(f.clock),
+    registry: registry.value,
+    hooks: hooks.value,
+    journal: f.journal,
+    correlation,
+    turnId: turn,
+    disclosedToolNames: new Set(["external"]),
+    effectLedger: new Map(),
+    confirmation: {
+      resolve: async (request) => {
+        confirmations.push(request.confirmationId);
+        return { kind: "confirmed", confirmationId: confirmations[0] ?? "" };
+      },
+    },
+    runner: {
+      execute: async () => {
+        dispatched++;
+        return { status: "completed", effect: "completed", output: {} };
+      },
+    },
+  });
+  expect(
+    await gateway.execute({
+      invocationId: invocationId.from("account-argv"),
+      toolCallId: "account-argv",
+      toolName: "external",
+      capabilityId: entry.value.manifest.capabilityId,
+      version: 1,
+      effect: "external",
+      input: { account: "first", argv: ["original"] },
+      signal: new AbortController().signal,
+    }),
+  ).toMatchObject({ status: "denied", effect: "none" });
+  expect(confirmations).toHaveLength(2);
+  expect(confirmations[0]).not.toBe(confirmations[1]);
+  expect(dispatched).toBe(0);
+});
+
+test("hook confirmation can narrow an allowed observation and cannot revive refused native policy", async () => {
+  const f = hookGateway(
+    [
+      preHook((envelope) => ({
+        kind: "external-effect-request",
+        binding: hookDecisionBinding(envelope.catalog),
+        request: { kind: "confirmation", reason: "review observation" },
+      })),
+    ],
+    false,
+    true,
+  );
+  expect(await f.gateway.execute(f.request())).toMatchObject({ status: "denied", effect: "none" });
+  expect(f.confirmations).toHaveLength(1);
+  expect(f.dispatched).toEqual([]);
+  let hooks = 0;
+  const g = hookGateway(
+    [
+      preHook(() => {
+        hooks++;
+        return { kind: "allow" };
+      }),
+    ],
+    false,
+    true,
+  );
+  expect(
+    (
+      await g.gateway.execute(
+        g.request("write_files", { targets: [{ path: "b.ts", kind: "create", text: "no" }] }),
+      )
+    ).status,
+  ).toBe("denied");
+  expect(hooks).toBe(0);
+  expect(g.dispatched).toEqual([]);
+});
+
+test("policy and hook confirmations retain distinct receipts for the same normalized intent", async () => {
+  const f = hookGateway([preHook(() => ({ kind: "request-confirmation", reason: "extra check" }))]);
+  expect(
+    (
+      await f.gateway.execute(
+        f.request("write_files", {
+          targets: [{ path: "confirmed.ts", kind: "create", text: "ok" }],
+        }),
+      )
+    ).status,
+  ).toBe("completed");
+  const gates = await f.gates();
+  expect(
+    gates.filter((gate) => gate.stage === "confirmation").map((gate) => gate.decision),
+  ).toEqual(["confirmed", "hook-accepted"]);
+  expect(new Set(gates.map((gate) => gate.id)).size).toBe(gates.length);
 });

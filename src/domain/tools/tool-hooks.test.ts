@@ -154,3 +154,17 @@ describe("recursion", () => {
     expect(isRecursionDenied({ recursionDepth: 2 })).toBe(true);
   });
 });
+
+test("the combined annotation result stays within the point bound", () => {
+  const decisions = Array.from({ length: 9 }, (_, index) => ({
+    hookId: `h${index}`,
+    decision: { kind: "observe" as const, annotations: { [`k${index}`]: "value" } },
+  }));
+  expect(settlePreHookDecisions(decisions)).toMatchObject({
+    kind: "failed-closed",
+    reason: "annotation-bound",
+  });
+  const post = settlePostHookDecisions(decisions);
+  expect(post).toMatchObject({ kind: "recorded", failures: [{ reason: "annotation-bound" }] });
+  if (post.kind === "recorded") expect(post.annotations).toHaveLength(8);
+});

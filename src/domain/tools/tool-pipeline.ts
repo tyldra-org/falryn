@@ -26,7 +26,6 @@ import type {
   ConfigurationGeneration,
   InvocationId,
 } from "../foundation/identity.ts";
-import { assertNever } from "../foundation/result.ts";
 import type { EffectCertainty } from "../orchestration/outcome.ts";
 import type { ResourceAdmissionReceipt } from "../orchestration/resource-admission.ts";
 import type { ConflictKey, EffectClass } from "../orchestration/work.ts";
@@ -148,6 +147,12 @@ type ToolInvocationResultCarrier = {
  * `effect: "none"`.
  */
 export type ToolInvocationOutcome = {
+  /** Separately admitted hook actions; never overwrite the subject's terminal fact. */
+  readonly hookEffects?: readonly {
+    readonly invocationId: string;
+    readonly status: ToolInvocationOutcome["status"];
+    readonly effect: EffectCertainty;
+  }[];
   readonly sandbox?: readonly SandboxReceipt[];
   readonly admission?: ResourceAdmissionReceipt;
   readonly composition?: CompositionProvenance;
@@ -241,23 +246,10 @@ function worseEffect(left: EffectCertainty, right: EffectCertainty): EffectCerta
 }
 
 export function effectOfToolOutcome(outcome: ToolInvocationOutcome): EffectCertainty {
-  switch (outcome.status) {
-    case "completed":
-      return "completed";
-    case "failed":
-    case "cancelled":
-    case "timed-out":
-    case "partial":
-      return outcome.effect;
-    case "uncertain":
-      return "uncertain";
-    case "denied":
-    case "unavailable":
-    case "malformed":
-      return "none";
-    default:
-      return assertNever(outcome, "unhandled tool invocation outcome");
-  }
+  return foldToolEffects([
+    outcome.effect,
+    ...(outcome.hookEffects ?? []).map((effect) => effect.effect),
+  ]);
 }
 
 export type BindToolProposalsOptions = {

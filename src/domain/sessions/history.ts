@@ -113,6 +113,18 @@ export const historyPayloadSchema = z.discriminatedUnion("type", [
       decision: z.string().min(1).max(128),
       declaredEffect: z.enum(["observation", "mutation", "external", "interactive"]),
       cancelled: z.boolean(),
+      hook: z
+        .strictObject({
+          hookId: identity,
+          factId: identity,
+          registrationGeneration: z.int().nonnegative(),
+          inputDigest: digest,
+          decisionDigest: digest,
+          effectInvocationId: identity.optional(),
+        })
+        .optional(),
+      originalInputDigest: digest.optional(),
+      admittedInputDigest: digest.optional(),
     })
     .strict(),
   z

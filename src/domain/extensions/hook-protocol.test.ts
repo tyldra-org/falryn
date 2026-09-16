@@ -2,7 +2,12 @@ import { expect, test } from "bun:test";
 import { externalHookFixture, hookFixtureDigest, hookFixtureEnvelope } from "./hook-fixtures.ts";
 import { hookRegistrationSchema } from "./hook-handlers.ts";
 import { HOOK_LIMITS, parseHookEnvelope } from "./hook-points.ts";
-import { decodeHookInput, decodeHookResponse, encodeHookInput } from "./hook-protocol.ts";
+import {
+  decodeHookInput,
+  decodeHookResponse,
+  encodeHookInput,
+  hookDecisionBinding,
+} from "./hook-protocol.ts";
 
 const registration = hookRegistrationSchema.parse(externalHookFixture);
 const input = {
@@ -12,7 +17,15 @@ const input = {
   envelope: hookFixtureEnvelope(),
 };
 const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
-const response = (decision: unknown) => bytes({ version: 1, invocationId: "inv:1", decision });
+const response = (decision: Record<string, unknown>) =>
+  bytes({
+    version: 1,
+    invocationId: "inv:1",
+    decision:
+      decision.kind === "observe"
+        ? decision
+        : { binding: hookDecisionBinding(input.envelope), ...decision },
+  });
 
 test("the v1 wire round trip is immutable, bounded and strictly correlated", () => {
   const unicode = { ...input, invocationId: "e\u0301\r\n" };
@@ -33,7 +46,11 @@ test("the v1 wire round trip is immutable, bounded and strictly correlated", () 
       input,
       registration,
     ),
-  ).toEqual({ kind: "transform", annotations: { note: "reviewed" } });
+  ).toEqual({
+    kind: "transform",
+    binding: hookDecisionBinding(input.envelope),
+    annotations: { note: "reviewed" },
+  });
   expect(
     decodeHookResponse(response({ kind: "veto", reason: "declined" }), input, registration).kind,
   ).toBe("veto");
@@ -203,4 +220,97 @@ test("context additions stay bounded, attributed, untrusted and limited to the f
   expect(() =>
     decodeHookResponse(response({ kind: "transform", annotations: {} }), input, evaluator),
   ).toThrow("hook-transform-unavailable");
+});
+
+test("mutation and veto bindings reject changed subjects, input digests and generations", () => {
+  const binding = hookDecisionBinding(input.envelope);
+  for (const changed of [
+    { factId: "other" },
+    { subjectId: "other" },
+    { ownerGeneration: 6 },
+    { configurationGeneration: 6 },
+    { registrationGeneration: 8 },
+    { payloadDigest: "b".repeat(64) },
+  ]) {
+    for (const decision of [
+      { kind: "transform", binding: { ...binding, ...changed }, input: { path: "b" } },
+      { kind: "veto", binding: { ...binding, ...changed }, reason: "stop" },
+    ])
+      expect(() => decodeHookResponse(response(decision), input, registration)).toThrow(
+        "hook-decision-stale",
+      );
+  }
+  expect(() =>
+    decodeHookResponse(
+      response({ kind: "observe" }),
+      { ...input, contribution: { ...input.contribution, generation: 8 } },
+      registration,
+    ),
+  ).toThrow("hook-registration-stale");
+});
+
+test("typed evaluator, async and terminal decisions cannot grant consent or change input", () => {
+  const evaluator = hookRegistrationSchema.parse({
+    ...externalHookFixture,
+    nonlocalOptIn: true,
+    handler: { kind: "prompt-evaluator-v1", bindingId: "model", instructions: "i.md" },
+  });
+  expect(
+    decodeHookResponse(response({ kind: "veto", reason: "refused" }), input, evaluator).kind,
+  ).toBe("veto");
+  for (const handler of [evaluator, { ...registration, mode: "async" as const }]) {
+    expect(decodeHookResponse(response({ kind: "observe" }), input, handler).kind).toBe("observe");
+    for (const decision of [
+      { kind: "transform", input: { account: "other", argv: ["other"] } },
+      {
+        kind: "external-effect-request",
+        request: { kind: "confirmation", reason: "model agrees" },
+      },
+      { kind: "observe", permission: "granted" },
+    ])
+      expect(() => decodeHookResponse(response(decision), input, handler)).toThrow();
+  }
+  for (const extra of [
+    { result: {} },
+    { processing: {} },
+    { permission: "allow" },
+    { capabilityId: "other" },
+  ])
+    expect(() =>
+      decodeHookResponse(response({ kind: "transform", ...extra }), input, registration),
+    ).toThrow();
+});
+
+test("async post requests are separate proposals, never retroactive mutations", () => {
+  const envelope = hookFixtureEnvelope("after-capability-invocation", {
+    capabilityId: "tool",
+    inputDigest: hookFixtureDigest,
+    declaredEffect: "observation",
+    terminal: "completed",
+    effect: "completed",
+  });
+  const declared = hookRegistrationSchema.parse({
+    ...externalHookFixture,
+    point: envelope.point,
+    mode: "async",
+  });
+  const bound = { ...input, envelope };
+  expect(
+    decodeHookResponse(
+      response({
+        kind: "external-effect-request",
+        binding: hookDecisionBinding(envelope),
+        request: { kind: "tool", name: "read_file", arguments: { path: "a" } },
+      }),
+      bound,
+      declared,
+    ).kind,
+  ).toBe("external-effect-request");
+  expect(() =>
+    decodeHookResponse(
+      response({ kind: "veto", binding: hookDecisionBinding(envelope), reason: "undo" }),
+      bound,
+      declared,
+    ),
+  ).toThrow();
 });

@@ -199,3 +199,37 @@ describe("createToolHookRunner", () => {
     expect(result.kind).toBe("failed-closed");
   });
 });
+
+test("cancelled and expired callbacks cannot settle a later subject or mutate a result", async () => {
+  for (const cancelled of [false, true]) {
+    const clock = createManualClock(instant(0));
+    const controller = new AbortController();
+    const pending =
+      Promise.withResolvers<import("../../domain/tools/tool-hooks.ts").ToolHookDecision>();
+    const registry = createToolHookRegistry(generation, [
+      {
+        id: "late",
+        point: "before-capability-invocation",
+        priority: 0,
+        run: () => pending.promise,
+      },
+    ]);
+    if (!registry.ok) throw new Error(registry.error.code);
+    const decisions: string[] = [];
+    const runner = createToolHookRunner({ clock, registry: registry.value, timeoutMs: 10 });
+    const result = runner.runPre({
+      envelope: envelope("before-capability-invocation"),
+      signal: controller.signal,
+      onDecision: async (record) => {
+        decisions.push(record.failed?.reason ?? record.decision.kind);
+      },
+    });
+    await Promise.resolve();
+    if (cancelled) controller.abort();
+    else clock.advance(duration(11));
+    expect((await result).kind).toBe("failed-closed");
+    pending.resolve({ kind: "transform", annotations: { late: "ignored" } });
+    await Promise.resolve();
+    expect(decisions).toEqual([cancelled ? "cancelled" : "timed-out"]);
+  }
+});

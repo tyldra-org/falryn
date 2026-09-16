@@ -2414,14 +2414,44 @@ two publishers are currently available:
 
 | Point | Product call site | Payload evidence | Mutation and settlement |
 | --- | --- | --- | --- |
-| `before-capability-invocation` | `product-tool-gateway.ts` before scheduling | Capability ID, input digest, declared effect | Bounded annotations; existing pre-hook refusal/confirmation; `hook-point-settled` |
-| `after-capability-invocation` | `product-tool-gateway.ts` after native outcome | The same identity plus terminal kind and observed effect | Observation/follow-up request; no terminal rewrite; `hook-point-settled` |
+| `before-capability-invocation` | `product-tool-gateway.ts` before scheduling | Capability ID, input digest, declared effect | Bounded annotations/input proposals, refusal and focused confirmation; `hook-point-settled` |
+| `after-capability-invocation` | `product-tool-gateway.ts` after native outcome | The same identity plus terminal kind and observed effect | Observation or separately admitted tool/follow-up request; no terminal rewrite; `hook-point-settled` |
 
 Both envelopes carry subject/fact identity, owner/configuration/registration
 generations, session/turn/attempt correlation and sequence. Callbacks receive
 frozen copies; the wire payload excludes raw tool input, output and runtime
 objects. Replay remains passive. The remaining catalog entries are unavailable;
 schemas alone do not compose a publisher or prove task/lifecycle dispatch.
+
+Hook decisions use `observe`, `transform`, `veto` and `external-effect-request`.
+Mutating wire decisions echo `hookDecisionBinding(envelope)`, binding the exact
+fact, subject, generations and payload digest. Trusted built-in legacy decisions
+remain accepted through a strict compatibility decoder. Neither decision form
+supplies an executor or grants permission. Built-in callbacks are trusted
+in-process code, not a sandbox for foreign executable handlers.
+
+At the before-tool point, a transform can propose at most eight top-level input
+fields, within the 16 KiB response limit. Same-field transforms conflict even
+when their values agree. The gateway normalizes the resulting input again and
+recomputes its effect, conflict keys, policy and focused confirmation. Earlier
+approval cannot authorize changed intent; replay rechecks the admitted input.
+Schema, workspace and native resource checks still own allowed targets.
+
+After-tool requests can propose a disclosed tool name and arguments. Once the
+subject is durably settled, each request enters the ordinary gateway with its
+own invocation, confirmation, shared task budget and receipt. One generation of
+requested effects is allowed; nested effect requests fail closed. Unknown or
+undisclosed requests are visible as unavailable. Follow-up text is a proposal
+only and never starts another model turn. Async declarations may propose a
+separate effect but cannot transform or veto a settled subject.
+
+The semantic journal records each decision with digests and correlation, plus
+original/admitted input digests. It does not store hook annotations or proposed
+patch contents. Result projections expose hook warnings and separate effect
+receipts; effect summaries retain uncertainty. Invalid pre-decisions prevent
+dispatch, and invalid or late post-decisions cannot rewrite the native result.
+SQLite reopen, export and replay read these facts without dispatching hooks.
+The existing 32-registration, recursion, response and native task limits apply.
 
 Package preparation rejects unknown hook points, versions, fields and invalid
 handler/mode combinations. External entrypoints require inventory digest locks.

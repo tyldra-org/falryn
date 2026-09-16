@@ -1,4 +1,5 @@
 /** One bounded JSON document in each direction. This module never launches a handler. */
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { canonicalJson, ExtensionInputError, freezeMetadata, parseMetadata } from "./canonical.ts";
 import { type HookRegistration, hookBudgetClass } from "./hook-handlers.ts";
@@ -24,17 +25,62 @@ const evidence = z
   )
   .max(HOOK_LIMITS.evidenceEntries)
   .refine((value) => Buffer.byteLength(JSON.stringify(value)) <= HOOK_LIMITS.evidenceBytes);
+const decisionBinding = z.strictObject({
+  factId: hookIdentity,
+  subjectId: hookIdentity,
+  ownerGeneration: hookGeneration,
+  configurationGeneration: hookGeneration,
+  registrationGeneration: hookGeneration,
+  payloadDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+});
+const inputPatch = z
+  .record(
+    z
+      .string()
+      .min(1)
+      .max(64)
+      .refine((key) => !["__proto__", "prototype", "constructor"].includes(key)),
+    z.unknown(),
+  )
+  .refine((value) => Object.keys(value).length > 0 && Object.keys(value).length <= 8);
+
+/** Exact snapshot binding; a decision cannot be carried to another fact or generation. */
+export function hookDecisionBinding(envelope: HookEnvelope) {
+  return {
+    factId: envelope.factId,
+    subjectId: envelope.subjectId,
+    ownerGeneration: envelope.ownerGeneration,
+    configurationGeneration: envelope.configurationGeneration,
+    registrationGeneration: envelope.registrationGeneration,
+    payloadDigest: createHash("sha256").update(JSON.stringify(envelope.payload)).digest("hex"),
+  };
+}
 export const hookDecisionSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("observe"),
     annotations: annotations.optional(),
     contextEvidence: evidence.optional(),
   }),
-  z.strictObject({ kind: z.literal("transform"), annotations }),
-  z.strictObject({ kind: z.literal("veto"), reason: z.string().min(1).max(120) }),
+  z.strictObject({
+    kind: z.literal("transform"),
+    binding: decisionBinding,
+    annotations: annotations.optional(),
+    input: inputPatch.optional(),
+  }),
+  z.strictObject({
+    kind: z.literal("veto"),
+    binding: decisionBinding,
+    reason: z.string().min(1).max(120),
+  }),
   z.strictObject({
     kind: z.literal("external-effect-request"),
+    binding: decisionBinding,
     request: z.discriminatedUnion("kind", [
+      z.strictObject({
+        kind: z.literal("tool"),
+        name: hookIdentity,
+        arguments: z.record(z.string(), z.unknown()),
+      }),
       z.strictObject({ kind: z.literal("confirmation"), reason: z.string().min(1).max(120) }),
       z.strictObject({
         kind: z.literal("follow-up"),
@@ -84,8 +130,17 @@ export function encodeHookInput(input: HookWireInput): Uint8Array {
 export function validateHookDecision(
   registration: HookRegistration,
   envelope: HookEnvelope,
-  decision: HookDecision,
+  candidate: unknown,
 ) {
+  canonicalJson(candidate);
+  if (Buffer.byteLength(JSON.stringify(candidate)) > HOOK_LIMITS.responseBytes)
+    throw new ExtensionInputError("hook-document-too-large");
+  const decision = hookDecisionSchema.parse(candidate);
+  if (
+    decision.kind !== "observe" &&
+    JSON.stringify(decision.binding) !== JSON.stringify(hookDecisionBinding(envelope))
+  )
+    throw new ExtensionInputError("hook-decision-stale");
   if (registration.point !== envelope.point || registration.pointVersion !== envelope.pointVersion)
     throw new ExtensionInputError("hook-point-mismatch");
   const descriptor = HOOK_POINTS[envelope.point];
@@ -98,7 +153,9 @@ export function validateHookDecision(
   if (budget === "evaluator" && envelope.origin === "evaluator")
     throw new ExtensionInputError("hook-evaluator-recursion");
   if (
-    (registration.mode === "async" || localOnly || descriptor.policy === "local-observe") &&
+    ((registration.mode === "async" && decision.kind !== "external-effect-request") ||
+      localOnly ||
+      descriptor.policy === "local-observe") &&
     decision.kind !== "observe"
   )
     throw new ExtensionInputError("hook-observation-only");
@@ -109,6 +166,12 @@ export function validateHookDecision(
     (budget === "evaluator" || !descriptor.mutableFields.includes("annotations"))
   )
     throw new ExtensionInputError("hook-transform-unavailable");
+  if (
+    decision.kind === "transform" &&
+    ((!decision.annotations && !decision.input) ||
+      (decision.input && !descriptor.mutableFields.includes("input")))
+  )
+    throw new ExtensionInputError("hook-transform-field-unavailable");
   if (
     decision.kind === "observe" &&
     decision.contextEvidence &&
@@ -121,7 +184,15 @@ export function validateHookDecision(
     const gate =
       descriptor.phase === "pre" &&
       (descriptor.policy === "gate" || descriptor.policy === "evidence");
-    if (budget === "evaluator" || (decision.request.kind === "confirmation" ? !gate : gate))
+    if (
+      budget === "evaluator" ||
+      envelope.recursionDepth >= HOOK_LIMITS.recursionDepth ||
+      (decision.request.kind === "confirmation"
+        ? !gate || registration.mode === "async"
+        : decision.request.kind === "follow-up"
+          ? gate
+          : envelope.point !== "after-capability-invocation")
+    )
       throw new ExtensionInputError("hook-effect-request-unavailable");
   }
   return freezeMetadata(decision);
@@ -141,5 +212,7 @@ export function decodeHookResponse(
     .parse(document(bytes, HOOK_LIMITS.responseBytes));
   if (response.invocationId !== input.invocationId)
     throw new ExtensionInputError("hook-invocation-mismatch");
+  if (input.contribution.generation !== input.envelope.registrationGeneration)
+    throw new ExtensionInputError("hook-registration-stale");
   return validateHookDecision(registration, input.envelope, response.decision);
 }
