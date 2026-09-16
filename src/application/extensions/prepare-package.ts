@@ -353,6 +353,14 @@ function validateDeclarations(
     declarations.set(key, entry);
     for (const path of [...entry.resources, ...(entry.path === undefined ? [] : [entry.path])])
       if (!files.has(path)) throw new ExtensionInputError("missing-contribution-file");
+    const handler = entry.hook?.handler;
+    if (handler?.kind === "external-command-v1" && !locks.has(handler.entrypoint))
+      throw new ExtensionInputError("unlocked-hook-entrypoint");
+    if (
+      (handler?.kind === "prompt-evaluator-v1" || handler?.kind === "agent-evaluator-v1") &&
+      !files.has(handler.instructions)
+    )
+      throw new ExtensionInputError("missing-hook-instructions");
     if (
       entry.configuration.some((id) => !configuration.has(id)) ||
       entry.state.some((id) => !state.has(id))

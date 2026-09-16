@@ -2379,6 +2379,37 @@ the full planned dependency/source/owner order, and a timeout settles the hook
 without propagating an `AbortSignal` to stop late asynchronous work.
 GitHub issue #143 owns those hook-runtime corrections.
 
+The v1 hook catalog in `src/domain/extensions/hook-points.ts` defines 47 closed
+point schemas and their phase, allowed decisions, mutable fields, filters,
+deadline/cancellation rules, sensitive-field policy and settlement events.
+`inspectHookPoints()` returns that table and generated input schemas. Exactly
+two publishers are currently available:
+
+| Point | Product call site | Payload evidence | Mutation and settlement |
+| --- | --- | --- | --- |
+| `before-capability-invocation` | `product-tool-gateway.ts` before scheduling | Capability ID, input digest, declared effect | Bounded annotations; existing pre-hook refusal/confirmation; `hook-point-settled` |
+| `after-capability-invocation` | `product-tool-gateway.ts` after native outcome | The same identity plus terminal kind and observed effect | Observation/follow-up request; no terminal rewrite; `hook-point-settled` |
+
+Both envelopes carry subject/fact identity, owner/configuration/registration
+generations, session/turn/attempt correlation and sequence. Callbacks receive
+frozen copies; the wire payload excludes raw tool input, output and runtime
+objects. Replay remains passive. The remaining catalog entries are unavailable;
+schemas alone do not compose a publisher or prove task/lifecycle dispatch.
+
+Package preparation rejects unknown hook points, versions, fields and invalid
+handler/mode combinations. External entrypoints require inventory digest locks.
+`falryn extension inspect <directory> --format json` reports the declared point,
+handler and availability; human output reports the same unavailable reason.
+Inspection neither activates handlers nor exposes arguments or credentials.
+The handler union includes built-in, command, HTTP, MCP and evaluator declarations;
+only the existing built-in tool callbacks execute. The external command codec
+accepts one UTF-8 JSON document per direction, with a 64 KiB input, 16 KiB
+response and exact invocation correlation. Python and Bun protocol fixtures
+exercise stdin/stdout EOF; they are not a product process adapter. Local timing
+remains 50 ms default/1,000 ms maximum. Broader publishers and handler runners
+remain with their existing owners; declared remote/evaluator budgets do not
+widen the current runner.
+
 The generic gateway captures its native result before projection and reports a
 failed capture independently of the observed effect. Content above the 4 MiB
 history admission bound is an explicit unavailable record. Broader artifact

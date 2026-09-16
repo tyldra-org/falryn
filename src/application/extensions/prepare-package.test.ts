@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { bytesDigest } from "../../domain/extensions/canonical.ts";
+import { externalHookFixture } from "../../domain/extensions/hook-fixtures.ts";
 import { NATIVE_CONTRIBUTION_KINDS } from "../../domain/extensions/identity.ts";
 import { PORTABLE_MCP_SCHEMA } from "../../domain/extensions/manifest.ts";
 import { packageInspectionReport } from "./inspection-report.ts";
@@ -14,6 +15,47 @@ import {
 import { preparePackage } from "./prepare-package.ts";
 
 describe("extension package preparation", () => {
+  test("hook declarations fail during preparation before missing, incompatible or unlocked handlers can activate", async () => {
+    const script = 'throw new Error("NEVER ACTIVATE");';
+    const prepare = (hook: unknown, locked = true) =>
+      preparePackage(
+        packageSource(
+          pluginManifest({
+            version: 1,
+            contributions: [
+              {
+                kind: "hook",
+                namespace: "fixture",
+                id: "observe",
+                description: "Observe tool calls",
+                authority: declaredAuthority,
+                ...(hook === undefined ? {} : { hook }),
+              },
+            ],
+            files: locked ? [{ path: "hooks/observe.ts", digest: bytesDigest(script) }] : [],
+          }),
+          { "hooks/observe.ts": script },
+        ),
+        inspectionHost,
+      );
+    for (const hook of [
+      undefined,
+      { ...externalHookFixture, point: "unknown" },
+      { ...externalHookFixture, pointVersion: 2 },
+      { ...externalHookFixture, handler: { kind: "builtin", id: "host" } },
+      { ...externalHookFixture, mode: "async" },
+    ])
+      expect(await prepare(hook)).toEqual({ ok: false, code: "invalid-falryn-manifest" });
+    expect(await prepare(externalHookFixture, false)).toEqual({
+      ok: false,
+      code: "unlocked-hook-entrypoint",
+    });
+    const valid = await prepare(externalHookFixture);
+    expect(valid.ok).toBe(true);
+    if (!valid.ok) throw new Error(valid.code);
+    expect(valid.package.contributions[0]?.declaration.hook).toMatchObject(externalHookFixture);
+    expect(Object.isFrozen(valid.package.contributions[0]?.declaration.hook)).toBe(true);
+  });
   test("normalizes portable components and isolates invalid siblings", async () => {
     const result = await preparePackage(
       packageSource(
@@ -100,6 +142,23 @@ describe("extension package preparation", () => {
       namespace: "fixture",
       id: kind,
       description: kind,
+      ...(kind === "hook"
+        ? {
+            hook: {
+              version: 1,
+              point: "before-capability-invocation",
+              pointVersion: 1,
+              mode: "sync",
+              handler: {
+                kind: "external-command-v1",
+                executable: "bun",
+                argv: [],
+                entrypoint: "scripts/run.ts",
+                executionProfile: "governed",
+              },
+            },
+          }
+        : {}),
       authority: declaredAuthority,
       ...(kind === "capability-module"
         ? {

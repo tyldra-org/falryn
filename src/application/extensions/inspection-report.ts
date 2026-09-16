@@ -34,6 +34,9 @@ export function packageInspectionReport(result: PackagePreparation, trust?: Pack
       mode: entry.mode,
       compatibility: entry.compatibility,
       batching: entry.batching,
+      ...(entry.identity.nativeKind === "hook"
+        ? { hook: inspectHookRegistration(entry.declaration.hook) }
+        : {}),
       disclosure:
         entry.mode === "full-user"
           ? "Activation would grant full user process access without a security sandbox; inspection does not activate it."
@@ -100,6 +103,11 @@ export function packageInspectionLines(report: PackageInspectionReport): string[
     ...report.contributions.flatMap((entry) => [
       `${entry.kind} ${entry.namespace}/${entry.id}: ${entry.mode}, ${entry.compatibility}`,
       `Declared effects: ${entry.authority.effects.join(", ") || "none"}; permissions: ${entry.authority.permissions.join(", ") || "none"}.`,
+      ...(entry.hook == null
+        ? []
+        : [
+            `Hook ${entry.hook.point}@${entry.hook.pointVersion}: ${entry.hook.handler}, ${entry.hook.mode}; ${entry.hook.availability.status}${entry.hook.availability.status === "unavailable" ? ` (${entry.hook.availability.code})` : ""}.`,
+          ]),
       ...(entry.disclosure === null ? [] : [entry.disclosure]),
     ]),
     `Dependencies: ${report.dependencies.status}${report.dependencies.status === "unresolved" ? ` (${report.dependencies.code}; no external inventory fetched)` : ""}`,
@@ -109,3 +117,5 @@ export function packageInspectionLines(report: PackageInspectionReport): string[
       : [`Additional diagnostics: ${report.omittedDiagnostics}`]),
   ];
 }
+
+import { inspectHookRegistration } from "../../domain/extensions/hook-handlers.ts";

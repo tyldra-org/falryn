@@ -1,3 +1,5 @@
+import { canonicalJson, freezeMetadata } from "../../domain/extensions/canonical.ts";
+import { HOOK_LIMITS, parseHookEnvelope } from "../../domain/extensions/hook-points.ts";
 /**
  * Run built-in tool hooks at capability-invocation points (#53).
  *
@@ -73,8 +75,35 @@ async function invokeHook(
   clock: ClockPort,
   budgetMs: number,
   signal: AbortSignal,
+  registryGeneration: number,
 ): Promise<HookInvokeResult> {
-  const expiresAt = addDuration(clock.now(), duration(budgetMs));
+  if (signal.aborted) return { ok: false, reason: "cancelled" };
+  let snapshot: ToolHookEnvelope;
+  try {
+    const catalog = parseHookEnvelope(envelope.catalog);
+    if (
+      catalog.point !== envelope.point ||
+      catalog.registrationGeneration !== Number(envelope.registrationGeneration) ||
+      catalog.registrationGeneration !== registryGeneration ||
+      catalog.ownerGeneration !== Number(envelope.catalogGeneration) ||
+      catalog.subjectId !== String(envelope.invocationId) ||
+      catalog.payload.capabilityId !== String(envelope.capabilityId)
+    )
+      return { ok: false, reason: "hook-envelope-mismatch" };
+    canonicalJson(envelope);
+    const text = JSON.stringify(envelope);
+    if (Buffer.byteLength(text) > HOOK_LIMITS.inputBytes)
+      return { ok: false, reason: "hook-input-too-large" };
+    snapshot = freezeMetadata(JSON.parse(text)) as ToolHookEnvelope;
+  } catch {
+    return { ok: false, reason: "invalid-hook-envelope" };
+  }
+  const remaining =
+    envelope.deadline === null
+      ? budgetMs
+      : Math.min(budgetMs, Number(envelope.deadline.expiresAt) - Number(clock.now()));
+  if (remaining <= 0) return { ok: false, reason: "timed-out" };
+  const expiresAt = addDuration(clock.now(), duration(remaining));
   const controller = new AbortController();
   const onAbort = (): void => {
     controller.abort();
@@ -86,7 +115,7 @@ async function invokeHook(
   try {
     const result = await Promise.race([
       Promise.resolve()
-        .then(() => run(envelope))
+        .then(() => (signal.aborted ? Promise.reject(new Error("cancelled")) : run(snapshot)))
         .then((decision) => ({ ok: true, decision }) as const),
       clock
         .waitUntil(expiresAt, controller.signal)
@@ -130,6 +159,7 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
         options.clock,
         budget,
         input.signal,
+        Number(options.registry.generation),
       );
       if (!result.ok) {
         recorded.push({

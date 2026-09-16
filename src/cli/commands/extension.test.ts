@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { packageInspectionLines } from "../../application/extensions/inspection-report.ts";
 import { pluginManifest } from "../../application/extensions/package-fixtures.ts";
 import { signedVerification } from "../../application/extensions/provenance-fixtures.ts";
+import { bytesDigest } from "../../domain/extensions/canonical.ts";
+import { externalHookFixture } from "../../domain/extensions/hook-fixtures.ts";
 import { createStaticEnvironment } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
 import { parseInvocation } from "../command-tree.ts";
@@ -14,6 +16,54 @@ import { runExtensionInspect } from "./extension.ts";
 const roots: string[] = [];
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true })));
+});
+
+test("public hook inspection exposes the declared contract and unavailable adapter without command details", async () => {
+  const root = await mkdtemp(join(tmpdir(), "falryn-hook-inspect-"));
+  roots.push(root);
+  await mkdir(join(root, "hooks"));
+  const script = 'throw new Error("MUST NOT EXECUTE");';
+  await writeFile(join(root, "hooks/observe.ts"), script);
+  await writeFile(
+    join(root, "plugin.json"),
+    JSON.stringify(
+      pluginManifest({
+        version: 1,
+        files: [{ path: "hooks/observe.ts", digest: bytesDigest(script) }],
+        contributions: [
+          {
+            kind: "hook",
+            namespace: "fixture",
+            id: "audit",
+            description: "Observe tool calls",
+            authority: {
+              effects: [],
+              permissions: [],
+              roots: [],
+              destinations: [],
+              secretReferences: [],
+              localData: [],
+            },
+            hook: {
+              ...externalHookFixture,
+              handler: { ...externalHookFixture.handler, argv: ["PRIVATE-ARGUMENT"] },
+            },
+          },
+        ],
+      }),
+    ),
+  );
+  const result = await runExtensionInspect(root);
+  if (result.payload?.status !== "inspected") throw new Error(JSON.stringify(result.payload));
+  expect(result.effect.observed).toBe("none");
+  expect(result.payload.contributions[0]?.hook).toMatchObject({
+    point: "before-capability-invocation",
+    pointVersion: 1,
+    handler: "external-command-v1",
+    availability: { status: "unavailable", code: "hook-handler-unavailable" },
+  });
+  expect(packageInspectionLines(result.payload).join("\n")).toContain("hook-handler-unavailable");
+  expect(JSON.stringify(result.payload)).not.toContain("PRIVATE-ARGUMENT");
 });
 
 test("public trust input verifies offline evidence, confirms refresh, and exposes revocation after restart", async () => {
