@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { isDeclarationSchema } from "./declaration-schema.ts";
 import { dependencySchema, versionRangeSchema } from "./dependencies.ts";
+import { hookRegistrationSchema } from "./hook-handlers.ts";
 import {
   BEHAVIOR_FAMILIES,
   digestSchema,
@@ -157,10 +158,14 @@ export const contributionDeclarationSchema = z
     state: names.default([]),
     presentationSlots: names.default([]),
     module: moduleDeclaration.optional(),
+    hook: hookRegistrationSchema.optional(),
     batching: batch.optional(),
   })
   .superRefine((value, ctx) => {
     const reject = (message: string) => ctx.addIssue({ code: "custom", message });
+    if (value.kind === "hook" && value.hook === undefined) reject("missing-hook-contract");
+    if (value.kind !== "hook" && value.hook !== undefined) reject("cross-kind-hook");
+    if (value.hook?.handler.kind === "builtin") reject("package-cannot-register-builtin-hook");
     const inert = [
       "skill",
       "instruction",

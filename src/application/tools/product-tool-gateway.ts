@@ -7,6 +7,7 @@ import {
   type SandboxInvocationPort,
   sandboxExpansionSchema,
 } from "../../domain/security/sandbox.ts";
+import { withHookCatalog } from "../../domain/tools/tool-hook-envelope.ts";
 import { createSessionHistory, historyDigest } from "../sessions/session-history.ts";
 /**
  * Non-bypassable product tool lifecycle used by the live model loop (#786).
@@ -126,23 +127,36 @@ function terminalOutcome(outcome: ToolInvocationOutcome): TerminalOutcome {
 
 function hookEnvelope(
   request: ToolRunnerRequest,
-  registry: ToolRegistry,
+  options: ProductToolGatewayOptions,
   point: ToolHookEnvelope["point"],
   outcome: ToolInvocationOutcome | null,
 ): ToolHookEnvelope {
-  return {
-    point,
-    phase: point === "before-capability-invocation" ? "pre" : "post",
-    invocationId: request.invocationId,
-    capabilityId: request.capabilityId,
-    catalogGeneration: registry.generation,
-    registrationGeneration: registry.generation,
-    deadline: null,
-    recursionDepth: 0,
-    reentryKey: `${request.invocationId}:${point}`,
-    payload: request.input,
-    observedOutcome: outcome,
-  };
+  const deadline = request.processTask?.deadline;
+  return withHookCatalog(
+    {
+      point,
+      phase: point === "before-capability-invocation" ? "pre" : "post",
+      invocationId: request.invocationId,
+      capabilityId: request.capabilityId,
+      catalogGeneration: options.registry.generation,
+      registrationGeneration: options.hooks.generation,
+      deadline: deadline === undefined ? null : deadlineAt(instant(deadline)),
+      recursionDepth: 0,
+      reentryKey: `${request.invocationId}:${point}`,
+      payload: request.input,
+      observedOutcome: outcome,
+    },
+    {
+      sessionId: String(options.correlation.sessionId),
+      turnId: String(options.turnId),
+      ...(options.attemptId === undefined ? {} : { attemptId: options.attemptId }),
+      configurationGeneration: Number(options.correlation.configurationGeneration),
+      declaredEffect: request.effect,
+      ...(deadline === undefined
+        ? {}
+        : { remainingMs: Math.max(0, Math.min(1000, deadline - Number(options.clock.now()))) }),
+    },
+  );
 }
 
 function failureReason(outcome: ToolInvocationOutcome): string {
@@ -526,7 +540,12 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     }
 
     const pre = await hookRunner.runPre({
-      envelope: hookEnvelope(request, options.registry, "before-capability-invocation", null),
+      envelope: hookEnvelope(
+        { ...request, input: ready.input, effect: ready.effect },
+        options,
+        "before-capability-invocation",
+        null,
+      ),
       signal: request.signal,
     });
     if (!(await observe("pre-hook", pre.kind)))
@@ -931,7 +950,12 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       historyTask,
     );
     const post = await hookRunner.runPost({
-      envelope: hookEnvelope(request, options.registry, "after-capability-invocation", outcome),
+      envelope: hookEnvelope(
+        { ...request, input: ready.input, effect: ready.effect },
+        options,
+        "after-capability-invocation",
+        outcome,
+      ),
       signal: request.signal,
     });
 

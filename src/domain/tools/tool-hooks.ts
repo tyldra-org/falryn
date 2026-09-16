@@ -7,6 +7,13 @@
  * later owners.
  */
 
+import {
+  HOOK_BUDGETS,
+  HOOK_LIMITS,
+  HOOK_POINTS,
+  type HookEnvelope,
+  LIVE_TOOL_HOOK_POINTS,
+} from "../extensions/hook-points.ts";
 import type { Instant } from "../foundation/clock.ts";
 import type { Deadline } from "../foundation/deadline.ts";
 import type {
@@ -21,10 +28,7 @@ import type { ToolInvocationOutcome } from "./tool-pipeline.ts";
 /** Schema version this build writes for tool-hook registries. */
 export const TOOL_HOOK_SCHEMA_VERSION = 1;
 
-export const TOOL_HOOK_POINTS = [
-  "before-capability-invocation",
-  "after-capability-invocation",
-] as const;
+export const TOOL_HOOK_POINTS = LIVE_TOOL_HOOK_POINTS;
 
 export type ToolHookPoint = (typeof TOOL_HOOK_POINTS)[number];
 
@@ -37,14 +41,7 @@ export const TOOL_HOOK_PHASES = ["pre", "post"] as const;
 export type ToolHookPhase = (typeof TOOL_HOOK_PHASES)[number];
 
 export function phaseForHookPoint(point: ToolHookPoint): ToolHookPhase {
-  switch (point) {
-    case "before-capability-invocation":
-      return "pre";
-    case "after-capability-invocation":
-      return "post";
-    default:
-      return assertNever(point, "unhandled tool hook point");
-  }
+  return HOOK_POINTS[point].phase as ToolHookPhase;
 }
 
 /**
@@ -55,26 +52,20 @@ export function phaseForHookPoint(point: ToolHookPoint): ToolHookPhase {
 export type ToolHookFailurePosture = "fail-closed" | "fail-open";
 
 export function failurePostureForHookPoint(point: ToolHookPoint): ToolHookFailurePosture {
-  switch (point) {
-    case "before-capability-invocation":
-      return "fail-closed";
-    case "after-capability-invocation":
-      return "fail-open";
-    default:
-      return assertNever(point, "unhandled tool hook point for posture");
-  }
+  return HOOK_POINTS[point].failurePosture;
 }
 
-export const MAX_TOOL_HOOKS_PER_POINT = 32;
-export const MAX_TOOL_HOOK_RECURSION_DEPTH = 1;
-export const MAX_TOOL_HOOK_ANNOTATION_KEYS = 8;
-export const MAX_TOOL_HOOK_ANNOTATION_VALUE_LENGTH = 120;
-export const DEFAULT_TOOL_HOOK_TIMEOUT_MS = 50;
-export const MAX_TOOL_HOOK_TIMEOUT_MS = 1_000;
+export const MAX_TOOL_HOOKS_PER_POINT = HOOK_LIMITS.registrationsPerPoint;
+export const MAX_TOOL_HOOK_RECURSION_DEPTH = HOOK_LIMITS.recursionDepth;
+export const MAX_TOOL_HOOK_ANNOTATION_KEYS = HOOK_LIMITS.annotationKeys;
+export const MAX_TOOL_HOOK_ANNOTATION_VALUE_LENGTH = HOOK_LIMITS.annotationValueLength;
+export const DEFAULT_TOOL_HOOK_TIMEOUT_MS = HOOK_BUDGETS.local.defaultMs;
+export const MAX_TOOL_HOOK_TIMEOUT_MS = HOOK_BUDGETS.local.maximumMs;
 
 export type ToolHookAnnotations = Readonly<Record<string, string>>;
 
 export type ToolHookEnvelope = {
+  readonly catalog: HookEnvelope<ToolHookPoint>;
   readonly point: ToolHookPoint;
   readonly phase: ToolHookPhase;
   readonly invocationId: InvocationId;
@@ -116,10 +107,19 @@ export type RegisteredToolHook = {
   readonly id: string;
   readonly point: ToolHookPoint;
   readonly priority: number;
+  readonly pointVersion?: 1;
   readonly run: ToolHookFn;
 };
 
 export type ToolHookRegistryError =
+  | {
+      readonly code:
+        | "unknown-hook-point"
+        | "incompatible-hook-version"
+        | "hook-publisher-unavailable"
+        | "invalid-hook-declaration";
+      readonly id: string;
+    }
   | { readonly code: "duplicate-hook"; readonly id: string }
   | { readonly code: "too-many-hooks"; readonly point: ToolHookPoint; readonly maximum: number }
   | { readonly code: "invalid-hook-id"; readonly id: string }
@@ -161,6 +161,23 @@ export function createToolHookRegistry(
   const seen = new Set<string>();
   const perPoint = new Map<ToolHookPoint, number>();
   for (const hook of hooks) {
+    if (!isToolHookPoint(hook.point))
+      return err({
+        code:
+          typeof hook.point === "string" && Object.hasOwn(HOOK_POINTS, hook.point)
+            ? "hook-publisher-unavailable"
+            : "unknown-hook-point",
+        id: hook.id,
+      });
+    if (
+      Object.keys(hook).some(
+        (key) => !["id", "point", "pointVersion", "priority", "run"].includes(key),
+      ) ||
+      typeof hook.run !== "function"
+    )
+      return err({ code: "invalid-hook-declaration", id: hook.id });
+    if (hook.pointVersion !== undefined && hook.pointVersion !== TOOL_HOOK_SCHEMA_VERSION)
+      return err({ code: "incompatible-hook-version", id: hook.id });
     if (!LEGAL_HOOK_ID.test(hook.id)) {
       return err({ code: "invalid-hook-id", id: hook.id });
     }
@@ -181,11 +198,17 @@ export function createToolHookRegistry(
     }
     perPoint.set(hook.point, count);
   }
-  return ok({
-    schemaVersion: TOOL_HOOK_SCHEMA_VERSION,
-    generation,
-    hooks: orderToolHooks(hooks),
-  });
+  return ok(
+    Object.freeze({
+      schemaVersion: TOOL_HOOK_SCHEMA_VERSION,
+      generation,
+      hooks: Object.freeze(
+        orderToolHooks(
+          hooks.map((hook) => Object.freeze({ ...hook, pointVersion: TOOL_HOOK_SCHEMA_VERSION })),
+        ),
+      ),
+    }),
+  );
 }
 
 export type BoundAnnotation = {
@@ -404,6 +427,6 @@ export type ToolLifecycleFact =
         | "recursion-denied";
     };
 
-export function isRecursionDenied(envelope: ToolHookEnvelope): boolean {
+export function isRecursionDenied(envelope: Pick<ToolHookEnvelope, "recursionDepth">): boolean {
   return envelope.recursionDepth > MAX_TOOL_HOOK_RECURSION_DEPTH;
 }

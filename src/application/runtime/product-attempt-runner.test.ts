@@ -19,6 +19,11 @@ import {
 } from "../../domain/foundation/index.ts";
 import { createStubCommandRunner } from "../../domain/process/index.ts";
 import { createInMemoryEventStore } from "../../domain/sessions/index.ts";
+import {
+  createToolHookRegistry,
+  type ToolHookEnvelope,
+  type ToolHookRegistry,
+} from "../../domain/tools/tool-hooks.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
 import {
   createAnthropicSdkAdapter,
@@ -49,6 +54,7 @@ function setup(
   }),
   wrapRunner: (base: ToolRunnerPort) => ToolRunnerPort = (base) => base,
   disclosureOptions: Parameters<typeof discloseProductTools>[2] = {},
+  toolHooks?: ToolHookRegistry,
 ) {
   const correlation = {
     workspaceId: workspaceId.from("workspace-attempt-product"),
@@ -72,6 +78,7 @@ function setup(
     correlation,
     providerAdapter: adapter,
     toolRegistry: tools.registry,
+    ...(toolHooks === undefined ? {} : { toolHooks }),
     toolRunner: {
       ...wrapRunner(tools.runner),
       hasBinding: (id) => tools.runner.hasBinding?.(id) === true,
@@ -136,6 +143,99 @@ function receipt(
     recordedAt: null,
   };
 }
+
+test("a real provider/tool turn emits one immutable v1 pair from the admitted hook generation", async () => {
+  const observed: ToolHookEnvelope[] = [];
+  const hooks = createToolHookRegistry(configurationGeneration.from(17), [
+    {
+      id: "proof.pre",
+      point: "before-capability-invocation",
+      priority: 0,
+      run: (envelope) => {
+        observed.push(envelope);
+        expect(Object.isFrozen(envelope.payload)).toBe(true);
+        return { kind: "allow" };
+      },
+    },
+    {
+      id: "proof.post",
+      point: "after-capability-invocation",
+      priority: 0,
+      run: (envelope) => {
+        observed.push(envelope);
+        expect(Object.isFrozen(envelope.observedOutcome)).toBe(true);
+        return { kind: "annotate", annotations: {} };
+      },
+    },
+  ]);
+  if (!hooks.ok) throw new Error(hooks.error.code);
+  const adapter = createDeterministicProviderAdapter({
+    script: (_request, index) =>
+      index === 0
+        ? {
+            kind: "tool",
+            toolCallId: "hook-list",
+            name: "list_dir",
+            argumentFragments: ['{"path":"."}'],
+          }
+        : { kind: "text", text: "Inspected." },
+  });
+  const product = setup(adapter, (base) => base, {}, hooks.value);
+  const turn = await start(product, "turn-hook-proof");
+  const runner = product.runtime.requireAttemptRunner();
+  if (!runner.ok) throw new Error(runner.error.code);
+  const result = await runner.value.run({
+    turnId: turn,
+    identity: {
+      attemptNumber: 1,
+      modelAttemptId: modelAttemptId.from("attempt-hook-proof"),
+      fallbackPosition: 0,
+      providerKey: adapter.identity.providerId,
+      modelKey: String(adapter.supportedModels[0]),
+    },
+    receipt: receipt(product),
+    boundConfigurationGeneration: generation,
+    configurationGeneration: generation,
+    signal: new AbortController().signal,
+    modelInput: {
+      messages: [{ role: "user", parts: [{ kind: "text", text: "Inspect." }] }],
+      tools: product.disclosure.modelTools,
+      output: { kind: "text" },
+      budgets: {},
+      disclosure: disclosureInput(product),
+    },
+  });
+  expect(result.fact.kind).toBe("completed");
+  expect(
+    observed.map((event) => [
+      event.catalog.point,
+      event.catalog.sequence,
+      event.catalog.registrationGeneration,
+    ]),
+  ).toEqual([
+    ["before-capability-invocation", 0, 17],
+    ["after-capability-invocation", 1, 17],
+  ]);
+  for (const event of observed) {
+    expect(event.catalog.ownerGeneration).toBe(5);
+    expect(event.catalog.configurationGeneration).toBe(5);
+    expect(event.catalog.correlation).toEqual({
+      sessionId: "session-attempt-product",
+      turnId: turn,
+      attemptId: "attempt-hook-proof",
+    });
+    expect(event.catalog.subjectId).toBe(event.invocationId);
+    expect(event.catalog.payload).not.toHaveProperty("path");
+    expect(event.catalog).not.toHaveProperty("signal");
+  }
+  expect(observed[1]?.catalog.payload).toMatchObject({
+    terminal: "completed",
+    effect: "completed",
+  });
+  const replay = await product.runtime.journal.replay();
+  expect(replay.kind).not.toBe("failed");
+  expect(observed).toHaveLength(2);
+});
 
 async function start(setupResult: ReturnType<typeof setup>, id: string) {
   const turn = turnId.from(id);

@@ -20,6 +20,7 @@ import {
   type ToolManifestDocument,
   validateAndNormalizeInvocations,
 } from "../domain/tools/index.ts";
+import { withHookCatalog } from "../domain/tools/tool-hook-envelope.ts";
 import { createRuntimeRedactor } from "./diagnostics/redaction.ts";
 import { createToolHookRunner } from "./tools/tool-hook-runner.ts";
 import { envelopeToolResult } from "./tools/tool-result-envelope.ts";
@@ -93,7 +94,7 @@ function envelopeFor(
   point: ToolHookEnvelope["point"],
   observedOutcome: ToolHookEnvelope["observedOutcome"] = null,
 ): ToolHookEnvelope {
-  return {
+  return withHookCatalog({
     point,
     phase: point === "before-capability-invocation" ? "pre" : "post",
     invocationId: authorized.invocation.invocationId,
@@ -105,7 +106,7 @@ function envelopeFor(
     reentryKey: `${authorized.invocation.invocationId}:${point}`,
     payload: authorized.invocation.input,
     observedOutcome,
-  };
+  });
 }
 
 describe("tool pipeline seam #48–#53", () => {

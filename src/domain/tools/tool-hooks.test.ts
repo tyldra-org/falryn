@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { capabilityId, configurationGeneration, invocationId } from "../foundation/index.ts";
+import { configurationGeneration } from "../foundation/index.ts";
 import {
   createToolHookRegistry,
   failurePostureForHookPoint,
@@ -29,6 +29,26 @@ function hook(
 }
 
 describe("tool hook registry", () => {
+  test("runtime registration rejects unknown points and versions, and snapshots admitted declarations", () => {
+    const valid = hook("valid", "before-capability-invocation", 0);
+    for (const [change, code] of [
+      [{ point: "capability.invoke.before" }, "unknown-hook-point"],
+      [{ point: "turn.complete" }, "hook-publisher-unavailable"],
+      [{ pointVersion: 2 }, "incompatible-hook-version"],
+      [{ environment: {} }, "invalid-hook-declaration"],
+    ] as const) {
+      const result = createToolHookRegistry(generation, [
+        { ...valid, ...change } as unknown as RegisteredToolHook,
+      ]);
+      expect(result).toMatchObject({ ok: false, error: { code } });
+    }
+    const registered = createToolHookRegistry(generation, [valid]);
+    if (!registered.ok) throw new Error(registered.error.code);
+    expect(Object.isFrozen(registered.value.hooks)).toBe(true);
+    expect(Object.isFrozen(registered.value.hooks[0])).toBe(true);
+    expect(registered.value.hooks[0]?.pointVersion).toBe(1);
+    expect(registered.value.hooks[0]).not.toBe(valid);
+  });
   test("orders by priority then stable id", () => {
     const ordered = orderToolHooks([
       hook("b.hook", "before-capability-invocation", 1),
@@ -131,20 +151,6 @@ describe("post-hook settlement", () => {
 
 describe("recursion", () => {
   test("denies depth beyond the bound", () => {
-    expect(
-      isRecursionDenied({
-        point: "before-capability-invocation",
-        phase: "pre",
-        invocationId: invocationId.from("inv-1"),
-        capabilityId: capabilityId.from("builtin:workspace/read_file@1"),
-        catalogGeneration: generation,
-        registrationGeneration: generation,
-        deadline: null,
-        recursionDepth: 2,
-        reentryKey: "inv-1:before-capability-invocation",
-        payload: {},
-        observedOutcome: null,
-      }),
-    ).toBe(true);
+    expect(isRecursionDenied({ recursionDepth: 2 })).toBe(true);
   });
 });
