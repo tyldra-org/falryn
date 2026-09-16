@@ -282,7 +282,8 @@ export function createProfileTransitions(ports: ProfileTransitionPorts): Profile
           return await reject("receipt-store-unavailable");
         if (abort.aborted || !current() || !(await bounded(candidate.validate(abort), abort)))
           return await reject(abort.aborted ? "cancelled" : "configuration-changed");
-        published = await candidate.publish(abort);
+        if (!current()) return await reject("configuration-changed");
+        published = await candidate.publish(abort, current);
         if (published === null) return await reject("publication-refused");
         owners = owners.map((entry) =>
           entry.state === "pending" ? { ...entry, code: "awaiting-acknowledgement" } : entry,

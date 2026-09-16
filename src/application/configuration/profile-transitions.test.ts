@@ -468,3 +468,34 @@ test("reconciliation refuses an owner's mismatched applied generation", async ()
     code: "acknowledgement-generation-mismatch",
   });
 });
+
+test("authority changed while validating cannot cross publication", async () => {
+  const f = fixture();
+  let validations = 0;
+  const service = createProfileTransitions({
+    ...f.ports,
+    resolve: async () => ({
+      ...f.candidate,
+      validate: async () => {
+        if (++validations === 2) f.state.policy = "revoked";
+        return true;
+      },
+    }),
+  });
+  await service.preview({
+    ...scope,
+    profile: "b",
+    actor: "user",
+    expectedGeneration: 0,
+    expectedSources: "source-a",
+  });
+  const result = await service.apply({
+    ...scope,
+    actor: "user",
+    candidateId: "candidate-b",
+    expectedGeneration: 0,
+  });
+  expect(result.kind === "receipt" && result.receipt.publishedGeneration).toBeNull();
+  expect(f.state.generation).toBe(0);
+  expect(f.calls).toEqual(["prepare:models", "release:models"]);
+});

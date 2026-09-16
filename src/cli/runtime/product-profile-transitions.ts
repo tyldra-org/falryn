@@ -96,9 +96,10 @@ export function composeProductProfileTransitions(options: {
               !String(change.path).startsWith("interface."),
           ),
         validate,
-        async publish(abort) {
-          if (!(await validate(abort))) return null;
-          const outcome = loaded.kind === "candidate" ? await loaded.publish(abort) : loaded;
+        async publish(abort, current) {
+          if (!(await validate(abort)) || !current()) return null;
+          const outcome =
+            loaded.kind === "candidate" ? await loaded.publish(abort, current) : loaded;
           return outcome.kind === "published" || outcome.kind === "unchanged"
             ? Number(outcome.record.generation)
             : null;

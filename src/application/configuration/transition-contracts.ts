@@ -66,8 +66,8 @@ export type ResolvedProfileTransition = {
   readonly effectiveInputChanged: boolean;
   /** Repeat source, trust and credential checks without starting work. */
   validate(signal: AbortSignal): Promise<boolean>;
-  /** CAS publication; null means that no candidate was published. */
-  publish(signal: AbortSignal): Promise<number | null>;
+  /** CAS publication; check current() at the final publication boundary. Null means no publication. */
+  publish(signal: AbortSignal, current: () => boolean): Promise<number | null>;
 };
 
 export type PreparedProfileOwner = {

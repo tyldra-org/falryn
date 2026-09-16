@@ -138,7 +138,7 @@ export type ConfigurationCandidate = {
   readonly changes: readonly ConfigurationChange[];
   readonly applicationClass: ConfigurationApplicationClass;
   /** One-use publication of these exact bytes against the captured generation. */
-  publish(signal?: AbortSignal): Promise<ConfigurationLoadOutcome>;
+  publish(signal?: AbortSignal, current?: () => boolean): Promise<ConfigurationLoadOutcome>;
 };
 export type ConfigurationPreviewOutcome =
   | ConfigurationCandidate
@@ -487,7 +487,7 @@ export function createConfigurationLoader(
         changes,
         applicationClass,
         inspection: inspectGeneration(options.registry, record),
-        async publish(abort) {
+        async publish(abort, authorityCurrent) {
           const failed = (code: string): ConfigurationLoadOutcome => ({
             kind: "publish-failed",
             code,
@@ -506,6 +506,8 @@ export function createConfigurationLoader(
             }
             if (isAborted(abort)) return { kind: "cancelled" };
             if (current !== previous) return failed("configuration-generation-changed");
+            if (authorityCurrent && !authorityCurrent())
+              return failed("configuration-authority-changed");
             const appended = await appendGenerationEvent(
               options,
               record.generation,

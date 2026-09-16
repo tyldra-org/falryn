@@ -837,6 +837,16 @@ describe("negative controls", () => {
 });
 
 describe("reviewed publication", () => {
+  test("host authority is checked at the publication boundary after source reads", async () => {
+    const f = harness();
+    const candidate = await f.loader.preview(REQUEST);
+    if (candidate.kind !== "candidate") throw new Error("Missing candidate");
+    expect(await candidate.publish(undefined, () => false)).toMatchObject({
+      kind: "publish-failed",
+      code: "configuration-authority-changed",
+    });
+    expect(f.loader.current()).toBeNull();
+  });
   test("preview has no publication and consumes exactly one reviewed candidate", async () => {
     const f = harness();
     const candidate = await f.loader.preview(REQUEST);
