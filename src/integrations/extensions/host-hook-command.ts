@@ -11,6 +11,7 @@ import { HOOK_LIMITS } from "../../domain/extensions/hook-points.ts";
 import { decodeHookResponse, encodeHookInput } from "../../domain/extensions/hook-protocol.ts";
 import { duration } from "../../domain/foundation/index.ts";
 import { OFFLINE_SANDBOX_NETWORK, SINGLE_PROCESS_SANDBOX } from "../../domain/security/sandbox.ts";
+import { type HookHandlerFacts, hookHandlerFactsSchema } from "../../domain/tools/hook-evidence.ts";
 import { createHostProcessCapturePort } from "../process/host-process-capture.ts";
 import { createHostSandbox } from "../security/host-sandbox.ts";
 
@@ -75,7 +76,18 @@ export function createHostHookCommand(options: {
         throw new HookExecutionError("hook-root-unavailable");
       const directory = await mkdtemp(join(realpathSync(options.directory), "hook-"));
       let terminated = true;
-      try {
+      const facts: Extract<HookHandlerFacts, { kind: "process" }> = {
+        kind: "process",
+        transport: "not-started",
+        exitCode: null,
+        signal: null,
+        response: "missing",
+        stdoutBytes: 0,
+        stderrBytes: 0,
+        omittedBytes: 0,
+        effects: "none",
+      };
+      const execute = async () => {
         if (!input.snapshot.files.some((file) => file.path === handler.entrypoint))
           throw new HookExecutionError("hook-entrypoint-missing");
         for (const file of input.snapshot.files) {
@@ -108,6 +120,8 @@ export function createHostHookCommand(options: {
         const remaining = input.context.expiresAt - Date.now();
         if (remaining <= 0) throw new HookExecutionError("timed-out");
         terminated = false;
+        facts.transport = "uncertain";
+        facts.effects = "unknown";
         const result = await sandbox.run(
           {
             invocationId: input.wire.invocationId,
@@ -150,6 +164,7 @@ export function createHostHookCommand(options: {
             }),
         );
         if (!result.value.ok) {
+          facts.transport = "failed";
           terminated = result.receipts.every(
             (receipt) => receipt.state === "terminated" || receipt.state === "refused",
           );
@@ -159,6 +174,21 @@ export function createHostHookCommand(options: {
           );
         }
         const report = result.value.value;
+        facts.transport =
+          report.stop.kind === "exited"
+            ? "settled"
+            : report.stop.kind === "capture-exceeded"
+              ? "failed"
+              : report.stop.kind;
+        facts.exitCode = report.exit.exitCode;
+        const signal = hookHandlerFactsSchema.safeParse({ ...facts, signal: report.exit.signal });
+        facts.signal =
+          signal.success && signal.data.kind === "process" ? signal.data.signal : "UNKNOWN";
+        facts.stdoutBytes = report.stdout.byteCount;
+        facts.response = report.stdout.byteCount === 0 ? "missing" : "unknown";
+        facts.stderrBytes = report.stderr.byteCount;
+        // Neither stream is retained as diagnostics. Successful stdout supplies only its typed decision.
+        facts.omittedBytes = report.stdout.byteCount + report.stderr.byteCount;
         terminated =
           report.killStage !== "unconfirmed" &&
           report.stop.kind !== "uncertain" &&
@@ -176,16 +206,45 @@ export function createHostHookCommand(options: {
         if (!(await input.current()) || input.context.signal.aborted)
           throw new HookExecutionError("hook-authority-stale");
         try {
-          return decodeHookResponse(report.stdout.inlineBytes, input.wire, input.registration);
+          const decision = decodeHookResponse(
+            report.stdout.inlineBytes,
+            input.wire,
+            input.registration,
+          );
+          facts.response = "valid";
+          return decision;
         } catch {
+          facts.response = "invalid";
           throw new HookExecutionError("invalid-hook-response");
         }
-      } finally {
+      };
+      let outcome:
+        | { ok: true; decision: Awaited<ReturnType<typeof execute>> }
+        | { ok: false; error: unknown };
+      try {
+        outcome = { ok: true, decision: await execute() };
+      } catch (error) {
+        outcome = { ok: false, error };
+      }
+      try {
         if (terminated) {
           await chmod(directory, 0o700);
           await rm(directory, { recursive: true });
         }
+      } catch {
+        outcome = {
+          ok: false,
+          error: new HookExecutionError(
+            !outcome.ok && outcome.error instanceof HookExecutionError
+              ? outcome.error.code
+              : "hook-cleanup-uncertain",
+            "uncertain",
+          ),
+        };
       }
+      input.context.report?.(facts);
+      if (!outcome.ok) throw outcome.error;
+      return outcome.decision;
     },
   };
 }

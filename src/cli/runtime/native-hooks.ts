@@ -77,6 +77,7 @@ export function composeNativeHooks(
       }
       return createNativeHookOwner({
         qualified: host.available,
+        health: records.hookHealth,
         async execute(input) {
           const key = `${input.activation}:${input.contribution}`;
           let generation = generations.get(key);

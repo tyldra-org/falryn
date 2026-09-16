@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { HOOK_PYTHON_PROFILE } from "../../domain/extensions/hook-command-profile.ts";
 import { hookFixtureEnvelope } from "../../domain/extensions/hook-fixtures.ts";
 import { hookRegistrationSchema } from "../../domain/extensions/hook-handlers.ts";
+import type { HookHandlerFacts } from "../../domain/tools/hook-evidence.ts";
 import {
   createHostHookCommand,
   HOOK_PYTHON_EXECUTABLE,
@@ -33,7 +34,9 @@ async function fixture() {
       executionProfile: HOOK_PYTHON_PROFILE,
     },
   });
+  const facts: HookHandlerFacts[] = [];
   return {
+    facts,
     directory,
     host,
     registration,
@@ -57,7 +60,12 @@ async function fixture() {
           contribution: { packageId: "fixture", contributionId: "hook", generation: 7 },
           envelope: hookFixtureEnvelope(),
         },
-        context: { signal, expiresAt: Date.now() + 1000, resourceTaskId: "fixture-task" },
+        context: {
+          signal,
+          expiresAt: Date.now() + 1000,
+          resourceTaskId: "fixture-task",
+          report: (value) => facts.push(value),
+        },
         current,
       });
     },
@@ -192,3 +200,39 @@ hostTest("changed authority after process completion discards a complete respons
     await f.close();
   }
 });
+
+hostTest(
+  "process receipts separate stderr, decoding and exit without retaining secrets",
+  async () => {
+    const f = await fixture();
+    const secret = "sk-private-hook-stderr-abcdef12345";
+    try {
+      await expect(
+        f.run(
+          `import sys\nsys.stderr.write(${JSON.stringify(secret)})\nprint(${JSON.stringify(secret)})`,
+        ),
+      ).rejects.toMatchObject({ code: "invalid-hook-response" });
+      expect(f.facts.at(-1)).toMatchObject({
+        kind: "process",
+        transport: "settled",
+        exitCode: 0,
+        signal: null,
+        response: "invalid",
+        stdoutBytes: Buffer.byteLength(secret) + 1,
+        stderrBytes: Buffer.byteLength(secret),
+        omittedBytes: Buffer.byteLength(secret) * 2 + 1,
+      });
+      await expect(f.run(`${observe}\nsys.exit(7)`)).rejects.toMatchObject({
+        code: "hook-process-exit",
+      });
+      expect(f.facts.at(-1)).toMatchObject({
+        transport: "settled",
+        exitCode: 7,
+        response: "unknown",
+      });
+      expect(JSON.stringify(f.facts)).not.toContain(secret);
+    } finally {
+      await f.close();
+    }
+  },
+);

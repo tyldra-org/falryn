@@ -7,7 +7,7 @@
  * later owners.
  */
 
-import { freezeMetadata } from "../extensions/canonical.ts";
+import { canonicalDigest, freezeMetadata } from "../extensions/canonical.ts";
 import { type HookRegistration, hookRegistrationSchema } from "../extensions/hook-handlers.ts";
 import {
   HOOK_BUDGETS,
@@ -26,6 +26,12 @@ import type {
 } from "../foundation/identity.ts";
 import { assertNever, err, ok, type Result } from "../foundation/result.ts";
 import type { DiagnosticLevel } from "../terminal/diagnostics.ts";
+import {
+  type HookFailureEvidence,
+  type HookHandlerFacts,
+  hookSourceIdentitySchema,
+} from "./hook-evidence.ts";
+import { createMemoryHookHealth, type HookHealth } from "./hook-health.ts";
 import { type HookOrderMetadata, resolveHookOrder } from "./tool-hook-order.ts";
 import type { ToolInvocationOutcome } from "./tool-pipeline.ts";
 
@@ -112,6 +118,8 @@ export type ToolHookContext = {
   readonly signal: AbortSignal;
   readonly expiresAt: number;
   readonly resourceTaskId: string;
+  /** Typed, payload-free transport facts; reporting never controls settlement. */
+  readonly report?: (facts: HookHandlerFacts) => void;
 };
 
 export type RegisteredToolHook = HookOrderMetadata & {
@@ -123,6 +131,8 @@ export type RegisteredToolHook = HookOrderMetadata & {
   readonly registration?: HookRegistration;
   /** Explicit revocation only. Replacing a registry does not abort this signal. */
   readonly revoked?: AbortSignal;
+  readonly health?: HookHealth;
+  readonly sourceIdentity?: { readonly owner: string; readonly contribution: string };
 };
 
 export type ToolHookRegistryError =
@@ -191,6 +201,8 @@ export function createToolHookRegistry(
             "after",
             "registration",
             "revoked",
+            "health",
+            "sourceIdentity",
           ].includes(key),
       ) ||
       typeof hook.run !== "function"
@@ -233,6 +245,8 @@ export function createToolHookRegistry(
       },
     );
     if (
+      (hook.sourceIdentity !== undefined &&
+        !hookSourceIdentitySchema.safeParse(hook.sourceIdentity).success) ||
       !parsed.success ||
       parsed.data.point !== hook.point ||
       (hook.revoked !== undefined && !(hook.revoked instanceof AbortSignal))
@@ -242,8 +256,20 @@ export function createToolHookRegistry(
       Object.freeze({
         ...hook,
         pointVersion: TOOL_HOOK_SCHEMA_VERSION,
+        ...(hook.sourceIdentity
+          ? { sourceIdentity: freezeMetadata({ ...hook.sourceIdentity }) }
+          : {}),
         after: Object.freeze([...(hook.after ?? [])]),
         registration: freezeMetadata(parsed.data),
+        health:
+          hook.health ??
+          createMemoryHookHealth(
+            canonicalDigest({
+              identity: `${hook.owner ?? "builtin"}/${hook.id}`,
+              generation: Number(generation),
+              registration: parsed.data,
+            }),
+          ),
       }),
     );
   }
@@ -338,6 +364,7 @@ export type RecordedHookDecision = {
   readonly hookId: string;
   readonly decision: ToolHookDecision;
   readonly failed?: { readonly reason: string };
+  readonly evidence?: HookFailureEvidence;
   readonly execution?: {
     readonly position: number;
     readonly state: "settled" | "skipped" | "not-started" | "queued" | "dropped";

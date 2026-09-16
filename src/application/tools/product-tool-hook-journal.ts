@@ -109,6 +109,7 @@ export function createToolHookJournal(options: {
             cancelled: request.signal.aborted,
             hook: {
               hookId: item.hookId,
+              ...(item.evidence ? { failureEvidence: item.evidence } : {}),
               factId: envelope.catalog.factId,
               registrationGeneration: Number(envelope.registrationGeneration),
               inputDigest: historyDigest(JSON.stringify(envelope.payload)),

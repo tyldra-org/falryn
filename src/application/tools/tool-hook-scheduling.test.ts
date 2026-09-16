@@ -225,6 +225,9 @@ test("async observers use four shared slots, sixteen pending entries, and drain 
   expect(maximum).toBe(4);
   expect(records.filter((r) => r.execution?.state === "queued")).toHaveLength(20);
   expect(records.filter((r) => r.execution?.state === "dropped")).toHaveLength(1);
+  const captured = records[0]?.evidence?.health.generation;
+  expect(captured).toMatch(/^sha256:/);
+  expect(records.every((r) => r.evidence?.health.generation === captured)).toBe(true);
   resources.shutdown();
   await clock.advance(duration(1000));
   expect(active).toBe(0);

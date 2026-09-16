@@ -15,6 +15,7 @@ import {
   type ConfigurationGeneration,
   configurationGeneration,
 } from "../../domain/foundation/index.ts";
+import { inspectHookHealth } from "../../domain/tools/hook-health.ts";
 import {
   createToolHookRegistry,
   createToolRegistry,
@@ -162,6 +163,9 @@ export function createNativeRegistrationPublisher(owners: readonly NativeRegistr
           family: entry.family ?? registered.binding.family,
           availability: "available",
           reason: "native-owner-bound",
+          ...(registered.hook?.health
+            ? { hookHealth: inspectHookHealth(registered.hook.health) }
+            : {}),
           binding: registered.binding,
         };
       });

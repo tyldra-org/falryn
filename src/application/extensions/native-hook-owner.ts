@@ -1,6 +1,7 @@
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import { hookCommandContract } from "../../domain/extensions/hook-command-profile.ts";
 import { contributionDeclarationSchema } from "../../domain/extensions/manifest.ts";
+import type { HookHealth } from "../../domain/tools/hook-health.ts";
 import {
   isToolHookPoint,
   type ToolHookContext,
@@ -20,6 +21,7 @@ export type PackageHookInvocation = {
 };
 export function createNativeHookOwner(options: {
   qualified(): boolean;
+  health?(identity: string, generation: string): HookHealth;
   execute(input: PackageHookInvocation): Promise<ToolHookDecision>;
 }): NativeRegistrationOwner {
   return {
@@ -43,6 +45,18 @@ export function createNativeHookOwner(options: {
           id,
           owner,
           source: activation.authority.scope,
+          sourceIdentity: {
+            owner: contribution.identity.owner.digest,
+            contribution: contribution.identityDigest,
+          },
+          ...(options.health
+            ? {
+                health: options.health(
+                  `${owner}/${id}`,
+                  canonicalDigest({ activation, contribution: contribution.identityDigest }),
+                ),
+              }
+            : {}),
           point: registration.point,
           registration,
           priority: registration.priority ?? 0,

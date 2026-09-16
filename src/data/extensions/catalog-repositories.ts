@@ -3,11 +3,13 @@ import type { SqliteStorePort } from "../../domain/storage/index.ts";
 import { createPackageProvenanceRepository } from "../security/provenance-repository.ts";
 import { createTrustDecisionRepository } from "../security/trust-repository.ts";
 import { createRecordRepositories } from "../sessions/repositories.ts";
+import { createHookHealthRepository } from "./hook-health-repository.ts";
 import { createPackageLifecycleRepository } from "./package-lifecycle-repository.ts";
 import { createScopeControlRepository } from "./scope-control-repository.ts";
 
 export function createCatalogRepositories(store: SqliteStorePort) {
   return {
+    hookHealth: createHookHealthRepository(store),
     packages: createPackageLifecycleRepository(store),
     controls: createScopeControlRepository(store),
     decisions: createTrustDecisionRepository(store),

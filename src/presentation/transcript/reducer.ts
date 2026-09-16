@@ -303,7 +303,20 @@ export function blockFor(event: RuntimeEvent, history?: HistoryPayload): Transcr
       };
     case "history.recorded": {
       const history = event.payload;
-      if (history.type === "gate") return null;
+      if (history.type === "gate") {
+        if (!history.hook?.failureEvidence || !history.decision.startsWith("failed:")) return null;
+        const facts = history.hook.failureEvidence;
+        return {
+          ...spine,
+          kind: "notice",
+          source: "runtime",
+          status: "final",
+          anchor: { of: "declared", key: String(event.eventId) },
+          invocationId: null,
+          summary: complete(`Hook ${history.hook.hookId}: ${history.decision}`),
+          note: complete(`${facts.health.status}; ${facts.remediation}`),
+        };
+      }
       const evidence = history.evidence;
       const text =
         evidence.availability === "inline"

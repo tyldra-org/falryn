@@ -1395,3 +1395,53 @@ test("parallel hook lineages preserve veto, timeout and immutable replay indepen
   }
   expect(f.dispatched).toEqual(["control"]);
 });
+
+test.each(["before-capability-invocation", "after-capability-invocation"] as const)(
+  "partial hook audit persistence stays visible at %s without repeating the subject",
+  async (point) => {
+    let calls = 0;
+    const f = hookGateway([
+      {
+        id: "audit",
+        point,
+        priority: 0,
+        run() {
+          calls++;
+          return { kind: "observe" };
+        },
+      },
+    ]);
+    const persist = f.journal.persist.bind(f.journal);
+    f.journal.persist = (facts, signal) =>
+      facts.some(
+        (fact) =>
+          fact.kind === "history.recorded" &&
+          fact.payload.type === "gate" &&
+          fact.payload.hook &&
+          !fact.payload.hook.order,
+      )
+        ? Promise.resolve({ kind: "cancelled", events: [], receipts: [] })
+        : persist(facts, signal);
+    const request = f.request();
+    const outcome = await f.gateway.execute(request);
+    expect(f.dispatched).toHaveLength(point === "before-capability-invocation" ? 0 : 1);
+    expect(await f.gateway.execute(request)).toEqual(outcome);
+    expect(calls).toBe(1);
+    if (point === "after-capability-invocation") {
+      expect(outcome).toMatchObject({
+        status: "failed",
+        effect: "completed",
+        reason: "tool.result-persist-failed",
+      });
+      const replay = await f.journal.replay();
+      expect(
+        "events" in replay &&
+          replay.events.some(
+            (event) =>
+              event.kind === "capability.invocation.completed" &&
+              event.payload.outcome.kind === "completed",
+          ),
+      ).toBe(true);
+    } else expect(outcome.status).not.toBe("completed");
+  },
+);

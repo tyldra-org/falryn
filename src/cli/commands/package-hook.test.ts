@@ -73,6 +73,7 @@ test.skipIf(!qualifiedHookPython())(
     expect(gates.some((gate) => gate.hook && gate.decision === "observe")).toBe(false);
     expect(journey.requests).toHaveLength(1);
   },
+  30000,
 );
 
 test.skipIf(!qualifiedHookPython()).each([

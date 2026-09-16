@@ -1,5 +1,6 @@
 /** Semantic content and causal evidence in the existing runtime event stream. */
 import { z } from "zod";
+import { hookFailureEvidenceSchema } from "../tools/hook-evidence.ts";
 
 export const HISTORY_VERSION = 1;
 export const HISTORY_LIMITS = Object.freeze({
@@ -116,6 +117,7 @@ export const historyPayloadSchema = z.discriminatedUnion("type", [
       hook: z
         .strictObject({
           hookId: identity,
+          failureEvidence: hookFailureEvidenceSchema.optional(),
           factId: identity,
           registrationGeneration: z.int().nonnegative(),
           inputDigest: digest,

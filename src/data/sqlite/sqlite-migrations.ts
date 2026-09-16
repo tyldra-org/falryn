@@ -1,3 +1,4 @@
+import { HOOK_HEALTH_TABLE, MIGRATION_0029 } from "../extensions/hook-health-repository.ts";
 import { MIGRATION_0022, WORKFLOW_TABLES } from "../orchestration/workflow-store.ts";
 import { MIGRATION_0027 } from "../sessions/activation-schema.ts";
 import { MIGRATION_0026 } from "../sessions/history-schema.ts";
@@ -127,6 +128,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0026,
   MIGRATION_0027,
   MIGRATION_0028,
+  MIGRATION_0029,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -162,6 +164,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   ...NATIVE_ACTIVATION_TABLES,
   REFLECTION_REQUESTS_TABLE,
   WORKSPACE_PROFILE_TABLE,
+  HOOK_HEALTH_TABLE,
 ];
 
 function issue(
