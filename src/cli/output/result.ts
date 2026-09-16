@@ -97,6 +97,7 @@ export const COMMAND_IDS = [
   "extension.scope",
   "package",
   "peer",
+  "mcp",
   "compact",
   /** Shell completion install script (#731). */
   "completion",

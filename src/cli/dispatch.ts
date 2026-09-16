@@ -267,6 +267,7 @@ async function runCommand(
         : { extensionCatalogArgs: invocation.extensionCatalogArgs }),
       ...(invocation.packageArgs === undefined ? {} : { packageArgs: invocation.packageArgs }),
       ...(invocation.peerArgs === undefined ? {} : { peerArgs: invocation.peerArgs }),
+      ...(invocation.mcpArgs === undefined ? {} : { mcpArgs: invocation.mcpArgs }),
       ...(invocation.compactArgs === undefined ? {} : { compactArgs: invocation.compactArgs }),
       ...(invocation.workingConfigurationArgs === undefined
         ? {}
@@ -525,6 +526,10 @@ async function launchShell(
         try {
           if (productArtifactSession !== null) {
             productAttachments = await composeProductShellAttachments({
+              async authorizeMcp(signal) {
+                const trust = await graph.workspaceTrust.resolve(undefined, signal);
+                return trust.status === "accepted" || trust.status === "empty";
+              },
               workingProfileSession: productWorkingProfileSessions(graph, globals, {
                 modelCatalogs: productArtifactSession.modelCatalogs,
                 providerContinuations: productArtifactSession.providerContinuations,

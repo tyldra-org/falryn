@@ -15,8 +15,12 @@ import { agentRegistryFrom } from "./agent-configuration.ts";
 import { createEnvironmentProcessContext } from "./environment-process-context.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { modelPreferencesFrom } from "./model-configuration.ts";
+import { composeProductMcp } from "./product-mcp.ts";
 import { productToolHost } from "./product-tool-host.ts";
-import type { WorkingProfileSessionFactory } from "./product-working-profiles.ts";
+import type {
+  WorkingProfileSession,
+  WorkingProfileSessionFactory,
+} from "./product-working-profiles.ts";
 import { createProductSandbox } from "./sandbox-configuration.ts";
 import { sessionManagedServices } from "./session-managed-services.ts";
 /**
@@ -109,6 +113,7 @@ import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  readonly authorizeMcp?: (signal: AbortSignal) => Promise<boolean>;
   readonly workingProfileSession?: WorkingProfileSessionFactory;
   readonly records?: Pick<
     import("./product-artifact-session.ts").ProductArtifactSession["records"],
@@ -360,6 +365,26 @@ export async function composeProductShellAttachments(
             startPath: String(workspaceRoot),
           });
     const sessionServices = sessionManagedServices(environmentContext.services(managedServices));
+    const mcpServices = sessionManagedServices(managedServices);
+    let profileSession: WorkingProfileSession | undefined;
+    const mcp = composeProductMcp({
+      identity: String(sessionId),
+      generation,
+      context: environmentContext,
+      services: mcpServices.port,
+      environment: ports.environment ?? { get: () => null },
+      configuration: () => {
+        const record = profileSession?.configuration() ?? ports.sandboxConfiguration?.();
+        return {
+          values: record?.values ?? ports.configurationValues?.() ?? {},
+          generation: Number(
+            record?.generation ?? ports.modelConfigurationGeneration?.() ?? generation,
+          ),
+          ...(record === undefined ? {} : { record }),
+        };
+      },
+      authorize: ports.authorizeMcp ?? (async () => false),
+    });
     const languageTools =
       workspaceRoot === null
         ? null
@@ -403,6 +428,7 @@ export async function composeProductShellAttachments(
               generation,
               [
                 workspaceTools,
+                mcp.tools,
                 processTools,
                 ...(scratchTools === null ? [] : [scratchTools]),
                 gitTools,
@@ -564,7 +590,7 @@ export async function composeProductShellAttachments(
           return null;
         }
       }
-      const profileSession = await ports.workingProfileSession?.(
+      profileSession = await ports.workingProfileSession?.(
         composed.value,
         (record, connections, provider) => {
           const correlation = {
@@ -658,9 +684,13 @@ export async function composeProductShellAttachments(
       return {
         profileSession,
         async close() {
+          const stopped = await mcp.close();
+          await mcpServices.close();
           await profileSession?.close();
           await sessionServices.close();
           await peer?.close();
+          if (stopped.some((result) => result.kind !== "completed"))
+            throw new Error("mcp-shutdown-uncertain");
         },
         extensionCatalog,
         sessionId,
@@ -684,6 +714,8 @@ export async function composeProductShellAttachments(
       };
     } finally {
       if (!prepared) {
+        await mcp.close();
+        await mcpServices.close();
         await sessionServices.close();
         await peer?.close();
       }

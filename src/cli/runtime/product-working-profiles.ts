@@ -51,6 +51,7 @@ export type WorkingProfileSession = {
   readonly transitions: ProfileTransitions;
   readonly current: () => { generation: number; sources: string; policy: string };
   readonly scope: { sessionId: string; workspaceId: string };
+  configuration(): ConfigurationGenerationRecord | null;
   capture(): ProductAdmissionBinding;
   close(): Promise<void>;
 };
@@ -435,6 +436,7 @@ export function productWorkingProfileSessions(
         return currentProvider;
       },
       modelSettings: { execute: (input, signal) => settings().execute(input, signal) },
+      configuration: () => graph.loader.current(),
       capture: () => ({ ...binding, runScope: environmentContext.scope() }),
       close: async () => {
         closed = true;

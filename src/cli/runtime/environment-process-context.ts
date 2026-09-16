@@ -36,6 +36,16 @@ export function createEnvironmentProcessContext() {
     install(next: () => EnvironmentBinding | null) {
       capture = next;
     },
+    currentGeneration() {
+      return capture?.()?.generation ?? null;
+    },
+    async values(names: readonly string[], signal: AbortSignal) {
+      if (!capture) return {};
+      return selected()?.child({}, (name) => names.includes(name), signal) ?? null;
+    },
+    generation() {
+      return selected()?.generation ?? null;
+    },
     scope() {
       const binding = local.getStore() ?? { binding: selected() };
       return <T>(work: () => Promise<T>): Promise<T> => local.run(binding, work);
@@ -104,14 +114,14 @@ export function createEnvironmentProcessContext() {
         },
       };
     },
-    services(port: ManagedServicePort): ManagedServicePort {
+    services(port: ManagedServicePort, accepts?: (name: string) => boolean): ManagedServicePort {
       return {
         ...port,
         async start(request) {
           prune();
           const binding = selected();
           const previous = retained.get(`service:${request.serviceId}`);
-          const environment = await owned(request.environment);
+          const environment = await owned(request.environment, accepts);
           if (environment === null)
             return {
               ok: false,

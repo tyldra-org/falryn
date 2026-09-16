@@ -61,6 +61,7 @@
   "dependencies": {
     "@anthropic-ai/sdk": "0.125.0",
     "@google/genai": "2.22.0",
+    "@modelcontextprotocol/client": "2.0.0",
     "@opentui/core": "0.5.11",
     "@opentui/keymap": "0.5.11",
     "@opentui/react": "0.5.11",

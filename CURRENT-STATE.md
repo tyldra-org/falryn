@@ -1036,6 +1036,73 @@ admission cannot repeat effects. Existing events without composition fields
 remain readable. Live MCP, package and browser hosts are not added
 by this common runtime path.
 
+### Configured MCP transports
+
+`connections.mcp.servers` in the user configuration declares stable IDs for
+stdio or Streamable HTTP peers. `falryn mcp inspect` reads lifecycle facts without
+starting a peer. `falryn mcp probe <server-id>` explicitly opens one connection,
+validates protocol readiness, and closes it before returning. Its `probe` result
+records readiness; `connections` records the final stopped state. Human, quiet,
+JSON and JSONL output share those facts. Probe failures retain a named code.
+
+Headless and terminal model runtimes publish `mcp_inspect`, `mcp_connect`,
+`mcp_request` and `mcp_stop` through the existing registry, confirmation, resource
+admission and tool runner. MCP-related tasks or explicit discovery disclose the
+controls. No peer starts until an admitted connect request. Requests require the
+captured configuration and transport generations and bounded JSON object text in `paramsJson`. Results use normal invocation history, projection and replay; replay
+never reconnects or repeats a remote effect.
+
+The integration pins `@modelcontextprotocol/client` 2.0.0. The default protocol is
+2026-07-28: HTTP uses protocol/routing metadata without initialize or a protocol
+session ID. `protocol: "legacy"` explicitly selects older negotiation. The SDK
+handles protocol validation, correlation, pagination and unsupported server
+requests. Falryn owns transport lifetime and live authorization.
+
+Stdio uses the managed process owner, isolated protocol stdout, and only the
+selected `environmentNames` from the prepared scoped environment. Diagnostic
+stderr stays in the managed owner's bounded 64 KiB replay and is never projected
+as MCP content. Environment or
+selected connection changes fence old replies; reconnect closes the old owner
+and captures a new generation. HTTP accepts HTTPS or loopback HTTP, rejects URL
+credentials, queries, fragments and redirects, and sends only its optional
+`credentialEnvironment` bearer reference. Configured secret values are redacted
+from returned content. Other server/provider values are not inherited by stdio.
+
+Limits are 64 configured identities, 1 MiB per protocol message, 32 pending
+requests per endpoint, a 30-second deadline, and three start attempts per endpoint
+in 30 seconds. SDK list walks stop after 16 pages. A safe read may retry once after
+HTTP 502/503/504 within its original deadline. Tool calls are never retried after
+an uncertain result. Shutdown aborts and settles pending requests before reporting
+stopped. Cancellation, configuration changes and disconnects preserve uncertainty
+for a sent tool call.
+
+Stdio is available on POSIX hosts with owned process-group termination. Windows
+stdio returns `mcp-stdio-platform-unavailable` before launch; HTTP remains
+available. Unsupported protocols and missing credentials do not publish a ready
+binding. General MCP catalog publication, subscriptions, automatic peer discovery,
+OAuth enrollment and server-initiated sampling remain separate capabilities.
+
+Example user configuration:
+
+```json
+{
+  "schemaVersion": 2,
+  "minimumReaderSchemaVersion": 2,
+  "connections": {
+    "mcp": {
+      "servers": [
+        { "id": "remote", "transport": "http", "url": "https://example.com/mcp", "credentialEnvironment": "MCP_TOKEN" }
+      ]
+    }
+  }
+}
+```
+
+`enabled` defaults to true and `explicitOnly` defaults to false. Explicit-only
+servers accept user probes but reject model/discovery startup. Stdio definitions
+require `executable`; `args` and `environmentNames` default to empty arrays, and
+`cwd` is optional. Configuration stores credential references, never values.
+
 Each registry generation can now be inspected through one consumer-specific
 capability-health snapshot. The pure evaluator combines declared lifecycle and
 operational state with supplied platform, architecture, dependency, credential,
@@ -1050,7 +1117,8 @@ The evaluator can derive consumer-specific snapshots for native-model, CLI,
 OpenTUI, headless, and external-host contracts. Product composition uses the
 snapshot for built-in model disclosure and diagnostics. The admitted native
 package observation-tool path executes through the shared gateway; a public
-external host and live MCP execution are not implemented. Its read-only
+external host is not implemented. Configured MCP transport controls use the
+same gateway as described below. Its read-only
 inspector derives tool queries, deduplicated doctor findings, and effective
 permission facts from one generation. Queries default to 32 rows and admit at
 most 256, carry a deterministic continuation handle, and reject stale

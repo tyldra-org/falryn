@@ -156,6 +156,13 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
               connection.models.map(safe).join(","),
             ].join("\t"),
           );
+    case "mcp":
+      return (
+        result.payload?.connections.map(
+          (connection) =>
+            `${safe(connection.serverId)}\t${connection.state}\t${connection.transportGeneration}`,
+        ) ?? []
+      );
     case "run":
       return result.payload === null
         ? []

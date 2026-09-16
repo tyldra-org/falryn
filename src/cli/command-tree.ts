@@ -1,6 +1,7 @@
 import { modelSettingsRequestSchema } from "../application/providers/model-settings.ts";
 import { PACKAGE_ACTIONS, packageRequestSchema } from "../domain/extensions/lifecycle.ts";
 import { type CompactArguments, compactArgumentsSchema } from "./commands/compact.ts";
+import { mcpArgumentsSchema } from "./commands/mcp.ts";
 /**
  * The yargs command tree, and the parse that never prints and never exits.
  *
@@ -110,6 +111,14 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           "Falryn is a local terminal coding agent. Running it with no command opens\n" +
           "the interactive shell on a capable terminal, and prints this help with a\n" +
           "reason on any run that cannot host one.",
+      )
+      .command(
+        lenientPositionals ? "mcp [action] [id]" : "mcp <action> [id]",
+        "Inspect MCP connections or probe an explicitly selected server, then close it.",
+        (group) =>
+          group
+            .positional("action", { type: "string", choices: ["inspect", "probe"] })
+            .positional("id", { type: "string", describe: "configured server identity" }),
       )
       .command(
         lenientPositionals ? "compact [action] [id]" : "compact <action> <id>",
@@ -885,6 +894,16 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     extensionCatalogArgs = checked.data;
   }
   let compactArgs: CompactArguments | undefined;
+  let mcpArgs: import("./commands/mcp.ts").McpArguments | undefined;
+  if (command === "mcp") {
+    const checked = mcpArgumentsSchema.safeParse({
+      action: parsed.action,
+      ...(parsed.id === undefined ? {} : { serverId: parsed.id }),
+    });
+    if (!checked.success)
+      return { kind: "invalid", message: "Use mcp inspect or mcp probe <server-id>." };
+    mcpArgs = checked.data;
+  }
   if (command === "compact") {
     const loaded = parsed.input === undefined ? null : await loadTaskInputFile(parsed.input);
     if (!loaded?.ok)
@@ -1018,6 +1037,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     ...(packageArgs === undefined ? {} : { packageArgs }),
     ...(peerArgs === undefined ? {} : { peerArgs }),
     ...(compactArgs === undefined ? {} : { compactArgs }),
+    ...(mcpArgs === undefined ? {} : { mcpArgs }),
     ...((command === "extension.inspect" || command === "extension.trust") &&
     parsed.path !== undefined
       ? { extensionPath: parsed.path }

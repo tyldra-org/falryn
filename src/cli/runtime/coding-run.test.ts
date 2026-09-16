@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import {
   reflectionAuthority,
   reflectionBinding,
@@ -11,6 +12,7 @@ import {
   turnCompleted as reflectionTurnCompleted,
   turnStarted as reflectionTurnStarted,
 } from "../../domain/fixtures.ts";
+import { resultEvents } from "../output/result-events.ts";
 import { languageStartupFixture } from "./language-startup.test-support.ts";
 /**
  * Headless `falryn run` (#708): prompt resolution, product hosting, fail-closed
@@ -68,6 +70,107 @@ import { openProductArtifactSession } from "./product-artifact-session.ts";
 import { CLI_EVENT_STREAM, createServiceProvider } from "./services.ts";
 
 const homes: string[] = [];
+
+(process.platform === "win32" ? test.skip : test)(
+  "real MCP stdio lifecycle reaches the headless model through the governed tool pipeline",
+  async () => {
+    const seeded = await seededHome();
+    await writeFile(
+      join(seeded.home, "config", "falryn.jsonc"),
+      JSON.stringify({
+        schemaVersion: 2,
+        minimumReaderSchemaVersion: 2,
+        connections: {
+          mcp: {
+            servers: [
+              {
+                id: "fixture",
+                transport: "stdio",
+                executable: process.execPath,
+                args: [
+                  fileURLToPath(
+                    new URL("../../integrations/extensions/mcp-fixtures.ts", import.meta.url),
+                  ),
+                ],
+              },
+            ],
+          },
+        },
+      }),
+    );
+    let configurationGeneration = 0;
+    let transportGeneration = 0;
+    const outputs: unknown[] = [];
+    const names = ["mcp_inspect", "mcp_connect", "mcp_request", "mcp_stop"];
+    const result = await runCoding(
+      providerFor(seeded)(globalsFor(seeded)),
+      {
+        promptParts: [
+          "Use mcp_inspect mcp_connect and mcp_request to call the configured fixture echo tool with value product-proof.",
+        ],
+      },
+      {
+        globals: globalsFor(seeded),
+        input: createRecordingCliStreams({ stdin: null }).input,
+        toolConfirmation: {
+          resolve: async (request) => ({
+            kind: "confirmed",
+            confirmationId: request.confirmationId,
+          }),
+        },
+        providerAdapter: createDeterministicProviderAdapter({
+          script(request, index) {
+            if (index > 0) {
+              const part = request.messages
+                .findLast((message) => message.role === "tool")
+                ?.parts.find((part) => part.kind === "text");
+              if (part?.kind !== "text") throw new Error("missing MCP result");
+              const envelope = JSON.parse(part.text);
+              expect(envelope.status, part.text).toBe("completed");
+              const value = envelope.output.value.result;
+              outputs.push(value);
+              if (index === 1) configurationGeneration = value[0].configurationGeneration;
+              if (index === 2) transportGeneration = value.snapshot.transportGeneration;
+            }
+            const name = names[index];
+            if (!name) return { kind: "text", text: "MCP transport completed." };
+            const input =
+              index === 0
+                ? {}
+                : index === 1
+                  ? { serverId: "fixture", configurationGeneration }
+                  : index === 2
+                    ? {
+                        serverId: "fixture",
+                        configurationGeneration,
+                        transportGeneration,
+                        method: "tools/call",
+                        paramsJson: JSON.stringify({
+                          name: "echo",
+                          arguments: { value: "product-proof" },
+                        }),
+                      }
+                    : { serverId: "fixture" };
+            return {
+              kind: "tool",
+              name,
+              toolCallId: `mcp-${index}`,
+              argumentFragments: [JSON.stringify(input)],
+            };
+          },
+        }),
+      },
+    );
+    expect(result.outcome.kind, JSON.stringify(result.outcome)).toBe("completed");
+    expect(outputs).toHaveLength(4);
+    expect(JSON.stringify(outputs[2])).toContain("product-proof");
+    expect(
+      (resultEvents(result) ?? []).some(
+        (event) => event.kind === "capability.invocation.completed",
+      ),
+    ).toBe(true);
+  },
+);
 
 afterEach(async () => {
   for (const home of homes.splice(0)) {
