@@ -2096,6 +2096,14 @@ direct task CLI controls, and PTY remain separate. Delegated agents and workflow
 runs use this durable attachment and settlement owner without a child OS process.
 
 
+## Scheduling boundary
+
+The application scheduler admits bounded work units through the shared runtime.
+Captured background tasks and explicitly invoked workflows use that runtime and
+their own durable settlement records. Durable one-shot, interval, and calendar
+schedule execution is not implemented. Workflow checkpoints do not provide
+calendar wakeups, an always-running service, or automatic execution after restart.
+
 ## Typed workflows
 
 `workflow` is a built-in tool in the normal headless and interactive coding
