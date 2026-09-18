@@ -34,7 +34,8 @@ for (const change of ["disable", "revoke", "uninstall", "update"] as const)
             },
             schedule: {
               version: 1,
-              timing: { trigger: { kind: "interval", everyMs: 1000 } },
+              timing: { trigger: { kind: "interval", everyMs: 60000 } },
+              missed: { kind: "latest" },
               target: {
                 kind: "action",
                 capability: "builtin:workspace/stat_path@1",
@@ -63,6 +64,7 @@ for (const change of ["disable", "revoke", "uninstall", "update"] as const)
         ok: z.literal(true),
         value: z.object({
           attempts: z.array(z.object({ terminal: z.object({ status: z.string() }).nullable() })),
+          slots: z.array(z.object({ kind: z.string(), disposition: z.string() })),
         }),
       });
       expect(
@@ -84,7 +86,8 @@ for (const change of ["disable", "revoke", "uninstall", "update"] as const)
             expectedRevision: schedule.revision,
             definition: {
               version: 1,
-              timing: { trigger: { kind: "interval", everyMs: 1100 } },
+              timing: { trigger: { kind: "interval", everyMs: 60001 } },
+              missed: { kind: "latest" },
               target: {
                 kind: "action",
                 capability: "builtin:workspace/stat_path@1",
@@ -102,23 +105,50 @@ for (const change of ["disable", "revoke", "uninstall", "update"] as const)
         { operation: "enable", id: schedule.id, expectedRevision: enableRevision },
         response,
       );
-      const host = () =>
-        Bun.spawn([...command, "schedule", "host", "--timeout", "1800", "--format", "json"], {
+      const host = (timeout: string) =>
+        Bun.spawn([...command, "schedule", "host", "--timeout", timeout, "--format", "json"], {
           cwd: root,
           env: fixture.environment,
           stdout: "pipe",
           stderr: "pipe",
         });
-      await host().exited;
-      const ran = await fixture.invoke(
-        ["schedule", "history"],
-        { operation: "history", id: schedule.id },
-        historySchema,
-        "jsonl",
+      const running = host("15000");
+      let ran: z.infer<typeof historySchema> | null = null;
+      try {
+        const deadline = Date.now() + 10000;
+        for (;;) {
+          ran = await fixture.invoke(
+            ["schedule", "history"],
+            { operation: "history", id: schedule.id },
+            historySchema,
+            "jsonl",
+          );
+          if (ran.value.attempts[0]?.terminal) break;
+          if (Date.now() >= deadline) throw new Error("package-schedule-completion-deadline");
+          await new Promise((resolve) => setTimeout(resolve, 50));
+        }
+        expect(ran.value.attempts).toMatchObject([{ terminal: { status: "succeeded" } }]);
+      } finally {
+        running.kill("SIGINT");
+        await running.exited;
+      }
+      if (!ran) throw new Error("missing-schedule-history");
+      const inspected = await fixture.invoke(
+        ["schedule", "inspect"],
+        { operation: "inspect", id: schedule.id },
+        response,
       );
-      expect(ran.value.attempts.length).toBeGreaterThan(0);
-      expect(ran.value.attempts.every((attempt) => attempt.terminal?.status === "succeeded")).toBe(
-        true,
+      // Queue a known due occurrence before changing package authority. The next
+      // host must retain that slot without admitting an effect under the old binding.
+      await fixture.invoke(
+        ["schedule", "trigger-now"],
+        {
+          operation: "trigger-now",
+          id: schedule.id,
+          expectedRevision: inspected.value.revision,
+          requestId: "authority-change",
+        },
+        response,
       );
       if (change === "revoke") {
         const revoke = { action: "revoke", expiresAt: null };
@@ -163,13 +193,16 @@ for (const change of ["disable", "revoke", "uninstall", "update"] as const)
           ).status,
         ).toBe("completed");
       }
-      await host().exited;
+      await host("3000").exited;
       const after = await fixture.invoke(
         ["schedule", "history"],
         { operation: "history", id: schedule.id },
         historySchema,
       );
-      expect(after.value.attempts.length).toBe(ran.value.attempts.length);
+      expect(after.value.attempts).toEqual(ran.value.attempts);
+      expect(
+        after.value.slots.some((slot) => slot.kind === "manual" && slot.disposition === "pending"),
+      ).toBe(true);
       expect(
         (
           await fixture.invoke(

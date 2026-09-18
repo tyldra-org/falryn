@@ -349,3 +349,22 @@ test("parallel admission stops at four, retirement drains stale generations, and
   expect(latest).toMatchObject({ ok: true, value: { id: "attempt-3", terminal: null } });
   await f.close();
 });
+
+test("wake progress fences competing cursors without expiring an unchanged user control", async () => {
+  const f = await fixture();
+  const inspected = f.record();
+  expect(f.first.decide(inspected, 1000, []).ok).toBe(true);
+  expect(f.second.decide(inspected, 2000, [])).toMatchObject({
+    ok: false,
+    error: { code: "stale-revision" },
+  });
+  expect(f.second.decide(f.record(), 2000, []).ok).toBe(true);
+  expect(f.record().revision).toBe(inspected.revision);
+  expect(
+    await f.invoke({ operation: "pause", id: "sample", expectedRevision: inspected.revision }),
+  ).toMatchObject({ ok: true, value: { state: "paused" } });
+  expect(
+    await f.invoke({ operation: "resume", id: "sample", expectedRevision: inspected.revision }),
+  ).toMatchObject({ ok: false, error: { code: "stale-revision" } });
+  await f.close();
+});

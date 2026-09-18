@@ -402,7 +402,7 @@ export function createScheduleStore(store: SqliteStorePort): ScheduleStore {
           scheduleSlotSchema,
         ),
       ),
-    decide(record, through, slots) {
+    decide(record, through, slots, recovery = record.recovery) {
       if (
         slots.length > SCHEDULE_LIMITS.slots ||
         through < record.cursor ||
@@ -417,7 +417,12 @@ export function createScheduleStore(store: SqliteStorePort): ScheduleStore {
       return write((sql) => {
         const current = load(sql, record.workspace, record.id);
         if (!current.ok) return current;
-        if (current.value.revision !== record.revision || current.value.state !== "enabled")
+        if (
+          current.value.revision !== record.revision ||
+          current.value.state !== "enabled" ||
+          current.value.cursor !== record.cursor ||
+          canonicalDigest(current.value.recovery) !== canonicalDigest(record.recovery)
+        )
           return err({ code: "stale-revision" });
         const additions: ScheduleSlotRecord[] = [];
         for (const slot of slots) {
@@ -474,8 +479,10 @@ export function createScheduleStore(store: SqliteStorePort): ScheduleStore {
         const next = {
           ...current.value,
           cursor: through,
-          recovery: record.recovery,
-          revision: current.value.revision + 1,
+          recovery,
+          // Wake progress has its own cursor/recovery fence; it does not invalidate
+          // a user's unchanged definition revision between inspection and control.
+          revision: current.value.revision,
         };
         save(sql, next);
         return ok(next);

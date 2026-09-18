@@ -209,17 +209,14 @@ export function createScheduleRuntime(options: {
           disposition: "missed",
         });
       if (window.through <= record.cursor && slots.length === 0) continue;
-      // Recovery budget and decisions must commit together. The store validates the same revision.
+      // Commit recovery budget with its decisions against the captured wake state.
       const decided = store.decide(
-        {
-          ...record,
-          recovery:
-            record.recovery && window.through < record.recovery.through
-              ? { ...record.recovery, remaining }
-              : null,
-        },
+        record,
         Math.max(record.cursor, window.through),
         slots,
+        record.recovery && window.through < record.recovery.through
+          ? { ...record.recovery, remaining }
+          : null,
       );
       if (!decided.ok) failure = decided.error.code;
     }

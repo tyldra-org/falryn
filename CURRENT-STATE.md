@@ -2140,7 +2140,8 @@ Create `schedule.json` with a command such as:
 Run `falryn schedule create --input schedule.json --format json`. A subsequent
 command file containing `{"operation":"enable","id":"inspect-workspace",
 "expectedRevision":1}` enables that exact revision. Use `inspect` to obtain the
-current revision before later mutations. `list`, `history`, `preview`,
+current revision before later mutations. Routine wake progress does not change
+that control revision. `list`, `history`, `preview`,
 `validate`, `delete-preview`, `pause`, `resume`, `update`, `trigger-now`, `cancel`,
 `delete`, `import` and `adopt` share this command-file format. `--format jsonl`
 uses the normal result protocol. In the TUI, enter `/schedule` followed by the

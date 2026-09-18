@@ -49,7 +49,8 @@ export async function scheduleCliJourney(binary: readonly string[], root: string
   }
   const definition = {
     version: 1,
-    timing: { trigger: { kind: "interval", everyMs: 1000 } },
+    timing: { trigger: { kind: "interval", everyMs: 60000 } },
+    missed: { kind: "latest" },
     target: { kind: "action", capability: "builtin:workspace/stat_path@1", input: { path: "." } },
   };
   const created = await invoke({ operation: "create", id: "sample", definition });
@@ -99,32 +100,39 @@ export async function scheduleCliJourney(binary: readonly string[], root: string
   });
   await invoke({ operation: "enable", id: "workflow", expectedRevision: 1 });
   const host = Bun.spawn(
-    [...binary, "schedule", "host", "--format", "json", "--timeout", "1800", "--non-interactive"],
+    [...binary, "schedule", "host", "--format", "json", "--timeout", "15000", "--non-interactive"],
     { cwd: root, env, stdout: "pipe", stderr: "pipe" },
   );
   const competing = Bun.spawn(
-    [...binary, "schedule", "host", "--format", "jsonl", "--timeout", "1500", "--non-interactive"],
+    [...binary, "schedule", "host", "--format", "jsonl", "--timeout", "15000", "--non-interactive"],
     { cwd: root, env, stdout: "pipe", stderr: "pipe" },
   );
-  await Promise.all([host.exited, competing.exited]);
-  const history = await invoke({ operation: "history", id: "sample" });
-  expect(history.attempts.length).toBeGreaterThan(0);
-  expect(history.attempts[0].terminal).toMatchObject({ status: "succeeded" });
-  const workflowHistory = await invoke({ operation: "history", id: "workflow" });
-  expect(workflowHistory.attempts.length).toBeGreaterThan(0);
-  expect(workflowHistory.attempts[0].terminal).toMatchObject({ status: "succeeded" });
-  expect(workflowHistory.attempts[0].workflow).not.toBeNull();
-  const inspected = await invoke({ operation: "inspect", id: "sample" });
-  await invoke({ operation: "pause", id: "sample", expectedRevision: inspected.revision });
+  let history: Awaited<ReturnType<typeof invoke>>;
+  let workflowHistory: Awaited<ReturnType<typeof invoke>>;
+  try {
+    const deadline = Date.now() + 10000;
+    for (;;) {
+      history = await invoke({ operation: "history", id: "sample" });
+      workflowHistory = await invoke({ operation: "history", id: "workflow" });
+      if (history.attempts[0]?.terminal && workflowHistory.attempts[0]?.terminal) break;
+      if (Date.now() >= deadline) throw new Error("schedule-completion-deadline");
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    }
+    expect(history.attempts[0].terminal).toMatchObject({ status: "succeeded" });
+    expect(workflowHistory.attempts[0].terminal).toMatchObject({ status: "succeeded" });
+    expect(workflowHistory.attempts[0].workflow).not.toBeNull();
+    for (const id of ["sample", "workflow"]) {
+      const inspected = await invoke({ operation: "inspect", id });
+      await invoke({ operation: "pause", id, expectedRevision: inspected.revision });
+    }
+  } finally {
+    host.kill("SIGINT");
+    competing.kill("SIGINT");
+    await Promise.all([host.exited, competing.exited]);
+  }
   expect(await invoke({ operation: "inspect", id: "sample" })).toMatchObject({
     state: "paused",
     lastAttempt: { terminal: { status: "succeeded" } },
-  });
-  const workflowInspected = await invoke({ operation: "inspect", id: "workflow" });
-  await invoke({
-    operation: "pause",
-    id: "workflow",
-    expectedRevision: workflowInspected.revision,
   });
   // A run may settle during host shutdown, after wake subscriptions stop.
   // Restart delivers its durable outbox with both definitions paused, never rerunning work.

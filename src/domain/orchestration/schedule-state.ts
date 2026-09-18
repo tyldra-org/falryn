@@ -186,6 +186,7 @@ export type ScheduleStore = {
     record: ScheduleRecord,
     through: number,
     slots: readonly ScheduleSlotRecord[],
+    recovery?: ScheduleRecord["recovery"],
   ): ScheduleResult<ScheduleRecord>;
   pending(
     workspace: string,
