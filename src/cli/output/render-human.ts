@@ -489,8 +489,9 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
     case "provider":
       return renderProviderConnections(session, result.payload);
     case "package":
+    case "schedule":
     case "peer":
-      if (result.command === "peer")
+      if (result.command === "peer" || result.command === "schedule")
         return {
           lines: result.payload === null ? [] : [safe(JSON.stringify(result.payload))],
           diagnostics: [],
@@ -623,6 +624,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "extension.catalog":
     case "extension.scope":
     case "package":
+    case "schedule":
     case "peer":
       return [];
     case "compact":

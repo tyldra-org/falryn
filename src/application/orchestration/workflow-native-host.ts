@@ -223,6 +223,8 @@ export function createWorkflowNativeHost(options: WorkflowNativeHostOptions): Wo
       return { operations: 1 };
     },
     async execute(node, input, record, instance, childResources, signal) {
+      if (request.authorityCurrent && !(await request.authorityCurrent(signal)))
+        return { state: "failed", effect: "none", reason: "workflow-parent-authority-changed" };
       if (!instance.invocation)
         return { state: "failed", effect: "none", reason: "workflow-node-not-admitted" };
       const child: ToolRunnerRequest = {

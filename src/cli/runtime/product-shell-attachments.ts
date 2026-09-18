@@ -115,6 +115,7 @@ import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 
 export type ProductShellAttachmentPorts = {
+  readonly schedules?: import("../../application/runtime/schedule-product-runtime.ts").ProductSchedulePorts;
   readonly instructionSources?: (
     configuration: () =>
       | import("../../domain/configuration/index.ts").ConfigurationGenerationRecord
@@ -181,6 +182,9 @@ export type ProductShellAttachmentPorts = {
 };
 
 export type ProductShellAttachments = {
+  readonly schedules:
+    | import("../../application/runtime/schedule-product-runtime.ts").ProductSchedules
+    | undefined;
   readonly activation: SessionActivationPort;
   close(): Promise<void>;
   readonly submission: ProductSubmissionPort;
@@ -489,6 +493,7 @@ export async function composeProductShellAttachments(
               tasks,
               artifacts,
               ...(ports.workflows ? { workflows: ports.workflows } : {}),
+              ...(ports.schedules ? { schedules: ports.schedules } : {}),
               ...(ports.workflowQuestions ? { workflowQuestions: ports.workflowQuestions } : {}),
               ...(ports.joins ? { joins: ports.joins } : {}),
               ...(ports.peers ? { peers: ports.peers } : {}),
@@ -708,8 +713,13 @@ export async function composeProductShellAttachments(
       sessionExecutor = executor;
       prepared = true;
       return {
+        get schedules() {
+          return publishedRuntime.schedules;
+        },
         profileSession,
         async close() {
+          await publishedRuntime.schedules?.close();
+          publishedRuntime.closeBindings();
           const stopped = await mcp.close();
           await mcpServices.close();
           await profileSession?.close();
@@ -849,6 +859,9 @@ export async function composeProductShellAttachments(
         }
       };
     },
+    schedule: (input: unknown, signal: AbortSignal) =>
+      active.schedules?.actions.execute(input, "user", signal) ??
+      Promise.resolve({ ok: false, error: { code: "schedule-unavailable" } }),
     peer: (input: unknown, signal: AbortSignal) => {
       const parsed = peerActionSchema.safeParse(input);
       const selected =
@@ -1117,6 +1130,9 @@ export async function composeProductShellAttachments(
   }
 
   return {
+    get schedules() {
+      return active.schedules;
+    },
     close,
     activation,
     submission,

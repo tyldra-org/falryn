@@ -947,6 +947,7 @@ describe("the rendered test harness", () => {
         "overlays/controls.test.tsx",
         "shell/frame.test.tsx",
         "shell/peer.test.tsx",
+        "shell/schedule.test.tsx",
         "overlays/interaction.test.tsx",
         "overlays/model-settings-sheet.test.tsx",
         "overlays/processing-settings-sheet.test.tsx",

@@ -99,6 +99,7 @@ export type SubmissionPort = {
   readonly binding?: () => string;
   readonly compact?: import("../../application/compression/checkpoint-request.ts").CheckpointControl;
   readonly exportSession?: import("../../application/sessions/session-export.ts").SessionExportControl;
+  readonly schedule?: (input: unknown, signal: AbortSignal) => Promise<unknown>;
   readonly peer?: (input: unknown, signal: AbortSignal) => Promise<unknown>;
   readonly subscribePeer?: (
     listener: (notice: import("../../domain/orchestration/peer-mailbox.ts").PeerNotice) => void,

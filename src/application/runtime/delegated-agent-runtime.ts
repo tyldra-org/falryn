@@ -34,6 +34,7 @@ import {
   mergeProductToolBundles,
   type ProductToolSourceBundle,
 } from "../tools/product-tools-merge.ts";
+import { composeScheduleTool } from "../tools/schedule-tool.ts";
 import { composeWorkflowTool } from "../tools/workflow-tool.ts";
 import {
   composeProductAgentRuntime,
@@ -41,9 +42,14 @@ import {
   productAgentHost,
 } from "./product-agent-runtime.ts";
 import { createProductLiveTurnExecutor } from "./product-live-turn.ts";
+import {
+  composeScheduleProductRuntime,
+  type ProductSchedulePorts,
+} from "./schedule-product-runtime.ts";
 import { composeWorkflowRuntime, type WorkflowRuntimeOptions } from "./workflow-runtime.ts";
 
 export type DelegatedRuntimeOptions = {
+  readonly schedules?: ProductSchedulePorts;
   readonly workflows?: WorkflowStore;
   readonly workflowQuestions?: WorkflowRuntimeOptions["questions"];
   readonly peers?: PeerMailboxFactory;
@@ -259,6 +265,7 @@ export function composeDelegatedAgentRuntime(
         });
         const result = await executor.run({
           childAdmission: run.admission,
+          ...(run.authorityCurrent ? { authorityCurrent: run.authorityCurrent } : {}),
           turnId: turnId.from(`${run.handle.taskId}-${run.handle.generation}`),
           signal: run.signal,
           prompt: canonicalJson({
@@ -389,18 +396,33 @@ export function composeDelegatedAgentRuntime(
             },
           )
         : null;
-    const tools = workflows
-      ? mergeProductToolBundles(
-          generation,
-          [baseTools, composeWorkflowTool(generation, workflows)],
-          {
-            capabilityEntries: baseTools.capabilityRegistry.entries.filter(
-              (entry) => !baseTools.registry.resolveByCapabilityId(entry.capabilityId),
-            ),
-          },
-        )
-      : baseTools;
-    return composeProductAgentRuntime({
+    const schedules =
+      parent === undefined && options.schedules
+        ? composeScheduleProductRuntime(childPorts, {
+            schedules: options.schedules,
+            tools: baseTools,
+            workflows,
+            ...(options.workflows ? { workflowStore: options.workflows } : {}),
+            preferences,
+          })
+        : null;
+    const tools =
+      workflows || schedules
+        ? mergeProductToolBundles(
+            generation,
+            [
+              baseTools,
+              ...(workflows ? [composeWorkflowTool(generation, workflows)] : []),
+              ...(schedules ? [composeScheduleTool(generation, schedules.actions)] : []),
+            ],
+            {
+              capabilityEntries: baseTools.capabilityRegistry.entries.filter(
+                (entry) => !baseTools.registry.resolveByCapabilityId(entry.capabilityId),
+              ),
+            },
+          )
+        : baseTools;
+    const composed = composeProductAgentRuntime({
       ...childPorts,
       canComplete(turn) {
         const prior = childPorts.canComplete?.(turn);
@@ -422,6 +444,22 @@ export function composeDelegatedAgentRuntime(
       toolCatalog: tools.catalog,
       capabilityRegistry: tools.capabilityRegistry,
     });
+    if (!composed.ok) {
+      void schedules?.close();
+      return composed;
+    }
+    if (!schedules) return composed;
+    return {
+      ok: true as const,
+      value: {
+        ...composed.value,
+        schedules,
+        closeBindings() {
+          void schedules.close();
+          composed.value.closeBindings();
+        },
+      },
+    };
   }
   const initial = compose(undefined, ports);
   if (!initial.ok) return initial;

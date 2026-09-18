@@ -4,12 +4,13 @@ import {
   createNativeRegistrationPublisher,
   type NativePublication,
 } from "../../application/extensions/native-registration.ts";
+import { createNativeScheduleOwner } from "../../application/extensions/native-schedule-owner.ts";
 import { createNativeToolOwner } from "../../application/extensions/native-tool-owner.ts";
 import { createPackageToolExecution } from "../../application/extensions/package-tool-execution.ts";
 import { createPackageToolRecovery } from "../../application/extensions/package-tool-recovery.ts";
 import type { CatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
-import { createExtensionCatalog } from "../../domain/extensions/catalog.ts";
+import { catalogEntryKey, createExtensionCatalog } from "../../domain/extensions/catalog.ts";
 import type { PackageRequest } from "../../domain/extensions/lifecycle.ts";
 import {
   type NativeActivationStore,
@@ -27,6 +28,7 @@ import type { Services } from "./services.ts";
 /** Compose the native owner with the same stores used by CLI lifecycle and metadata inspection. */
 export function composeNativePackages(options: {
   services: Services;
+  schedules?: Parameters<typeof createNativeScheduleOwner>[0];
   records: CatalogRepositories;
   activations: NativeActivationStore;
   processes: PackageHealthStore;
@@ -103,6 +105,57 @@ export function composeNativePackages(options: {
   let current: NativePublication | null = null;
   return {
     current: () => current,
+    async scheduleCurrent(
+      source: { contribution: string; digest: string; scope: string },
+      signal: AbortSignal,
+    ) {
+      const prior = current?.catalog.entries.find(
+        (entry) => entry.binding?.actionId === source.contribution,
+      );
+      if (
+        !prior ||
+        prior.contribution.owner.digest !== source.digest ||
+        prior.availability !== "available"
+      )
+        return false;
+      const fresh = await context.registered(signal);
+      const priorSource = prior.source;
+      const entry = fresh.catalog.entries.find(
+        (entry) =>
+          canonicalDigest(entry.contribution) === canonicalDigest(prior.contribution) &&
+          entry.source.kind === "package" &&
+          priorSource.kind === "package" &&
+          entry.source.activation.scope === priorSource.activation.scope &&
+          entry.source.activation.scopeAuthorityId === priorSource.activation.scopeAuthorityId &&
+          entry.source.activation.scopeAuthorityGeneration ===
+            priorSource.activation.scopeAuthorityGeneration,
+      );
+      const activation = entry && fresh.activations.get(catalogEntryKey(entry));
+      if (
+        !entry?.enabled ||
+        entry.lifecycle !== "current" ||
+        entry.trust !== "accepted" ||
+        !activation ||
+        !activation.contributions.includes(canonicalDigest(entry.contribution)) ||
+        canonicalDigest(activation.scopeKey) !== source.scope
+      )
+        return false;
+      const control = fresh.controls.get(canonicalDigest(activation));
+      if (!control) return false;
+      const installed = options.records.packages.current(control.package.packageId);
+      if (!installed.ok) return false;
+      try {
+        await context.validate(
+          control,
+          installed.value,
+          canonicalDigest(entry.contribution),
+          signal,
+        );
+        return true;
+      } catch {
+        return false;
+      }
+    },
     async close() {
       stopped.abort();
       await hookOwner.close();
@@ -178,6 +231,7 @@ export function composeNativePackages(options: {
       const publication = createNativeRegistrationPublisher([
         owner,
         hookOwner.owner(captured),
+        createNativeScheduleOwner(options.schedules),
       ]).publish({
         catalog: createExtensionCatalog({
           generation: Math.max(captured.catalog.generation, (current?.catalog.generation ?? 0) + 1),

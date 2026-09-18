@@ -65,6 +65,7 @@ export const EVENT_KINDS = [
   "instructions.resolved",
   "instructions.revoked",
   "instructions.rejected",
+  "schedule.settled",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -392,6 +393,11 @@ export type RuntimeEvent =
   | ConfigurationTransitionRecordedEvent
   | HistoryRecordedEvent
   | Envelope<"workflow.changed", SessionCorrelation, WorkflowReceipt>
+  | Envelope<
+      "schedule.settled",
+      SessionCorrelation,
+      import("../orchestration/schedule-state.ts").ScheduleNotice
+    >
   | WorkQueueChangedEvent
   | Envelope<"workspace.trust.reviewed", SessionCorrelation, WorkspaceTrustEventPayload>
   | SessionStartedEvent

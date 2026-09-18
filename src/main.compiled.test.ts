@@ -26,6 +26,7 @@ import { pluginManifest } from "./application/extensions/package-fixtures.ts";
 import { packageCliJourney } from "./cli/commands/package-fixtures.ts";
 import { packageHealthCliJourney } from "./cli/commands/package-health-fixtures.ts";
 import { peerCliJourney } from "./cli/commands/peer-fixtures.ts";
+import { scheduleCliJourney } from "./cli/commands/schedule-fixtures.ts";
 import { CLI_SCHEMA_FAMILY, EXIT_CODES, FALRYN_VERSION, readCliStream } from "./cli/index.ts";
 import { MIGRATION_TABLE, PRODUCT_SCHEMA_VERSION, PRODUCT_TABLES } from "./data/index.ts";
 import { createStaticEnvironment } from "./domain/foundation/index.ts";
@@ -234,6 +235,9 @@ function spawnCompiled(
 }
 
 describe.if(built)("the standalone executable", () => {
+  test("durable schedules execute actions and workflows across compiled host restarts", async () => {
+    await scheduleCliJourney([EXECUTABLE], await temporaryRoot());
+  }, 30000);
   test(
     "working profile selection, inheritance, reset and migration survive compiled restarts",
     async () => {

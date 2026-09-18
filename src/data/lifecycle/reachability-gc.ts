@@ -360,7 +360,7 @@ function gcRoots(
     { limit: MAX_GC_EXAMINED_ARTIFACTS + 1 },
   );
   const packages = store.read(
-    "SELECT DISTINCT artifact_id FROM package_data_artifacts LIMIT $limit",
+    "SELECT DISTINCT artifact_id FROM package_data_artifacts UNION SELECT artifact_id FROM schedule_artifacts LIMIT $limit",
     { limit: MAX_GC_EXAMINED_ARTIFACTS + 1 },
   );
   if (!tasks.ok || !owned.ok || !mailed.ok || !packages.ok)

@@ -618,6 +618,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
       case "configuration.transition.recorded":
       case "configuration.generation.changed":
       case "workspace.trust.reviewed":
+      case "schedule.settled":
       case "workflow.changed":
       case "work.queue.changed":
       case "process.task.changed":

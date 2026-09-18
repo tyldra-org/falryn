@@ -1,3 +1,4 @@
+import { SCHEDULE_OPERATIONS } from "../../application/orchestration/schedule-actions.ts";
 import { modelSettingsLines } from "../../application/providers/model-settings-format.ts";
 import { useSessionOperation } from "./session-operation.ts";
 
@@ -128,6 +129,7 @@ function resolveCommandState(
 
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const peerAction = useRef<AbortController | null>(null);
+  const localControlKind = useRef<"peer" | "schedule">("peer");
   const [peerPending, setPeerPending] = useState(false);
   const modelSelection =
     options.submission !== undefined && "modelSelection" in options.submission
@@ -512,6 +514,61 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
 
   const submitComposer = useCallback((): void => {
     const current = stateRef.current.composer;
+    if (/^\/schedule(?:\s|$)/u.test(current.text.trim())) {
+      const schedule = options.submission?.schedule;
+      if (!schedule) {
+        dispatch({
+          kind: "notice",
+          message: "Schedule controls are unavailable for this session.",
+        });
+        return;
+      }
+      if (encoder.encode(current.text).byteLength > 65_536) {
+        dispatch({ kind: "notice", message: "Schedule action exceeds 64 KiB." });
+        return;
+      }
+      let action: unknown;
+      try {
+        action = JSON.parse(current.text.trim().slice(9).trim() || '{"operation":"list"}');
+      } catch {
+        dispatch({
+          kind: "notice",
+          message:
+            'Use /schedule followed by a bounded JSON action, for example {"operation":"list"}.',
+        });
+        return;
+      }
+      peerAction.current?.abort();
+      const controller = new AbortController();
+      peerAction.current = controller;
+      setPeerPending(true);
+      localControlKind.current = "schedule";
+      void schedule(action, controller.signal)
+        .then(
+          (result) => {
+            if (controller.signal.aborted) return;
+            const text = JSON.stringify(result);
+            dispatch({
+              kind: "notice",
+              message:
+                encoder.encode(text).byteLength <= 262_144
+                  ? text
+                  : "Schedule result exceeds 256 KiB. Request a smaller history page or inspect one receipt.",
+            });
+          },
+          () => {
+            if (!controller.signal.aborted)
+              dispatch({ kind: "notice", message: "Schedule action unavailable." });
+          },
+        )
+        .finally(() => {
+          if (peerAction.current === controller) {
+            peerAction.current = null;
+            setPeerPending(false);
+          }
+        });
+      return;
+    }
     if (/^\/peer(?:\s|$)/u.test(current.text.trim())) {
       const peer = options.submission?.peer;
       if (!peer) {
@@ -537,6 +594,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       const controller = new AbortController();
       peerAction.current = controller;
       setPeerPending(true);
+      localControlKind.current = "peer";
       void peer(action, controller.signal)
         .then(
           (result) => {
@@ -846,6 +904,15 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           return environment.run(null);
         case "profile.inspect":
           return profile.run(null);
+        case "schedule.controls":
+          dispatch({ kind: "close-overlay" });
+          dispatch({
+            kind: "notice",
+            message: options.submission?.schedule
+              ? `Use /schedule {"operation":"list"}. Available operations: ${SCHEDULE_OPERATIONS.join(", ")}.`
+              : "Schedule controls are unavailable for this session.",
+          });
+          return true;
         case "session.export":
           return sessionExport.run(null);
         case "compact.preview":
@@ -946,7 +1013,10 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
             setPeerPending(false);
             dispatch({
               kind: "notice",
-              message: "Local peer wait cancelled. Remote work continues independently.",
+              message:
+                localControlKind.current === "peer"
+                  ? "Local peer wait cancelled. Remote work continues independently."
+                  : "Local schedule wait cancelled. Use exact run cancellation to stop admitted work.",
             });
             return true;
           }
@@ -997,6 +1067,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       cancelCompact,
       cancelSessionExport,
       options.onExit,
+      options.submission?.schedule,
       options.transcriptKeys,
       options.midTurn,
       options.sessionCreation,

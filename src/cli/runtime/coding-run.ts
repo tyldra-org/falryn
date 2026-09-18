@@ -877,7 +877,10 @@ export async function runCoding(
         tasks: productArtifactSession.tasks,
         ...(options.toolExposureOverride === "none"
           ? { toolExposureOverride: "none" as const }
-          : { workflows: productArtifactSession.workflows }),
+          : {
+              workflows: productArtifactSession.workflows,
+              schedules: productArtifactSession.schedules,
+            }),
         ...(productArtifactSession.workflowQuestions
           ? { workflowQuestions: productArtifactSession.workflowQuestions }
           : {}),

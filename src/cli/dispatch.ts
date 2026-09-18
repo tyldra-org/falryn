@@ -267,6 +267,7 @@ async function runCommand(
         ? {}
         : { extensionCatalogArgs: invocation.extensionCatalogArgs }),
       ...(invocation.packageArgs === undefined ? {} : { packageArgs: invocation.packageArgs }),
+      ...(invocation.scheduleArgs === undefined ? {} : { scheduleArgs: invocation.scheduleArgs }),
       ...(invocation.peerArgs === undefined ? {} : { peerArgs: invocation.peerArgs }),
       ...(invocation.mcpArgs === undefined ? {} : { mcpArgs: invocation.mcpArgs }),
       ...(invocation.compactArgs === undefined ? {} : { compactArgs: invocation.compactArgs }),
@@ -550,6 +551,7 @@ async function launchShell(
               },
               agentRegistry: agentRegistryFrom(configuration),
               workflows: productArtifactSession.workflows,
+              schedules: productArtifactSession.schedules,
               ...(productArtifactSession.workflowQuestions
                 ? { workflowQuestions: productArtifactSession.workflowQuestions }
                 : {}),

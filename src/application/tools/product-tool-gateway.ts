@@ -950,6 +950,9 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           return options.runner
             .execute({
               ...nativeRequest,
+              ...(options.instructionsCurrent
+                ? { authorityCurrent: options.instructionsCurrent }
+                : {}),
               taskResources: task,
               ...(options.delegation === undefined ? {} : { delegation: options.delegation }),
               ...(String(manifest.capabilityId) !== "builtin:orchestration/workflow@1"
@@ -984,6 +987,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
               ...(![
                 "builtin:orchestration/delegate@1",
                 "builtin:orchestration/peer@1",
+                "builtin:orchestration/schedule@1",
                 "builtin:orchestration/workflow@1",
               ].includes(String(manifest.capabilityId))
                 ? {}

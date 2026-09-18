@@ -135,6 +135,7 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
     case "profile":
     case "config.migrate":
     case "package":
+    case "schedule":
     case "peer":
     case "compact":
       return result.payload === null ? [] : [safe(JSON.stringify(result.payload))];

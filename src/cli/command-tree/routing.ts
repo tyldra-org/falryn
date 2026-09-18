@@ -42,6 +42,7 @@ export function commandFrom(
     return "run";
   }
   if (group === "model") return action === null ? null : "model";
+  if (group === "schedule") return action === null ? null : "schedule";
   if (group === "peer") return action === null ? null : "peer";
   if (group === "mcp") return action === "inspect" || action === "probe" ? "mcp" : null;
   if (group === "compact") return action === null ? null : "compact";

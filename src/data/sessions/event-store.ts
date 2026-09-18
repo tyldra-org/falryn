@@ -198,6 +198,8 @@ export type StreamHead = {
 };
 
 export type DurableEventStore = EventStorePort & {
+  /** Locate a committed receipt without scanning a retained stream after a lost reply. */
+  receipt(stream: StreamId, key: string): Result<Sequence | null, EventStoreError>;
   /**
    * Stops accepting appends and resolves once those in flight have settled.
    *
@@ -509,6 +511,18 @@ export function createSqliteEventStore(
           },
         });
       return ok({ reason: row.stage, sequence: seq.value });
+    },
+    receipt(stream, key) {
+      const rows = store.read(SELECT_BY_IDEMPOTENCY_KEY, { streamId: stream, idempotencyKey: key });
+      if (!rows.ok) return err(eventStoreErrorFor(rows.error));
+      if (!rows.value.length) return ok(null);
+      const parsed = sequence.parse(integerOf(rows.value[0]?.sequence));
+      return parsed.ok
+        ? ok(parsed.value)
+        : err({
+            code: "codec",
+            error: { kind: "invalid-envelope", issues: [{ path: "sequence", code: "custom" }] },
+          });
     },
     head(stream) {
       const rows = store.read(SELECT_LAST_SEQUENCE, { streamId: stream });
