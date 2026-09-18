@@ -1,4 +1,3 @@
-import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -12,24 +11,28 @@ import { probeStorage } from "./storage-probe.ts";
 test("database inspection waits for a transient exclusive lock without changing the database", async () => {
   const root = await mkdtemp(join(tmpdir(), "falryn-probe-lock-"));
   const path = join(root, "state.sqlite");
-  const db = new Database(path);
-  db.exec(
-    `CREATE TABLE ${MIGRATION_TABLE} (version INTEGER); INSERT INTO ${MIGRATION_TABLE} VALUES (${PRODUCT_SCHEMA_VERSION})`,
-  );
-  db.close();
+  const opened = openBunSqlite({ path: localPath(path), create: true });
+  if (!opened.ok) throw new Error("fixture database unavailable");
+  const db = opened.value;
+  db.run(`CREATE TABLE ${MIGRATION_TABLE} (version INTEGER)`);
+  db.run(`INSERT INTO ${MIGRATION_TABLE} VALUES (${PRODUCT_SCHEMA_VERSION})`);
+  await db.close();
   const before = await readFile(path);
   const holder = Bun.spawn(
     [
       process.execPath,
       "--eval",
       `
-    const { Database } = require("bun:sqlite");
-    const db = new Database(process.argv[1]);
-    db.exec("BEGIN EXCLUSIVE");
+    const { openBunSqlite } = await import(process.argv[2]);
+    const opened = openBunSqlite({ path: process.argv[1], create: false });
+    if (!opened.ok) throw new Error("fixture lock unavailable");
+    const db = opened.value;
+    db.run("BEGIN EXCLUSIVE");
     process.stdout.write("locked\\n");
-    setTimeout(() => { db.exec("ROLLBACK"); db.close(); }, 250);
+    setTimeout(async () => { db.run("ROLLBACK"); await db.close(); }, 250);
   `,
       path,
+      new URL("../../integrations/storage/bun-sqlite.ts", import.meta.url).href,
     ],
     { stdout: "pipe", stderr: "pipe" },
   );
