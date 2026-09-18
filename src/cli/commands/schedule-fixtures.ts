@@ -120,6 +120,22 @@ export async function scheduleCliJourney(binary: readonly string[], root: string
     state: "paused",
     lastAttempt: { terminal: { status: "succeeded" } },
   });
+  const workflowInspected = await invoke({ operation: "inspect", id: "workflow" });
+  await invoke({
+    operation: "pause",
+    id: "workflow",
+    expectedRevision: workflowInspected.revision,
+  });
+  // A run may settle during host shutdown, after wake subscriptions stop.
+  // Restart delivers its durable outbox with both definitions paused, never rerunning work.
+  const delivery = Bun.spawn(
+    [...binary, "schedule", "host", "--format", "json", "--timeout", "3000", "--non-interactive"],
+    { cwd: root, env, stdout: "pipe", stderr: "pipe" },
+  );
+  await delivery.exited;
+  expect((await invoke({ operation: "history", id: "workflow" })).attempts).toEqual(
+    workflowHistory.attempts,
+  );
   const session = `schedule-${history.attempts[0].id}`;
   function command(args: string[]) {
     const output = Bun.spawnSync([...binary, ...args, "--format", "json", "--non-interactive"], {
