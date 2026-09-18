@@ -304,7 +304,7 @@ describe.if(built)("the standalone executable", () => {
       expect(await readFile(preview.recovery, "utf8")).toBe(original);
       expect(run(["config", "validate"]).valid).toBe(true);
     },
-    COMPILED_RUN_TIMEOUT_MS,
+    30_000, // This journey starts many processes; each retains its own command timeout.
   );
 
   test(

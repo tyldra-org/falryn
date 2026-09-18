@@ -21,7 +21,7 @@ export async function scheduleCliJourney(binary: readonly string[], root: string
   ) {
     const input = join(root, "input.json");
     await writeFile(input, JSON.stringify(command));
-    const child = Bun.spawnSync(
+    const child = Bun.spawn(
       [
         ...binary,
         "schedule",
@@ -34,15 +34,18 @@ export async function scheduleCliJourney(binary: readonly string[], root: string
       ],
       { cwd: root, env, stdout: "pipe", stderr: "pipe", timeout: 15000 },
     );
-    const stdout = new TextDecoder().decode(child.stdout);
-    const stderr = new TextDecoder().decode(child.stderr);
+    const [stdout, stderr, exit] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+      child.exited,
+    ]);
     if (expectedFailure) {
       const result = JSON.parse(stdout);
-      expect(child.exitCode).not.toBe(0);
+      expect(exit).not.toBe(0);
       expect(result.payload).toMatchObject({ ok: false, error: { code: expectedFailure } });
       return result.payload;
     }
-    if (child.exitCode !== 0) throw new Error(`${child.exitCode}: ${stdout} ${stderr}`);
+    if (exit !== 0) throw new Error(`${exit}: ${stdout} ${stderr}`);
     const result = JSON.parse(stdout);
     expect(result.payload.ok).toBe(true);
     return result.payload.value;

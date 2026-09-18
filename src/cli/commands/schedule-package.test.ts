@@ -112,19 +112,53 @@ for (const change of ["disable", "revoke", "uninstall", "update"] as const)
           stdout: "pipe",
           stderr: "pipe",
         });
+      const historyInput = join(root, "history.json");
+      await writeFile(historyInput, JSON.stringify({ operation: "history", id: schedule.id }));
+      const liveHistory = async () => {
+        const child = Bun.spawn(
+          [...command, "schedule", "history", "--input", historyInput, "--format", "jsonl"],
+          {
+            cwd: root,
+            env: fixture.environment,
+            stdin: "ignore",
+            stdout: "pipe",
+            stderr: "pipe",
+            timeout: 15000,
+          },
+        );
+        const [stdout, stderr, exit] = await Promise.all([
+          new Response(child.stdout).text(),
+          new Response(child.stderr).text(),
+          child.exited,
+        ]);
+        if (exit !== 0) throw new Error(`schedule-history-failed: ${exit} ${stdout} ${stderr}`);
+        return historySchema.parse(JSON.parse(stdout.trim().split("\n").at(-1) ?? "null").payload);
+      };
       const running = host("15000");
       let ran: z.infer<typeof historySchema> | null = null;
       try {
         const deadline = Date.now() + 10000;
         for (;;) {
-          ran = await fixture.invoke(
-            ["schedule", "history"],
-            { operation: "history", id: schedule.id },
-            historySchema,
-            "jsonl",
-          );
+          ran = await liveHistory();
           if (ran.value.attempts[0]?.terminal) break;
-          if (Date.now() >= deadline) throw new Error("package-schedule-completion-deadline");
+          if (running.exitCode !== null || Date.now() >= deadline) {
+            const state = await fixture.invoke(
+              ["schedule", "inspect"],
+              { operation: "inspect", id: schedule.id },
+              response,
+            );
+            throw new Error(
+              `package-schedule-completion-deadline: ${JSON.stringify({
+                state,
+                history: ran.value,
+                hostExit: running.exitCode,
+                stdout:
+                  running.exitCode === null ? null : await new Response(running.stdout).text(),
+                stderr:
+                  running.exitCode === null ? null : await new Response(running.stderr).text(),
+              })}`,
+            );
+          }
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
         expect(ran.value.attempts).toMatchObject([{ terminal: { status: "succeeded" } }]);
