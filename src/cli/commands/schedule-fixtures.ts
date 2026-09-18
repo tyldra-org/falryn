@@ -1,6 +1,7 @@
 import { expect } from "bun:test";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { SQLITE_DATABASE_FILE } from "../../data/sqlite/sqlite-store.ts";
 /** Shared real-process journey for source and the shipped binary. */
 export async function scheduleCliJourney(binary: readonly string[], root: string) {
   const env = {
@@ -179,4 +180,6 @@ export async function scheduleCliJourney(binary: readonly string[], root: string
   expect(new Set(history.attempts.map((attempt: { slot: string }) => attempt.slot)).size).toBe(
     history.attempts.length,
   );
+  await writeFile(join(root, "state", SQLITE_DATABASE_FILE), "invalid SQLite fixture");
+  await invoke({ operation: "list" }, "configuration-unavailable");
 }

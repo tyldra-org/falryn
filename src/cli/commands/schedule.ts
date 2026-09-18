@@ -55,11 +55,16 @@ export async function runSchedule(
   const graph = services();
   const workspace = await graph.ensureWorkspaceSet(signal);
   if (!workspace.ok) return fail("workspace-unavailable");
-  const configuration = await loadProductConfiguration(
-    graph,
-    productConfigurationLoadRequest(globals),
-    signal,
-  );
+  let configuration: Awaited<ReturnType<typeof loadProductConfiguration>>;
+  try {
+    configuration = await loadProductConfiguration(
+      graph,
+      productConfigurationLoadRequest(globals),
+      signal,
+    );
+  } catch {
+    return fail("configuration-unavailable");
+  }
   if (!["published", "unchanged"].includes(configuration.outcome.kind))
     return fail("configuration-unavailable");
   const product = await openProductArtifactSession(graph, signal);
