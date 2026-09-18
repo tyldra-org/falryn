@@ -277,6 +277,19 @@ export function blockFor(event: RuntimeEvent, history?: HistoryPayload): Transcr
   } as const;
 
   switch (event.kind) {
+    case "schedule.settled":
+      return {
+        ...spine,
+        kind: "notice",
+        anchor: { of: "declared", key: `schedule:${event.payload.attempt}` },
+        source: "runtime",
+        status: "final",
+        summary: complete(`Schedule ${event.payload.schedule}: ${event.payload.terminal.status}.`),
+        invocationId: null,
+        note: bound(
+          `${event.payload.terminal.reason}. Inspect the exact attempt ${event.payload.attempt}.`,
+        ),
+      };
     case "workflow.changed":
     case "work.queue.changed":
       // The queue journal is available to its store consumers; #161 owns shared projections.

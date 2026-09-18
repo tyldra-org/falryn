@@ -341,3 +341,111 @@ describe("durable process tasks", () => {
     await store.close();
   });
 });
+
+test("schedule settlement owns its foreign task reference until a certain terminal commit", async () => {
+  const { createScheduleActions } = await import(
+    "../../application/orchestration/schedule-actions.ts"
+  );
+  const { createScheduleStore } = await import("./schedule-store.ts");
+  const { canonicalDigest } = await import("../../domain/extensions/canonical.ts");
+  const { ok } = await import("../../domain/foundation/result.ts");
+  const { store, tasks } = await open();
+  const sealed = settle(tasks, written(tasks.create(task())));
+  const wake = written(tasks.claimWake(sealed.handle));
+  written(tasks.acknowledgeWake(sealed.handle, wake.notificationId));
+  const schedules = createScheduleStore(store);
+  const workspace = sealed.owner.workspaceId;
+  const actions = createScheduleActions({
+    store: schedules,
+    workspace,
+    now: () => 1000,
+    authority: {
+      validate: async () =>
+        ok({
+          descriptor: canonicalDigest("d"),
+          authority: canonicalDigest("a"),
+          configuration: canonicalDigest("c"),
+          configurationGeneration: 1,
+          timezoneData: "test",
+        }),
+    },
+  });
+  const signal = new AbortController().signal;
+  value(
+    await actions.execute(
+      {
+        operation: "create",
+        id: "schedule",
+        definition: {
+          version: 1,
+          timing: { trigger: { kind: "interval", everyMs: 1000 } },
+          target: { kind: "action", capability: "builtin:test/read@1", input: {} },
+        },
+      },
+      "user",
+      signal,
+    ),
+  );
+  value(
+    await actions.execute(
+      { operation: "enable", id: "schedule", expectedRevision: 1 },
+      "user",
+      signal,
+    ),
+  );
+  const slot = {
+    id: "slot",
+    schedule: "schedule",
+    generation: 1,
+    kind: "nominal" as const,
+    nominal: 1000,
+    eligible: 1000,
+    disposition: "pending" as const,
+    through: null,
+  };
+  const record = value(schedules.decide(value(schedules.get(workspace, "schedule")), 1000, [slot]));
+  value(
+    schedules.claim(record, slot, {
+      id: "scheduled-attempt",
+      slot: "slot",
+      schedule: "schedule",
+      generation: 1,
+      revision: 1,
+      host: "test",
+      process: { platform: "linux", pid: 1, birth: "test" },
+      admittedAt: 1000,
+      deadline: 2000,
+      task: null,
+      workflow: null,
+      cancelRequestedAt: null,
+      cancelAcknowledgedAt: null,
+      terminal: null,
+    }),
+  );
+  value(
+    schedules.changeAttempt(workspace, "scheduled-attempt", 1, (prior) =>
+      ok({ ...prior, revision: 2, task: sealed.handle }),
+    ),
+  );
+  expect(tasks.cleanup(sealed.handle, sealed.revision, 1000)).toEqual({
+    ok: false,
+    error: { code: "busy" },
+  });
+  value(
+    schedules.changeAttempt(workspace, "scheduled-attempt", 2, (prior) =>
+      ok({
+        ...prior,
+        revision: 3,
+        terminal: {
+          status: "failed",
+          effect: "none",
+          reason: "task-spawn-failed",
+          result: null,
+          at: 1000,
+        },
+      }),
+    ),
+  );
+  expect(tasks.cleanup(sealed.handle, sealed.revision, 1000).ok).toBe(true);
+  await store.close();
+});

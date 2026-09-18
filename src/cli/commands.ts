@@ -1,3 +1,4 @@
+import type { SchedulePayload } from "./commands/schedule.ts";
 /**
  * The command surfaces this build can honestly ship.
  *
@@ -276,6 +277,8 @@ export function stoppedResult(
       );
     case "package":
       return resultFor<"package", PackageReceipt>("package", null, [], outcome, effect);
+    case "schedule":
+      return resultFor<"schedule", SchedulePayload>("schedule", null, [], outcome, effect);
     case "peer":
       return resultFor<"peer", PeerPayload>("peer", null, [], outcome, effect);
     case "mcp":
@@ -356,6 +359,7 @@ export type RunCommandResult =
     >
   | CommandResultOf<"compact", CheckpointOutcome>
   | CommandResultOf<"peer", PeerPayload>
+  | CommandResultOf<"schedule", SchedulePayload>
   | CommandResultOf<"mcp", import("./commands/mcp.ts").McpPayload>
   | CommandResultOf<"package", PackageReceipt>
   | Awaited<ReturnType<typeof runConfigShow>>

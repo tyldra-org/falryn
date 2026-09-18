@@ -156,6 +156,7 @@ export type ProductAgentPortResult<Value> =
   | { readonly ok: false; readonly error: ProductAgentRuntimeError };
 
 export type ProductAgentRuntime = {
+  readonly schedules?: import("./schedule-product-runtime.ts").ProductSchedules;
   readonly instructions: import("../context/product-instructions.ts").ProductInstructions | null;
   readonly turnLifecycle: ReturnType<typeof createGenerationTurnLifecycle>;
   /** Release only this composition's bindings, not the shared session or resources. */

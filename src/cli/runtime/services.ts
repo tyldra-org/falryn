@@ -81,6 +81,7 @@ import { LANGUAGE_SERVICE_CONFIGURATION_KEYS } from "./language-service-configur
 import { MODEL_CONFIGURATION_KEYS } from "./model-configuration.ts";
 import { loadPackageConfiguration } from "./package-configuration.ts";
 import { PROVIDER_CONNECTION_KEYS } from "./provider-configuration.ts";
+import { SCHEDULE_CONFIGURATION_KEYS } from "./schedule-configuration.ts";
 import {
   describeWorkspaceResolveError,
   type ResolvedCliWorkspace,
@@ -105,6 +106,7 @@ export const PRODUCT_CONFIGURATION_KEYS = [
   ...PROVIDER_CONNECTION_KEYS,
   ...MODEL_CONFIGURATION_KEYS,
   ...AGENT_CONFIGURATION_KEYS,
+  ...SCHEDULE_CONFIGURATION_KEYS,
   ...INSTRUCTION_CONFIGURATION_KEYS,
   ...LANGUAGE_SERVICE_CONFIGURATION_KEYS,
   ...ENVIRONMENT_CONFIGURATION_KEYS,

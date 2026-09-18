@@ -31,6 +31,8 @@ export type PackageAdmissionOptions = {
   bytes: Pick<PackageBytes, "read">;
   host: InspectionHost;
   protocol: string;
+  /** Native schedule registration admits data only; target execution has its own gateway. */
+  declarationKind?: "schedule";
   authority(
     installed: InstalledPackage,
     contribution: string | null,
@@ -92,7 +94,8 @@ export function createPackageExecutionAdmission(options: PackageAdmissionOptions
             !authority.trusted ? "package-trust-required" : "dependency-disabled",
           );
         }
-        if (!authority.strict) throw new ExtensionInputError("strict-sandbox-policy-required");
+        if (!authority.strict && options.declarationKind !== "schedule")
+          throw new ExtensionInputError("strict-sandbox-policy-required");
         const snapshot = await options.bytes.read(version, signal);
         inventoryBytes += version.byteLength;
         if (inventoryBytes > 67_108_864)
@@ -197,28 +200,38 @@ export function createPackageExecutionAdmission(options: PackageAdmissionOptions
       contribution = health.contribution;
       if (selected.compatibility !== "compatible")
         throw new ExtensionInputError("contribution-incompatible");
-      if (selected.mode !== "governed" || !declaration.execution)
-        throw new ExtensionInputError("governed-execution-required");
-      if (options.protocol === HOOK_COMMAND_PROTOCOL) hookCommandContract(declaration);
-      else if (declaration.execution.loader !== "native")
-        throw new ExtensionInputError("health-loader-unavailable");
-      if (declaration.execution.protocolVersion !== options.protocol)
-        throw new ExtensionInputError("health-protocol-unavailable");
-      const authority = declaration.authority;
-      if (
-        authority.effects.some((effect) => effect !== "observation") ||
-        authority.permissions.length ||
-        authority.roots.length ||
-        authority.destinations.length ||
-        authority.secretReferences.length ||
-        authority.localData.length ||
-        declaration.execution.expectedChildren.length ||
-        declaration.execution.hostIntegrations.length ||
-        declaration.module !== undefined
-      )
-        throw new ExtensionInputError("health-authority-unavailable");
-      if (health.requiredControls.length)
-        throw new ExtensionInputError(`health-${health.requiredControls[0]}-control-unavailable`);
+      if (options.declarationKind === "schedule") {
+        if (
+          selected.identity.nativeKind !== "schedule" ||
+          selected.mode !== "declarative" ||
+          !declaration.schedule ||
+          declaration.execution
+        )
+          throw new ExtensionInputError("schedule-declaration-invalid");
+      } else {
+        if (selected.mode !== "governed" || !declaration.execution)
+          throw new ExtensionInputError("governed-execution-required");
+        if (options.protocol === HOOK_COMMAND_PROTOCOL) hookCommandContract(declaration);
+        else if (declaration.execution.loader !== "native")
+          throw new ExtensionInputError("health-loader-unavailable");
+        if (declaration.execution.protocolVersion !== options.protocol)
+          throw new ExtensionInputError("health-protocol-unavailable");
+        const authority = declaration.authority;
+        if (
+          authority.effects.some((effect) => effect !== "observation") ||
+          authority.permissions.length ||
+          authority.roots.length ||
+          authority.destinations.length ||
+          authority.secretReferences.length ||
+          authority.localData.length ||
+          declaration.execution.expectedChildren.length ||
+          declaration.execution.hostIntegrations.length ||
+          declaration.module !== undefined
+        )
+          throw new ExtensionInputError("health-authority-unavailable");
+        if (health.requiredControls.length)
+          throw new ExtensionInputError(`health-${health.requiredControls[0]}-control-unavailable`);
+      }
       return {
         installed,
         snapshot,

@@ -18,6 +18,7 @@ import { runImport, runReplay } from "../commands/import-replay-commands.ts";
 import { runModel } from "../commands/model.ts";
 import { type PackageArguments, runPackage } from "../commands/package.ts";
 import { type PeerArguments, runPeer } from "../commands/peer.ts";
+import { runSchedule, type ScheduleArguments } from "../commands/schedule.ts";
 import { runTaskCommitPlan } from "../commands/task-commit-plan-commands.ts";
 import {
   runTaskDecompose,
@@ -66,6 +67,7 @@ export type DispatchProduceOptions = {
   readonly workingConfigurationArgs?: import("../commands/profile.ts").WorkingConfigurationArguments;
   readonly extensionCatalogArgs?: ExtensionCatalogArguments;
   readonly packageArgs?: PackageArguments;
+  readonly scheduleArgs?: ScheduleArguments;
   readonly peerArgs?: PeerArguments;
   readonly mcpArgs?: import("../commands/mcp.ts").McpArguments;
   readonly compactArgs?: CompactArguments;
@@ -141,6 +143,20 @@ export async function produce(
       if (options.packageArgs === undefined) throw new Error("Missing package arguments.");
       if (options.packageArgs.request.confirmation !== undefined) onMutationStart?.();
       return runPackage(services, options.packageArgs, signal);
+    case "schedule":
+      if (!options.scheduleArgs) throw new Error("Missing schedule arguments.");
+      if (
+        !["validate", "preview", "inspect", "list", "history", "delete-preview"].includes(
+          options.scheduleArgs.operation,
+        )
+      )
+        onMutationStart?.();
+      return runSchedule(
+        services,
+        options.scheduleArgs,
+        globals,
+        signal ?? new AbortController().signal,
+      );
     case "peer":
       if (!options.peerArgs) throw new Error("Missing peer arguments.");
       onMutationStart?.();

@@ -498,6 +498,24 @@ export function everyEventKind(): readonly RuntimeEvent[] {
         sources: [],
       },
     },
+    {
+      ...spine({ eventId: "event-schedule", sequence: 20, idempotencyKey: "key-schedule" }),
+      kind: "schedule.settled",
+      correlation: FIXTURE_SESSION_CORRELATION,
+      payload: {
+        version: 1,
+        schedule: "schedule-fixture",
+        generation: 1,
+        attempt: "attempt-fixture",
+        terminal: {
+          status: "succeeded",
+          effect: "completed",
+          reason: "completed",
+          result: null,
+          at: 1,
+        },
+      },
+    },
   ];
 }
 

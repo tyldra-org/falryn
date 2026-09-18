@@ -141,6 +141,7 @@ export async function executeWorkflowModel(options: {
     });
     const result = await executor.run({
       childAdmission: admission.child,
+      ...(request.authorityCurrent ? { authorityCurrent: request.authorityCurrent } : {}),
       signal: request.signal,
       turnId: turnId.from(identity),
       prompt: canonicalJson(options.input),

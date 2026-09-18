@@ -1,3 +1,17 @@
+import type { ProductSchedulePorts } from "../../application/runtime/schedule-product-runtime.ts";
+import { createScheduleStore } from "../../data/orchestration/schedule-store.ts";
+import { canonicalDigest } from "../../domain/extensions/canonical.ts";
+import {
+  eventId,
+  idempotencyKey,
+  sequence,
+  sessionId,
+  streamId,
+  timestampFromEpochMilliseconds,
+  traceId,
+  workspaceId,
+} from "../../domain/foundation/index.ts";
+import { RUNTIME_EVENT_SCHEMA_VERSION } from "../../domain/foundation/limits.ts";
 /** Durable event, artifact, and Loom lifecycle for one product process. */
 
 import { createHash, randomUUID } from "node:crypto";
@@ -67,9 +81,13 @@ import {
 } from "../../data/orchestration/work-queue-locations.ts";
 import { createWorkflowStore } from "../../data/orchestration/workflow-store.ts";
 import { createRecordRepositories } from "../../data/sessions/repositories.ts";
-import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
-import { runId } from "../../domain/foundation/index.ts";
+import {
+  type ConfigurationGeneration,
+  configurationGeneration,
+  runId,
+} from "../../domain/foundation/index.ts";
 import type { ReflectionAuthority } from "../../domain/memory/reflection.ts";
+import { scheduleDefaultsSchema } from "../../domain/orchestration/schedule-defaults.ts";
 import type { WorkflowStore } from "../../domain/orchestration/workflow-state.ts";
 import {
   DEFAULT_BUSY_TIMEOUT_MS,
@@ -77,7 +95,7 @@ import {
   isRootUsable,
   type RootStatus,
 } from "../../domain/storage/index.ts";
-import { joinPath, type LocalPath } from "../../domain/workspace/index.ts";
+import { joinPath, type LocalPath, primaryWorkspaceRoot } from "../../domain/workspace/index.ts";
 import {
   createHostBlobStore,
   createSha256Hasher,
@@ -92,9 +110,11 @@ import {
   composeProductPeerMailboxes,
   type ProductPeerMailboxes,
 } from "./product-peer-mailboxes.ts";
+import { SCHEDULE_CONFIGURATION_KEY } from "./schedule-configuration.ts";
 import type { Services } from "./services.ts";
 
 export type ProductArtifactSession = {
+  readonly schedules: ProductSchedulePorts;
   readonly records: ReturnType<typeof createRecordRepositories>;
   readonly workflows: WorkflowStore;
   readonly workflowQuestions: WorkflowQuestions | null;
@@ -302,6 +322,8 @@ export async function openProductArtifactSession(
     session: string | undefined;
     owner: ReturnType<typeof composeNativePackages>;
   } | null = null;
+  const scheduleOwners = new Set<{ close(): Promise<boolean> }>();
+  const scheduleStore = createScheduleStore(store);
   let closed = false;
   let closing: Promise<boolean> | null = null;
 
@@ -319,6 +341,11 @@ export async function openProductArtifactSession(
     await attempt(async () => {
       if (!(await recovery.close())) clean = false;
     });
+    for (const owner of scheduleOwners)
+      await attempt(async () => {
+        if (!(await owner.close())) clean = false;
+      });
+    scheduleOwners.clear();
     await attempt(() => nativeOwner?.owner.close());
     await attempt(() => peers.close());
     await attempt(async () => {
@@ -341,6 +368,125 @@ export async function openProductArtifactSession(
     return clean;
   }
   const session: ProductArtifactSession = {
+    schedules: {
+      defaults: () =>
+        scheduleDefaultsSchema.parse(
+          services.loader.current()?.values[SCHEDULE_CONFIGURATION_KEY] ?? { version: 1 },
+        ),
+      store: scheduleStore,
+      tasks: taskStore,
+      process: processIdentity.kind === "present" ? processIdentity.identity : null,
+      identities,
+      timezoneData: process.versions.tz ?? `icu-${process.versions.icu ?? "unknown"}`,
+      async notify(attempt, signal, workspace) {
+        if (!attempt.terminal) return false;
+        const record = scheduleStore.get(workspace, attempt.schedule, attempt.generation);
+        if (!record.ok || !record.value.binding) return false;
+        const identity = `schedule-notice:${attempt.id}`;
+        const stream = streamId.from(`schedule-attempt:${attempt.id}`);
+        const existing = eventStore.receipt(stream, identity);
+        if (!existing.ok) return false;
+        if (existing.value !== null)
+          return taskNotices.schedule(identity, stream, Number(existing.value), signal);
+        const correlation = {
+          sessionId: sessionId.from(`schedule-${attempt.id}`),
+          workspaceId: workspaceId.from(workspace),
+          traceId: traceId.from(attempt.id),
+          configurationGeneration: configurationGeneration.from(
+            record.value.binding.configurationGeneration,
+          ),
+        };
+        let head = eventStore.head?.(stream);
+        if (!head?.ok) return false;
+        if (head.value === null) {
+          const began = await eventStore.append(
+            {
+              schemaVersion: RUNTIME_EVENT_SCHEMA_VERSION,
+              minimumReaderSchemaVersion: RUNTIME_EVENT_SCHEMA_VERSION,
+              eventId: eventId.from(`schedule-recovery:${attempt.id}`),
+              streamId: stream,
+              sequence: sequence.from(1),
+              occurredAt: timestampFromEpochMilliseconds(attempt.admittedAt),
+              idempotencyKey: idempotencyKey.from(`schedule-recovery:${attempt.id}`),
+              correlation,
+              kind: "session.started",
+              payload: {},
+            },
+            signal,
+          );
+          if (!began.ok) return false;
+          head = eventStore.head?.(stream);
+          if (!head?.ok) return false;
+        }
+        const receipt = await eventStore.append(
+          {
+            schemaVersion: RUNTIME_EVENT_SCHEMA_VERSION,
+            minimumReaderSchemaVersion: RUNTIME_EVENT_SCHEMA_VERSION,
+            eventId: eventId.from(identity),
+            streamId: stream,
+            sequence: sequence.from(Number(head.value ?? 0) + 1),
+            occurredAt: timestampFromEpochMilliseconds(attempt.terminal.at),
+            idempotencyKey: idempotencyKey.from(identity),
+            correlation,
+            kind: "schedule.settled",
+            payload: {
+              version: 1,
+              schedule: attempt.schedule,
+              generation: attempt.generation,
+              attempt: attempt.id,
+              terminal: attempt.terminal,
+            },
+          },
+          signal,
+        );
+        return (
+          receipt.ok &&
+          taskNotices.schedule(identity, stream, Number(receipt.value.sequence), signal)
+        );
+      },
+      retain: (owner) => {
+        scheduleOwners.add(owner);
+        return () => {
+          scheduleOwners.delete(owner);
+        };
+      },
+      async current(record, signal) {
+        if (closed || signal.aborted) return { ok: false, error: { code: "host-unavailable" } };
+        const configuration = services.loader.current();
+        if (!configuration) return { ok: false, error: { code: "configuration-unavailable" } };
+        // Reject changed or removed source bytes even before a watcher reloads.
+        // Project bytes are pinned by the trust owner below.
+        for (const report of configuration.sources) {
+          if (
+            !report.source.file ||
+            ["project-file", "private-project-file"].includes(report.source.kind)
+          )
+            continue;
+          const current = await services.fileSystem.stat(report.source.file, signal);
+          if (!current.ok || (current.value?.revision ?? null) !== (report.source.revision ?? null))
+            return { ok: false, error: { code: "configuration-source-changed" } };
+        }
+        const workspace = await services.ensureWorkspaceSet(signal);
+        const trust = await services.workspaceTrust.resolve(undefined, signal);
+        if (!workspace.ok) return { ok: false, error: { code: "workspace-unavailable" } };
+        if (!["accepted", "empty"].includes(trust.status))
+          return { ok: false, error: { code: "workspace-trust-required" } };
+        if (record.source.kind === "package") {
+          if (!(await nativeOwner?.owner.scheduleCurrent(record.source, signal)))
+            return { ok: false, error: { code: "package-authority-unavailable" } };
+        }
+        return {
+          ok: true,
+          value: canonicalDigest({
+            configuration: configuration.values,
+            profile: configuration.workingProfile ?? null,
+            sources: configuration.sources,
+            workspace: workspace.value.set,
+            trust,
+          }),
+        };
+      },
+    },
     workflows: createWorkflowStore(store),
     workflowQuestions: questions
       ? createWorkflowQuestions(questions, {
@@ -352,12 +498,22 @@ export async function openProductArtifactSession(
     workQueues,
     async publishNativePackages(generation, signal, session) {
       if (closed) throw new Error("catalog-host-closed");
+      const workspace = await services.ensureWorkspaceSet(signal);
       if (nativeOwner === null || nativeOwner.session !== session) {
         await nativeOwner?.owner.close();
         nativeOwner = {
           session,
           owner: composeNativePackages({
             services,
+            ...(workspace.ok
+              ? {
+                  schedules: {
+                    store: scheduleStore,
+                    workspace: primaryWorkspaceRoot(workspace.value.set).rootId,
+                    now: () => Number(services.clock.now()),
+                  },
+                }
+              : {}),
             records: createCatalogRepositories(store),
             activations: createNativeActivationRepository(store),
             processes: createPackageHealthRepository(store),

@@ -68,6 +68,8 @@ import type { ProductAgentRuntime } from "./product-agent-runtime.ts";
 import { createTurnAttemptPolicy } from "./turn-attempt-policy.ts";
 
 export type ProductLiveTurnInput = {
+  /** Native parent authority; checked again before each provider or capability effect. */
+  readonly authorityCurrent?: (signal: AbortSignal) => Promise<boolean>;
   /** Authorized per-call preference; never copied into delegated work or saved settings. */
   readonly processing?: import("../../domain/sessions/model-processing.ts").ProcessingPreference;
   /** Trusted host admission; no prompt or saved agent definition can manufacture this handle. */
@@ -1395,7 +1397,8 @@ export function createProductLiveTurnExecutor(
           let instructionAuthorityLost = false;
           const instructionsCurrent = async (signal: AbortSignal) => {
             const current =
-              instructionBinding === null || (await instructionBinding.current(signal));
+              (!input.authorityCurrent || (await input.authorityCurrent(signal))) &&
+              (instructionBinding === null || (await instructionBinding.current(signal)));
             if (!current) instructionAuthorityLost = true;
             return current;
           };
@@ -1408,7 +1411,7 @@ export function createProductLiveTurnExecutor(
             intent: input.intent ?? executionPolicy.workIntent,
             modelInput: {
               ...modelInput,
-              ...(instructionBinding ? { instructionsCurrent } : {}),
+              ...(instructionBinding || input.authorityCurrent ? { instructionsCurrent } : {}),
             },
           });
           let instructionHistoryFailed = false;

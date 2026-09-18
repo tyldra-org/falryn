@@ -139,6 +139,7 @@ export function composeWorkflowRuntime(
         const routes: Record<string, z.infer<typeof capturedSchema>> = {};
         for (const node of definition.nodes) {
           if (node.kind !== "agent" && node.kind !== "model") continue;
+          if (!initiating.route) continue;
           const saved = record ? capturedSchema.safeParse(record.routes[node.key]) : null;
           const selected: ModelSelection | { kind: "no-model" } = saved?.success
             ? saved.data.selection

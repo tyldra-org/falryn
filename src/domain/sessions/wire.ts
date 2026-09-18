@@ -4,6 +4,7 @@ import {
   instructionRejectionSchema,
   instructionSourceReceiptSchema,
 } from "../context/instruction-source-receipt.ts";
+import { scheduleNoticeSchema } from "../orchestration/schedule-state.ts";
 import { workflowReceiptSchema } from "../orchestration/workflow-state.ts";
 import {
   MAX_SANDBOX_LAUNCHES,
@@ -517,6 +518,12 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
   }),
   z.object({
     ...envelopeSpine,
+    kind: z.literal("schedule.settled"),
+    correlation: sessionCorrelationSchema,
+    payload: scheduleNoticeSchema,
+  }),
+  z.object({
+    ...envelopeSpine,
     kind: z.literal("workflow.changed"),
     correlation: sessionCorrelationSchema,
     payload: workflowReceiptSchema,
@@ -660,6 +667,7 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
     case "configuration.transition.recorded":
     case "workspace.trust.reviewed":
     case "work.queue.changed":
+    case "schedule.settled":
     case "workflow.changed":
       return event.payload;
     case "execution.profile.selected":

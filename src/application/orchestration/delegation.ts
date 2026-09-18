@@ -66,6 +66,7 @@ export type AgentExecution = {
   readonly usage: unknown;
 };
 export type AgentRun = {
+  readonly authorityCurrent?: (signal: AbortSignal) => Promise<boolean>;
   readonly handle: AgentHandle;
   readonly rootTaskId: string;
   readonly rootSessionId: string;
@@ -149,7 +150,7 @@ export function createDelegation(options: DelegationOptions) {
     if (definition === null) return { reason: "agent-definition-not-found" };
     if (definition.availability !== "available")
       return { reason: definition.reason ?? "agent-definition-disabled" };
-    if (!request.delegation || !request.processTask || !request.taskResources)
+    if (!request.delegation?.route || !request.processTask || !request.taskResources)
       return { reason: "agent-parent-unavailable" };
     if (parent && !parent.prepared.definition.definition.nestedDelegation)
       return { reason: "agent-nesting-denied" };
@@ -314,6 +315,7 @@ export function createDelegation(options: DelegationOptions) {
         let execution: AgentExecution;
         try {
           execution = await options.execute({
+            ...(request.authorityCurrent ? { authorityCurrent: request.authorityCurrent } : {}),
             handle: entry.handle,
             rootTaskId: entry.rootTaskId,
             rootSessionId: entry.rootSessionId,

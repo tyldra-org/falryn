@@ -30,6 +30,15 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
     availability: () => AVAILABLE,
   },
   {
+    id: "schedule.controls",
+    title: "Schedule controls",
+    description: "Inspect schedules and use /schedule JSON for explicit lifecycle controls.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["schedule", "timer", "pause", "recurrence"],
+    availability: () => AVAILABLE,
+  },
+  {
     id: "session.export",
     title: "Export session",
     description: "Preview a versioned session package and its artifact omissions before writing.",

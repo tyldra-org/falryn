@@ -1,5 +1,6 @@
 /** Static declarations are upper bounds and never executable admission. */
 import { z } from "zod";
+import { scheduleDefinitionSchema } from "../orchestration/schedule-state.ts";
 import { isDeclarationSchema } from "./declaration-schema.ts";
 import { dependencySchema, versionRangeSchema } from "./dependencies.ts";
 import { hookRegistrationSchema } from "./hook-handlers.ts";
@@ -159,10 +160,14 @@ export const contributionDeclarationSchema = z
     presentationSlots: names.default([]),
     module: moduleDeclaration.optional(),
     hook: hookRegistrationSchema.optional(),
+    schedule: scheduleDefinitionSchema.optional(),
     batching: batch.optional(),
   })
   .superRefine((value, ctx) => {
     const reject = (message: string) => ctx.addIssue({ code: "custom", message });
+    if (value.kind === "schedule" && value.execution !== undefined)
+      reject("invalid-schedule-contract");
+    if (value.kind !== "schedule" && value.schedule !== undefined) reject("cross-kind-schedule");
     if (value.kind === "hook" && value.hook === undefined) reject("missing-hook-contract");
     if (value.kind !== "hook" && value.hook !== undefined) reject("cross-kind-hook");
     if (value.hook?.handler.kind === "builtin") reject("package-cannot-register-builtin-hook");

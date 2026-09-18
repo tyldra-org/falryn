@@ -1,3 +1,7 @@
+import {
+  SCHEDULE_OPERATIONS,
+  scheduleCommandSchema,
+} from "../application/orchestration/schedule-actions.ts";
 import { modelSettingsRequestSchema } from "../application/providers/model-settings.ts";
 import { PACKAGE_ACTIONS, packageRequestSchema } from "../domain/extensions/lifecycle.ts";
 import { type CompactArguments, compactArgumentsSchema } from "./commands/compact.ts";
@@ -306,6 +310,17 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
             type: "string",
             describe: "session identity to rebuild (not `session replay`, which is cursor control)",
           }),
+      )
+      .command(
+        lenientPositionals ? "schedule [action]" : "schedule <action>",
+        "Control durable schedules. Use --input for a JSON command. Enabled work requires a live host; host runs until interrupted. No automatic OS startup.",
+        (group) =>
+          group
+            .positional("action", { type: "string", choices: [...SCHEDULE_OPERATIONS, "host"] })
+            .option("input", {
+              type: "string",
+              describe: "bounded JSON command with matching operation; registration is disabled",
+            }),
       )
       .command(
         lenientPositionals ? "peer [action] [id]" : "peer <action> <id>",
@@ -1012,6 +1027,27 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
   }
   let extensionTrust: import("../application/extensions/package-trust.ts").TrustRequest | undefined;
   let packageArgs: import("./commands/package.ts").PackageArguments | undefined;
+  let scheduleArgs: import("./commands/schedule.ts").ScheduleArguments | undefined;
+  if (command === "schedule") {
+    let input: unknown = { operation: parsed.action };
+    if (parsed.input !== undefined) {
+      const loaded = await loadTaskInputFile(parsed.input, 1_122_304);
+      if (!loaded.ok) return { kind: "invalid", message: "Invalid schedule command file." };
+      try {
+        input = JSON.parse(loaded.value);
+      } catch {
+        return { kind: "invalid", message: "Invalid schedule JSON." };
+      }
+    }
+    if (parsed.action === "host" && parsed.input === undefined)
+      scheduleArgs = { operation: "host" };
+    else {
+      const checked = scheduleCommandSchema.safeParse(input);
+      if (!checked.success || checked.data.operation !== parsed.action)
+        return { kind: "invalid", message: "Schedule command fields must match its operation." };
+      scheduleArgs = checked.data;
+    }
+  }
   let peerArgs: import("./commands/peer.ts").PeerArguments | undefined;
   if (command === "peer") {
     let action: unknown = { operation: parsed.action };
@@ -1125,6 +1161,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     ...(extensionCatalogArgs === undefined ? {} : { extensionCatalogArgs }),
     ...(extensionTrust === undefined ? {} : { extensionTrust }),
     ...(packageArgs === undefined ? {} : { packageArgs }),
+    ...(scheduleArgs === undefined ? {} : { scheduleArgs }),
     ...(peerArgs === undefined ? {} : { peerArgs }),
     ...(compactArgs === undefined ? {} : { compactArgs }),
     ...(mcpArgs === undefined ? {} : { mcpArgs }),

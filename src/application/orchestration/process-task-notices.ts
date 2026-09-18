@@ -41,6 +41,29 @@ export function createProcessTaskNotices(events: EventStorePort) {
       for (const listener of listeners) listener();
       return true;
     },
+    async schedule(
+      identity: string,
+      stream: string,
+      position: number,
+      signal: AbortSignal,
+    ): Promise<boolean> {
+      if (notices.has(identity)) return true;
+      if (signal.aborted || notices.size >= 256) return false;
+      const read = await events.readFrom(
+        {
+          streamId: streamId.from(stream),
+          afterSequence: position > 1 ? sequence.from(position - 1) : null,
+        },
+        1,
+        signal,
+      );
+      const event = read.ok ? read.value[0] : null;
+      if (signal.aborted || event?.eventId !== identity || event.kind !== "schedule.settled")
+        return false;
+      notices.set(identity, event);
+      for (const listener of listeners) listener();
+      return true;
+    },
     dispose() {
       listeners.clear();
       notices.clear();

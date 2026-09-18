@@ -242,3 +242,19 @@ test("failed processing settles history inside its sole occupied slot and retain
   expect(replay.events.some((event) => event.kind === "model.processing.recorded")).toBe(true);
   task.close();
 }, 1000);
+
+test("a revoked native parent blocks provider dispatch even without an instruction binding", async () => {
+  const product = processingProduct();
+  let checks = 0;
+  const result = await product.executor.run({
+    prompt: "Reply briefly.",
+    turnId: turnId.from("parent-authority-revoked"),
+    authorityCurrent: async () => {
+      checks++;
+      return false;
+    },
+  });
+  expect(checks).toBeGreaterThan(0);
+  expect(product.requests).toHaveLength(0);
+  expect(result.kind).not.toBe("completed");
+});

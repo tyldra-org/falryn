@@ -2096,13 +2096,111 @@ direct task CLI controls, and PTY remain separate. Delegated agents and workflow
 runs use this durable attachment and settlement owner without a child OS process.
 
 
-## Scheduling boundary
+## Durable schedules
 
-The application scheduler admits bounded work units through the shared runtime.
-Captured background tasks and explicitly invoked workflows use that runtime and
-their own durable settlement records. Durable one-shot, interval, and calendar
-schedule execution is not implemented. Workflow checkpoints do not provide
-calendar wakeups, an always-running service, or automatic execution after restart.
+`falryn schedule` and the interactive `/schedule` control use the same durable
+schedule actions. The model discovers `schedule` through the normal tool
+registry and gateway. Definitions are data, disabled at creation. Enabling,
+resuming, adopting an import, and triggering a manual occurrence require a
+user control, including when the model has permission to prepare definitions.
+Model mutations still pass the normal confirmation policy.
+
+The host executes existing built-in actions and typed workflows through shared
+capability admission, task resources, policy, hooks, provider bindings and
+artifact capture. Workflows with model nodes require an available concrete
+main model route. Missing targets or producers remain unavailable. Grouped Todo
+selection and named-route/quota-reset scheduling remain separate integrations
+under #1112 and #1113.
+
+A live qualified Falryn host is required. Interactive sessions and live coding
+runs compose this host; `falryn schedule host` runs it until interruption.
+Control-only CLI commands do not run due work. There is no OS startup service
+or execution while Falryn is closed. Linux and macOS provide process birth
+identity for recovery. Windows currently supports inert controls but refuses
+enable with `schedule-host-unavailable`; it does not infer ownership from a PID.
+
+Create `schedule.json` with a command such as:
+
+~~~json
+{
+  "operation": "create",
+  "id": "inspect-workspace",
+  "definition": {
+    "version": 1,
+    "timing": { "trigger": { "kind": "interval", "everyMs": 60000 } },
+    "target": {
+      "kind": "action",
+      "capability": "builtin:workspace/stat_path@1",
+      "input": { "path": "." }
+    }
+  }
+}
+~~~
+
+Run `falryn schedule create --input schedule.json --format json`. A subsequent
+command file containing `{"operation":"enable","id":"inspect-workspace",
+"expectedRevision":1}` enables that exact revision. Use `inspect` to obtain the
+current revision before later mutations. Routine wake progress does not change
+that control revision. `list`, `history`, `preview`,
+`validate`, `delete-preview`, `pause`, `resume`, `update`, `trigger-now`, `cancel`,
+`delete`, `import` and `adopt` share this command-file format. `--format jsonl`
+uses the normal result protocol. In the TUI, enter `/schedule` followed by the
+same JSON, or use Schedule controls in the command palette for operation names.
+Escape cancels the local control wait; exact attempt cancellation is separate.
+
+Triggers accept an offset-qualified RFC 3339 `once.at`, an integer interval
+of 1,000 through 31,536,000,000 ms, or five numeric calendar fields. Calendar
+syntax supports `*`, comma, inclusive range and `/step`, Sunday `0`, and OR when
+both day fields are restricted. Timezones are IANA identifiers, default UTC.
+DST gaps record missed civil-time ranges; folds select the earlier instant.
+Start is inclusive and end exclusive. Deterministic jitter only delays a slot,
+by at most 900,000 ms and never into its successor.
+
+Overlap defaults to `skip`; `queue-latest` retains one pending occurrence;
+`parallel` accepts an explicit limit of 1 through 4. Missed-run policies are
+`none`, `latest`, and oldest-first `bounded-all` with at most 32 catch-up runs.
+Lookback defaults to 24 hours and caps at 30 days. The registered user/profile
+key `execution.schedules` supplies version-1 defaults for newly prepared
+schedules only. Selecting a profile never enables or rewrites definitions.
+
+| Current state | Action | Result |
+| --- | --- | --- |
+| Disabled | Enable | Binds normalized intent and current authority, then enables |
+| Enabled | Pause | Stops new admission; admitted work keeps its original identity |
+| Paused | Resume | Revalidates the binding and applies missed-run policy |
+| Disabled, enabled or paused | Update | Creates a disabled generation requiring explicit enable |
+| Imported, disabled | Adopt | Creates a user-owned disabled generation |
+| Enabled | Trigger-now | Deduplicates the request ID separately from recurrence |
+| Any nondeleted definition | Delete | Tombstones it; preserves history and retained references |
+| Admitted attempt | Cancel | Records request and acknowledgement separately from settlement |
+| Stale revision or changed authority | Mutation or admission | Refuses it; inspect and explicitly update/re-enable |
+| Corrupt executable record | Discovery | Quarantines that schedule and continues healthy work |
+| Uncertain settlement or unavailable executor identity | Recovery | Pauses new admission; inspect before explicit resume |
+
+Migration 30 separates definitions/generations, slots, occurrence claims,
+attempts, retained artifacts and notification receipts. A unique nominal key
+and transactional claim fence two hosts and clock rollback. Manual receipts,
+terminal settlement and notices are independently deduplicated. Bounded pages
+advance across retained catalogs, and old pending generations are superseded in
+bounded batches. Execution keeps the existing 16-operation shared limit and
+hierarchical task budgets. No attempt is automatically retried.
+
+Each effect rechecks its current authority. Package schedules bind declarative
+`kind: "schedule"` contributions with a `schedule` definition through the native
+registration owner. Package code cannot supply timers. Install, catalog discovery
+and publication are inert; update, disable, revocation and removal prevent old
+bindings from admitting work. A replacement declaration gets a new disabled
+identity and requires explicit activation. Imported definitions require adoption.
+
+`inspect` and `list` show the next nominal/eligible time, current blocker and last
+attempt; paginated history retains skipped, missed, coalesced and superseded
+facts. Results keep artifact handles, workflow/task identities, partial effects,
+and truthful uncertainty. Notifications carry metadata rather than target input.
+The existing transcript projects `schedule.settled`; session export and replay
+retain the event without starting another run. Deletion previews references and
+keeps evidence needed for recovery. On shutdown, due admission stops first;
+unsettled work becomes uncertain after a bounded wait, and late completion
+cannot replace that terminal result.
 
 ## Typed workflows
 
@@ -2654,10 +2752,10 @@ registered in the product tool bundle, and live provider adapters accept text
 only; their document/media owners remain GitHub issues #183–#188.
 
 Apart from the captured process, delegated agent, workflow, and host-only question
-paths described above, no schedule, goal/loop, or automatic work-item runner
+and schedule paths described above, no goal/loop or automatic work-item runner
 is product-composed. Opportunity records do not automatically
 launch those runtimes. Their existing owners include GitHub issues #155–#162,
-#284, #797, and #897. Extensions, MCP servers, package contributions, skills,
+#797 and #897. Extensions, MCP servers, package contributions, skills,
 prompts, and external hosts likewise remain registry contracts or planned
 loaders unless explicitly described above as built-in production behavior.
 

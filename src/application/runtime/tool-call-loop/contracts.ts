@@ -45,6 +45,8 @@ export const DEFAULT_TOOL_CALL_LOOP_LIMITS: ToolCallLoopLimits = {
  * signal — never provider clients, UI state, or unrestricted host access.
  */
 export type ToolRunnerRequest = {
+  /** Live parent authority, supplied by the gateway and inherited by native work. */
+  readonly authorityCurrent?: (signal: AbortSignal) => Promise<boolean>;
   /** Native orchestration only: every downstream call re-enters this same gateway. */
   readonly invokeCapability?: (
     request: ToolRunnerRequest,
@@ -52,8 +54,10 @@ export type ToolRunnerRequest = {
   ) => Promise<ToolInvocationOutcome>;
   /** Captured by the live attempt, never decoded from model arguments. */
   readonly delegation?: {
-    readonly route: import("../../../providers/configuration/policy.ts").RoleRoute;
-    readonly binding: import("../../../domain/orchestration/child-admission.ts").ChildProviderBinding;
+    readonly route: import("../../../providers/configuration/policy.ts").RoleRoute | null;
+    readonly binding:
+      | import("../../../domain/orchestration/child-admission.ts").ChildProviderBinding
+      | null;
     readonly effects: readonly import("../../../domain/orchestration/work.ts").EffectClass[];
     readonly capabilities: readonly string[];
   };

@@ -258,6 +258,13 @@ export function createSqliteProcessTaskStore(store: SqliteStorePort): ProcessTas
             ).length > 0
           )
             return taskFailure("busy");
+          if (
+            statements.all(
+              "SELECT id FROM schedule_attempts WHERE workspace=$workspace AND json_extract(record,'$.task.taskId')=$taskId AND json_extract(record,'$.task.generation')=$generation AND (terminal=0 OR json_extract(record,'$.terminal.effect')='uncertain') LIMIT 1",
+              { workspace: task.owner.workspaceId, ...task.handle },
+            ).length > 0
+          )
+            return taskFailure("busy");
           if (!Number.isSafeInteger(now) || now < task.terminal.sealedAt)
             return taskFailure("invalid-record");
           if (

@@ -15,7 +15,7 @@
  * the report; it never sees a row, a statement, or a connection.
  */
 
-import type { SqliteOpener } from "../../domain/storage/index.ts";
+import { DEFAULT_BUSY_TIMEOUT_MS, type SqliteOpener } from "../../domain/storage/index.ts";
 import type { LocalPath } from "../../domain/workspace/index.ts";
 import { PRODUCT_SCHEMA_VERSION } from "../sqlite/sqlite-migrations.ts";
 import { MIGRATION_TABLE } from "../sqlite/sqlite-store.ts";
@@ -62,6 +62,10 @@ export async function probeStorage(options: StorageProbeOptions): Promise<Storag
 
   const connection = opened.value;
   try {
+    // A live host may briefly hold an exclusive lock during WAL recovery or close.
+    // This connection-local setting preserves the probe's no-write contract.
+    const timeout = connection.pragma(`busy_timeout = ${DEFAULT_BUSY_TIMEOUT_MS}`);
+    if (!timeout.ok) return { kind: "unreadable", code: timeout.error.code };
     const rows = connection.all(
       `SELECT COALESCE(MAX(version), 0) AS recordedVersion FROM ${MIGRATION_TABLE}`,
     );
