@@ -45,7 +45,10 @@ describe("capture ownership on the existing launcher", () => {
       if (!result.ok) throw new Error("capture unavailable");
       expect(result.value.stop).toEqual({
         kind: "uncertain",
-        reason: "owned-descendants-remained",
+        reason:
+          result.value.killStage === "unconfirmed"
+            ? "unconfirmed-exit"
+            : "owned-descendants-remained",
       });
       const descendant = Number(result.value.stdout.inlineText);
       expect(descendant).toBeGreaterThan(1);
