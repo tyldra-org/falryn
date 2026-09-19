@@ -137,7 +137,7 @@ export function productWorkingProfileSessions(
     environmentContext.install(environment.capture);
     let binding: ProductAdmissionBinding = {
       runtime,
-      preferences: modelPreferencesFrom(initial.values),
+      preferences: modelPreferencesFrom(initial.values, Number(initial.generation)),
       // Initial capture is installed below from the existing provider owner.
       catalog: null,
       generation: initial.generation,
@@ -207,7 +207,10 @@ export function productWorkingProfileSessions(
               binding = {
                 ...binding,
                 generation: candidate.record.generation,
-                preferences: modelPreferencesFrom(candidate.record.values),
+                preferences: modelPreferencesFrom(
+                  candidate.record.values,
+                  Number(candidate.record.generation),
+                ),
               };
               return { state: "applied", generation, code: "binding-unchanged" };
             },
@@ -219,7 +222,10 @@ export function productWorkingProfileSessions(
         });
         const provider = await connections.resolveSelected(signal);
         if (provider.kind !== "ready") return { kind: "refused", code: provider.code };
-        const preferences = modelPreferencesFrom(candidate.record.values);
+        const preferences = modelPreferencesFrom(
+          candidate.record.values,
+          Number(candidate.record.generation),
+        );
         const route = productModelPolicy(
           provider.adapter,
           provider.session.catalog,
@@ -254,7 +260,10 @@ export function productWorkingProfileSessions(
         const next = {
           runtime: nextRuntime,
           catalog: provider.session.catalog,
-          preferences: modelPreferencesFrom(candidate.record.values),
+          preferences: modelPreferencesFrom(
+            candidate.record.values,
+            Number(candidate.record.generation),
+          ),
           generation: candidate.record.generation,
         };
         let released = false;
@@ -373,7 +382,7 @@ export function productWorkingProfileSessions(
           binding = {
             ...binding,
             generation: record.generation,
-            preferences: modelPreferencesFrom(record.values),
+            preferences: modelPreferencesFrom(record.values, Number(record.generation)),
           };
           if (initialProvider.kind === "ready") {
             const next = compose(record, initialConnections, initialProvider);

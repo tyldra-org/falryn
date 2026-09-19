@@ -814,8 +814,11 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         }, 0);
         return;
       }
-      if (slash.commandId === "model.settings") {
-        dispatch({ kind: "open-overlay", route: { kind: "model-settings" } });
+      if (slash.commandId === "model.settings" || slash.commandId === "model.routes") {
+        dispatch({
+          kind: "open-overlay",
+          route: { kind: "model-settings", routes: slash.commandId === "model.routes" },
+        });
         dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
         return;
       }

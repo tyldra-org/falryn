@@ -10,7 +10,7 @@ import {
   EMPTY_MODEL_PREFERENCES,
   fastRoleSettingsSchema,
   MODEL_POLICY_SCHEMA_VERSION,
-  type ModelPreferences,
+  type StoredModelPreferences as ModelPreferences,
   modelPreferencesSchema,
   roleRouteBaseSchema,
 } from "./policy-schema.ts";

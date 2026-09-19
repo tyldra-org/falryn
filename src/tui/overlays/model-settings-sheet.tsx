@@ -17,9 +17,11 @@ import { useFrame } from "../shell/context.tsx";
 import { Line } from "../visual/primitives.tsx";
 import { type MenuItem, SettingsMenu } from "./model-settings-menu.tsx";
 import { ProcessingSettingsSheet } from "./processing-settings-sheet.tsx";
+import { RouteSettingsSheet } from "./route-settings-sheet.tsx";
 
 type Page =
   | { readonly kind: "roles" }
+  | { readonly kind: "routes" }
   | { readonly kind: "processing"; readonly target?: ModelSelectionTarget }
   | { readonly kind: "group"; readonly role: "fast" | "subagents" | "workflows" }
   | {
@@ -44,13 +46,17 @@ export function ModelSettingsSheet({
   service,
   rows,
   processing = false,
+  routes = false,
 }: {
   readonly service: ModelSettingsService | null;
   readonly rows: number;
   readonly processing?: boolean;
+  readonly routes?: boolean;
 }): ReactNode {
   const { terminal } = useFrame();
-  const [page, setPage] = useState<Page>({ kind: processing ? "processing" : "roles" });
+  const [page, setPage] = useState<Page>({
+    kind: routes ? "routes" : processing ? "processing" : "roles",
+  });
   const [inspection, setInspection] = useState<Inspection | null>(null);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -120,6 +126,11 @@ export function ModelSettingsSheet({
       );
     }
     items.push({
+      title: "Named routes",
+      detail: "Inspect, validate and edit global route definitions",
+      run: () => setPage({ kind: "routes" }),
+    });
+    items.push({
       title: "Processing speed",
       detail: "Session main preference, eligibility and actual results",
       run: () => setPage({ kind: "processing" }),
@@ -185,13 +196,30 @@ export function ModelSettingsSheet({
         ? inspection?.preferences.roles.default
         : undefined) ?? (selection?.kind === "route" ? selection.route : null);
     if (selection?.kind !== "no-model") {
+      for (const named of inspection?.namedRoutes ?? [])
+        items.push({
+          title: `Use route: ${named.label ?? named.id}`,
+          detail: `${named.id} · revision ${named.revision} · ${named.policy.strategy}; binds the next admitted work`,
+          run: () => {
+            if (inspection !== null)
+              write({
+                kind: "edit",
+                edit: {
+                  kind: "configure",
+                  target,
+                  route: { kind: "route", routeId: named.id, reasoning: "provider-default" },
+                },
+                expectedRevision: inspection.fileRevision,
+              });
+          },
+        });
       items.push({
         title: "Configure model",
         detail: "Set this provider profile, model and thinking together.",
         run: () => {
           if (inspection === null) return;
           const values =
-            route === null
+            route === null || "routeId" in route
               ? ["", "", ""]
               : [route.providerProfileId, String(route.providerId), String(route.modelId)];
           setDraft(values[0] ?? "");
@@ -309,6 +337,10 @@ export function ModelSettingsSheet({
       <Line color="mutedForeground" maxColumns={columns}>
         Model settings are not attached.
       </Line>
+    );
+  if (page.kind === "routes")
+    return (
+      <RouteSettingsSheet service={service} rows={rows} onBack={() => setPage({ kind: "roles" })} />
     );
   if (page.kind === "processing")
     return (

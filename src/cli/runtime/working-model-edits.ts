@@ -1,7 +1,7 @@
 /** Translate one model action to source-local edits; inheritance stays in the resolver. */
 import type { ModelSettingsRequest } from "../../application/providers/model-settings.ts";
 import type { ConfigurationDocumentEdit } from "../../config/document/edits.ts";
-import type { ModelPreferences } from "../../providers/configuration/policy-schema.ts";
+import type { StoredModelPreferences as ModelPreferences } from "../../providers/configuration/policy-schema.ts";
 import { modelPreferencePath } from "../../providers/configuration/settings-actions.ts";
 
 export function workingModelEdits(
@@ -38,8 +38,13 @@ export function workingModelEdits(
         "processing",
         "fallbacks",
         "budgets",
+        "kind",
+        "routeId",
       ] as const)
-        put([...path, field], edit.route[field]);
+        put(
+          [...path, field],
+          Object.hasOwn(edit.route, field) ? Reflect.get(edit.route, field) : undefined,
+        );
     }
   }
   const target =

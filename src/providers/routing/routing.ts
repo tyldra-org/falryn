@@ -77,6 +77,7 @@ export type RouteSelectionReason =
   | "fallback";
 
 export type RoutingReceipt = {
+  readonly namedRoute?: import("./named-route.ts").NamedRouteReceipt;
   readonly processing?: ProcessingPreference;
   readonly role: ModelRole;
   readonly intent: WorkIntent | null;
@@ -556,6 +557,7 @@ export function resolveModelRoute(input: ResolveRouteInput): RoutingOutcome {
         role,
         intent,
         selectionReason,
+        ...(route.namedRoute ? { namedRoute: route.namedRoute } : {}),
         processing: resolveProcessingPreference([
           input.processing,
           route.processing,

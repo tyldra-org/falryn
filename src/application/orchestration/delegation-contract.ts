@@ -13,6 +13,7 @@ import {
 } from "../../domain/orchestration/process-task.ts";
 import { resourceAmountsSchema } from "../../domain/orchestration/resource-admission.ts";
 import { EFFECT_CLASSES } from "../../domain/orchestration/work.ts";
+import { boundRoleRouteSchema } from "../../providers/configuration/model-selection-schema.ts";
 import { roleRouteBaseSchema } from "../../providers/configuration/policy-schema.ts";
 import {
   agentContextItemSchema,
@@ -122,7 +123,7 @@ export const sealedAgentResultSchema = z.strictObject({
   definitionDigest: digestSchema,
   preparationDigest: digestSchema,
   preparation: z.strictObject({
-    route: roleRouteBaseSchema,
+    route: boundRoleRouteSchema,
     source: identityText,
     execution: childAuthoritySchema,
     context: z.array(agentContextItemSchema.omit({ text: true })).max(64),

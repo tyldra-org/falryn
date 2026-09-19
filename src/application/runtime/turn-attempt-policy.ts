@@ -378,6 +378,17 @@ function attemptBinding(
 ): ModelAttemptBinding {
   const disclosure = modelInput?.disclosure;
   return {
+    ...(receipt.namedRoute
+      ? {
+          namedRoute: {
+            routeId: receipt.namedRoute.routeId,
+            definitionRevision: receipt.namedRoute.definitionRevision,
+            configurationGeneration: receipt.namedRoute.configurationGeneration,
+            factsRevision: receipt.namedRoute.factsRevision,
+            accountGeneration: receipt.namedRoute.eligible[0]?.accountGeneration ?? "",
+          },
+        }
+      : {}),
     ...(receipt.processing === undefined ? {} : { processingPreference: receipt.processing }),
     schemaVersion: 1,
     providerId: receipt.providerId,

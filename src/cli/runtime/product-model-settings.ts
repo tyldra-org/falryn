@@ -1,3 +1,4 @@
+import { declaredRouteFacts } from "./product-route-facts.ts";
 /** Local composition for the shared model settings service. No model calls on save. */
 
 import { loadWorkflowFiles } from "../../application/orchestration/workflow-files.ts";
@@ -19,6 +20,11 @@ import {
 import { joinPath } from "../../domain/workspace/index.ts";
 import { createSha256Hasher } from "../../integrations/filesystem/content-digest.ts";
 import { parseProviderConnectionState } from "../../providers/configuration/connection-schema.ts";
+import {
+  NAMED_ROUTES_CONFIGURATION_KEY,
+  namedRoutesFrom,
+  UnresolvedNamedRouteError,
+} from "../../providers/configuration/named-route-binding.ts";
 import type { RoleRoute } from "../../providers/configuration/policy.ts";
 import { modelPreferencesSchema } from "../../providers/configuration/policy-schema.ts";
 import { reasoningControlFor } from "../../providers/routing/routing.ts";
@@ -28,6 +34,7 @@ import {
   MODEL_POLICY_CONFIGURATION_KEY,
   modelPreferencesFrom,
   modelPreferencesValue,
+  storedModelPreferencesFrom,
 } from "./model-configuration.ts";
 import {
   loadProductConfiguration,
@@ -102,6 +109,52 @@ export function composeProductModelSettings(
     return loaded;
   };
   return createModelSettingsService({
+    async routeFacts(definitions, signal) {
+      const loaded = await readConfiguration(signal);
+      return declaredRouteFacts(loaded.values, definitions);
+    },
+    async writeRoutes(definitions, expectedRevision, signal) {
+      const result = await writeConfigurationValue(
+        services.registry,
+        services.fileSystem,
+        {
+          ...request,
+          legacyConfigurationRoot: services.legacyConfigurationRoot,
+          keyPath: NAMED_ROUTES_CONFIGURATION_KEY,
+          value: JSON.parse(JSON.stringify({ definitions })),
+          expectedRevision,
+          requireAbsent: expectedRevision === null,
+          validateCandidate: (path, text, abort) =>
+            validateProductConfigurationCandidate(services, globals.profile, path, text, abort),
+        },
+        signal,
+      );
+      if (result.kind !== "written") return { kind: "failed", code: result.kind };
+      try {
+        const transition = transitions
+          ? await transitions.afterSave(result.revision, signal)
+          : null;
+        const loaded = transitions ? null : await readConfiguration(signal);
+        const generation = transition?.publishedGeneration ?? loaded?.generation ?? null;
+        return {
+          kind: "written",
+          revision: result.revision,
+          receipt: {
+            ...result,
+            transition,
+            publication: generation === null ? "failed" : "published",
+            generation,
+            application: transition?.code === "applied" ? "applied" : "pending",
+          },
+        };
+      } catch {
+        return {
+          kind: "written",
+          revision: result.revision,
+          receipt: { ...result, publication: "failed", generation: null, application: "pending" },
+        };
+      }
+    },
     async inspectProcessing(route, signal) {
       const localDiscovery = createUserCatalogModelDiscovery({
         fileSystem: services.fileSystem,
@@ -149,7 +202,16 @@ export function composeProductModelSettings(
         path !== (await sourcePath(signal))
       )
         throw new Error("Settings changed during inspection.");
-      const preferences = modelPreferencesFrom(loaded.values);
+      const preferences = storedModelPreferencesFrom(loaded.values);
+      const namedRoutes = namedRoutesFrom(loaded.values);
+      const routeFacts = declaredRouteFacts(loaded.values, namedRoutes);
+      let configuredMain: RoleRoute | null = null;
+      try {
+        configuredMain =
+          modelPreferencesFrom(loaded.values, Number(loaded.generation)).roles.default ?? null;
+      } catch (error) {
+        if (!(error instanceof UnresolvedNamedRouteError)) throw error;
+      }
       const workflows = await loadWorkflowFiles(
         {
           fileSystem: services.fileSystem,
@@ -171,8 +233,10 @@ export function composeProductModelSettings(
       const selectedModel = selected?.profile.enabledModels[0];
       const captured =
         main?.() ??
-        preferences.roles.default ??
-        (selected === undefined || selectedModel === undefined
+        configuredMain ??
+        (preferences.roles.default !== undefined ||
+        selected === undefined ||
+        selectedModel === undefined
           ? null
           : {
               providerProfileId: selected.profile.profileId,
@@ -184,6 +248,8 @@ export function composeProductModelSettings(
             });
       return {
         preferences,
+        namedRoutes,
+        routeFacts,
         ...(organized ? { ownedOverridePaths: ownedModelOverridePaths(owned) } : {}),
         ...(!modelPreferencesSchema.safeParse(loaded.values[MODEL_POLICY_CONFIGURATION_KEY]).success
           ? { legacyPolicy: loaded.values[MODEL_POLICY_CONFIGURATION_KEY] }

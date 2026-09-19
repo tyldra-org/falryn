@@ -1,5 +1,6 @@
 import { resolveProcessingPreference } from "../../domain/sessions/model-processing.ts";
 /** Shared route inheritance for settings inspection and future admitted workload owners. */
+import { bindNamedModelPreferences, hasNamedRouteReferences } from "./named-route-binding.ts";
 import type { RoleRoute } from "./policy.ts";
 import type { ModelPreferences } from "./policy-schema.ts";
 import type { FastOption, ModelRole, SubagentPreset } from "./roles.ts";
@@ -58,7 +59,9 @@ export type ModelSelection = {
   readonly reason: string | null;
 };
 export type ResolveModelSelectionInput = {
-  readonly preferences: ModelPreferences;
+  readonly preferences: ModelPreferences | import("./policy-schema.ts").StoredModelPreferences;
+  readonly namedRoutes?: readonly import("./named-route.ts").NamedRouteDefinition[];
+  readonly routeFacts?: readonly import("../routing/named-route.ts").RouteCandidateFacts[];
   readonly main: RoleRoute;
   readonly configurationGeneration: number;
   readonly definitions: readonly ModelDefinition[];
@@ -72,8 +75,19 @@ export type ResolveModelSelectionInput = {
 
 /** One immutable binding; this is selection, not execution or permission admission. */
 export function resolveModelSelection(
-  input: ResolveModelSelectionInput,
+  request: ResolveModelSelectionInput,
 ): ModelSelection | { readonly kind: "no-model" } {
+  const input = {
+    ...request,
+    preferences: hasNamedRouteReferences(request.preferences)
+      ? bindNamedModelPreferences(
+          request.preferences,
+          request.namedRoutes ?? [],
+          request.routeFacts ?? [],
+          request.configurationGeneration,
+        )
+      : (request.preferences as ModelPreferences),
+  };
   const {
     preferences: { roles },
     target,
@@ -82,7 +96,16 @@ export function resolveModelSelection(
   const definitions: ModelSelection["definitions"][number][] = [];
   let availability: ModelSelection["availability"] = "available";
   let reason: string | null = null;
-  const add = (source: string, route: RoleRoute | undefined): void => {
+  let routeFailure: string | null = null;
+  const add = (source: string, route: RoleRoute | undefined, path?: readonly string[]): void => {
+    if (
+      chain.length === 0 &&
+      path &&
+      input.preferences.unavailableRoutes?.some(
+        (entry) => JSON.stringify(entry.path) === JSON.stringify(path),
+      )
+    )
+      routeFailure ??= "The selected named route is missing or has no qualified destination.";
     if (route !== undefined) chain.push({ source, route: snapshotRoute(route) });
   };
   const unavailable = (message: string): void => {
@@ -119,7 +142,7 @@ export function resolveModelSelection(
     const definition = input.definitions.find(
       (entry): entry is AgentModelDefinition => entry.kind === "agent" && entry.id === id,
     );
-    add(`agent:${id}`, saved?.route);
+    add(`agent:${id}`, saved?.route, ["roles", "subagents", "agents", id, "route"]);
     if (definition === undefined)
       unavailable("Agent definition is not registered; its preferences are retained.");
     else {
@@ -127,8 +150,14 @@ export function resolveModelSelection(
       add(`agent-definition:${id}`, definition.model);
     }
     const preset = saved?.preset ?? definition?.preset ?? "default";
-    if (preset !== "default") add(`subagents.preset:${preset}`, roles.subagents?.presets?.[preset]);
-    add("subagents.default", roles.subagents?.default);
+    if (preset !== "default")
+      add(`subagents.preset:${preset}`, roles.subagents?.presets?.[preset], [
+        "roles",
+        "subagents",
+        "presets",
+        preset,
+      ]);
+    add("subagents.default", roles.subagents?.default, ["roles", "subagents", "default"]);
   };
 
   // A deterministic node cannot acquire a model even from a targeted override.
@@ -145,8 +174,8 @@ export function resolveModelSelection(
     case "role": {
       const { role } = target;
       if (role === "fast" || role === "subagents" || role === "workflows")
-        add(`${role}.default`, roles[role]?.default);
-      else if (role !== "default") add(role, roles[role]);
+        add(`${role}.default`, roles[role]?.default, ["roles", role, "default"]);
+      else if (role !== "default") add(role, roles[role], ["roles", role]);
       if (role === "subagents" || role === "workflows" || role === "fast")
         unavailable(
           "Choose an actual workload or registered definition to inspect execution readiness.",
@@ -161,8 +190,13 @@ export function resolveModelSelection(
       break;
     }
     case "fast":
-      add(`fast.options:${target.option}`, roles.fast?.options?.[target.option]);
-      add("fast.default", roles.fast?.default);
+      add(`fast.options:${target.option}`, roles.fast?.options?.[target.option], [
+        "roles",
+        "fast",
+        "options",
+        target.option,
+      ]);
+      add("fast.default", roles.fast?.default, ["roles", "fast", "default"]);
       availability = input.fastAvailability?.[target.option] ?? "unavailable";
       reason =
         availability === "available"
@@ -174,8 +208,13 @@ export function resolveModelSelection(
       }
       break;
     case "preset":
-      add(`subagents.preset:${target.preset}`, roles.subagents?.presets?.[target.preset]);
-      add("subagents.default", roles.subagents?.default);
+      add(`subagents.preset:${target.preset}`, roles.subagents?.presets?.[target.preset], [
+        "roles",
+        "subagents",
+        "presets",
+        target.preset,
+      ]);
+      add("subagents.default", roles.subagents?.default, ["roles", "subagents", "default"]);
       unavailable("A preset is a preference; it does not identify or launch a workload.");
       break;
     case "agent":
@@ -192,7 +231,14 @@ export function resolveModelSelection(
         unavailable("Workflow definition is not registered; its preferences are retained.");
       else record(definition, saved);
       if (target.kind === "step") {
-        add(`workflow-step:${target.id}:${target.key}`, saved?.steps?.[target.key]);
+        add(`workflow-step:${target.id}:${target.key}`, saved?.steps?.[target.key], [
+          "roles",
+          "workflows",
+          "definitions",
+          target.id,
+          "steps",
+          target.key,
+        ]);
         const node = definition?.nodes.find((entry) => entry.key === target.key);
         if (node === undefined) unavailable("The stable template step is not registered.");
         else if (node.kind !== "deterministic") {
@@ -204,13 +250,23 @@ export function resolveModelSelection(
         }
       }
       add("workflow-run", input.workflowRunDefault);
-      add(`workflow:${target.id}`, saved?.default);
+      add(`workflow:${target.id}`, saved?.default, [
+        "roles",
+        "workflows",
+        "definitions",
+        target.id,
+        "default",
+      ]);
       add(`workflow-definition:${target.id}`, definition?.model);
-      add("workflows.default", roles.workflows?.default);
+      add("workflows.default", roles.workflows?.default, ["roles", "workflows", "default"]);
       break;
     }
   }
-  add("main", input.main);
+  add("main", input.main, ["roles", "default"]);
+  if (routeFailure !== null) {
+    availability = "unavailable";
+    reason = routeFailure;
+  }
   const winner = chain[0];
   if (winner === undefined) throw new Error("A captured main route is required.");
   return Object.freeze({
@@ -251,7 +307,7 @@ function snapshotRoute(route: RoleRoute): RoleRoute {
 /** Saved missing definitions remain visible. Names do not merge identities. */
 export function modelDefinitionPage(input: {
   readonly definitions: readonly ModelDefinition[];
-  readonly preferences: ModelPreferences;
+  readonly preferences: import("./policy-schema.ts").StoredModelPreferences;
   readonly kind: "agent" | "workflow";
   readonly search?: string;
   readonly offset?: number;

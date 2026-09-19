@@ -229,6 +229,15 @@ const modelCapabilityBriefSchema: z.ZodType<ModelCapabilityBrief> = z
   .strict();
 
 const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
+  namedRoute: z
+    .strictObject({
+      routeId: z.string().min(1).max(128),
+      definitionRevision: z.number().int().nonnegative(),
+      configurationGeneration: z.number().int().nonnegative(),
+      factsRevision: z.number().int().nonnegative(),
+      accountGeneration: z.string().max(256),
+    })
+    .optional(),
   processingPreference: processingPreferenceSchema.optional(),
   schemaVersion: z.literal(1),
   providerId: brandedString(providerId),

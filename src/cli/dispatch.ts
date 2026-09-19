@@ -558,12 +558,17 @@ async function launchShell(
               modelConfigurationGeneration: () =>
                 graph.loader.current()?.generation ?? configurationGeneration,
               modelPreferences: () =>
-                modelPreferencesFrom(graph.loader.current()?.values ?? configuration),
+                modelPreferencesFrom(
+                  graph.loader.current()?.values ?? configuration,
+                  Number(graph.loader.current()?.generation ?? configurationGeneration),
+                ),
               modelSettings: composeProductModelSettings(graph, globals, () => {
                 const selected = productAttachments?.submission.modelSelection.get();
                 if (selected === null || selected === undefined) return null;
-                const saved = modelPreferencesFrom(graph.loader.current()?.values ?? configuration)
-                  .roles.default;
+                const saved = modelPreferencesFrom(
+                  graph.loader.current()?.values ?? configuration,
+                  Number(graph.loader.current()?.generation ?? configurationGeneration),
+                ).roles.default;
                 return {
                   ...selected,
                   reasoning:

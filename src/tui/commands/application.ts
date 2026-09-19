@@ -206,6 +206,15 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
     keywords: ["model", "settings", "roles", "presets"],
     availability: () => AVAILABLE,
   },
+  {
+    id: "model.routes",
+    title: "Named model routes",
+    description: "Inspect and manage approved destinations without submitting requests.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["route", "models"],
+    availability: () => AVAILABLE,
+  },
   ...(["inspect", "fast", "standard", "reset"] as const).map((action) => ({
     id: `model.processing.${action}`,
     title: `Processing speed: ${action}`,

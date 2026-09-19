@@ -133,7 +133,7 @@ export type HelpSection = {
 export type OverlayRoute =
   | { readonly kind: "none" }
   | { readonly kind: "help" }
-  | { readonly kind: "model-settings"; readonly processing?: boolean }
+  | { readonly kind: "model-settings"; readonly processing?: boolean; readonly routes?: boolean }
   | { readonly kind: "profile-result"; readonly text: string; readonly title?: string }
   /**
    * The palette, and what has been typed into it.

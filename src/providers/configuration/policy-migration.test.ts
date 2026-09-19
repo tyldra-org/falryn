@@ -41,7 +41,9 @@ test("migration preserves the original and main, retires four helpers without as
   if (preview.kind !== "preview") return;
   expect(preview.original).toEqual(legacy);
   expect(preview.unresolved).toEqual([]);
-  expect(preview.candidate.roles.default?.modelId).toBe(modelId.from("main"));
+  expect(roleRouteBaseSchema.parse(preview.candidate.roles.default).modelId).toBe(
+    modelId.from("main"),
+  );
   expect(preview.candidate.roles.fast?.default).toBeUndefined();
   expect(preview.candidate.roles.fast).toBeUndefined();
   expect(preview.changes.filter((change) => change.kind === "retired")).toHaveLength(4);
@@ -59,7 +61,9 @@ test("custom memory retains its explicit route while compression uses main and o
   const preview = previewModelPolicyMigration(source, EMPTY_MODEL_PREFERENCES);
   if (preview.kind !== "preview") throw new Error("Expected preview");
   expect(preview.unresolved).toEqual(["intents.read"]);
-  expect(preview.candidate.roles.fast?.options?.memory?.modelId).toBe(modelId.from("plan"));
+  expect(roleRouteBaseSchema.parse(preview.candidate.roles.fast?.options?.memory).modelId).toBe(
+    modelId.from("plan"),
+  );
   expect(preview.candidate.intents.compression).toBe("default");
   const accepted = previewModelPolicyMigration(source, EMPTY_MODEL_PREFERENCES, {
     "intents.read": "normalize",
@@ -79,12 +83,15 @@ test("conflicts never discard current choices without an explicit decision", () 
   const preview = previewModelPolicyMigration(explicitMemory, current);
   if (preview.kind !== "preview") throw new Error("Expected preview");
   expect(preview.unresolved).toContain("roles.fast.options.memory");
-  expect(preview.candidate.roles.fast?.options?.memory?.modelId).toBe(modelId.from("new-memory"));
+  expect(roleRouteBaseSchema.parse(preview.candidate.roles.fast?.options?.memory).modelId).toBe(
+    modelId.from("new-memory"),
+  );
   const accepted = previewModelPolicyMigration(explicitMemory, current, {
     "roles.fast.options.memory": "use-legacy",
   });
   expect(
-    accepted.kind === "preview" && accepted.candidate.roles.fast?.options?.memory?.modelId,
+    accepted.kind === "preview" &&
+      roleRouteBaseSchema.parse(accepted.candidate.roles.fast?.options?.memory).modelId,
   ).toBe(modelId.from("old-memory"));
   const retained = previewModelPolicyMigration(explicitMemory, current, {
     "roles.fast.options.memory": "keep-current",
@@ -112,11 +119,16 @@ test("unconfigured legacy helpers remain disabled and proposed nested groups mov
   );
   if (preview.kind !== "preview") throw new Error("Expected preview");
   expect(preview.candidate.roles.fast?.use).toBeUndefined();
-  expect(preview.candidate.roles.subagents?.default?.modelId).toBe(modelId.from("agents"));
-  expect(preview.candidate.roles.subagents?.agents?.["user:custom"]?.route?.modelId).toBe(
-    modelId.from("custom"),
+  expect(roleRouteBaseSchema.parse(preview.candidate.roles.subagents?.default).modelId).toBe(
+    modelId.from("agents"),
   );
-  expect(preview.candidate.roles.workflows?.default?.modelId).toBe(modelId.from("workflow"));
+  expect(
+    roleRouteBaseSchema.parse(preview.candidate.roles.subagents?.agents?.["user:custom"]?.route)
+      .modelId,
+  ).toBe(modelId.from("custom"));
+  expect(roleRouteBaseSchema.parse(preview.candidate.roles.workflows?.default).modelId).toBe(
+    modelId.from("workflow"),
+  );
   expect(
     modelPreferencesSchema.safeParse({
       ...EMPTY_MODEL_PREFERENCES,
@@ -141,7 +153,9 @@ test("development Fast options retain their route and enablement without inherit
   );
   if (preview.kind !== "preview") throw new Error("Expected preview");
   expect(preview.unresolved).toEqual([]);
-  expect(String(preview.candidate.roles.fast?.options?.memory?.modelId)).toBe("memory");
+  expect(
+    String(roleRouteBaseSchema.parse(preview.candidate.roles.fast?.options?.memory).modelId),
+  ).toBe("memory");
   expect(preview.candidate.roles.fast?.use).toEqual({ memory: "evaluated" });
   expect(preview.candidate.roles.subagents).toBeUndefined();
 });

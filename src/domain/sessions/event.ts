@@ -118,6 +118,16 @@ export type TerminalPayload = {
  * schema while keeping the semantic journal bounded.
  */
 export type ModelAttemptBinding = {
+  /** Authored selection identity; actual serving account/model remain the binding fields below. */
+  readonly namedRoute?:
+    | {
+        readonly routeId: string;
+        readonly definitionRevision: number;
+        readonly configurationGeneration: number;
+        readonly factsRevision: number;
+        readonly accountGeneration: string;
+      }
+    | undefined;
   readonly processingPreference?: import("./model-processing.ts").ProcessingPreference | undefined;
   readonly schemaVersion: 1;
   readonly providerId: ProviderId;

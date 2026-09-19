@@ -989,6 +989,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
                 "builtin:orchestration/peer@1",
                 "builtin:orchestration/schedule@1",
                 "builtin:orchestration/workflow@1",
+                "builtin:providers/model_routes@1",
               ].includes(String(manifest.capabilityId))
                 ? {}
                 : {

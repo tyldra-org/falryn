@@ -10,12 +10,17 @@ import {
   modelDefinitionPage,
   resolveModelSelection,
 } from "../../providers/configuration/model-selection.ts";
+import type { NamedRouteDefinition } from "../../providers/configuration/named-route.ts";
+import {
+  bindNamedModelPreferences,
+  UnresolvedNamedRouteError,
+} from "../../providers/configuration/named-route-binding.ts";
 import type { RoleRoute } from "../../providers/configuration/policy.ts";
 import { storedModelPreferencesSchema } from "../../providers/configuration/policy-compatibility.ts";
 import { previewModelPolicyMigration } from "../../providers/configuration/policy-migration.ts";
 import {
   EMPTY_MODEL_PREFERENCES,
-  type ModelPreferences,
+  type StoredModelPreferences as ModelPreferences,
   modelPreferencesSchema,
 } from "../../providers/configuration/policy-schema.ts";
 import {
@@ -29,11 +34,18 @@ import {
   modelSelectionTargetSchema,
   modelSettingsEditSchema,
 } from "../../providers/configuration/settings-actions.ts";
+import type { RouteCandidateFacts } from "../../providers/routing/named-route.ts";
 import {
   type ProcessingRouteInspection,
   type ProcessingSessionControl,
   processingRequests,
 } from "./processing-controls.ts";
+import {
+  executeRouteSettings,
+  isRouteSettingsRequest,
+  type RouteDefinitionWriter,
+  routeSettingsRequests,
+} from "./route-settings.ts";
 
 const expectedRevisionSchema = z.string().min(1).nullable();
 const decisionsSchema = z.record(
@@ -42,6 +54,7 @@ const decisionsSchema = z.record(
 );
 export const modelSettingsRequestSchema = z.discriminatedUnion("kind", [
   ...processingRequests,
+  ...routeSettingsRequests,
   z.strictObject({
     kind: z.literal("inspect"),
     target: modelSelectionTargetSchema.optional(),
@@ -76,6 +89,8 @@ export const modelSettingsRequestSchema = z.discriminatedUnion("kind", [
 export type ModelSettingsRequest = z.infer<typeof modelSettingsRequestSchema>;
 export type ModelSettingsSnapshot = {
   readonly preferences: ModelPreferences;
+  readonly namedRoutes?: readonly NamedRouteDefinition[];
+  readonly routeFacts?: readonly RouteCandidateFacts[];
   /** A recognized older source may be inspected, but only explicit migration can replace it. */
   readonly legacyPolicy?: unknown;
   readonly ownedOverridePaths?: readonly string[];
@@ -86,6 +101,11 @@ export type ModelSettingsSnapshot = {
   readonly definitions: readonly ModelDefinition[];
 };
 export type ModelSettingsStore = {
+  readonly writeRoutes?: RouteDefinitionWriter;
+  routeFacts?(
+    definitions: readonly NamedRouteDefinition[],
+    signal?: AbortSignal,
+  ): Promise<readonly RouteCandidateFacts[]>;
   readonly processingSession?: ProcessingSessionControl;
   inspectProcessing?(route: RoleRoute, signal?: AbortSignal): Promise<ProcessingRouteInspection>;
   read(signal?: AbortSignal): Promise<ModelSettingsSnapshot>;
@@ -116,6 +136,26 @@ export type ModelSettingsStore = {
     signal?: AbortSignal,
   ): Promise<{ readonly ok: true } | { readonly ok: false; readonly code: string }>;
 };
+function snapshotSelection(snapshot: ModelSettingsSnapshot, target: ModelSelectionTarget) {
+  if (!snapshot.main) return null;
+  try {
+    return resolveModelSelection({
+      preferences: bindNamedModelPreferences(
+        snapshot.preferences,
+        snapshot.namedRoutes ?? [],
+        snapshot.routeFacts ?? [],
+        snapshot.generation,
+      ),
+      main: snapshot.main,
+      configurationGeneration: snapshot.generation,
+      definitions: snapshot.definitions,
+      target,
+    });
+  } catch (error) {
+    if (!(error instanceof UnresolvedNamedRouteError)) throw error;
+    return null;
+  }
+}
 export type ModelSettingsService = ReturnType<typeof createModelSettingsService>;
 export function createModelSettingsService(store: ModelSettingsStore) {
   return {
@@ -150,6 +190,13 @@ export function createModelSettingsService(store: ModelSettingsStore) {
       } catch {
         return failure("configuration-unavailable");
       }
+      if (isRouteSettingsRequest(request)) {
+        try {
+          return await executeRouteSettings(request, snapshot, store, signal);
+        } catch {
+          return failure(signal?.aborted ? "cancelled" : "route-settings-unavailable");
+        }
+      }
       const { preferences } = snapshot;
       if (
         request.kind === "processing-inspect" ||
@@ -159,16 +206,7 @@ export function createModelSettingsService(store: ModelSettingsStore) {
         if (request.scope.kind === "session") return failure("processing-session-host-required");
         if (request.scope.kind !== snapshot.scope) return failure("processing-scope-mismatch");
         const target = request.scope.target;
-        const selection =
-          snapshot.main === null
-            ? null
-            : resolveModelSelection({
-                preferences,
-                main: snapshot.main,
-                configurationGeneration: snapshot.generation,
-                definitions: snapshot.definitions,
-                target: target ?? { kind: "role", role: "default" },
-              });
+        const selection = snapshotSelection(snapshot, target ?? { kind: "role", role: "default" });
         if (selection?.kind === "no-model") return failure("deterministic-step-has-no-model");
         const route = selection?.kind === "route" ? selection.route : null;
         if (request.kind === "processing-inspect")
@@ -240,16 +278,7 @@ export function createModelSettingsService(store: ModelSettingsStore) {
           targets.push({ kind: request.catalog === "agent" ? "agent" : "workflow", id: entry.id });
         const rows = [];
         for (const target of targets) {
-          const selection =
-            snapshot.main === null
-              ? null
-              : resolveModelSelection({
-                  preferences,
-                  main: snapshot.main,
-                  configurationGeneration: snapshot.generation,
-                  definitions: snapshot.definitions,
-                  target,
-                });
+          const selection = snapshotSelection(snapshot, target);
           const compatibility =
             selection?.kind === "route" ? await store.validateRoute(selection.route, signal) : null;
           const definition =
@@ -265,6 +294,7 @@ export function createModelSettingsService(store: ModelSettingsStore) {
         return {
           kind: "inspection" as const,
           migrationRequired: snapshot.legacyPolicy !== undefined,
+          namedRoutes: snapshot.namedRoutes ?? [],
           preferences,
           fileRevision: snapshot.fileRevision,
           scope: snapshot.scope,
@@ -316,9 +346,25 @@ export function createModelSettingsService(store: ModelSettingsStore) {
             )
           )
             return failure("deterministic-step-has-no-model");
-          const validity = await store.validateRoute(request.edit.route, signal);
+          let concrete: RoleRoute;
+          if ("kind" in request.edit.route && request.edit.route.kind === "route") {
+            try {
+              const resolved = bindNamedModelPreferences(
+                { ...EMPTY_MODEL_PREFERENCES, roles: { default: request.edit.route } },
+                snapshot.namedRoutes ?? [],
+                snapshot.routeFacts ?? [],
+                snapshot.generation,
+              ).roles.default;
+              if (!resolved) return failure("route-unavailable");
+              concrete = resolved;
+            } catch (error) {
+              if (error instanceof UnresolvedNamedRouteError) return failure(error.message);
+              throw error;
+            }
+          } else concrete = request.edit.route;
+          const validity = await store.validateRoute(concrete, signal);
           if (!validity.ok) return failure(validity.code);
-          for (const fallback of request.edit.route.fallbacks) {
+          for (const fallback of concrete.fallbacks) {
             const validity = await store.validateRoute(
               { ...fallback, reasoning: "provider-default", fallbacks: [], budgets: {} },
               signal,
@@ -448,10 +494,19 @@ export function withProcessingSession(
 /** Stable declarations for host/SDK consumers; projections do not create attempts. */
 export type HostModelServiceQuery = Extract<
   ModelSettingsRequest,
-  { kind: "inspect" | "processing-inspect" }
+  {
+    kind:
+      | "inspect"
+      | "processing-inspect"
+      | "route-list"
+      | "route-inspect"
+      | "route-validate"
+      | "route-explain"
+      | "route-simulate";
+  }
 >;
 export type HostModelServicePreference = Extract<
   ModelSettingsRequest,
-  { kind: "processing-set" | "processing-reset" }
+  { kind: "processing-set" | "processing-reset" | "edit" | "route-save" | "route-reset" }
 >;
 export type HostModelServiceReceipt = ModelSettingsResult;

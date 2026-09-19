@@ -21,11 +21,15 @@ export async function runModel(
     request.kind === "apply-clear" ||
     request.kind === "apply-migration" ||
     request.kind === "processing-set" ||
-    request.kind === "processing-reset";
+    request.kind === "processing-reset" ||
+    request.kind === "route-save" ||
+    request.kind === "route-reset";
   if (mutation) onMutationStart?.();
   const payload = await composeProductModelSettings(services(), globals).execute(request, signal);
   const errors =
-    payload.kind === "failed" || payload.kind === "invalid"
+    payload.kind === "failed" ||
+    payload.kind === "invalid" ||
+    (payload.kind === "route-validation" && !payload.ok)
       ? [
           adoptForeignError(
             {
@@ -34,7 +38,9 @@ export async function runModel(
               message:
                 payload.kind === "failed"
                   ? `Model settings failed: ${payload.code}. Inspect settings and retry with their current revision.`
-                  : payload.message,
+                  : payload.kind === "invalid"
+                    ? payload.message
+                    : "Named route validation failed. Inspect the returned errors before saving.",
             },
             { operation: "model settings" },
           ),
@@ -45,7 +51,7 @@ export async function runModel(
     payload,
     errors,
     undefined,
-    payload.kind === "written"
+    payload.kind === "written" || payload.kind === "route-written"
       ? WRITE_COMPLETED_EFFECT
       : mutation
         ? MUTATION_NOT_OBSERVED

@@ -6,6 +6,7 @@ import { z } from "zod";
 import { brandedString } from "../../domain/foundation/branded-schema.ts";
 import { modelId, providerId } from "../../domain/foundation/identity.ts";
 import { processingPreferenceSchema } from "../../domain/sessions/model-processing.ts";
+import { namedRouteReferenceSchema } from "./named-route.ts";
 import { DEFAULT_INTENT_ROLE_MAP, type ModelPolicy, REASONING_EFFORTS } from "./policy.ts";
 import { FAST_OPTIONS, MODEL_ROLES, SUBAGENT_PRESETS, WORK_INTENTS } from "./roles.ts";
 
@@ -161,14 +162,84 @@ export const modelRoleSettingsSchema = z.strictObject({
   vision: visionRoleRouteSchema.optional(),
   advisor: advisorRoleRouteSchema.optional(),
 });
-export const modelPreferencesSchema = z.strictObject({
+export const concreteModelPreferencesSchema = z.strictObject({
   schemaVersion: z.literal(MODEL_POLICY_SCHEMA_VERSION),
   revision: z.number().int().nonnegative(),
   processing: processingPreferenceSchema.optional(),
   roles: modelRoleSettingsSchema,
   intents: intentMapSchema,
 });
-export type ModelPreferences = z.infer<typeof modelPreferencesSchema>;
+export type ModelPreferences = Omit<z.infer<typeof concreteModelPreferencesSchema>, "roles"> & {
+  readonly roles: import("./policy.ts").BoundModelRoleSettings;
+  readonly unavailableRoutes?: readonly {
+    readonly path: readonly string[];
+    readonly routeId: string;
+    readonly receipt: import("../routing/named-route.ts").NamedRouteReceipt | null;
+  }[];
+};
+
+/** New selections are discriminated; legacy concrete objects retain their exact account pins. */
+export const modelTargetSchema = z.union([
+  namedRouteReferenceSchema,
+  roleRouteBaseSchema.extend({ kind: z.literal("concrete") }),
+  roleRouteBaseSchema,
+]);
+export type ModelTarget = z.infer<typeof modelTargetSchema>;
+export const modelPreferencesSchema = concreteModelPreferencesSchema.extend({
+  roles: modelRoleSettingsSchema.extend({
+    default: modelTargetSchema.optional(),
+    plan: modelTargetSchema.optional(),
+    vision: z
+      .union([
+        visionRoleRouteSchema,
+        visionRoleRouteSchema.extend({ kind: z.literal("concrete") }),
+        namedRouteReferenceSchema.extend({ use: visionRoleRouteSchema.shape.use }),
+      ])
+      .optional(),
+    advisor: z
+      .union([
+        advisorRoleRouteSchema,
+        advisorRoleRouteSchema.extend({ kind: z.literal("concrete") }),
+        namedRouteReferenceSchema.extend({ use: advisorRoleRouteSchema.shape.use }),
+      ])
+      .optional(),
+    fast: fastRoleSettingsSchema
+      .extend({
+        default: modelTargetSchema.optional(),
+        options: z.partialRecord(z.enum(FAST_OPTIONS), modelTargetSchema).optional(),
+      })
+      .optional(),
+    subagents: subagentRoleSettingsSchema
+      .extend({
+        default: modelTargetSchema.optional(),
+        presets: z.partialRecord(z.enum(SUBAGENT_PRESETS), modelTargetSchema).optional(),
+        agents: boundedRecord(
+          contributionIdentitySchema,
+          agentPreferenceSchema.extend({ route: modelTargetSchema.optional() }),
+          MAX_MODEL_DEFINITIONS,
+        ).optional(),
+      })
+      .optional(),
+    workflows: workflowRoleSettingsSchema
+      .extend({
+        default: modelTargetSchema.optional(),
+        definitions: boundedRecord(
+          contributionIdentitySchema,
+          workflowPreferenceSchema.extend({
+            default: modelTargetSchema.optional(),
+            steps: boundedRecord(
+              nodeIdentitySchema,
+              modelTargetSchema,
+              MAX_WORKFLOW_MODEL_STEPS,
+            ).optional(),
+          }),
+          MAX_MODEL_DEFINITIONS,
+        ).optional(),
+      })
+      .optional(),
+  }),
+});
+export type StoredModelPreferences = z.infer<typeof modelPreferencesSchema>;
 export const EMPTY_MODEL_PREFERENCES: ModelPreferences = {
   schemaVersion: MODEL_POLICY_SCHEMA_VERSION,
   revision: 0,

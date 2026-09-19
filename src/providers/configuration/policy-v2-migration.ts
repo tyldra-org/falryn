@@ -6,7 +6,10 @@ import type {
   ModelMigrationChange,
   ModelMigrationPreview,
 } from "./policy-migration.ts";
-import { type ModelPreferences, modelPreferencesSchema } from "./policy-schema.ts";
+import {
+  type StoredModelPreferences as ModelPreferences,
+  modelPreferencesSchema,
+} from "./policy-schema.ts";
 
 /** Preserve every unrelated preference; only the retired route and use setting disappear. */
 export function previewPreviousModelPolicy(

@@ -35,7 +35,9 @@ export function isReasoningEffort(value: unknown): value is ReasoningEffort {
 
 export type RoleBudgets = ParsedRoleBudgets;
 export type FallbackTarget = ProviderModelIdentity;
-export type RoleRoute = ParsedRoleRoute;
+export type RoleRoute = ParsedRoleRoute & {
+  readonly namedRoute?: import("../routing/named-route.ts").NamedRouteReceipt | undefined;
+};
 
 export type VisionRoleRoute = RoleRoute & {
   readonly use: "fallback" | "always" | "off";
@@ -45,7 +47,15 @@ export type AdvisorRoleRoute = RoleRoute & {
   readonly use: "explicit" | "evaluated" | "off";
 };
 
-export type ModelRoleRoutes = ParsedModelRoleSettings & { readonly default: RoleRoute };
+type BoundRoutes<T> = T extends ParsedRoleRoute
+  ? T & { readonly namedRoute?: import("../routing/named-route.ts").NamedRouteReceipt | undefined }
+  : T extends readonly unknown[]
+    ? T
+    : T extends object
+      ? { [K in keyof T]: BoundRoutes<T[K]> }
+      : T;
+export type BoundModelRoleSettings = BoundRoutes<ParsedModelRoleSettings>;
+export type ModelRoleRoutes = BoundModelRoleSettings & { readonly default: RoleRoute };
 
 export type IntentRoleMap = {
   readonly [K in WorkIntent]: ModelRole;

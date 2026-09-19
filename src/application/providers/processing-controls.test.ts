@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { turnId } from "../../domain/foundation/index.ts";
-import type { ModelPreferences } from "../../providers/configuration/policy-schema.ts";
+import type { StoredModelPreferences as ModelPreferences } from "../../providers/configuration/policy-schema.ts";
 import { createProductLiveTurnExecutor } from "../runtime/product-live-turn.ts";
 import { processingProduct, reportedProcessing } from "../runtime/product-processing.fixture.ts";
 import { createModelSettingsService, withProcessingSession } from "./model-settings.ts";

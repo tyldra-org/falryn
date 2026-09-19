@@ -3,6 +3,7 @@ import { z } from "zod";
 import { removeTemporaryRoots } from "../../data/fixtures.ts";
 import { createAgentJoinStore } from "../../data/orchestration/agent-join-store.ts";
 import { createMailboxRepository } from "../../data/orchestration/mailbox-store.ts";
+import { createWorkflowStore } from "../../data/orchestration/workflow-store.ts";
 import { createCapabilityRegistry } from "../../domain/capabilities/index.ts";
 import { sourceFixture } from "../../domain/context/instruction-sources.fixtures.ts";
 import { EMPTY_SOURCE_PREFERENCES } from "../../domain/context/instruction-sources.ts";
@@ -27,6 +28,8 @@ import {
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
 import { createPeerCrypto } from "../../integrations/process/peer-crypto.ts";
 import { createPeerIpc } from "../../integrations/process/peer-ipc.ts";
+import { namedRouteDefinitionSchema } from "../../providers/configuration/named-route.ts";
+import { bindNamedModelPreferences } from "../../providers/configuration/named-route-binding.ts";
 import {
   EMPTY_MODEL_PREFERENCES,
   roleRouteBaseSchema,
@@ -37,6 +40,7 @@ import {
   type DeterministicProviderScript,
   type ModelRequest,
 } from "../../providers/index.ts";
+import { routeFacts } from "../../providers/routing/named-route.fixtures.ts";
 import { capabilityEntryFromTool } from "../capabilities/product-capability-registry.ts";
 import { createInstructionSourceOwner } from "../context/instruction-source-owner.ts";
 import type { ProductInstructions } from "../context/product-instructions.ts";
@@ -117,6 +121,8 @@ async function run(
   > & {
     nativeDenied?: boolean;
     withPeers?: boolean;
+    withWorkflows?: boolean;
+    prompt?: string;
     processing?: boolean;
     instructions?: ProductInstructions;
   } = {},
@@ -253,6 +259,7 @@ async function run(
     },
     {
       tasks,
+      ...(options.withWorkflows ? { workflows: createWorkflowStore(f.database) } : {}),
       joins: createAgentJoins({
         store: createAgentJoinStore(f.database),
         tasks: f.tasks,
@@ -306,7 +313,7 @@ async function run(
     expect(executor.processing.change({ mode: "fast" }).kind).toBe("processing-changed");
   try {
     const result = await executor.run({
-      prompt: "Delegate an independent source inspection",
+      prompt: options.prompt ?? "Delegate an independent source inspection",
       turnId: turnId.from("agent-parent-turn"),
       signal: AbortSignal.timeout(3000),
     });
@@ -569,60 +576,143 @@ test("a denied native capability cannot become available through child compositi
   expect(JSON.stringify(requests[1]?.messages)).toContain("agent-capability-denied");
 });
 
-test("Small preset resolves an independent account and model without consulting Fast", async () => {
-  const childRequests: ModelRequest[] = [];
-  const child = createDeterministicProviderAdapter({
-    profileId: "child-account",
-    supportedModels: ["child-small"],
-    onRequest: (request) => childRequests.push(request),
-    script: (_request, index) =>
-      index === 0
-        ? { kind: "tool", toolCallId: "child-inspect", name: "inspect", argumentFragments: ["{}"] }
-        : { kind: "text", text: explorerResult },
-  });
-  const route = roleRouteBaseSchema.parse({
-    providerId: String(child.identity.providerId),
-    providerProfileId: "child-account",
-    modelId: "child-small",
-  });
-  const { result, requests, tools } = await run(
-    (_request, index) =>
-      index === 0
-        ? launch("explorer", "Inspect source", [inspect])
-        : { kind: "text", text: "Parent received the result." },
-    {
-      preferences: () => ({
-        ...EMPTY_MODEL_PREFERENCES,
-        roles: {
-          subagents: { presets: { small: route } },
-          fast: {
-            default: {
-              ...route,
-              modelId: roleRouteBaseSchema.parse({ ...route, modelId: "wrong-fast-model" }).modelId,
-            },
-          },
-        },
-      }),
-      resolveProvider: async (profileId) => {
-        expect(profileId).toBe("child-account");
-        return {
-          adapter: child,
-          catalog: catalogFromAdapterModels(child.supportedModels, {
+test.each(["concrete", "named"])(
+  "%s Small preset captures an independent account and model without consulting Fast",
+  async (selectionKind) => {
+    const childRequests: ModelRequest[] = [];
+    let changePreferences = () => {};
+    const child = createDeterministicProviderAdapter({
+      profileId: "child-account",
+      supportedModels: ["child-small"],
+      onRequest: (request) => {
+        childRequests.push(request);
+        changePreferences();
+      },
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "child-inspect",
+              name: "inspect",
+              argumentFragments: ["{}"],
+            }
+          : { kind: "text", text: explorerResult },
+    });
+    const route = roleRouteBaseSchema.parse({
+      providerId: String(child.identity.providerId),
+      providerProfileId: "child-account",
+      modelId: "child-small",
+    });
+    const definition = namedRouteDefinitionSchema.parse({
+      id: "child-route",
+      revision: 1,
+      primary: {
+        connectionId: "child-account",
+        providerId: String(child.identity.providerId),
+        modelId: "child-small",
+      },
+    });
+    const fact = routeFacts()[0];
+    const facts = [
+      {
+        ...fact,
+        target: definition.primary,
+        capability:
+          catalogFromAdapterModels(child.supportedModels, {
             generation: 0,
             fetchedAt: instant(0),
             capabilities: child.modelCapabilities,
-          }),
-        };
+          }).models[0] ?? null,
       },
-    },
-  );
-  expect(result.terminalOutcome.kind).toBe("completed");
-  expect(requests).toHaveLength(2);
-  expect(childRequests).toHaveLength(2);
-  expect(childRequests.every((request) => request.modelId === "child-small")).toBe(true);
-  expect(tools).toBe(1);
-  expect(JSON.stringify(requests[1]?.messages)).toContain("subagents.preset:small");
-});
+    ];
+    let namedPreferences = bindNamedModelPreferences(
+      {
+        ...EMPTY_MODEL_PREFERENCES,
+        roles: {
+          subagents: {
+            presets: {
+              small: { kind: "route", routeId: definition.id, reasoning: "provider-default" },
+            },
+          },
+        },
+      },
+      [definition],
+      facts,
+      0,
+    );
+    changePreferences = () => {
+      namedPreferences = bindNamedModelPreferences(
+        {
+          ...EMPTY_MODEL_PREFERENCES,
+          roles: {
+            subagents: {
+              presets: {
+                small: { kind: "route", routeId: definition.id, reasoning: "provider-default" },
+              },
+            },
+          },
+        },
+        [{ ...definition, revision: 2 }],
+        facts,
+        1,
+      );
+    };
+    const { result, requests, tools } = await run(
+      (_request, index) =>
+        index === 0
+          ? launch("explorer", "Inspect source", [inspect])
+          : { kind: "text", text: "Parent received the result." },
+      {
+        preferences: () => ({
+          ...EMPTY_MODEL_PREFERENCES,
+          roles: {
+            subagents: {
+              presets: {
+                small:
+                  selectionKind === "named"
+                    ? (namedPreferences.roles.subagents?.presets?.small ?? route)
+                    : route,
+              },
+            },
+            fast: {
+              default: {
+                ...route,
+                modelId: roleRouteBaseSchema.parse({ ...route, modelId: "wrong-fast-model" })
+                  .modelId,
+              },
+            },
+          },
+        }),
+        resolveProvider: async (profileId) => {
+          expect(profileId).toBe("child-account");
+          return {
+            adapter: child,
+            catalog: catalogFromAdapterModels(child.supportedModels, {
+              generation: 0,
+              fetchedAt: instant(0),
+              capabilities: child.modelCapabilities,
+            }),
+          };
+        },
+      },
+    );
+    expect(result.terminalOutcome.kind).toBe("completed");
+    expect(requests).toHaveLength(2);
+    expect(childRequests).toHaveLength(2);
+    expect(childRequests.every((request) => request.modelId === "child-small")).toBe(true);
+    if (selectionKind === "named") {
+      expect(childRequests.map((request) => request.namedRoute?.routeId)).toEqual([
+        "child-route",
+        "child-route",
+      ]);
+      expect(childRequests.every((request) => request.namedRoute?.definitionRevision === 1)).toBe(
+        true,
+      );
+    }
+    expect(tools).toBe(1);
+    expect(JSON.stringify(requests[1]?.messages)).toContain("subagents.preset:small");
+  },
+);
 
 test.each(["explorer", "planner", "reviewer", "researcher"])(
   "%s cannot widen its effect ceiling through a selected native tool",
@@ -833,4 +923,103 @@ test("a child resolves its declared subtree after a parent edit while the parent
   expect(inputs[2]).not.toContain("ROOT_EDITED");
   expect(result.instructions?.scope.kind).toBe("main");
   expect(snapshots[0]).not.toEqual(snapshots[1]);
+});
+
+test("workflow model steps retain named receipts when preferences change between nodes", async () => {
+  const adapter = createDeterministicProviderAdapter({ script: { kind: "text", text: "{}" } });
+  const model = adapter.supportedModels[0];
+  if (!model) throw new Error("Missing fixture model");
+  const definition = namedRouteDefinitionSchema.parse({
+    id: "workflow-route",
+    revision: 1,
+    primary: {
+      connectionId: adapter.identity.profileId,
+      providerId: String(adapter.identity.providerId),
+      modelId: String(model),
+    },
+  });
+  const facts = [
+    {
+      ...routeFacts()[0],
+      target: definition.primary,
+      capability:
+        catalogFromAdapterModels(adapter.supportedModels, {
+          generation: 0,
+          fetchedAt: instant(0),
+          capabilities: adapter.modelCapabilities,
+        }).models[0] ?? null,
+    },
+  ];
+  const authored = {
+    ...EMPTY_MODEL_PREFERENCES,
+    roles: {
+      workflows: {
+        default: {
+          kind: "route" as const,
+          routeId: definition.id,
+          reasoning: "provider-default" as const,
+        },
+      },
+    },
+  };
+  let preferences = bindNamedModelPreferences(authored, [definition], facts, 0);
+  const schema = { type: "object", properties: {}, additionalProperties: false };
+  const workflow = {
+    version: 1,
+    id: "user/test:route",
+    label: "Route capture",
+    argumentsSchema: schema,
+    nodes: [
+      { key: "first", kind: "model", instruction: "Return an empty object", resultSchema: schema },
+      {
+        key: "second",
+        kind: "model",
+        instruction: "Return an empty object",
+        resultSchema: schema,
+        dependencies: ["first"],
+      },
+    ],
+    outputs: { result: { from: "node", node: "second" } },
+  };
+  const observed = await run(
+    (request, index) => {
+      if (index === 0)
+        return {
+          kind: "tool",
+          toolCallId: "workflow-route",
+          name: "workflow",
+          argumentFragments: [
+            JSON.stringify({
+              operation: "execute",
+              handle: { id: "workflow-route", generation: "one" },
+              definitionJson: JSON.stringify(workflow),
+              argumentsJson: "{}",
+            }),
+          ],
+        };
+      if (request.tools.length === 0) {
+        preferences = bindNamedModelPreferences(
+          authored,
+          [{ ...definition, revision: 2 }],
+          facts,
+          1,
+        );
+        return { kind: "text", text: "{}" };
+      }
+      return { kind: "text", text: "Workflow complete." };
+    },
+    {
+      withWorkflows: true,
+      prompt: "Use workflow to execute two model nodes",
+      preferences: () => preferences,
+    },
+  );
+  expect(observed.result.terminalOutcome.kind).toBe("completed");
+  const nodes = observed.requests.filter((request) => request.tools.length === 0);
+  expect(nodes).toHaveLength(2);
+  expect(nodes.map((request) => request.namedRoute?.definitionRevision)).toEqual([1, 1]);
+  expect(nodes.map((request) => request.namedRoute?.routeId)).toEqual([
+    "workflow-route",
+    "workflow-route",
+  ]);
 });

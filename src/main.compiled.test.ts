@@ -352,6 +352,31 @@ describe.if(built)("the standalone executable", () => {
     },
     30_000,
   );
+  test("named routes save and bind real model requests through compiled composition", async () => {
+    const binary = join(bootstrapDirectory, "named-route-controls");
+    const built = Bun.spawnSync(
+      [
+        process.execPath,
+        "build",
+        join(import.meta.dir, "cli/runtime/named-route-compiled-fixtures.ts"),
+        "--compile",
+        "--outfile",
+        binary,
+      ],
+      { stdout: "pipe", stderr: "pipe", timeout: 30_000 },
+    );
+    expect(built.exitCode, built.stderr.toString()).toBe(0);
+    const child = Bun.spawnSync([binary], { stdout: "pipe", stderr: "pipe", timeout: 20_000 });
+    expect(child.exitCode, child.stderr.toString()).toBe(0);
+    expect(JSON.parse(child.stdout.toString())).toMatchObject({
+      outcome: "completed",
+      controls: ["route-written", "written"],
+      requests: 1,
+      model: "gpt-5.6-sol",
+      reasoning: { effort: "medium" },
+    });
+  }, 60000);
+
   test("processing controls persist and project the actual provider tier through compiled boundaries", async () => {
     const binary = join(bootstrapDirectory, "processing-controls");
     const built = Bun.spawnSync(

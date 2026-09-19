@@ -252,6 +252,12 @@ export function productModelPolicy(
   preferences?: import("../../providers/configuration/policy-schema.ts").ModelPreferences,
 ): ModelPolicy | null {
   if (
+    preferences?.unavailableRoutes?.some(
+      (entry) => JSON.stringify(entry.path) === '["roles","default"]',
+    )
+  )
+    return null;
+  if (
     selectedModel !== undefined &&
     selectedModel !== null &&
     (selectedModel.providerProfileId !== adapter.identity.profileId ||
@@ -296,6 +302,7 @@ export function productModelPolicy(
         fallbacks: saved?.fallbacks ?? [],
         budgets: saved?.budgets ?? {},
         ...(saved?.processing === undefined ? {} : { processing: saved.processing }),
+        ...(saved?.namedRoute === undefined ? {} : { namedRoute: saved.namedRoute }),
       },
     },
     intents: preferences?.intents ?? DEFAULT_INTENT_ROLE_MAP,
