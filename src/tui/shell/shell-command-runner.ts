@@ -57,6 +57,9 @@ export function runAvailableCommand(
     case "compression.show":
       dispatch({ kind: "open-overlay", route: { kind: "compression" } });
       return true;
+    case "model.routes":
+      dispatch({ kind: "open-overlay", route: { kind: "model-settings", routes: true } });
+      return true;
     case "model.settings":
       dispatch({ kind: "open-overlay", route: { kind: "model-settings" } });
       return true;

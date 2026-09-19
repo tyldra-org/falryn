@@ -1,6 +1,8 @@
 import { expect, test } from "bun:test";
 import { processingNativeParametersSchema } from "../../domain/sessions/model-processing.ts";
 import { processingQualificationSchema } from "../../providers/configuration/processing.ts";
+import { routeDefinition, routeFacts } from "../../providers/routing/named-route.fixtures.ts";
+import { resolveNamedRoute } from "../../providers/routing/named-route.ts";
 import { processingProduct } from "../runtime/product-processing.fixture.ts";
 import { bindModelProcessing, inspectModelProcessing } from "./model-processing.ts";
 import { processingPromptCache } from "./provider-prompt-cache.ts";
@@ -74,4 +76,26 @@ test("qualification and native parameters reject arbitrary provider fields, head
     null,
   ])
     expect(processingNativeParametersSchema.safeParse(input).success).toBe(false);
+});
+
+test("session Fast preference cannot widen the captured named-route premium grant", () => {
+  const product = processingProduct();
+  const selected = product.select("fast");
+  const resolved = resolveNamedRoute(routeDefinition(), routeFacts(), {
+    configurationGeneration: 1,
+    factsRevision: 1,
+  });
+  if (resolved.kind !== "resolved") throw new Error("fixture");
+  const inspected = inspectModelProcessing({
+    adapter: product.adapter,
+    route: { ...selected.receipt, namedRoute: resolved.receipt },
+    preference: { mode: "fast", fallback: "allow-standard" },
+    pricing: product.state.pricing,
+  });
+  expect(inspected).toMatchObject({
+    eligible: false,
+    reason: "premium-processing-not-approved",
+    standardFallbackAllowed: false,
+  });
+  expect(product.requests).toEqual([]);
 });

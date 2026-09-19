@@ -584,6 +584,7 @@ function overlayBody(
           service={props.modelSettings ?? null}
           rows={rows}
           processing={overlay.processing ?? false}
+          routes={overlay.routes ?? false}
         />
       );
     case "compression":

@@ -2,10 +2,12 @@
 import { z } from "zod";
 import { processingPreferenceSchema } from "../../domain/sessions/model-processing.ts";
 import type { ModelSelectionTarget } from "./model-selection.ts";
+import { namedRouteReferenceSchema } from "./named-route.ts";
 import {
   contributionIdentitySchema,
-  type ModelPreferences,
+  type StoredModelPreferences as ModelPreferences,
   modelPreferencesSchema,
+  modelTargetSchema,
   nodeIdentitySchema,
   roleRouteBaseSchema,
 } from "./policy-schema.ts";
@@ -36,7 +38,7 @@ export const modelSettingsEditSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("configure"),
     target: modelSelectionTargetSchema,
-    route: roleRouteBaseSchema,
+    route: modelTargetSchema,
   }),
   z.strictObject({ kind: z.literal("reset"), target: modelSelectionTargetSchema }),
   z.strictObject({
@@ -57,7 +59,9 @@ export function configuredModelRoute(preferences: ModelPreferences, target: Mode
     if (value === null || typeof value !== "object" || !Object.hasOwn(value, key)) return null;
     value = Reflect.get(value, key);
   }
-  const parsed = roleRouteBaseSchema.strip().safeParse(value);
+  const parsed = z
+    .union([roleRouteBaseSchema.strip(), namedRouteReferenceSchema.strip()])
+    .safeParse(value);
   return parsed.success ? parsed.data : null;
 }
 export function modelPreferencePath(target: ModelSelectionTarget): readonly string[] {

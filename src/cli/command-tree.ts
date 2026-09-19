@@ -451,7 +451,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           group
             .positional("action", {
               type: "string",
-              choices: ["roles", "configure", "reset", "migrate", "clear", "processing"],
+              choices: ["roles", "configure", "reset", "migrate", "clear", "processing", "routes"],
             })
             .positional("processing-action", {
               type: "string",
@@ -931,7 +931,8 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
       } catch {
         return { kind: "invalid", message: "Model settings input must be JSON." };
       }
-    } else if (parsed.action !== "roles")
+    } else if (parsed.action === "routes") request = { kind: "route-list" };
+    else if (parsed.action !== "roles")
       return {
         kind: "invalid",
         message: "This model action requires --input with a settings request.",
@@ -939,23 +940,25 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     const checked = modelSettingsRequestSchema.safeParse(request);
     if (!checked.success) return { kind: "invalid", message: "Invalid model settings request." };
     const matches =
-      parsed.action === "processing"
-        ? (parsed["processing-action"] === undefined ||
-            checked.data.kind === `processing-${parsed["processing-action"]}`) &&
-          (checked.data.kind === "processing-inspect" ||
-            checked.data.kind === "processing-set" ||
-            checked.data.kind === "processing-reset")
-        : parsed.action === "roles"
-          ? checked.data.kind === "inspect"
-          : parsed.action === "configure"
-            ? checked.data.kind === "edit" && checked.data.edit.kind !== "reset"
-            : parsed.action === "reset"
-              ? checked.data.kind === "edit" && checked.data.edit.kind === "reset"
-              : parsed.action === "migrate"
-                ? checked.data.kind === "preview-migration" ||
-                  checked.data.kind === "apply-migration"
-                : parsed.action === "clear" &&
-                  (checked.data.kind === "preview-clear" || checked.data.kind === "apply-clear");
+      parsed.action === "routes"
+        ? checked.data.kind.startsWith("route-")
+        : parsed.action === "processing"
+          ? (parsed["processing-action"] === undefined ||
+              checked.data.kind === `processing-${parsed["processing-action"]}`) &&
+            (checked.data.kind === "processing-inspect" ||
+              checked.data.kind === "processing-set" ||
+              checked.data.kind === "processing-reset")
+          : parsed.action === "roles"
+            ? checked.data.kind === "inspect"
+            : parsed.action === "configure"
+              ? checked.data.kind === "edit" && checked.data.edit.kind !== "reset"
+              : parsed.action === "reset"
+                ? checked.data.kind === "edit" && checked.data.edit.kind === "reset"
+                : parsed.action === "migrate"
+                  ? checked.data.kind === "preview-migration" ||
+                    checked.data.kind === "apply-migration"
+                  : parsed.action === "clear" &&
+                    (checked.data.kind === "preview-clear" || checked.data.kind === "apply-clear");
     if (!matches)
       return { kind: "invalid", message: "The model action does not match its input request." };
     modelArgs = checked.data;

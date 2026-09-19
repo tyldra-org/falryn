@@ -2,8 +2,10 @@ import { expect, test } from "bun:test";
 import { createModelSettingsService } from "../../application/providers/model-settings.ts";
 import {
   EMPTY_MODEL_PREFERENCES,
-  type ModelPreferences,
+  type StoredModelPreferences as ModelPreferences,
+  roleRouteBaseSchema,
 } from "../../providers/configuration/policy-schema.ts";
+import { routeDefinition, routeFacts } from "../../providers/routing/named-route.fixtures.ts";
 import { UNAVAILABLE_SUBMISSION } from "../composer/index.ts";
 import { mount } from "../runtime/harness.tsx";
 import { ShellApp } from "../shell/shell-app.tsx";
@@ -27,13 +29,15 @@ const MODEL: Omit<ShellModel, "overlay" | "commands" | "transcript" | "composer"
   status: { status: "informational", message: "Nothing is running.", hints: [] },
   help: [],
 };
-function fixture() {
+function fixture(namedRoutes = false) {
   let preferences: ModelPreferences = structuredClone(EMPTY_MODEL_PREFERENCES);
   let fileRevision: string | null = null;
   const service = createModelSettingsService({
     async read() {
       return {
         preferences,
+        namedRoutes: namedRoutes ? [routeDefinition()] : [],
+        routeFacts: routeFacts(),
         fileRevision,
         main: null,
         definitions: [],
@@ -116,7 +120,9 @@ test("terminal configure writes one route using the same revision and codec as h
   for (let n = 0; n < 4; n += 1) shell.setup.mockInput.pressArrow("down");
   shell.setup.mockInput.pressEnter();
   await shell.frame("Saved model policy revision 1");
-  expect(String(f.get().roles.fast?.default?.modelId)).toBe("chosen-model");
+  expect(String(roleRouteBaseSchema.parse(f.get().roles.fast?.default).modelId)).toBe(
+    "chosen-model",
+  );
   expect(f.get().roles.fast?.default?.reasoning).toBe("provider-default");
   expect(f.get().roles.default).toBeUndefined();
 });
@@ -130,4 +136,31 @@ test("all public slash aliases open the same settings surface", async () => {
     await shell.press("\r");
     expect(await shell.frame("Model settings are not attached")).toContain("Model roles");
   }
+});
+
+test("model role picker saves a named reference and route controls remain inert", async () => {
+  const f = fixture(true);
+  const submission = { ...UNAVAILABLE_SUBMISSION, modelSettings: f.service };
+  using shell = await mount(
+    <ShellApp theme={THEME} model={MODEL} onExit={() => {}} submission={submission} />,
+    { shape: { columns: 120, rows: 34 } },
+  );
+  await shell.frame();
+  await shell.press("p", { ctrl: true });
+  await shell.type("model.settings");
+  await shell.press("\r");
+  await shell.frame("Named routes");
+  shell.setup.mockInput.pressEnter();
+  await shell.frame("Use route: daily");
+  shell.setup.mockInput.pressEnter();
+  await shell.frame("Saved model policy revision 1");
+  expect(f.get().roles.default).toMatchObject({ kind: "route", routeId: "daily" });
+  await shell.press("\u001b");
+  await shell.frame();
+  await shell.press("\t");
+  await shell.press("\t");
+  await shell.type("/route");
+  await shell.press("\r");
+  await shell.frame("Route JSON action");
+  expect(f.get().revision).toBe(1);
 });

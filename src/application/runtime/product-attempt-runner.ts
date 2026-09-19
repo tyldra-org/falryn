@@ -739,6 +739,7 @@ function modelRequest(
     budgets,
     reasoning: request.receipt.reasoning,
     reasoningControl: request.receipt.reasoningControl,
+    ...(request.receipt.namedRoute ? { namedRoute: request.receipt.namedRoute } : {}),
     responseDensityControl,
     ...(request.promptCache === undefined ? {} : { promptCache: request.promptCache }),
     metadata: {

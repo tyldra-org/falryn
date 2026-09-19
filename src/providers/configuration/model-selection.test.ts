@@ -9,7 +9,7 @@ import {
 } from "./model-selection.ts";
 import {
   EMPTY_MODEL_PREFERENCES,
-  type ModelPreferences,
+  type StoredModelPreferences as ModelPreferences,
   modelPreferencesSchema,
   roleRouteBaseSchema,
 } from "./policy-schema.ts";

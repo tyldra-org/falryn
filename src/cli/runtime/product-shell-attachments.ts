@@ -10,6 +10,7 @@ import {
   type SessionActivationFact,
   type SessionActivationPort,
 } from "../../application/sessions/session-activation.ts";
+import { composeModelRouteTool } from "../../application/tools/model-route-tool.ts";
 import type { ConfigurationValues } from "../../domain/configuration/index.ts";
 import type { SessionId } from "../../domain/foundation/index.ts";
 import { agentRegistryFrom } from "./agent-configuration.ts";
@@ -428,6 +429,7 @@ export async function composeProductShellAttachments(
       (await ports.peers?.open({ sessionId: String(sessionId), agentId: "main", generation: 1 })) ??
       null;
     try {
+      const routeSettings = ports.modelSettings;
       const productTools =
         workspaceTools === null ||
         processTools === null ||
@@ -446,6 +448,14 @@ export async function composeProductShellAttachments(
                 languageTools,
                 memoryTools,
                 composePeerTool(generation, peer),
+                ...(routeSettings
+                  ? [
+                      composeModelRouteTool(generation, {
+                        execute: (input, signal) =>
+                          (profileSession?.modelSettings ?? routeSettings).execute(input, signal),
+                      }),
+                    ]
+                  : []),
               ],
               {
                 afterMutation: async (request) => {
@@ -500,7 +510,11 @@ export async function composeProductShellAttachments(
               ...(profile
                 ? {
                     registry: agentRegistryFrom(profile.record.values),
-                    preferences: () => modelPreferencesFrom(profile.record.values),
+                    preferences: () =>
+                      modelPreferencesFrom(
+                        profile.record.values,
+                        Number(profile.record.generation),
+                      ),
                     configurationGeneration: () => Number(profile.record.generation),
                     resolveProvider: async (id: string, signal: AbortSignal) => {
                       const resolved = await profile.connections.resolveProfile(id, signal);

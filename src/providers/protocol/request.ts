@@ -47,6 +47,7 @@ export type PromptCacheSeed = Pick<
 >;
 
 export type ModelRequest = {
+  readonly namedRoute?: import("../routing/named-route.ts").NamedRouteReceipt | undefined;
   readonly processing?:
     | import("../../domain/sessions/model-processing.ts").ProcessingBinding
     | undefined;

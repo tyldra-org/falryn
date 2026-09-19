@@ -2,6 +2,48 @@
 import type { ModelSettingsResult } from "./model-settings.ts";
 export function modelSettingsLines(result: ModelSettingsResult): readonly string[] {
   switch (result.kind) {
+    case "route-list":
+      return [
+        `Named model routes · generation ${result.configurationGeneration}`,
+        ...result.routes.map(
+          (route) => `${route.id} · revision ${route.revision} · ${route.policy.strategy}`,
+        ),
+        `File revision: ${result.fileRevision ?? "absent"}`,
+      ];
+    case "route-inspection": {
+      const receipt = result.resolution.receipt;
+      return [
+        `${result.simulated ? "Simulated" : "Declared"} route: ${result.resolution.kind}`,
+        ...(receipt
+          ? [
+              `${receipt.routeId} · definition ${receipt.definitionRevision} · generation ${receipt.configurationGeneration}`,
+              ...receipt.eligible.map(
+                (candidate, index) =>
+                  `${index === 0 ? "Primary" : "Qualified alternate"}: ${candidate.target.connectionId} / ${candidate.target.providerId} / ${candidate.target.modelId} · ${candidate.uncertainty.join(", ") || "qualified"}`,
+              ),
+              ...receipt.exclusions.map(
+                (entry) =>
+                  `Excluded ${entry.target.connectionId} / ${entry.target.modelId}: ${entry.reasons.join(", ")}`,
+              ),
+            ]
+          : ["Route definition missing."]),
+        "No provider calls, credential reads or writes. Qualified alternates are not automatic retries.",
+      ];
+    }
+    case "route-validation":
+      return result.ok
+        ? ["Route declarations valid."]
+        : result.errors.map((error) => `${error.path}: ${error.code}`);
+    case "route-written":
+      return [
+        `Saved ${result.definitions.length} named routes.`,
+        `File revision: ${result.revision}`,
+        ...(result.receipt
+          ? [
+              `Publication: ${result.receipt.publication}; application: ${result.receipt.application}.`,
+            ]
+          : []),
+      ];
     case "processing-changed":
       return [
         "Processing preference changed; application: pending (next main request).",
@@ -107,7 +149,7 @@ export function modelSettingsLines(result: ModelSettingsResult): readonly string
             ...(savedMain === undefined
               ? []
               : [
-                  `  saved default: ${savedMain.providerProfileId} / ${String(savedMain.modelId)} · ${savedMain.reasoning}; session selection takes precedence`,
+                  `  saved default: ${"routeId" in savedMain ? `route ${savedMain.routeId}` : `${savedMain.providerProfileId} / ${String(savedMain.modelId)}`} · ${savedMain.reasoning}; session selection takes precedence`,
                 ]),
             ...(selection.reason === null ? [] : [`  ${selection.reason}`]),
             ...(definition === null

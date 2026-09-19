@@ -220,9 +220,28 @@ export function composeProductProviderConnections(
       options.configuration ??
       (await loadProductConfiguration(services, productConfigurationLoadRequest(globals), signal))
         .values;
+    const preferences = modelPreferencesFrom(values);
+    if (
+      profileId === undefined &&
+      preferences.unavailableRoutes?.some(
+        (entry) => JSON.stringify(entry.path) === '["roles","default"]',
+      )
+    ) {
+      return {
+        kind: "unavailable",
+        code: "named-route-unavailable",
+        session: {
+          kind: "unavailable",
+          issue: { code: "named-route-unavailable", retryable: false },
+          connection: null,
+          auth: null,
+          catalog: null,
+        },
+      };
+    }
     const session = await service.openSelected(
       signal,
-      profileId ?? modelPreferencesFrom(values).roles.default?.providerProfileId,
+      profileId ?? preferences.roles.default?.providerProfileId,
     );
     if (session.kind !== "ready") {
       return { kind: "unavailable", code: session.issue.code, session };
@@ -355,6 +374,33 @@ export function composeProductProviderConnections(
         adapter = {
           ...boundAdapter,
           async *stream(request, streamOptions) {
+            if (request.namedRoute) {
+              const currentValues = (
+                await loadProductConfiguration(
+                  services,
+                  productConfigurationLoadRequest(globals),
+                  streamOptions.signal,
+                )
+              ).values;
+              const state = parseProviderConnectionState(
+                currentValues[PROVIDER_CONNECTIONS_CONFIGURATION_KEY],
+              );
+              const connection = state.ok
+                ? state.value.connections.find(
+                    (entry) => entry.profile.profileId === profile.profileId,
+                  )
+                : undefined;
+              const captured = request.namedRoute.eligible[0];
+              if (
+                !connection ||
+                !captured ||
+                captured.target.connectionId !== profile.profileId ||
+                captured.target.providerId !== String(request.providerId) ||
+                captured.target.modelId !== String(request.modelId) ||
+                openAiAccountGeneration(connection) !== captured.accountGeneration
+              )
+                throw new Error("provider-route-account-stale");
+            }
             const current = await resolve(profile.profileId, streamOptions.signal, true);
             if (current.kind !== "ready") throw new Error(`provider-${current.code}`);
             try {

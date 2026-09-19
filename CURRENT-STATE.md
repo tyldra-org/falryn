@@ -69,6 +69,47 @@ changes reset omitted thinking to provider default. Model actions edit their
 selected source, so route, membership and processing resets reveal inheritance.
 Provider account, endpoint and executable definitions remain global in version two.
 
+Named model routes live in user `defaults.models.routes.definitions`. Each has a
+stable ID, revision, exact primary connection/provider/model, and at most 16
+explicit alternatives. The registry accepts at most 64 definitions. Model-role
+preferences select `{ "kind": "route", "routeId": "daily" }`; existing concrete
+pins and ordered legacy fallbacks remain unchanged. Working profiles select
+references but cannot redefine global route membership. Missing references
+remain inspectable and refuse execution.
+
+Use `falryn model routes --format json` to list definitions and their file
+revision. `falryn model routes --input action.json --format json` accepts
+`route-inspect`, `route-explain`, `route-simulate`, `route-validate`, `route-save`
+and `route-reset`. Save supplies the complete `definitions` array and exact
+`expectedRevision`; reset supplies an `id` and that revision. Changed definitions
+must advance their revision. The existing `falryn model configure --input action.json`
+accepts a `kind: "edit"` action with `edit.kind: "configure"`, an existing model
+`target`, and the named reference in `edit.route`. `/model` exposes named choices
+beside concrete configuration; its Named routes page and `/route` accept the same
+JSON management actions. Attached hosts use `ModelSettingsService.execute`.
+The registered `model_routes` tool accepts a bounded `commandJson` through the
+normal capability discovery and admission owner. Save/reset require mutation
+authority and retain revision checks.
+
+Inspection, explanation, validation and simulation use supplied metadata without
+credential reads or provider requests. The resolver records exact targets,
+revisions, exclusions, processing qualification and quota/price uncertainty.
+It supports ordered preference, current-account affinity with a deadline-bounded
+wait, availability preference and a strict primary. Live configuration uses
+explicit connection capabilities and qualified built-in metadata; undeclared
+variants refuse qualification. Live quota and enforceable included-allowance
+facts remain unknown unless supplied by an owning consumer, so included-only and
+unknown-price cost caps fail closed.
+
+Main requests and delegated/workflow selections retain immutable route receipts.
+Each provider request checks the current account binding before transport;
+credential replacement or account/project changes invalidate an old binding.
+Attempt history records the route ID and revisions beside actual serving and
+cache identities. Save receipts distinguish publication from application, and
+already-admitted work keeps its capture. Qualified alternatives are a typed
+handoff to #215; this implementation does not execute automatic account switching
+or quota waits. Scheduled route integration remains with #1113.
+
 Interactive sessions expose `/profile` for inspection, `/profile use <id>` for
 an inert preview, and `/profile apply <candidate-id>` for explicit application of
 that exact candidate. `/profile default <id>` saves a future-session default;

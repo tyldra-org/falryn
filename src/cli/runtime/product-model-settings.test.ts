@@ -140,7 +140,9 @@ test("working profile saves and resets stay local across restart, including memb
       preset: "small",
       route: { modelId: "inherited" },
     });
-    expect(String(inspection.preferences.roles.plan?.modelId)).toBe("inherited");
+    expect(String(roleRouteBaseSchema.parse(inspection.preferences.roles.plan).modelId)).toBe(
+      "inherited",
+    );
     expect(inspection.preferences.processing?.mode).toBe("fast");
   } finally {
     await rm(home, { recursive: true, force: true });

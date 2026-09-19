@@ -106,6 +106,7 @@ describe("parseComposerSlash", () => {
         alias.commandId === "loom.set" ||
         alias.commandId === "compression.show" ||
         alias.commandId === "model.settings" ||
+        alias.commandId === "model.routes" ||
         alias.commandId.startsWith("model.processing.") ||
         alias.commandId === "profile.inspect" ||
         alias.commandId === "environment.inspect" ||

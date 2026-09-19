@@ -93,12 +93,18 @@ export async function openAiProcessingJourney(
     dialect: "chat" | "responses";
     mode: "standard" | "fast" | "provider-default";
     tier?: unknown;
+    prompt?: string;
     custom?: boolean;
     cost?: number;
     fetch?: OpenAiSdkFetch;
     signal?: AbortSignal;
     continueAt?: "standard";
     throughControls?: boolean;
+    prepare?: (context: {
+      services: ReturnType<typeof createServiceProvider>;
+      globals: GlobalOptions;
+      profile: ProviderProfile;
+    }) => Promise<void>;
   },
   register: (home: string) => void,
 ) {
@@ -191,6 +197,7 @@ export async function openAiProcessingJourney(
     },
   };
   await writeFile(path, JSON.stringify(config));
+  await options.prepare?.({ services: makeServices(), globals, profile });
   const controlResults = [];
   if (options.throughControls) {
     const invoke = async (args: string[]) => {
@@ -233,7 +240,12 @@ export async function openAiProcessingJourney(
   };
   const result = await runCoding(
     services,
-    { promptParts: [options.continueAt ? "Read sample.txt and reply briefly." : "Reply briefly."] },
+    {
+      promptParts: [
+        options.prompt ??
+          (options.continueAt ? "Read sample.txt and reply briefly." : "Reply briefly."),
+      ],
+    },
     runOptions,
   );
   let followUp: Awaited<ReturnType<typeof runCoding>> | null = null;

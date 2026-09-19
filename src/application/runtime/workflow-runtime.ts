@@ -8,10 +8,8 @@ import {
   type ModelSelection,
   resolveModelSelection,
 } from "../../providers/configuration/model-selection.ts";
-import {
-  type ModelPreferences,
-  roleRouteBaseSchema,
-} from "../../providers/configuration/policy-schema.ts";
+import { modelSelectionSchema } from "../../providers/configuration/model-selection-schema.ts";
+import type { ModelPreferences } from "../../providers/configuration/policy-schema.ts";
 import type { AgentJoins } from "../orchestration/agent-joins.ts";
 import type { AgentRegistry } from "../orchestration/agent-registry.ts";
 import type { ProcessTaskSupervisor } from "../orchestration/process-task-supervisor.ts";
@@ -32,29 +30,8 @@ import {
   workflowProviderBinding,
 } from "./workflow-model-runtime.ts";
 
-const selectionSchema = z.strictObject({
-  kind: z.literal("route"),
-  route: roleRouteBaseSchema,
-  source: z.string().min(1).max(256),
-  chain: z
-    .array(z.strictObject({ source: z.string().min(1).max(256), route: roleRouteBaseSchema }))
-    .max(32),
-  policyRevision: z.int().nonnegative(),
-  configurationGeneration: z.int().nonnegative(),
-  definitions: z
-    .array(
-      z.strictObject({
-        id: z.string().max(256),
-        revision: z.string().max(256),
-        schemaRevision: z.int().nonnegative(),
-      }),
-    )
-    .max(256),
-  availability: z.enum(["available", "disabled", "unavailable", "incompatible"]),
-  reason: z.string().nullable(),
-});
 const capturedSchema = z.strictObject({
-  selection: selectionSchema,
+  selection: modelSelectionSchema,
   definitionDigest: z.string().nullable(),
   binding: childProviderBindingSchema,
 });

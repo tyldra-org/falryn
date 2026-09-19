@@ -2,7 +2,7 @@ import { expect, test } from "bun:test";
 import type { ModelDefinition } from "../../providers/configuration/model-selection.ts";
 import {
   EMPTY_MODEL_PREFERENCES,
-  type ModelPreferences,
+  type StoredModelPreferences as ModelPreferences,
   roleRouteBaseSchema,
 } from "../../providers/configuration/policy-schema.ts";
 import { createModelSettingsService, type ModelSettingsStore } from "./model-settings.ts";
@@ -137,7 +137,7 @@ test("inspect and configure do not launch anything; stale edits and unsupported 
       edit: { ...edit.edit, route: { ...route("bad"), reasoning: "max" } },
     }),
   ).toEqual({ kind: "failed", code: "unsupported-thinking" });
-  expect(String(f.get().roles.fast?.default?.modelId)).toBe("cheap");
+  expect(String(roleRouteBaseSchema.parse(f.get().roles.fast?.default).modelId)).toBe("cheap");
 });
 
 test("saved definition revisions survive edits, reset removes empty entries, and deterministic nodes reject models", async () => {

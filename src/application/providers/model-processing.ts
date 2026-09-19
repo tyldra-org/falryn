@@ -31,21 +31,25 @@ export function inspectModelProcessing(input: {
   const mode = qualification?.modes[preference.mode];
   const authority = adapter.processingAuthority?.(route.modelId, preference.mode) ?? null;
   const reason =
-    preference.mode === "provider-default"
-      ? null
-      : mode?.support !== "supported"
-        ? `processing-${mode?.support ?? "unknown"}`
-        : !adapter.processingModes?.includes(preference.mode) ||
-            adapter.processingTransportVersion !== qualification?.transportVersion ||
-            mode.nativeParameters === null
-          ? "processing-integration-unavailable"
-          : authority === null
-            ? "processing-authority-unknown"
-            : !authority.authorized
-              ? "processing-unauthorized"
-              : authority.capacity === "unavailable"
-                ? "processing-capacity-unavailable"
-                : null;
+    preference.mode === "fast" &&
+    route.namedRoute &&
+    !route.namedRoute.definition.policy.allowPremiumProcessing
+      ? "premium-processing-not-approved"
+      : preference.mode === "provider-default"
+        ? null
+        : mode?.support !== "supported"
+          ? `processing-${mode?.support ?? "unknown"}`
+          : !adapter.processingModes?.includes(preference.mode) ||
+              adapter.processingTransportVersion !== qualification?.transportVersion ||
+              mode.nativeParameters === null
+            ? "processing-integration-unavailable"
+            : authority === null
+              ? "processing-authority-unknown"
+              : !authority.authorized
+                ? "processing-unauthorized"
+                : authority.capacity === "unavailable"
+                  ? "processing-capacity-unavailable"
+                  : null;
   const price = processingPrice(input.pricing, mode?.priceTierIds ?? null);
   return {
     operation: plan?.declaration.dialect ?? "unavailable",
@@ -64,7 +68,10 @@ export function inspectModelProcessing(input: {
     },
     maximumCostMicros: processingCostMaximum(price, input.inputTokens, input.outputTokens),
     /** The retry owner must admit a separate attempt; inspection never falls back. */
-    standardFallbackAllowed: preference.mode === "fast" && preference.fallback === "allow-standard",
+    standardFallbackAllowed:
+      reason !== "premium-processing-not-approved" &&
+      preference.mode === "fast" &&
+      preference.fallback === "allow-standard",
   };
 }
 

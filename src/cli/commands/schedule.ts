@@ -105,7 +105,10 @@ export async function runSchedule(
             : { reason: `agent-provider-${resolved.code}` };
         },
         modelPreferences: () =>
-          modelPreferencesFrom(graph.loader.current()?.values ?? configuration.values),
+          modelPreferencesFrom(
+            graph.loader.current()?.values ?? configuration.values,
+            Number(graph.loader.current()?.generation ?? configuration.generation),
+          ),
       });
       closeHost = async () => {
         await host?.close();

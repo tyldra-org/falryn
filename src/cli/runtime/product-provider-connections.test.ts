@@ -13,6 +13,7 @@ import {
 import { localPath } from "../../domain/workspace/index.ts";
 import type { OpenAiSdkFetch, OperatingSystemSecretsPort } from "../../integrations/index.ts";
 import { admittedOpenAiRequest } from "../../integrations/providers/openai-processing-fixtures.ts";
+import { namedRouteDefinitionSchema } from "../../providers/configuration/named-route.ts";
 import type {
   AuthorizedProviderLoginHost,
   ModelDiscoveryPort,
@@ -28,9 +29,11 @@ import {
   OPENAI_CODEX_AUTHORIZATION_UNAVAILABLE_CODE,
   OPENAI_RESPONSES_TRANSPORT_DEFAULT,
 } from "../../providers/index.ts";
+import { resolveNamedRoute } from "../../providers/routing/named-route.ts";
 import type { GlobalOptions } from "../options.ts";
 import { openProductArtifactSession } from "./product-artifact-session.ts";
 import { composeProductProviderConnections } from "./product-provider-connections.ts";
+import { declaredRouteFacts } from "./product-route-facts.ts";
 import { createServiceProvider } from "./services.ts";
 
 const GLOBALS: GlobalOptions = {
@@ -1301,6 +1304,24 @@ describe("product provider connection persistence", () => {
       { type: "function_call_output", call_id: "call-restart", output: "contents" },
     ]);
     expect(JSON.stringify(afterRestart)).not.toContain("opaque-provider-state");
+    const routeDefinition = namedRouteDefinitionSchema.parse({
+      id: "captured",
+      revision: 1,
+      primary: {
+        connectionId: profile.profileId,
+        providerId: String(profile.providerId),
+        modelId: String(baseRequest.modelId),
+      },
+    });
+    const values = graph.loader.current()?.values;
+    if (!values) throw new Error("Missing loaded configuration");
+    const resolution = resolveNamedRoute(
+      routeDefinition,
+      declaredRouteFacts(values, [routeDefinition]),
+      { configurationGeneration: 1, factsRevision: 1 },
+    );
+    if (resolution.kind !== "resolved") throw new Error("Missing named route binding");
+    const capturedNamedRequest = { ...baseRequest, namedRoute: resolution.receipt };
     const staleRequest = admittedOpenAiRequest(restarted.adapter, baseRequest, "fast");
     expect(
       await configured.execute({
@@ -1314,6 +1335,29 @@ describe("product provider connection persistence", () => {
     await expect(providerEvents(restarted.adapter, staleRequest)).rejects.toThrow(
       "provider-processing-account-stale",
     );
+    await expect(providerEvents(restarted.adapter, capturedNamedRequest)).rejects.toThrow(
+      "provider-route-account-stale",
+    );
+    const replaced = await configured.execute({
+      kind: "configure",
+      profile: {
+        ...profile,
+        credential: {
+          storeKind: "environment",
+          locator: "REPLACEMENT_ACCOUNT_KEY",
+          consumer: `provider:${profile.profileId}`,
+          accountLabel: "replacement",
+        },
+      },
+      preserveCredential: false,
+      preserveCapabilities: true,
+      preserveTransportCompatibility: true,
+    });
+    expect(replaced).toMatchObject({ kind: "completed" });
+    await expect(providerEvents(restarted.adapter, capturedNamedRequest)).rejects.toThrow(
+      "provider-route-account-stale",
+    );
+    expect(resolution.receipt.definitionRevision).toBe(1);
     expect(bodies).toHaveLength(2);
     await restartedState.close();
   });

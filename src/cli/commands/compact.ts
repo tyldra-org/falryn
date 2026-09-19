@@ -61,7 +61,7 @@ export async function runCompact(
   );
   if (loaded.outcome.kind !== "published" && loaded.outcome.kind !== "unchanged")
     return fail("configuration-unavailable");
-  const route = modelPreferencesFrom(loaded.values)?.roles.default;
+  const route = modelPreferencesFrom(loaded.values, Number(loaded.generation))?.roles.default;
   const connections = parseProviderConnectionState(
     loaded.values[PROVIDER_CONNECTIONS_CONFIGURATION_KEY],
   );

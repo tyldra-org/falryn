@@ -1,5 +1,6 @@
 /** Version-two field inheritance. Concrete route identity and reasoning move together. */
 import { z } from "zod";
+import { namedRouteReferenceSchema } from "./named-route.ts";
 import {
   advisorRoleRouteSchema,
   agentPreferenceSchema,
@@ -19,7 +20,11 @@ import {
 } from "./policy-schema.ts";
 import { FAST_OPTIONS, SUBAGENT_PRESETS } from "./roles.ts";
 
-const route = roleRouteBaseSchema.partial();
+const route = z.union([
+  roleRouteBaseSchema.partial(),
+  roleRouteBaseSchema.partial().extend({ kind: z.literal("concrete") }),
+  namedRouteReferenceSchema,
+]);
 const agent = agentPreferenceSchema.extend({ route: route.optional() });
 const workflow = workflowPreferenceSchema.extend({
   default: route.optional(),
@@ -31,8 +36,20 @@ export const workingModelPreferencesSchema = modelPreferencesSchema.partial().ex
     .extend({
       default: route.optional(),
       plan: route.optional(),
-      vision: visionRoleRouteSchema.partial().optional(),
-      advisor: advisorRoleRouteSchema.partial().optional(),
+      vision: z
+        .union([
+          visionRoleRouteSchema.partial(),
+          visionRoleRouteSchema.partial().extend({ kind: z.literal("concrete") }),
+          namedRouteReferenceSchema.extend({ use: visionRoleRouteSchema.shape.use.optional() }),
+        ])
+        .optional(),
+      advisor: z
+        .union([
+          advisorRoleRouteSchema.partial(),
+          advisorRoleRouteSchema.partial().extend({ kind: z.literal("concrete") }),
+          namedRouteReferenceSchema.extend({ use: advisorRoleRouteSchema.shape.use.optional() }),
+        ])
+        .optional(),
       fast: fastRoleSettingsSchema
         .extend({
           default: route.optional(),
@@ -73,6 +90,13 @@ function record(value: unknown): RecordValue {
 function mergeRoute(base: unknown, incoming: unknown): unknown {
   const previous = record(base),
     next = record(incoming);
+  if (next.kind === "route" && (previous.kind !== "route" || next.routeId !== previous.routeId))
+    return next;
+  if (
+    previous.kind === "route" &&
+    (next.kind === "concrete" || next.modelId !== undefined || next.providerProfileId !== undefined)
+  )
+    return next;
   const changed = ["modelId", "providerId", "providerProfileId"].some(
     (key) => next[key] !== undefined && next[key] !== previous[key],
   );

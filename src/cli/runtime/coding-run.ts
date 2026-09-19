@@ -4,10 +4,12 @@ import {
   type PreparedSessionSelection,
   prepareSessionSelection,
 } from "../../application/sessions/session-activation.ts";
+import { composeModelRouteTool } from "../../application/tools/model-route-tool.ts";
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
 import { createEnvironmentProcessContext } from "./environment-process-context.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { composeProductMcp } from "./product-mcp.ts";
+import { composeProductModelSettings } from "./product-model-settings.ts";
 import { productToolHost } from "./product-tool-host.ts";
 import { createProductSandbox } from "./sandbox-configuration.ts";
 import { standaloneEnvironment } from "./standalone-environment.ts";
@@ -815,6 +817,14 @@ export async function runCoding(
               languageTools,
               memoryTools,
               composePeerTool(generation, peer),
+              ...(options.globals
+                ? [
+                    composeModelRouteTool(
+                      generation,
+                      composeProductModelSettings(graph, options.globals),
+                    ),
+                  ]
+                : []),
             ],
             {
               afterMutation: async (signalRequest) => {
@@ -896,7 +906,10 @@ export async function runCoding(
             : { reason: `agent-provider-${resolved.code}` };
         },
         preferences: () =>
-          modelPreferencesFrom(graph.loader.current()?.values ?? configuration.values),
+          modelPreferencesFrom(
+            graph.loader.current()?.values ?? configuration.values,
+            Number(graph.loader.current()?.generation ?? generation),
+          ),
         configurationGeneration: () => Number(graph.loader.current()?.generation ?? generation),
       },
     );
@@ -1000,7 +1013,10 @@ export async function runCoding(
       ...(workspaceTools.resources === null ? {} : { resources: workspaceTools.resources }),
       modelConfigurationGeneration: () => graph.loader.current()?.generation ?? generation,
       modelPreferences: () =>
-        modelPreferencesFrom(graph.loader.current()?.values ?? configuration.values),
+        modelPreferencesFrom(
+          graph.loader.current()?.values ?? configuration.values,
+          Number(graph.loader.current()?.generation ?? generation),
+        ),
       runtime: composed.value,
       clock: graph.clock,
       providerCatalog,
