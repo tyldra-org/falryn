@@ -10,6 +10,7 @@ export function peerCliEnvironment(root: string) {
     // The per-user peer scope reads the account name, as a real terminal provides it.
     USER: process.env.USER ?? "",
     LOGNAME: process.env.LOGNAME ?? process.env.USER ?? "",
+    USERNAME: process.env.USERNAME ?? "",
     HOME: root,
     FALRYN_CONFIG_DIR: join(root, "config"),
     FALRYN_STATE_DIR: join(root, "state"),
