@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { createProductResources } from "../../application/orchestration/product-resources.ts";
 import {
   workAuthority,
+  workFields,
   workScope,
   workValue,
 } from "../../application/orchestration/work-queues.fixtures.ts";
@@ -98,5 +99,83 @@ test("registered selection, ephemeral lifetime, resumed locator and shared persi
     ).existingQueue,
   ).toBeNull();
   await reopened.close();
+  await state.close();
+});
+
+test("the registered memory location runs the same hierarchy actions", async () => {
+  const root = await temporaryRoot("falryn-queue-locations-");
+  const state = await openProductStoreOrThrow(root);
+  const clock = createSystemClock();
+  const locations = createWorkQueueLocations({
+    state,
+    stateRoot: root,
+    clock,
+    open: openBunSqlite,
+  });
+  const selected = workValue(
+    await locations.select({
+      sessionId: "session-1",
+      workspaceId: "workspace-1",
+      persistentSession: false,
+    }),
+  );
+  expect(selected.store.durability).toBe("ephemeral");
+  const actions = createWorkQueueActions(selected.store, {
+    authority: { ...workAuthority, persistentSession: false },
+    resources: createProductResources(clock).openTask("configuration-1"),
+  });
+  const send = (value: unknown) => actions.execute(JSON.stringify(value));
+  const provenance = (mutationId: string) => ({
+    mutationId,
+    source: "prompt-1",
+    sourceGeneration: "g1",
+    reason: "organize",
+  });
+  workValue(
+    await send({
+      version: 2,
+      action: "create",
+      queueId: "memory-queue",
+      objective: "Local work",
+      scope: { ...workScope, locator: "memory" },
+      ...provenance("create"),
+    }),
+  );
+  const organized = workValue(
+    await send({
+      version: 2,
+      action: "mutate",
+      queueId: "memory-queue",
+      scopeGeneration: workScope.generation,
+      expectedRevision: 1,
+      ...provenance("organize"),
+      operations: [
+        {
+          kind: "group",
+          groupId: "todo",
+          subject: "Todo",
+          parentId: null,
+          position: { at: "end" },
+        },
+        { kind: "add", itemId: "task-1", fields: workFields },
+        { kind: "place", nodeId: "task-1", parentId: "todo", position: { at: "end" } },
+      ],
+    }),
+  );
+  expect(organized.receipt?.version).toBe(2);
+  const progress = workValue(
+    await send({
+      version: 2,
+      action: "progress",
+      queueId: "memory-queue",
+      scopeGeneration: workScope.generation,
+      expectedRevision: 2,
+      groupId: "todo",
+    }),
+  ).progress;
+  expect(progress).toMatchObject({ total: 1, accepted: 0, groups: 0, state: "in-progress" });
+  const persisted = state.read("SELECT COUNT(*) AS count FROM work_groups");
+  expect(persisted.ok && persisted.value[0]?.count).toBe(0);
+  expect(await locations.close()).toBeTrue();
   await state.close();
 });

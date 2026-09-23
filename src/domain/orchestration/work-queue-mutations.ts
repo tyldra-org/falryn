@@ -112,7 +112,8 @@ export function applyWorkMutation(input: {
   budget.step();
   const found = tx.item(queue.id, op.itemId);
   if (op.kind === "add") {
-    if (found !== null) refuseWork("conflicting-identity");
+    if (found !== null || tx.group(queue.id, op.itemId) !== null)
+      refuseWork("conflicting-identity");
     if (op.fields.agentType !== null && !authority.registeredAgent(op.fields.agentType))
       refuseWork("unsupported");
     save({
@@ -138,6 +139,8 @@ export function applyWorkMutation(input: {
     });
     return;
   }
+  // Task operations never address a group: groups have no claim, criteria or completion.
+  if (found === null && tx.group(queue.id, op.itemId) !== null) refuseWork("invalid-hierarchy");
   let item = live(found);
   const finish = (next: WorkItem) =>
     save({ ...next, revision: queue.revision + 1, updatedAt: now });

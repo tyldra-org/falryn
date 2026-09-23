@@ -11,6 +11,8 @@ export const WORK_QUEUE_LIMITS = {
   responseBytes: 1_048_576,
   validationMs: 30_000,
   traversalSteps: 10_000,
+  /** Hierarchy input and traversal ceiling; a root-level node is at depth 1. */
+  depth: 32,
 } as const;
 export const workReferenceSchema = z
   .string()
@@ -120,14 +122,40 @@ export const workItemSchema = workFieldsSchema.extend({
 });
 export type WorkItem = z.infer<typeof workItemSchema>;
 export type WorkEdge = { readonly item: WorkItemId; readonly dependency: WorkItemId };
-export const workReceiptSchema = z.strictObject({
+/**
+ * A named heading that organizes tasks. It has no criteria, claim, execution or
+ * acceptance: it cannot be claimed, run, depended on or completed directly.
+ */
+export const workGroupSchema = z.strictObject({
   version: z.literal(1),
+  kind: z.literal("group"),
+  id: workItemIdSchema,
+  queueId: workQueueIdSchema,
+  revision: workRevisionSchema,
+  subject: text.min(1),
+  source: workReferenceSchema,
+  sourceGeneration: workReferenceSchema,
+  actor: workReferenceSchema,
+  deleted: z.boolean(),
+  createdAt: workRevisionSchema,
+  updatedAt: workRevisionSchema,
+});
+export type WorkGroup = z.infer<typeof workGroupSchema>;
+/**
+ * Where a node sits: a single-parent forest with ordered siblings. A task with
+ * no recorded placement is a root node ordered by its ID, which is the order
+ * flat queues always had. Order keys are opaque and store-owned.
+ */
+export type WorkPlacement = { readonly parent: WorkItemId | null; readonly order: string };
+export type WorkChild = { readonly id: WorkItemId; readonly order: string };
+const digestText = z.string().regex(/^[a-f0-9]{64}$/u);
+const receiptV1 = {
   queueId: workQueueIdSchema,
   scopeGeneration: workReferenceSchema,
   mutationId: workReferenceSchema,
-  intent: z.string().regex(/^[a-f0-9]{64}$/u),
-  queueDigest: z.string().regex(/^[a-f0-9]{64}$/u),
-  edgesDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+  intent: digestText,
+  queueDigest: digestText,
+  edgesDigest: digestText,
   previousRevision: workRevisionSchema,
   revision: workRevisionSchema,
   actor: workReferenceSchema,
@@ -135,10 +163,27 @@ export const workReceiptSchema = z.strictObject({
   sourceGeneration: workReferenceSchema,
   reason: z.string().max(512),
   at: workRevisionSchema,
-  items: z
-    .array(z.strictObject({ id: workItemIdSchema, digest: z.string().regex(/^[a-f0-9]{64}$/u) }))
-    .max(100),
-});
+  items: z.array(z.strictObject({ id: workItemIdSchema, digest: digestText })).max(100),
+};
+/**
+ * Version 1 receipts cover flat task changes. A mutation that creates or changes
+ * a group or a placement writes version 2, which also binds group records and
+ * the placement rows written at its revision.
+ */
+export const workReceiptSchema = z.discriminatedUnion("version", [
+  z.strictObject({ version: z.literal(1), ...receiptV1 }),
+  z.strictObject({
+    version: z.literal(2),
+    ...receiptV1,
+    groups: z.array(z.strictObject({ id: workItemIdSchema, digest: digestText })).max(100),
+    placementsDigest: digestText,
+    /** Groups whose derived progress may have changed; `complete` false means invalidate all. */
+    affected: z.strictObject({
+      groups: z.array(workItemIdSchema).max(64),
+      complete: z.boolean(),
+    }),
+  }),
+]);
 export type WorkReceipt = z.infer<typeof workReceiptSchema>;
 export type WorkQueueError = {
   readonly code:
@@ -150,6 +195,7 @@ export type WorkQueueError = {
     | "conflicting-revision"
     | "conflicting-identity"
     | "invalid-dependency"
+    | "invalid-hierarchy"
     | "blocked-transition"
     | "stale-evidence"
     | "stale-page"
@@ -198,6 +244,20 @@ export interface WorkQueueTransaction {
     revision?: number,
   ): readonly WorkItemId[];
   setEdge(queue: WorkQueueId, edge: WorkEdge, present: boolean): void;
+  group(queue: WorkQueueId, group: WorkItemId): WorkGroup | null;
+  putGroup(group: WorkGroup): void;
+  /** The recorded placement, or null for a task that is implicitly a root node. */
+  placement(queue: WorkQueueId, node: WorkItemId): WorkPlacement | null;
+  setPlacement(queue: WorkQueueId, node: WorkItemId, placement: WorkPlacement): void;
+  /** Ordered by opaque key then ID, including tombstoned nodes; callers skip those. */
+  children(
+    queue: WorkQueueId,
+    parent: WorkItemId | null,
+    after: WorkChild | null,
+    limit: number,
+    direction?: "forward" | "backward",
+  ): readonly WorkChild[];
+  placementsDigest(queue: WorkQueueId, revision: number): string;
   receipt(queue: WorkQueueId, mutation: string): WorkReceipt | null;
   appendReceipt(queue: WorkQueue, receipt: WorkReceipt): void;
   edgesDigest(queue: WorkQueueId, revision: number): string;

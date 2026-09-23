@@ -70,66 +70,157 @@ const provenance = {
 };
 const selection = { queueId: workQueueIdSchema, scopeGeneration: workReferenceSchema };
 const expected = { ...selection, expectedRevision: workRevisionSchema };
-export const workQueueRequestSchema = z.discriminatedUnion("action", [
+const subject = z.string().min(1).max(WORK_QUEUE_LIMITS.inlineBytes);
+const nodeId = workItemIdSchema;
+/** Siblings are addressed by ID; order keys are store-owned and never supplied. */
+export const workPositionSchema = z.discriminatedUnion("at", [
+  z.strictObject({ at: z.literal("end") }),
+  z.strictObject({ at: z.literal("before"), sibling: nodeId }),
+  z.strictObject({ at: z.literal("after"), sibling: nodeId }),
+]);
+export const workHierarchyMutationSchema = z.discriminatedUnion("kind", [
   z.strictObject({
-    version: z.literal(1),
-    action: z.literal("create"),
-    ...provenance,
-    queueId: workQueueIdSchema,
-    objective: z.string().min(1).max(16_384),
-    scope: workScopeSchema,
+    kind: z.literal("group"),
+    groupId: nodeId,
+    subject,
+    parentId: nodeId.nullable(),
+    position: workPositionSchema,
   }),
   z.strictObject({
-    version: z.literal(1),
-    action: z.literal("mutate"),
-    ...provenance,
-    ...expected,
-    operations: z.array(workMutationSchema).min(1).max(WORK_QUEUE_LIMITS.batch),
+    kind: z.literal("place"),
+    nodeId,
+    parentId: nodeId.nullable(),
+    position: workPositionSchema,
   }),
+  z.strictObject({ kind: z.literal("rename"), groupId: nodeId, subject }),
+  z.strictObject({ kind: z.literal("remove-group"), groupId: nodeId }),
   z.strictObject({
-    version: z.literal(1),
-    action: z.literal("show"),
-    ...expected,
-    itemId: workItemIdSchema,
+    kind: z.literal("remove-subtree"),
+    groupId: nodeId,
+    /** The exact node set the caller reviewed; any difference refuses the removal. */
+    reviewed: z.array(nodeId).min(1).max(WORK_QUEUE_LIMITS.batch),
   }),
-  z.strictObject({
-    version: z.literal(1),
-    action: z.literal("list"),
-    ...expected,
-    after: workReferenceSchema.nullable(),
-    limit: z.int().min(1).max(WORK_QUEUE_LIMITS.page),
-  }),
-  z.strictObject({
-    version: z.literal(1),
-    action: z.literal("edges"),
-    ...expected,
-    itemId: workItemIdSchema,
-    direction: z.enum(["dependencies", "dependents"]),
-    after: workReferenceSchema.nullable(),
-    atRevision: workRevisionSchema.optional(),
-  }),
-  z.strictObject({
-    version: z.literal(1),
-    action: z.literal("replay"),
-    ...expected,
-    atRevision: workRevisionSchema,
-    after: workReferenceSchema.nullable(),
-    limit: z.int().min(1).max(WORK_QUEUE_LIMITS.page),
-  }),
-  z.strictObject({
-    version: z.literal(1),
-    action: z.literal("history"),
-    ...expected,
-    afterRevision: workRevisionSchema,
-    limit: z.int().min(1).max(WORK_QUEUE_LIMITS.page),
-  }),
-  z.strictObject({
-    version: z.literal(1),
-    action: z.literal("receipt"),
-    ...selection,
-    mutationId: workReferenceSchema,
-  }),
-  z.strictObject({ version: z.literal(1), action: z.literal("resume") }),
+]);
+const HIERARCHY_KINDS: ReadonlySet<string> = new Set(
+  workHierarchyMutationSchema.options.map((option) => option.shape.kind.value),
+);
+export function isHierarchyMutation(
+  operation: WorkMutation | WorkHierarchyMutation,
+): operation is WorkHierarchyMutation {
+  return HIERARCHY_KINDS.has(operation.kind);
+}
+const page = { limit: z.int().min(1).max(WORK_QUEUE_LIMITS.page) };
+
+function requestSchema<const Version extends 1 | 2, Mutation extends z.ZodType>(
+  version: Version,
+  mutation: Mutation,
+) {
+  const v = { version: z.literal(version) };
+  return [
+    z.strictObject({
+      ...v,
+      action: z.literal("create"),
+      ...provenance,
+      queueId: workQueueIdSchema,
+      objective: z.string().min(1).max(16_384),
+      scope: workScopeSchema,
+    }),
+    z.strictObject({
+      ...v,
+      action: z.literal("mutate"),
+      ...provenance,
+      ...expected,
+      operations: z.array(mutation).min(1).max(WORK_QUEUE_LIMITS.batch),
+    }),
+    z.strictObject({ ...v, action: z.literal("show"), ...expected, itemId: workItemIdSchema }),
+    z.strictObject({
+      ...v,
+      action: z.literal("list"),
+      ...expected,
+      after: workReferenceSchema.nullable(),
+      ...page,
+    }),
+    z.strictObject({
+      ...v,
+      action: z.literal("edges"),
+      ...expected,
+      itemId: workItemIdSchema,
+      direction: z.enum(["dependencies", "dependents"]),
+      after: workReferenceSchema.nullable(),
+      atRevision: workRevisionSchema.optional(),
+    }),
+    z.strictObject({
+      ...v,
+      action: z.literal("replay"),
+      ...expected,
+      atRevision: workRevisionSchema,
+      after: workReferenceSchema.nullable(),
+      ...page,
+    }),
+    z.strictObject({
+      ...v,
+      action: z.literal("history"),
+      ...expected,
+      afterRevision: workRevisionSchema,
+      ...page,
+    }),
+    z.strictObject({
+      ...v,
+      action: z.literal("receipt"),
+      ...selection,
+      mutationId: workReferenceSchema,
+    }),
+    z.strictObject({ ...v, action: z.literal("resume") }),
+  ] as const;
+}
+
+/** Version 2 adds groups and placement; version 1 clients keep a task-only view. */
+export const workQueueRequestSchema = z.union([
+  z.discriminatedUnion("action", requestSchema(1, workMutationSchema)),
+  z.discriminatedUnion("action", [
+    ...requestSchema(2, z.union([workMutationSchema, workHierarchyMutationSchema])),
+    z.strictObject({ version: z.literal(2), action: z.literal("node"), ...expected, nodeId }),
+    z.strictObject({ version: z.literal(2), action: z.literal("ancestors"), ...expected, nodeId }),
+    z.strictObject({
+      version: z.literal(2),
+      action: z.literal("children"),
+      ...expected,
+      parentId: nodeId.nullable(),
+      after: nodeId.nullable(),
+      ...page,
+    }),
+    z.strictObject({
+      version: z.literal(2),
+      action: z.literal("subtree"),
+      ...expected,
+      groupId: nodeId,
+      after: nodeId.nullable(),
+      ...page,
+    }),
+    z.strictObject({
+      version: z.literal(2),
+      action: z.literal("progress"),
+      ...expected,
+      groupId: nodeId.nullable(),
+      /** Continues a partial count; omitted or null starts at the beginning. */
+      after: nodeId.nullable().optional(),
+    }),
+    z.strictObject({
+      version: z.literal(2),
+      action: z.literal("expand"),
+      ...expected,
+      groups: z.array(nodeId).max(256),
+      tasks: z.array(nodeId).max(256),
+    }),
+    z.strictObject({
+      version: z.literal(2),
+      action: z.literal("removal-plan"),
+      ...expected,
+      groupId: nodeId,
+    }),
+  ]),
 ]);
 export type WorkMutation = z.infer<typeof workMutationSchema>;
+export type WorkHierarchyMutation = z.infer<typeof workHierarchyMutationSchema>;
+export type WorkPosition = z.infer<typeof workPositionSchema>;
 export type WorkQueueRequest = z.infer<typeof workQueueRequestSchema>;

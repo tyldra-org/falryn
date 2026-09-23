@@ -18,13 +18,17 @@ import { canonicalResourceValue } from "../../domain/orchestration/resource-admi
 import {
   refuseWork,
   WORK_QUEUE_LIMITS,
+  type WorkChild,
+  type WorkGroup,
   type WorkItem,
+  type WorkPlacement,
   type WorkQueueId,
   WorkQueueRefusal,
   type WorkQueueStore,
   type WorkQueueTransaction,
   type WorkReceipt,
   type WorkResult,
+  workGroupSchema,
   workItemIdSchema,
   workItemSchema,
   workQueueIdSchema,
@@ -90,6 +94,29 @@ export function createSqliteWorkQueueStore(
         if (rows.length < 100) return hash.digest("hex");
       }
     };
+    const placementsDigest = (queue: WorkQueueId, revision: number) => {
+      const hash = createHash("sha256");
+      let after = "",
+        count = 0;
+      for (;;) {
+        const rows = sql.all(
+          "SELECT node_id,parent_id,order_key FROM work_placement_versions WHERE queue_id=$queue AND revision=$revision AND node_id>$after ORDER BY node_id LIMIT 100",
+          { queue, revision, after },
+        );
+        for (const row of rows) {
+          if (
+            ++count > WORK_QUEUE_LIMITS.traversalSteps ||
+            typeof row.node_id !== "string" ||
+            (row.parent_id !== null && typeof row.parent_id !== "string") ||
+            typeof row.order_key !== "string"
+          )
+            refuseWork("corrupt");
+          hash.update(JSON.stringify([row.node_id, row.parent_id, row.order_key]));
+          after = row.node_id;
+        }
+        if (rows.length < 100) return hash.digest("hex");
+      }
+    };
     const itemKey = (queue: WorkQueueId, item: string) => JSON.stringify([queue, item]);
     const readReceipt = (row: SqliteRow | undefined): WorkReceipt | null => {
       const receipt = decode(row, workReceiptSchema, 65_536);
@@ -132,6 +159,11 @@ export function createSqliteWorkQueueStore(
         refuseWork("corrupt");
       if (edgesDigest(receipt.queueId, receipt.revision) !== receipt.edgesDigest)
         refuseWork("corrupt");
+      if (
+        receipt.version === 2 &&
+        placementsDigest(receipt.queueId, receipt.revision) !== receipt.placementsDigest
+      )
+        refuseWork("corrupt");
       if (verified.size >= 100) verified.clear();
       verified.set(key, receipt);
       return receipt;
@@ -157,8 +189,129 @@ export function createSqliteWorkQueueStore(
       }
       return item;
     };
+    const readGroup = (row: SqliteRow | undefined): WorkGroup | null => {
+      const group = decode(row, workGroupSchema, WORK_QUEUE_LIMITS.recordBytes);
+      if (group === null) return null;
+      if (
+        row?.queue_id !== group.queueId ||
+        row.group_id !== group.id ||
+        row.revision !== group.revision
+      )
+        refuseWork("corrupt");
+      if (!pending.has(itemKey(group.queueId, `group:${group.id}`))) {
+        const receipt = readReceipt(
+          sql.all("SELECT * FROM work_mutations WHERE queue_id=$queue AND revision=$revision", {
+            queue: group.queueId,
+            revision: group.revision,
+          })[0],
+        );
+        if (
+          receipt?.version !== 2 ||
+          !receipt.groups.some((entry) => entry.id === group.id && entry.digest === digest(group))
+        )
+          refuseWork("corrupt");
+      }
+      return group;
+    };
+    const placementRow = (row: SqliteRow | undefined): WorkPlacement | null => {
+      if (row === undefined) return null;
+      const parent = row.parent_id === null ? null : workItemIdSchema.safeParse(row.parent_id);
+      if (
+        (parent !== null && !parent.success) ||
+        typeof row.order_key !== "string" ||
+        row.order_key.length === 0 ||
+        row.order_key.length > 128
+      )
+        refuseWork("corrupt");
+      return { parent: parent === null ? null : parent.data, order: row.order_key };
+    };
+    const childRow = (row: SqliteRow): WorkChild => {
+      const id = workItemIdSchema.safeParse(row.id);
+      if (!id.success || typeof row.ord !== "string") refuseWork("corrupt");
+      return { id: id.data, order: row.ord };
+    };
     return {
       edgesDigest,
+      placementsDigest,
+      group: (queue, id) =>
+        readGroup(
+          sql.all("SELECT * FROM work_groups WHERE queue_id=$queue AND group_id=$id", {
+            queue,
+            id,
+          })[0],
+        ),
+      putGroup(group) {
+        if (!workGroupSchema.safeParse(group).success) refuseWork("malformed");
+        const binding = {
+          queue: group.queueId,
+          id: group.id,
+          revision: group.revision,
+          record: JSON.stringify(group),
+          digest: digest(group),
+        };
+        sql.run(
+          "INSERT INTO work_groups(queue_id,group_id,revision,record,digest) VALUES($queue,$id,$revision,$record,$digest) ON CONFLICT(queue_id,group_id) DO UPDATE SET revision=excluded.revision,record=excluded.record,digest=excluded.digest",
+          binding,
+        );
+        sql.run(
+          "INSERT INTO work_group_versions(queue_id,group_id,revision,record,digest) VALUES($queue,$id,$revision,$record,$digest) ON CONFLICT(queue_id,group_id,revision) DO UPDATE SET record=excluded.record,digest=excluded.digest",
+          binding,
+        );
+        pending.add(itemKey(group.queueId, `group:${group.id}`));
+      },
+      placement(queue, node) {
+        const current = placementRow(
+          sql.all(
+            "SELECT parent_id,order_key FROM work_placements WHERE queue_id=$queue AND node_id=$node",
+            {
+              queue,
+              node,
+            },
+          )[0],
+        );
+        const latest = placementRow(
+          sql.all(
+            "SELECT parent_id,order_key FROM work_placement_versions WHERE queue_id=$queue AND node_id=$node ORDER BY revision DESC LIMIT 1",
+            { queue, node },
+          )[0],
+        );
+        // The current row must be the latest recorded version; anything else was edited outside a mutation.
+        if (JSON.stringify(current) !== JSON.stringify(latest)) refuseWork("corrupt");
+        return current;
+      },
+      setPlacement(queue, node, placement) {
+        const row = sql.all("SELECT revision FROM work_queues WHERE queue_id=$queue", { queue })[0];
+        if (typeof row?.revision !== "number") refuseWork("corrupt");
+        const binding = { queue, node, parent: placement.parent, order: placement.order };
+        sql.run(
+          "INSERT INTO work_placements(queue_id,node_id,parent_id,order_key) VALUES($queue,$node,$parent,$order) ON CONFLICT(queue_id,node_id) DO UPDATE SET parent_id=excluded.parent_id,order_key=excluded.order_key",
+          binding,
+        );
+        sql.run(
+          "INSERT INTO work_placement_versions(queue_id,node_id,revision,parent_id,order_key) VALUES($queue,$node,$revision,$parent,$order) ON CONFLICT(queue_id,node_id,revision) DO UPDATE SET parent_id=excluded.parent_id,order_key=excluded.order_key",
+          { ...binding, revision: row.revision + 1 },
+        );
+      },
+      children(queue, parent, after, limit, direction = "forward") {
+        const forward = direction === "forward";
+        const source =
+          parent === null
+            ? "SELECT node_id AS id, order_key AS ord FROM work_placements WHERE queue_id=$queue AND parent_id IS NULL UNION ALL SELECT i.item_id AS id, i.item_id AS ord FROM work_items i WHERE i.queue_id=$queue AND NOT EXISTS (SELECT 1 FROM work_placements p WHERE p.queue_id=i.queue_id AND p.node_id=i.item_id)"
+            : "SELECT node_id AS id, order_key AS ord FROM work_placements WHERE queue_id=$queue AND parent_id=$parent";
+        const bound =
+          after === null ? "" : forward ? "WHERE (ord,id)>($ord,$id)" : "WHERE (ord,id)<($ord,$id)";
+        return sql
+          .all(
+            `SELECT id,ord FROM (${source}) ${bound} ORDER BY ord ${forward ? "ASC" : "DESC"}, id ${forward ? "ASC" : "DESC"} LIMIT $limit`,
+            {
+              queue,
+              ...(parent === null ? {} : { parent }),
+              ...(after === null ? {} : { ord: after.order, id: after.id }),
+              limit: Math.min(limit, WORK_QUEUE_LIMITS.page),
+            },
+          )
+          .map(childRow);
+      },
       queueAt(id, revision) {
         const current = this.queue(id);
         if (current === null || revision < 1 || revision > current.revision) return null;

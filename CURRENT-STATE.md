@@ -2115,6 +2115,52 @@ Deleted prerequisites leave dependent criteria unresolved. Tombstones and revisi
 history preserve identity and evidence; explicit content erasure remains with the
 existing retention owner. Rejected batches return their original source handle.
 
+Version 2 requests add named groups. A queue is a single-parent forest: groups
+contain groups or tasks, tasks are leaves, and siblings are ordered by
+store-owned keys addressed by `before`, `after` or `end`. Groups have no
+criteria, claim, execution or acceptance, so they can't be claimed, run,
+depended on or completed. Task operations and dependency edges refuse group IDs.
+Placement is a separate relation from dependencies. Moving or renaming never
+changes a claim, criteria, executor or frozen workflow selection. Maximum depth
+is 32, with a root-level node at depth 1. A move that would form a cycle is
+refused. Removing a group with live children is refused unless the same batch
+moves them. Subtree removal needs the exact reviewed node set. Larger subtrees
+use `removal-plan`, which returns explicit batches deepest-first; each committed
+batch keeps its receipt.
+
+`progress` counts each live descendant task once, never groups. It returns
+accepted/total, a disposition partition that uses the pre-archive disposition
+for archived tasks, a separate archived count, and `empty`, `in-progress` or
+`all-completed`. `all-completed` requires at least one task, all accepted.
+When `progress` reaches its traversal bound, it returns what it counted as
+`partial` with a pre-order `next` cursor. Pages at one revision sum to the exact
+counts, a changed revision refuses them as stale, and a partial page never
+reports `empty` or `all-completed`. `node`, `ancestors`, `children` and
+`subtree` queries also page at one revision.
+
+Migration 0031 adds group and placement tables. An existing task with no
+placement row is a root node ordered by its ID, which is the order flat lists
+already had. No task record is rewritten, flat mutations keep writing version 1
+receipts, and version 1 clients see tasks only. A mutation that creates or
+changes a group or placement writes a version 2 receipt. That receipt binds the
+group records, a digest of the placement rows at its revision, and up to 64
+affected group IDs, with `complete` false beyond that. Edited group or placement
+rows read as corruption. A live node under a missing parent is a recovery
+condition, never silently reparented. An older build refuses the migrated
+database as `schema-too-new`.
+
+Committed mutations report `task-created` and `task-accepted` facts with stable
+ID, revision and provenance. An optional observer receives them after the
+storage transaction; its failure never changes the commit, and a replayed
+receipt does not call it again. `prepareTaskListWorkflow` accepts `groups` and
+expands them once at the queue's revision into a unique task manifest. Accepted,
+including archived-completed, and cancelled, archived, blocked or unavailable
+tasks are reported, never launched. The expansion revision, groups and
+exclusions are frozen in the workflow selection. A changed queue is refused as
+stale, and an empty, over-256 or over-limit graph selection is refused before
+any launch with a recoverable handle. Command, model, TUI and scheduled
+registration remain with their owners.
+
 ## Captured background tasks
 
 `run_process` and `run_shell` accept an optional strict version-1 `execution`

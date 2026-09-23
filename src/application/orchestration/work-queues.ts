@@ -4,9 +4,24 @@ import { err } from "../../domain/foundation/result.ts";
 import { canonicalResourceValue } from "../../domain/orchestration/resource-admission.ts";
 import { conflictKey, NO_RETRY, workUnitId } from "../../domain/orchestration/work.ts";
 import {
+  ancestorsOf,
+  applyHierarchyMutation,
+  expandWorkSelection,
+  liveChildren,
+  nextInSubtree,
+  placementOf,
+  removalPlan,
+  type WorkNode,
+  type WorkProgress,
+  workNode,
+  workProgress,
+} from "../../domain/orchestration/work-hierarchy.ts";
+import {
   refuseWork,
   WORK_QUEUE_LIMITS,
+  type WorkGroup,
   type WorkItem,
+  type WorkItemId,
   type WorkQueue,
   type WorkQueueAuthority,
   type WorkQueueStore,
@@ -19,6 +34,7 @@ import {
   validateWorkItem,
 } from "../../domain/orchestration/work-queue-mutations.ts";
 import {
+  isHierarchyMutation,
   type WorkQueueRequest,
   workQueueRequestSchema,
 } from "../../domain/orchestration/work-queue-requests.ts";
@@ -28,15 +44,48 @@ import type { ProductTaskResources } from "./product-resources.ts";
 export const workDigest = (value: unknown) =>
   createHash("sha256").update(canonicalResourceValue(value)).digest("hex");
 const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
+/** A hierarchy node as a version 2 client sees it; order keys stay inside the store. */
+export type WorkNodeView =
+  | { readonly kind: "task"; readonly parentId: WorkItemId | null; readonly item: WorkItem }
+  | { readonly kind: "group"; readonly parentId: WorkItemId | null; readonly group: WorkGroup };
+/**
+ * Committed task lifecycle facts for observers such as hooks. Group changes and
+ * executor termination are never task acceptance.
+ */
+export type WorkTaskFact = {
+  readonly kind: "task-created" | "task-accepted";
+  readonly node: "task";
+  readonly id: WorkItemId;
+  readonly queueId: WorkQueue["id"];
+  readonly revision: number;
+  readonly mutationId: string;
+  readonly actor: string;
+  readonly source: string;
+  readonly sourceGeneration: string;
+};
 export type WorkQueueResponse = {
   readonly queue: WorkQueue | null;
   readonly durability: "ephemeral" | "durable";
   readonly receipt?: WorkReceipt;
   readonly items?: readonly WorkItem[];
+  readonly nodes?: readonly WorkNodeView[];
+  readonly progress?: WorkProgress;
+  readonly manifest?: ReturnType<typeof expandWorkSelection>;
+  readonly plan?: ReturnType<typeof removalPlan>;
   readonly edges?: readonly string[];
   readonly history?: readonly WorkReceipt[];
   readonly next?: string | number | null;
+  /** Present only on the commit that produced them; a replayed receipt carries none. */
+  readonly facts?: readonly WorkTaskFact[];
+  readonly observer?: "delivered" | "failed";
 };
+function viewOf(tx: WorkQueueTransaction, queue: WorkQueue, node: WorkNode): WorkNodeView {
+  const id = node.kind === "task" ? node.item.id : node.group.id;
+  const parentId = placementOf(tx, queue, id).parent;
+  return node.kind === "task"
+    ? { kind: "task", parentId, item: node.item }
+    : { kind: "group", parentId, group: node.group };
+}
 
 function hasSecret(value: unknown): boolean {
   if (typeof value === "string") return containsRedactableSecret(value);
@@ -62,6 +111,12 @@ export function createWorkQueueActions(
     readonly now?: () => number;
     readonly validationMs?: number;
     readonly traversalSteps?: number;
+    /**
+     * Called after a commit, outside the storage transaction, with that commit's
+     * task facts. Its failure never changes the committed mutation, and replayed
+     * receipts never call it again.
+     */
+    readonly observe?: (facts: readonly WorkTaskFact[]) => void | Promise<void>;
   },
 ) {
   const now = options.now ?? Date.now;
@@ -170,14 +225,51 @@ export function createWorkQueueActions(
       if (queue.revision >= Number.MAX_SAFE_INTEGER - 2)
         refuseWork("resource-exhausted", { dimension: "storage" });
       const changed = new Map<string, { id: WorkItem["id"]; digest: string }>();
+      const groups = new Map<string, { id: WorkItem["id"]; digest: string }>();
+      const before = new Map<string, WorkItem | null>();
+      const affected = new Set<WorkItemId>();
+      let placed = false;
       const at = Math.max(now(), queue.updatedAt);
       const save = (item: WorkItem) => {
         budget.check();
         validateWorkItem(item);
+        if (!before.has(item.id)) before.set(item.id, tx.item(item.queueId, item.id));
         changed.set(item.id, { id: item.id, digest: workDigest(item) });
         if (changed.size > WORK_QUEUE_LIMITS.batch)
           refuseWork("resource-exhausted", { dimension: "validation", incomplete: true });
         tx.putItem(item);
+      };
+      const current = queue;
+      const effects = {
+        saveGroup(group: WorkGroup) {
+          budget.check();
+          if (bytes(group) > WORK_QUEUE_LIMITS.recordBytes)
+            refuseWork("resource-exhausted", { dimension: "inlineBytes" });
+          groups.set(group.id, { id: group.id, digest: workDigest(group) });
+          affected.add(group.id);
+          if (groups.size > WORK_QUEUE_LIMITS.batch)
+            refuseWork("resource-exhausted", { dimension: "validation", incomplete: true });
+          tx.putGroup(group);
+        },
+        place(node: WorkItemId, placement: { parent: WorkItemId | null; order: string }) {
+          budget.step();
+          placed = true;
+          tx.setPlacement(current.id, node, placement);
+        },
+        affect(ids: readonly WorkItemId[]) {
+          for (const id of ids) affected.add(id);
+        },
+        deleteTask(itemId: WorkItemId) {
+          applyWorkMutation({
+            tx,
+            queue: current,
+            operation: { kind: "delete", itemId },
+            authority,
+            budget,
+            now: at,
+            save,
+          });
+        },
       };
       if (request.action === "create") {
         tx.putQueue(queue);
@@ -187,13 +279,39 @@ export function createWorkQueueActions(
         )
           tx.bind(queue.scope.sessionId, queue.scope.workspaceId, queue.id);
       } else
-        for (const operation of request.operations)
-          applyWorkMutation({ tx, queue, operation, authority, budget, now: at, save });
+        for (const operation of request.operations) {
+          if (isHierarchyMutation(operation))
+            applyHierarchyMutation({
+              tx,
+              queue,
+              operation,
+              actor: authority.actor,
+              source: request.source,
+              sourceGeneration: request.sourceGeneration,
+              budget,
+              now: at,
+              effects,
+            });
+          else applyWorkMutation({ tx, queue, operation, authority, budget, now: at, save });
+        }
       budget.check();
+      const hierarchical = placed || groups.size > 0;
+      // Derived progress of every group above a changed task may change too.
+      if (hierarchical)
+        for (const id of changed.keys()) {
+          // An invalidation hint, not a validation: stop at a parent removed in this batch.
+          let parent = tx.placement(queue.id, id as WorkItemId)?.parent ?? null;
+          while (parent !== null && !affected.has(parent)) {
+            budget.step();
+            const group = tx.group(queue.id, parent);
+            if (group === null || group.deleted) break;
+            affected.add(parent);
+            parent = tx.placement(queue.id, parent)?.parent ?? null;
+          }
+        }
       authorize(queue, "mutate");
       const updated = { ...queue, revision: queue.revision + 1, updatedAt: at };
-      const receipt: WorkReceipt = {
-        version: 1,
+      const common = {
         queueId: queue.id,
         scopeGeneration: queue.scope.generation,
         mutationId: request.mutationId,
@@ -210,9 +328,45 @@ export function createWorkQueueActions(
         items: [...changed.values()],
       };
       tx.putQueue(updated);
+      const liveGroups = [...affected].filter((id) => {
+        const group = tx.group(current.id, id);
+        return group !== null;
+      });
+      const receipt: WorkReceipt = hierarchical
+        ? {
+            version: 2,
+            ...common,
+            groups: [...groups.values()],
+            placementsDigest: tx.placementsDigest(queue.id, updated.revision),
+            affected: {
+              // Bounded so a full batch still fits one receipt row.
+              groups: liveGroups.slice(0, 64),
+              complete: liveGroups.length <= 64,
+            },
+          }
+        : { version: 1, ...common };
       tx.appendReceipt(updated, receipt);
       budget.check();
-      return { queue: updated, durability: store.durability, receipt };
+      const facts: WorkTaskFact[] = [];
+      for (const [id] of changed) {
+        const prior = before.get(id) ?? null;
+        const next = tx.item(queue.id, id as WorkItemId);
+        if (next === null) continue;
+        const fact = {
+          node: "task" as const,
+          id: next.id,
+          queueId: queue.id,
+          revision: updated.revision,
+          mutationId: request.mutationId,
+          actor: authority.actor,
+          source: request.source,
+          sourceGeneration: request.sourceGeneration,
+        };
+        if (prior === null) facts.push({ kind: "task-created", ...fact });
+        if (next.disposition === "completed" && prior?.disposition !== "completed")
+          facts.push({ kind: "task-accepted", ...fact });
+      }
+      return { queue: updated, durability: store.durability, receipt, facts };
     }
     if (request.action === "receipt") {
       const receipt = tx.receipt(queue.id, request.mutationId);
@@ -220,9 +374,104 @@ export function createWorkQueueActions(
       return { queue, durability: store.durability, receipt };
     }
     if (request.expectedRevision !== queue.revision)
-      refuseWork(request.action === "show" ? "conflicting-revision" : "stale-page", {
-        currentRevision: queue.revision,
-      });
+      refuseWork(
+        ["show", "node"].includes(request.action) ? "conflicting-revision" : "stale-page",
+        {
+          currentRevision: queue.revision,
+        },
+      );
+    const pinned: WorkQueue = queue;
+    if (request.action === "node" || request.action === "ancestors") {
+      const node = workNode(tx, pinned, request.nodeId);
+      if (node === null) refuseWork("unavailable");
+      if (request.action === "node")
+        return { queue: pinned, durability: store.durability, nodes: [viewOf(tx, pinned, node)] };
+      const nodes = ancestorsOf(tx, pinned, request.nodeId, budget)
+        .reverse()
+        .map((id) => {
+          const group = workNode(tx, pinned, id);
+          if (group === null) refuseWork("corrupt");
+          return viewOf(tx, pinned, group);
+        });
+      return { queue: pinned, durability: store.durability, nodes };
+    }
+    if (request.action === "children" || request.action === "subtree") {
+      const nodes: WorkNodeView[] = [];
+      let size = bytes(pinned) + 256;
+      let more = false;
+      const push = (node: WorkNode) => {
+        const view = viewOf(tx, pinned, node);
+        const length = bytes(view);
+        if (nodes.length >= request.limit || size + length > WORK_QUEUE_LIMITS.responseBytes)
+          return false;
+        nodes.push(view);
+        size += length;
+        return true;
+      };
+      if (request.action === "children") {
+        if (request.parentId !== null) {
+          const parent = workNode(tx, pinned, request.parentId);
+          if (parent === null || parent.kind !== "group" || parent.group.deleted)
+            refuseWork(parent?.kind === "task" ? "invalid-hierarchy" : "unavailable");
+        }
+        let after = null;
+        if (request.after !== null) {
+          const placement = placementOf(tx, pinned, request.after);
+          if (placement.parent !== request.parentId) refuseWork("stale-page");
+          after = { id: request.after, order: placement.order };
+        }
+        for (const child of liveChildren(tx, pinned, request.parentId, budget, after))
+          if (!push(child.node)) {
+            more = true;
+            break;
+          }
+      } else {
+        const root = workNode(tx, pinned, request.groupId);
+        if (root === null || root.kind !== "group" || root.group.deleted)
+          refuseWork(root?.kind === "task" ? "invalid-hierarchy" : "unavailable");
+        if (
+          request.after !== null &&
+          !ancestorsOf(tx, pinned, request.after, budget).includes(request.groupId)
+        )
+          refuseWork("stale-page");
+        let cursor = request.after;
+        for (;;) {
+          const next = nextInSubtree(tx, pinned, request.groupId, cursor, budget);
+          if (next === null) break;
+          if (!push(next.node)) {
+            more = true;
+            break;
+          }
+          cursor = next.id;
+        }
+      }
+      const last = nodes.at(-1);
+      return {
+        queue: pinned,
+        durability: store.durability,
+        nodes,
+        next:
+          more && last !== undefined ? (last.kind === "task" ? last.item.id : last.group.id) : null,
+      };
+    }
+    if (request.action === "progress")
+      return {
+        queue: pinned,
+        durability: store.durability,
+        progress: workProgress(tx, pinned, request.groupId, budget, request.after ?? null),
+      };
+    if (request.action === "expand")
+      return {
+        queue: pinned,
+        durability: store.durability,
+        manifest: expandWorkSelection(tx, pinned, request, budget),
+      };
+    if (request.action === "removal-plan")
+      return {
+        queue: pinned,
+        durability: store.durability,
+        plan: removalPlan(tx, pinned, request.groupId, budget),
+      };
     if (request.action === "show") {
       const item = tx.item(queue.id, request.itemId);
       if (item === null) refuseWork("unavailable");
@@ -312,7 +561,11 @@ export function createWorkQueueActions(
       if (!parsed.success)
         return err({
           code:
-            typeof raw === "object" && raw !== null && "version" in raw && raw.version !== 1
+            typeof raw === "object" &&
+            raw !== null &&
+            "version" in raw &&
+            raw.version !== 1 &&
+            raw.version !== 2
               ? "unsupported"
               : "malformed",
         });
@@ -370,7 +623,18 @@ export function createWorkQueueActions(
           };
         },
       });
-      const result = execution.kind === "completed" ? execution.value : observed.value;
+      let result = execution.kind === "completed" ? execution.value : observed.value;
+      const facts = result?.ok ? result.value.facts : undefined;
+      if (result?.ok && facts !== undefined && facts.length > 0 && options.observe) {
+        // Outside the storage transaction: observers see committed facts and cannot undo them.
+        let observer: "delivered" | "failed" = "delivered";
+        try {
+          await options.observe(facts);
+        } catch {
+          observer = "failed";
+        }
+        result = { ok: true, value: { ...result.value, observer } };
+      }
       if (
         result !== undefined &&
         !result.ok &&

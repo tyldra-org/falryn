@@ -148,7 +148,7 @@ test("stale holder cannot complete reassigned work, and cancellation is not reve
 });
 test("unknown codecs, missing original sources and meaning changes reject old completion proof", async () => {
   const f = await workFixture();
-  expect(workCode(await f.send({ version: 2, action: "resume" }))).toBe("unsupported");
+  expect(workCode(await f.send({ version: 3, action: "resume" }))).toBe("unsupported");
   expect(
     workCode(
       await actionsFor(f.store, { sourceAvailable: () => false }).execute(
