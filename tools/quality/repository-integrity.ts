@@ -34,14 +34,14 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "@anthropic-ai/sdk",
     group: "dependencies",
-    version: "0.125.0",
+    version: "0.127.0",
     license: "MIT",
     repository: "github:anthropics/anthropic-sdk-typescript",
   },
   {
     name: "@google/genai",
     group: "dependencies",
-    version: "2.22.0",
+    version: "2.23.0",
     license: "Apache-2.0",
     repository: "https://github.com/googleapis/js-genai",
     installLifecycleHooks: { preinstall: "echo 'preinstall: no-op'" },
@@ -77,7 +77,7 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "openai",
     group: "dependencies",
-    version: "7.15.0",
+    version: "7.20.0",
     license: "Apache-2.0",
     repository: "github:openai/openai-node",
   },
@@ -119,7 +119,7 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "zod",
     group: "dependencies",
-    version: "4.6.2",
+    version: "4.6.5",
     license: "MIT",
     repository: "https://github.com/colinhacks/zod",
   },

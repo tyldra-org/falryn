@@ -60,18 +60,18 @@
     "typescript": "7.0.2"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "0.125.0",
-    "@google/genai": "2.22.0",
+    "@anthropic-ai/sdk": "0.127.0",
+    "@google/genai": "2.23.0",
     "@modelcontextprotocol/client": "2.0.0",
     "@opentui/core": "0.5.11",
     "@opentui/keymap": "0.5.11",
     "@opentui/react": "0.5.11",
     "jsonc-parser": "3.3.1",
-    "openai": "7.15.0",
+    "openai": "7.20.0",
     "react": "19.3.0",
     "semver": "7.8.5",
     "yaml": "2.9.1",
     "yargs": "18.1.0",
-    "zod": "4.6.2"
+    "zod": "4.6.5"
   }
 }
