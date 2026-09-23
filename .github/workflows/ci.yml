@@ -31,7 +31,6 @@ jobs:
 
   lint:
     name: Lint and import organization
-    needs: format
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -47,7 +46,6 @@ jobs:
 
   typecheck:
     name: TypeScript
-    needs: lint
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -63,7 +61,6 @@ jobs:
 
   dependency-integrity:
     name: Dependency integrity
-    needs: typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -79,7 +76,6 @@ jobs:
 
   dependency-audit:
     name: Dependency advisory audit
-    needs: dependency-integrity
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
@@ -93,26 +89,61 @@ jobs:
       - name: Audit installed dependencies for known vulnerabilities
         run: bun audit
 
-  platform-test:
-    name: Platform tests (${{ matrix.name }})
+  # The complete source suite is split into balanced shards per host. Bun's
+  # --shard assigns files by the recorded durations in .github/test-timings.json
+  # (refresh with `bun run test:timings`); a file missing from it still runs.
+  # The gate jobs below keep the required check names stable.
+  platform-test-ubuntu:
+    name: Platform tests shard (Ubuntu latest x64, ${{ matrix.shard }}/3)
     needs:
       - typecheck
       - dependency-integrity
-    runs-on: ${{ matrix.runner }}
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: Ubuntu latest x64
-            runner: ubuntu-latest
-            command: bun run test
-          - name: macOS latest arm64
-            runner: macos-latest
-            command: bun run test
-          - name: Windows latest x64
-            runner: windows-latest
-            command: bun run test:platform-baseline
+        shard: [1, 2, 3]
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
+
+      - name: Run this shard of the source suite
+        run: bun test --shard=${{ matrix.shard }}/3 --timings=.github/test-timings.json
+
+  platform-test-macos:
+    name: Platform tests shard (macOS latest arm64, ${{ matrix.shard }}/3)
+    needs:
+      - typecheck
+      - dependency-integrity
+    runs-on: macos-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
+
+      - name: Run this shard of the source suite
+        run: bun test --shard=${{ matrix.shard }}/3 --timings=.github/test-timings.json
+
+  platform-test-windows:
+    name: Platform tests (Windows latest x64)
+    needs:
+      - typecheck
+      - dependency-integrity
+    runs-on: windows-latest
+    timeout-minutes: 20
 
     steps:
       - name: Check out the reviewed revision
@@ -122,7 +153,32 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Run the platform test command
-        run: ${{ matrix.command }}
+        run: bun run test:platform-baseline
+
+  # Required-check gates. They always run, so a skipped or failed shard (for
+  # example after a failed typecheck) fails the required check instead of
+  # leaving it pending or passing.
+  platform-test-ubuntu-gate:
+    name: Platform tests (Ubuntu latest x64)
+    needs: platform-test-ubuntu
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require every Ubuntu shard to pass
+        run: test "${{ needs.platform-test-ubuntu.result }}" = success
+
+  platform-test-macos-gate:
+    name: Platform tests (macOS latest arm64)
+    needs: platform-test-macos
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require every macOS shard to pass
+        run: test "${{ needs.platform-test-macos.result }}" = success
 
   ubuntu-x64-compiled-smoke:
     name: Ubuntu x64 compiled smoke

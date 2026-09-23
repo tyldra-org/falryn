@@ -88,10 +88,12 @@ bypass actors, so a check that flakes is a merge nobody can unblock.
 
 ## `ci.yml`
 
-Static gates run first and in order, because each one makes the next one's
-failure easier to read: `format` → `lint` → `typecheck` → `dependency-integrity`.
-Everything after that fans out in parallel from `typecheck` and
-`dependency-integrity`.
+The static gates (`format`, `lint`, `typecheck`, `dependency-integrity`,
+`dependency-audit`) run side by side. They used to run in a chain so each failure
+read in order, but the chain added about a minute of runner setup to every run,
+and parallel jobs still report each failure under its own name. The platform
+suites and compiled smokes wait only for `typecheck` and `dependency-integrity`,
+so no macOS runner builds or tests a revision that does not typecheck.
 
 | Job | Runner | What it establishes |
 | --- | --- | --- |
@@ -100,10 +102,29 @@ Everything after that fans out in parallel from `typecheck` and
 | `typecheck` | `ubuntu-latest` | `tsc --noEmit` under the strict configuration |
 | `dependency-integrity` | `ubuntu-latest` | direct-dependency admission and generated-output ownership |
 | `dependency-audit` | `ubuntu-latest` | `bun audit` against installed packages |
-| `platform-test` | all three | the source suite, per host |
+| `platform-test-ubuntu`, `platform-test-macos` | Ubuntu, macOS | the complete source suite, in three balanced shards per host |
+| `platform-test-windows` | `windows-latest` | the Windows platform baseline |
+| `platform-test-*-gate` | `ubuntu-latest` | the required `Platform tests (…)` check for each sharded host |
 | `ubuntu-x64-compiled-smoke` | `ubuntu-latest` | the compiled CLI runs on Linux x64 |
 | `macos-arm64-compiled-smoke` | `macos-latest` | the compiled CLI **and** a real pseudo-terminal on darwin arm64 |
 | `windows-x64-compiled-smoke` | `windows-latest` | the compiled CLI runs on win32 x64 |
+
+### Sharded source suites
+
+The full suite on one macOS runner took about eight minutes and was the slowest
+part of every run. Ubuntu and macOS now split it with Bun's `--shard=i/3`.
+`--timings=.github/test-timings.json` balances the shards by recorded per-file
+durations instead of file count. A file missing from that record still runs in
+some shard; a stale record only unbalances the shards. Refresh it with
+`bun run test:timings` after adding or substantially changing slow suites, and
+commit the result with that change.
+
+Each shard runs its files serially, exactly as the unsharded job did, so a
+timing-sensitive test sees the same load as before. The two gate jobs carry the
+original required check names, `Platform tests (Ubuntu latest x64)` and
+`Platform tests (macOS latest arm64)`. They run even when a shard is skipped or
+fails, and pass only when every shard of that host passed, so branch rules need
+no change.
 
 ### What each platform actually qualifies
 
