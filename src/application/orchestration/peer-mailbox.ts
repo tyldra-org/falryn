@@ -10,6 +10,9 @@ import {
   type MailboxRepository,
   mailboxReceiptSchema,
   messageKey,
+  PEER_FAILURE_CODES,
+  PEER_ROUTE_REASONS,
+  PEER_ROUTE_RIGHTS,
   type PeerEndpoint,
   type PeerIdentity,
   type PeerLease,
@@ -17,6 +20,7 @@ import {
   type PeerNotice,
   type PeerPolicy,
   type PeerResult,
+  type PeerRouteProof,
   type PeerScope,
   peerIdentitySchema,
   peerMessageSchema,
@@ -46,15 +50,29 @@ const outerSchema = z.strictObject({
   processGeneration: z.string().min(1).max(160),
   sealed: z.string().max(525_000),
 });
-const requestSchema = z.strictObject({
-  version: z.literal(1),
+const requestFields = {
   recipient: peerIdentitySchema,
   processGeneration: z.string().min(1).max(160),
   requestId: z.string().uuid(),
   expiresAt: z.number().int().nonnegative(),
   capability: z.string().length(43).nullable(),
   operation: operationSchema,
-});
+};
+/**
+ * Version 1 is the delivered same-scope request. Version 2 adds the exact route
+ * grant a cross-scope sender checked; it is separate from the envelope scope.
+ */
+const requestSchema = z.discriminatedUnion("version", [
+  z.strictObject({ version: z.literal(1), ...requestFields }),
+  z.strictObject({
+    version: z.literal(2),
+    ...requestFields,
+    route: z.strictObject({
+      id: z.string().regex(/^sha256:[a-f0-9]{64}$/u),
+      revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+    }),
+  }),
+]);
 type Operation = z.infer<typeof operationSchema>;
 
 export async function openPeerMailbox(options: {
@@ -234,7 +252,20 @@ export async function openPeerMailbox(options: {
     const verified = crypto.decrypt(sender.value.publicKey, outer.data.sealed);
     if (!verified.ok) return verified;
     const parsed = requestSchema.safeParse(verified.value);
-    if (!parsed.success) return err({ code: "invalid" });
+    if (!parsed.success) {
+      // A newer request version is refused visibly, never parsed as a weaker one.
+      const unknown = z
+        .looseObject({ version: z.number().int().min(3), requestId: z.string().uuid() })
+        .safeParse(verified.value);
+      return unknown.success
+        ? {
+            sealed: crypto.seal(sender.value.publicKey, {
+              requestId: unknown.data.requestId,
+              result: err({ code: "unsupported" }),
+            }),
+          }
+        : err({ code: "invalid" });
+    }
     const request = parsed.data;
     const respond = (result: PeerResult<unknown>) => ({
       sealed: crypto.seal(sender.value.publicKey, { requestId: request.requestId, result }),
@@ -303,7 +334,12 @@ export async function openPeerMailbox(options: {
             !(await options.authorizeArtifacts(operation.message, admittedSignal))
           )
             return err({ code: "denied" });
-          const receipt = repository.admit(currentLease, operation.message, now());
+          const receipt = repository.admit(
+            currentLease,
+            operation.message,
+            now(),
+            request.version === 2 ? request.route : null,
+          );
           if (receipt.ok) notify();
           return receipt;
         },
@@ -399,16 +435,26 @@ export async function openPeerMailbox(options: {
       return unavailable();
     const requestId = randomUUID();
     const expiresAt = now() + MAILBOX_LIMITS.admissionMs;
+    // Cross-scope traffic needs a current exact grant before anything leaves this process.
+    const proof: PeerResult<PeerRouteProof | null> = lease
+      ? repository.routeProof(lease, recipient, now())
+      : unavailable();
+    if (!proof.ok) return proof;
     const exchange = async (capability: string | null): Promise<PeerResult<unknown>> => {
-      const sealed = crypto.seal(route.value.publicKey, {
-        version: 1,
+      const base = {
         recipient,
         processGeneration: route.value.endpoint.processGeneration,
         requestId,
         expiresAt,
         capability,
         operation,
-      });
+      };
+      const sealed = crypto.seal(
+        route.value.publicKey,
+        proof.value === null
+          ? { version: 1, ...base }
+          : { version: 2, ...base, route: proof.value },
+      );
       const response = await transport.request(
         route.value.address,
         { version: 1, sender: options.identity, processGeneration, sealed },
@@ -427,21 +473,8 @@ export async function openPeerMailbox(options: {
             z.strictObject({
               ok: z.literal(false),
               error: z.strictObject({
-                code: z.enum([
-                  "invalid",
-                  "denied",
-                  "stale",
-                  "conflict",
-                  "full",
-                  "rate-limited",
-                  "unavailable",
-                  "uncertain",
-                  "corrupt",
-                  "not-found",
-                  "expired",
-                  "cancelled",
-                  "held",
-                ]),
+                code: z.enum(PEER_FAILURE_CODES),
+                reason: z.enum(PEER_ROUTE_REASONS).optional(),
               }),
             }),
           ]),
@@ -634,6 +667,41 @@ export async function openPeerMailbox(options: {
       }
     },
     subscription: (id: string) => repository.subscription(ownLease, options.identity, id, now()),
+    routePreview: (sender: PeerIdentity) => repository.routePreview(ownLease, sender, now()),
+    /** Only the host's direct user controls receive this method. */
+    grantRoute(
+      sender: PeerIdentity,
+      input: {
+        readonly expectedRevision: number;
+        readonly expiresInMs: number;
+        readonly rights?: readonly (typeof PEER_ROUTE_RIGHTS)[number][];
+      },
+    ) {
+      const result = repository.grantRoute(
+        ownLease,
+        sender,
+        {
+          expectedRevision: input.expectedRevision,
+          expiresAt: Math.min(now() + input.expiresInMs, now() + MAILBOX_LIMITS.expiryMs),
+          rights: input.rights ?? [...PEER_ROUTE_RIGHTS],
+        },
+        now(),
+      );
+      if (result.ok) notify();
+      return result;
+    },
+    /** Only the host's direct user controls receive this method. */
+    revokeRoute(
+      peer: PeerIdentity,
+      expectedRevision: number,
+      direction: "incoming" | "outgoing" | null = null,
+    ) {
+      const result = repository.revokeRoute(ownLease, peer, direction, expectedRevision, now());
+      if (result.ok) notify();
+      return result;
+    },
+    routes: (after = 0, limit: number = MAILBOX_LIMITS.page) =>
+      repository.routes(ownLease, after, limit, now()),
     cancelSubscription(id: string) {
       const result = repository.cancelSubscription(ownLease, id, now());
       outgoingWatches.get(id)?.abort();

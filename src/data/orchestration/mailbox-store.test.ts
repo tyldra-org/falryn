@@ -4,6 +4,7 @@ import {
   messageKey,
   type PeerIdentity,
   type PeerMessage,
+  peerRouteId,
 } from "../../domain/orchestration/peer-mailbox.ts";
 import { type SqliteStorePort, SqliteWorkError } from "../../domain/storage/index.ts";
 import { openProductStore, removeTemporaryRoots, temporaryRoot } from "../fixtures.ts";
@@ -250,7 +251,7 @@ test("scope, generation, fan-out and envelope bounds refuse admission without in
           request({ scope: { ...scope, [dimension]: canonicalDigest("other") } }),
           now,
         ),
-      ).toEqual({ ok: false, error: { code: "denied" } });
+      ).toEqual({ ok: false, error: { code: "denied", reason: "scope-mismatch" } });
     expect(repository.admit(b, request({ text: "x".repeat(16_385) }), now)).toEqual({
       ok: false,
       error: { code: "invalid" },
@@ -399,6 +400,56 @@ test("availability registration atomically tests state and preserves one durable
     ).toBe(true);
     const revoked = repository.subscription(a, sender, "revoke", now);
     expect(revoked.ok && revoked.value).toMatchObject({ wait: "settled", reason: "revoked" });
+  } finally {
+    await store.close();
+  }
+});
+test("admission re-checks the exact route revision the sender proved", async () => {
+  const { store, repository, b } = await fixture();
+  try {
+    const other = { ...scope, workspace: canonicalDigest("other-worktree") };
+    const remote: PeerIdentity = { sessionId: "remote", agentId: "main", generation: 1 };
+    const lease = repository.register(
+      {
+        endpoint: {
+          version: 1,
+          identity: remote,
+          scope: other,
+          label: "same name",
+          state: "idle",
+          processGeneration: "remote-process",
+          leaseUntil: now + 30_000,
+        },
+        publicKey: "public-verifier",
+        address: "host-private-address",
+        fence: `remote-process-${"x".repeat(40)}`,
+      },
+      now,
+    );
+    expect(lease.ok).toBeTrue();
+    const routed = (id: string) =>
+      request({ id, sender: remote, scope: other, laneSequence: Number(id.at(-1)) });
+    const id = peerRouteId(remote, recipient);
+    expect(repository.admit(b, routed("m1"), now, { id, revision: 1 })).toEqual({
+      ok: false,
+      error: { code: "denied", reason: "route-missing" },
+    });
+    const grant = (expectedRevision: number) =>
+      repository.grantRoute(
+        b,
+        remote,
+        { expectedRevision, expiresAt: now + 60_000, rights: ["send"] },
+        now,
+      );
+    expect(grant(0).ok).toBeTrue();
+    expect(repository.admit(b, routed("m1"), now, { id, revision: 1 }).ok).toBeTrue();
+    expect(repository.revokeRoute(b, remote, null, 1, now).ok).toBeTrue();
+    expect(grant(2).ok).toBeTrue();
+    expect(repository.admit(b, routed("m2"), now, { id, revision: 1 })).toEqual({
+      ok: false,
+      error: { code: "stale", reason: "route-stale" },
+    });
+    expect(repository.admit(b, routed("m3"), now, { id, revision: 3 }).ok).toBeTrue();
   } finally {
     await store.close();
   }

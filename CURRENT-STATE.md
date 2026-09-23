@@ -2473,7 +2473,30 @@ using the actual identity returned by that sender. `hold` permits persistence
 but hides the body from model retrieval until explicit `release`; `deny` refuses
 new admission. `muted` and `perMinute` narrow notification and rate policy.
 Names are discovery hints, never authority. Different workspace/project, user,
-environment or trust scope is denied.
+environment or trust scope is denied unless an exact route grant covers it.
+
+Routes connect endpoints in different trusted worktrees that share this user's
+peer registry. The recipient's user grants one direction to one exact sender
+identity: `route-preview` shows the direction, both scopes, the
+`expectedRevision` and that a reply needs its own reverse grant; then
+`route-grant` takes that `expectedRevision`, optional `expiresInMs` (default one
+hour, at most 24 hours) and `rights` (`discover`, `send`). Either end can
+`route-revoke` with the current revision, naming `direction` (`incoming` or
+`outgoing`) when routes exist both ways; `routes` pages both directions with
+status `active`, `revoked`, `expired` or `invalid` and a reason such as
+`route-endpoint-retired` or `route-scope-changed`. Grants are recipient-owned,
+revisioned and bounded to 256 active grants per endpoint. They are never
+inferred from a shared remote, clone, path, symlink or display name, and a fork
+or new session identity has none. The sender still sends from its own scope.
+Admission re-checks the exact grant revision the sender proved, so a revoke
+between check and commit returns `stale` with `route-stale`. Revocation refuses
+not-yet-admitted delivery and settles its waits; admitted receipts remain
+intact. The recipient's `hold`/`deny` still applies. Cross-scope artifact
+handles are refused and nothing is copied in their place. A trust change, retired
+endpoint or scope change makes the route `invalid`. An identity outside this
+registry, such as one using a separate state directory, returns `unsupported`
+with `not-in-registry`. Only direct user controls can preview, grant or
+revoke; model calls are denied without effect.
 
 `send` and `reply` take `messageJson`, a JSON-encoded version-1 envelope with
 `id`, exact `sender` and `recipient`, the endpoint's `scope`, increasing
@@ -2516,16 +2539,16 @@ closure. A closed child cannot reply or redirect mail to its parent/replacement.
 Children still settle their assigned results exclusively through normal joins.
 Model calls cannot change inbound policy or impersonate another endpoint.
 
-The normal SQLite store owns migration 18, fenced endpoint leases, admission,
+The normal SQLite store owns migrations 18 and 32 (route grants), fenced endpoint leases, admission,
 attempts, acknowledgements, subscriptions, notification consumption and cursors.
 UNIX sockets use private directories and mode 0600 entries; Windows uses local
 named pipes. Fresh process signing/encryption keys authenticate nonce-bound
 requests and opaque single-use operation capabilities. Private keys and tokens
 are not persisted. Expired process claims require fresh authentication after
 restart. Cross-machine transport and automatic collaboration turns are unavailable.
-The separate follow-ups are #1082 for opted-in local turn admission, #1083 for
-explicit local cross-worktree route grants and #1084 for the remote transport
-and trust decision. #161 owns their user controls. These issue links do not
+The separate follow-ups are #1082 for opted-in local turn admission, #1133 for
+peers on separate state stores and #1084 for the remote transport and trust
+decision. #161 owns their user controls. These issue links do not
 change current runtime availability.
 
 Mailbox limits are 16 KiB text, 32 KiB envelopes, eight artifact handles totalling

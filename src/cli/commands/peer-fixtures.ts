@@ -3,10 +3,13 @@ import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { messageKey, type PeerMessage } from "../../domain/orchestration/peer-mailbox.ts";
 
-/** Run the public command boundary in fresh processes against one private state root. */
-export async function peerCliJourney(command: readonly string[], root: string) {
-  const environment = {
+/** Private product directories for one per-user state root, shared by every worktree. */
+export function peerCliEnvironment(root: string) {
+  return {
     PATH: process.env.PATH ?? "",
+    // The per-user peer scope reads the account name, as a real terminal provides it.
+    USER: process.env.USER ?? "",
+    LOGNAME: process.env.LOGNAME ?? process.env.USER ?? "",
     HOME: root,
     FALRYN_CONFIG_DIR: join(root, "config"),
     FALRYN_STATE_DIR: join(root, "state"),
@@ -17,37 +20,52 @@ export async function peerCliJourney(command: readonly string[], root: string) {
     FALRYN_EXPORT_DIR: join(root, "exports"),
     NO_COLOR: "1",
   };
+}
+
+/** One fresh command process per action; returns the terminal peer payload, success or refusal. */
+export function peerCli(command: readonly string[], root: string) {
+  const environment = peerCliEnvironment(root);
+  let inputs = 0;
+  return async function invoke(
+    cwd: string,
+    session: string,
+    action: { operation: string; [key: string]: unknown },
+    format = "json",
+  ) {
+    inputs += 1;
+    const input = join(root, `peer-action-${inputs}.json`);
+    await writeFile(input, JSON.stringify(action));
+    // Asynchronous, so a live endpoint hosted by the calling process can answer the child.
+    const child = Bun.spawn(
+      [...command, "peer", action.operation, session, "--input", input, "--format", format],
+      { cwd, env: environment, stdin: "ignore", stdout: "pipe", stderr: "pipe", timeout: 30_000 },
+    );
+    const [stdout, stderr] = await Promise.all([
+      new Response(child.stdout).text(),
+      new Response(child.stderr).text(),
+    ]);
+    await child.exited;
+    if (format === "human") return stdout;
+    expect(stderr).toBe("");
+    const terminal = JSON.parse(stdout.trim().split("\n").at(-1) ?? "null");
+    expect(terminal.command).toBe("peer");
+    expect(child.exitCode === 0).toBe(terminal.payload.ok);
+    return terminal.payload;
+  };
+}
+
+/** Run the public command boundary in fresh processes against one private state root. */
+export async function peerCliJourney(command: readonly string[], root: string) {
+  const cli = peerCli(command, root);
   async function invoke(
     session: string,
     action: { operation: string; [key: string]: unknown },
     format = "json",
   ) {
-    const input = join(root, "peer-action.json");
-    await writeFile(input, JSON.stringify(action));
-    const child = Bun.spawnSync(
-      [...command, "peer", action.operation, session, "--input", input, "--format", format],
-      {
-        cwd: root,
-        env: environment,
-        stdin: "ignore",
-        stdout: "pipe",
-        stderr: "pipe",
-        timeout: 30_000,
-      },
-    );
-    const stdout = new TextDecoder().decode(child.stdout);
-    const stderr = new TextDecoder().decode(child.stderr);
-    if (format !== "human") expect(stderr).toBe("");
-    expect(child.exitCode).toBe(0);
-    if (format === "human") return stdout;
-    const records = stdout
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
-    const terminal = records.at(-1);
-    expect(terminal.command).toBe("peer");
-    expect(terminal.payload.ok).toBe(true);
-    return terminal.payload.value;
+    const payload = await cli(root, session, action, format);
+    if (format === "human") return payload;
+    expect(payload.ok).toBe(true);
+    return payload.value;
   }
   const alice = await invoke("alice", { operation: "endpoint" });
   const bob = await invoke("bob", { operation: "endpoint" });

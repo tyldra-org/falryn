@@ -3,6 +3,7 @@ import { z } from "zod";
 import { err, ok } from "../../domain/foundation/result.ts";
 import {
   MAILBOX_LIMITS,
+  PEER_ROUTE_RIGHTS,
   type PeerResult,
   peerIdentitySchema,
   samePeer,
@@ -34,6 +35,10 @@ export const peerActionSchema = z.strictObject({
     "release",
     "revoke",
     "rename",
+    "route-preview",
+    "route-grant",
+    "route-revoke",
+    "routes",
   ]),
   peer: peerIdentitySchema.optional(),
   as: peerIdentitySchema.optional(),
@@ -51,8 +56,28 @@ export const peerActionSchema = z.strictObject({
   muted: z.boolean().optional(),
   perMinute: z.number().int().min(1).max(MAILBOX_LIMITS.sendsPerMinute).optional(),
   label: z.string().max(80).optional(),
+  /** The grant revision the user reviewed; 0 before any grant exists. */
+  expectedRevision: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional(),
+  expiresInMs: z.number().int().min(1).max(MAILBOX_LIMITS.expiryMs).optional(),
+  rights: z.array(z.enum(PEER_ROUTE_RIGHTS)).min(1).max(PEER_ROUTE_RIGHTS.length).optional(),
+  /** Route revocation only; required when routes exist in both directions. */
+  direction: z.enum(["incoming", "outgoing"]).optional(),
 });
-const controls = new Set(["allow", "hold", "deny", "release", "revoke", "rename"]);
+/**
+ * Direct user controls. A model may inspect its own routes, but it can never
+ * grant, renew, widen or revoke one, nor probe unlisted endpoints by preview.
+ */
+const controls = new Set([
+  "allow",
+  "hold",
+  "deny",
+  "release",
+  "revoke",
+  "rename",
+  "route-preview",
+  "route-grant",
+  "route-revoke",
+]);
 export async function executePeerAction(
   peer: PeerMailbox | null,
   raw: unknown,
@@ -145,6 +170,22 @@ async function performPeerAction(
         : err({ code: "invalid" as const });
     case "revoke":
       return peer.state("retired");
+    case "route-preview":
+      return action.peer ? peer.routePreview(action.peer) : err({ code: "invalid" as const });
+    case "route-grant":
+      return action.peer && action.expectedRevision !== undefined
+        ? peer.grantRoute(action.peer, {
+            expectedRevision: action.expectedRevision,
+            expiresInMs: action.expiresInMs ?? 3_600_000,
+            ...(action.rights ? { rights: action.rights } : {}),
+          })
+        : err({ code: "invalid" as const });
+    case "route-revoke":
+      return action.peer && action.expectedRevision !== undefined
+        ? peer.revokeRoute(action.peer, action.expectedRevision, action.direction ?? null)
+        : err({ code: "invalid" as const });
+    case "routes":
+      return peer.routes(action.after, action.limit);
     case "rename":
       return action.label === undefined
         ? err({ code: "invalid" as const })
