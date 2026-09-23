@@ -203,6 +203,7 @@ Use the smallest command that proves the current edit while iterating.
 | `bun run test:changed` | Tests affected relative to `main` |
 | `bun test <path>` | One focused test file |
 | `bun run test:watch` | Re-run tests while files change |
+| `bun run test:timings` | Refresh the per-file durations CI uses to balance test shards |
 | `bun run test:parallel` | Bounded four-worker source suite |
 | `bun run check` | Canonical static checks and full source suite |
 | `bun run build` | Standalone executable compilation |
