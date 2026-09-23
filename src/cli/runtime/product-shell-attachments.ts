@@ -818,6 +818,9 @@ export async function composeProductShellAttachments(
     get processing() {
       return active.executor.processing;
     },
+    get generation() {
+      return active.executor.generation;
+    },
     environment: {
       execute: (action: "inspect" | "reload", signal?: AbortSignal) => {
         const control = active.profileSession?.environment;

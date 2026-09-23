@@ -26,6 +26,7 @@ import {
   turnStarted,
 } from "../../domain/fixtures.ts";
 import { capabilityId, sequence } from "../../domain/foundation/index.ts";
+import { type GenerationTimingRecord, summarizeGeneration } from "../../domain/sessions/index.ts";
 import { outcomeOf } from "./blocks.ts";
 import { TRANSCRIPT_PROJECTION_GENERATION } from "./generation.ts";
 import { blockFor, EMPTY_PROJECTION, reduceTranscript } from "./reducer.ts";
@@ -258,5 +259,52 @@ describe("purity", () => {
     const before = [...events];
     reduceTranscript(events);
     expect(events).toEqual(before);
+  });
+});
+
+describe("model attempt generation timing", () => {
+  const timing = summarizeGeneration({
+    modelAttemptId: "attempt-fixture",
+    requestId: "request-1",
+    completion: "complete",
+    requestStartedAt: 0,
+    firstOutputAt: 320,
+    terminalAt: 2_820,
+    clockAnomaly: false,
+    estimated: { text: 0, reasoning: 0 },
+    usage: { provenance: "provider-reported", outputTokens: 105, reasoningTokens: 40 },
+  });
+
+  function outcomeBlock(generation?: GenerationTimingRecord) {
+    const event = modelAttemptCompleted(5, { kind: "completed" });
+    const block = blockFor(
+      generation === undefined ? event : { ...event, payload: { ...event.payload, generation } },
+    );
+    if (block?.kind !== "model-outcome") throw new Error("expected a model outcome");
+    return block;
+  }
+
+  test("an attempt recorded before timing existed shows its absence, not a zero", () => {
+    expect(outcomeBlock().generation).toEqual({
+      text: "",
+      disclosure: {
+        kind: "omitted",
+        reason: "attempt recorded before generation timing",
+        route: null,
+      },
+    });
+  });
+
+  test("recorded timing projects its rate, first token, duration, token source and identity", () => {
+    const text = outcomeBlock({ version: 1, requests: [timing] }).generation.text;
+    expect(text).toBe(
+      "42 tok/s · time to first token 320 ms · generation 2.5 s · 105 output tokens, 40 reasoning (provider-reported) · attempt attempt-fixture request request-1",
+    );
+  });
+
+  test("an attempt that consumed no stream says so", () => {
+    expect(outcomeBlock({ version: 1, requests: [] }).generation.text).toBe(
+      "No provider stream was consumed.",
+    );
   });
 });

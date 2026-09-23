@@ -32,9 +32,18 @@ export function StatusLine(props: StatusLineProps): ReactNode {
   // reminder, and the status is the answer.
   const statusRoom = Math.max(8, terminal.columns - hintWidth - 2);
   const processing = props.model.processing;
-  const message = processing
-    ? `${props.model.message} · ${processing.active ? "Active" : "Last"} speed ${processing.actual}; next ${processing.requested}`
-    : props.model.message;
+  const generation = props.model.generation;
+  // Generation goes last: it is the part a narrow line can lose, and its label
+  // is fixed width so live updates never move the text before it.
+  const message = [
+    props.model.message,
+    ...(processing
+      ? [
+          `${processing.active ? "Active" : "Last"} speed ${processing.actual}; next ${processing.requested}`,
+        ]
+      : []),
+    ...(generation ? [`${generation.active ? "Generating" : "Last"} ${generation.label}`] : []),
+  ].join(" · ");
 
   return (
     <box flexDirection="row" justifyContent="space-between">

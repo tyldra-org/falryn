@@ -87,10 +87,15 @@ export const MAX_PROMPT_TOOL_INPUTS = 128;
  * without binding the domain to a provider tokenizer.
  */
 export function estimatePromptTokens(text: string): number {
-  if (text.length === 0) {
+  return estimateTokensForLength(text.length);
+}
+
+/** The same estimate over a UTF-16 length, for callers that keep only a running count. */
+export function estimateTokensForLength(codeUnits: number): number {
+  if (codeUnits <= 0) {
     return 0;
   }
-  return Math.max(1, Math.ceil(text.length / 4));
+  return Math.max(1, Math.ceil(codeUnits / 4));
 }
 
 function utf8ByteLength(text: string): number {

@@ -87,6 +87,14 @@ export type KeyHint = {
 };
 
 export type StatusLineModel = {
+  /**
+   * The latest generation rate, already labelled at a fixed width. `active`
+   * while a stream is running; otherwise the last settled attempt's rate.
+   */
+  readonly generation?: {
+    readonly label: string;
+    readonly active: boolean;
+  };
   readonly processing?: {
     readonly requested: string;
     readonly actual: "standard" | "fast" | "unknown";

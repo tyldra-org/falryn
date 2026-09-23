@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createGenerationActivity } from "../../application/providers/generation-timing.ts";
 import { createProcessingSessionControl } from "../../application/providers/processing-controls.ts";
 
 import type { ProductLiveTurnExecutor } from "../../application/runtime/index.ts";
@@ -47,6 +48,7 @@ function executor(run: ProductLiveTurnExecutor["run"]): ProductLiveTurnExecutor 
   let selected = modelSelection("model-default");
   return {
     processing: createProcessingSessionControl("test", () => null).control,
+    generation: createGenerationActivity(),
     executionProfile: {
       get: () => profileId,
       async select(nextProfileId) {
@@ -234,6 +236,7 @@ describe("product submission port", () => {
     let selected = "agent" as "ask" | "plan" | "debug" | "agent";
     const live: ProductLiveTurnExecutor = {
       processing: createProcessingSessionControl("test", () => null).control,
+      generation: createGenerationActivity(),
       executionProfile: {
         get: () => selected,
         async select(profileId) {
@@ -273,6 +276,7 @@ describe("product submission port", () => {
     const observed: string[] = [];
     const live: ProductLiveTurnExecutor = {
       processing: createProcessingSessionControl("test", () => null).control,
+      generation: createGenerationActivity(),
       executionProfile: {
         get: () => "agent",
         async select(profileId) {

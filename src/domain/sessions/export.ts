@@ -1,4 +1,5 @@
 import { sandboxReceiptSchema } from "../security/sandbox.ts";
+import { generationTimingSchema } from "./generation-timing.ts";
 import { HISTORY_LIMITS, historyEvidenceSchema } from "./history.ts";
 /**
  * The export package contract: what a package is, what it declares, and what a
@@ -711,6 +712,25 @@ function walkExportValue(
   const scopeDigest =
     scopeIdentity && digestSchema.safeParse(activation.data.scopeAuthorityId).success;
   const sandbox = "effectiveMode" in value ? sandboxReceiptSchema.safeParse(value) : null;
+  // A fully parsed generation timing fact holds closed vocabularies and counts:
+  // its `tokens` and `tokensPerSecond` names are measurements, not credentials.
+  // Only its identity strings can carry free text, and they keep the text rules.
+  const timing = "timeToFirstTokenMs" in value ? generationTimingSchema.safeParse(value) : null;
+  if (timing?.success) {
+    const identities: Record<string, unknown> = {};
+    for (const key of ["modelAttemptId", "requestId"] as const) {
+      const walked = walkExportValue(
+        timing.data[key],
+        childPath(path, key),
+        depth + 1,
+        redactor,
+        redactions,
+      );
+      if (!walked.ok) return walked;
+      identities[key] = walked.value;
+    }
+    return ok({ ...timing.data, ...identities });
+  }
   const next: Record<string, unknown> = {};
   for (const [key, nested] of Object.entries(value)) {
     const nestedPath = childPath(path, key);

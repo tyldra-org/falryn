@@ -112,6 +112,7 @@ export function everyBlockKind(): readonly TranscriptBlock[] {
       status: "final",
       summary: complete("Model attempt finished."),
       outcome: { kind: "completed" },
+      generation: omitted("attempt recorded before generation timing"),
     },
     {
       ...spine(declared("tool-request", 4), 4),

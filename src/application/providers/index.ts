@@ -1,6 +1,18 @@
 /** Public contracts for this capability. Internal modules import their exact dependencies. */
 
 export type {
+  GenerationActivity,
+  GenerationActivityEntry,
+  GenerationLiveUpdate,
+  GenerationTimingRecorder,
+  GenerationTimingSink,
+} from "./generation-timing.ts";
+export {
+  createGenerationActivity,
+  createGenerationTimingRecorder,
+  timeProviderStream,
+} from "./generation-timing.ts";
+export type {
   UserModelCatalogLoadError,
   UserModelCatalogLoaderOptions,
 } from "./model-catalogs.ts";

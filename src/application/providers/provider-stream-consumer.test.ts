@@ -4,6 +4,8 @@ import {
   configurationGeneration,
   createManualClock,
   duration,
+  instant,
+  modelAttemptId,
   sessionId,
   traceId,
   turnId,
@@ -16,6 +18,7 @@ import {
   type NormalizedProviderEvent,
 } from "../../providers/index.ts";
 import { createTurnCoordinator } from "../runtime/turn-coordinator.ts";
+import { createGenerationTimingRecorder, timeProviderStream } from "./generation-timing.ts";
 import {
   createProviderStreamConsumer,
   DEFAULT_PROVIDER_STREAM_QUEUE_LIMITS,
@@ -345,6 +348,60 @@ describe("provider stream consumer", () => {
     expect(outcome.queueReport.rejected).toBeGreaterThanOrEqual(1);
     expect(outcome.queueReport.bytes).toBeLessThanOrEqual(8);
     expect(outcome.turn).toMatchObject({ status: "terminal", outcome: { kind: "failed" } });
+  });
+
+  test("backpressure coalescing downstream of the timing tap does not change recorded timing", async () => {
+    const run = async (queueLimits: QueueLimits) => {
+      const { coordinator, turnId: id } = startAtAssemblingContext();
+      const clock = createManualClock(instant(1_000));
+      const consumer = createProviderStreamConsumer({ clock, coordinator, queueLimits });
+      const request = deterministicEchoRequest();
+      const spine = { requestId: request.requestId, modelAttemptId: modelAttemptId.from("a-1") };
+      async function* timedDeltas(): AsyncIterable<NormalizedProviderEvent> {
+        let sequence = 1;
+        yield { ...spine, kind: "request-started", sequence: sequence++ };
+        for (const fragment of ["alpha ", "beta ", "gamma ", "delta ", "epsilon"]) {
+          await clock.advance(duration(100));
+          yield { ...spine, kind: "text-delta", sequence: sequence++, text: fragment.repeat(8) };
+        }
+        await clock.advance(duration(100));
+        yield {
+          ...spine,
+          kind: "usage",
+          sequence: sequence++,
+          usage: { provenance: "provider-reported", outputTokens: 60 },
+        };
+        yield { ...spine, kind: "finished", sequence: sequence++, finishReason: "stop" };
+      }
+      const timing = createGenerationTimingRecorder({
+        clock,
+        modelAttemptId: "a-1",
+        requestId: String(request.requestId),
+      });
+      const outcome = await consumer.consume({
+        turnId: id,
+        configurationGeneration: generation,
+        events: timeProviderStream(timedDeltas(), timing),
+        signal: new AbortController().signal,
+      });
+      if (outcome.kind !== "finished") throw new Error(outcome.kind);
+      return {
+        coalesced: outcome.queueReport.coalesced,
+        timing: timing.finish("complete", outcome.snapshot.usage),
+      };
+    };
+
+    const roomy = await run(limits({ maxItems: 64 }));
+    const pressured = await run(limits({ maxItems: 2, maxBytes: 10_000, overflow: "coalesce" }));
+    expect(roomy.coalesced).toBe(0);
+    expect(pressured.coalesced).toBeGreaterThan(0);
+    expect(pressured.timing).toEqual(roomy.timing);
+    expect(roomy.timing).toMatchObject({
+      timeToFirstTokenMs: 100,
+      generationMs: 500,
+      tokens: { source: "provider-reported", output: 60 },
+      rate: { kind: "measured", tokensPerSecond: 120, source: "provider-reported" },
+    });
   });
 
   test("coalesces display-only deltas instead of rejecting under pressure", async () => {

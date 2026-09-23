@@ -4,6 +4,10 @@ import { createLiveCheckpoint, guardCheckpointTurn } from "../compression/live-c
 import type { CheckpointOutcome, CheckpointRequest } from "../compression/product-checkpoint.ts";
 import { conversationBudget } from "../context/conversation-budget.ts";
 import {
+  createGenerationActivity,
+  type GenerationActivity,
+} from "../providers/generation-timing.ts";
+import {
   createProcessingSessionControl,
   inspectProcessingRoute,
   type ProcessingSessionControl,
@@ -105,6 +109,8 @@ export type ProductLiveTurnResult = {
     readonly budget: ReturnType<typeof conversationBudget>;
   };
   readonly processing?: readonly import("../../domain/sessions/model-processing.ts").ProcessingReceipt[];
+  /** Final timing per consumed provider stream of this turn only, in attempt order. */
+  readonly generation?: readonly import("../../domain/sessions/generation-timing.ts").GenerationTiming[];
   readonly kind: "completed" | "unavailable" | "failed";
   readonly code: string;
   readonly message: string;
@@ -171,6 +177,8 @@ export type ProductModelSelectionControls = {
 
 export type ProductLiveTurnExecutor = {
   readonly processing: ProcessingSessionControl;
+  /** This executor's latest generation state; delegated children own their own. */
+  readonly generation: GenerationActivity;
   readonly compact?: (
     request: CheckpointRequest,
     signal: AbortSignal,
@@ -360,6 +368,7 @@ export function createProductLiveTurnExecutor(
         })
       : null;
   });
+  const generationActivity = createGenerationActivity();
   processing.settled(
     producer
       .events()
@@ -632,6 +641,7 @@ export function createProductLiveTurnExecutor(
   }
 
   const executor: ProductLiveTurnExecutor = {
+    generation: generationActivity,
     executionProfile: {
       get: () => activeProfile,
       async select(profileId) {
@@ -1411,6 +1421,7 @@ export function createProductLiveTurnExecutor(
           };
           const attempted = await attemptPolicy.run({
             ...(input.processing === undefined ? {} : { processing: input.processing }),
+            generation: generationActivity.sinkFor(String(input.turnId)),
             taskResources,
             turnId: input.turnId,
             configurationGeneration: generation,
@@ -1548,6 +1559,7 @@ export function createProductLiveTurnExecutor(
             briefReceipt,
             providerUsage,
             processing: attempted.attempts.flatMap((attempt) => attempt.output?.processing ?? []),
+            generation: attempted.attempts.flatMap((attempt) => attempt.output?.generation ?? []),
             providerRequests,
           });
         } finally {

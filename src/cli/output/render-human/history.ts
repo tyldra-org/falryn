@@ -2,6 +2,7 @@
 
 import { extensionCatalogLines } from "../../../application/extensions/catalog-report.ts";
 import type { CatalogHistory } from "../../../domain/extensions/catalog-history.ts";
+import { generationDetail } from "../../../presentation/index.ts";
 import type {
   ImportCommandPayload,
   ReplayCommandPayload,
@@ -112,6 +113,11 @@ export function renderReplay(
       `  Stream       ${safe(payload.streamId)}`,
       `  Turns        ${payload.turnCount}`,
       `  Artifacts    ${payload.artifactCount}`,
+      ...payload.generation.flatMap((attempt) =>
+        attempt.status === "unavailable"
+          ? [`  Generation   attempt ${safe(attempt.modelAttemptId)}: unavailable`]
+          : attempt.requests.map((timing) => `  Generation   ${safe(generationDetail(timing))}`),
+      ),
       ...(payload.packageData ?? []).map(
         (bundle) =>
           `  Package data ${safe(bundle.packageId)}: ${bundle.records.length} inert records, ${bundle.omitted} omitted; import ${safe(bundle.importId)}`,

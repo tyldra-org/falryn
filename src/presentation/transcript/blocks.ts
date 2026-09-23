@@ -195,8 +195,16 @@ export type ModelTextBlock = Block<"model-text", { readonly text: BoundedText }>
 /** Bounded reasoning metadata, which is not the same thing as the answer. */
 export type ModelReasoningBlock = Block<"model-reasoning", { readonly text: BoundedText }>;
 
-/** How one model attempt ended. Separate from anything the model said. */
-export type ModelOutcomeBlock = Block<"model-outcome", { readonly outcome: TerminalOutcome }>;
+/**
+ * How one model attempt ended. Separate from anything the model said.
+ *
+ * `generation` is the attempt's recorded timing per provider stream, or an
+ * omission for attempts recorded before timing existed.
+ */
+export type ModelOutcomeBlock = Block<
+  "model-outcome",
+  { readonly outcome: TerminalOutcome; readonly generation: BoundedText }
+>;
 
 /** A tool was asked to do something. Still running. */
 export type ToolRequestBlock = Block<
@@ -381,6 +389,7 @@ export function boundedTextsOf(block: TranscriptBlock): readonly BoundedText[] {
     case "model-reasoning":
       return [block.summary, block.text];
     case "model-outcome":
+      return [block.summary, block.generation];
     case "turn-outcome":
       return [block.summary];
     case "tool-request":

@@ -21,6 +21,7 @@ import {
   selectedSessions,
   summarize,
 } from "./export.ts";
+import { summarizeGeneration } from "./generation-timing.ts";
 
 const DIGEST = `${CONTENT_DIGEST_ALGORITHM}:${"a".repeat(64)}`;
 
@@ -296,6 +297,48 @@ describe("record redaction", () => {
 
     expect(walked.ok && walked.value).toEqual({ title: "plain" });
     expect(redactions).toEqual([]);
+  });
+  test("keeps a parsed generation timing's measurement names but still redacts its text", () => {
+    const tokenNames = { ...redactor, isSecretName: (key: string) => /token/i.test(key) };
+    const timing = summarizeGeneration({
+      modelAttemptId: "attempt-1",
+      requestId: "request-hunter2",
+      completion: "complete",
+      requestStartedAt: 0,
+      firstOutputAt: 100,
+      terminalAt: 1_100,
+      clockAnomaly: false,
+      estimated: { text: 0, reasoning: 0 },
+      usage: { provenance: "provider-reported", outputTokens: 50 },
+    });
+    const redactions: ExportRedaction[] = [];
+    const walked = redactExportValue(
+      { payload: { generation: { version: 1, requests: [timing] } } },
+      tokenNames,
+      redactions,
+    );
+
+    expect(walked.ok && walked.value).toEqual({
+      payload: {
+        generation: {
+          version: 1,
+          requests: [{ ...timing, requestId: "request-[redacted]" }],
+        },
+      },
+    });
+    expect(redactions).toEqual([
+      { path: "$.payload.generation.requests.0.requestId", kind: "replaced" },
+    ]);
+    // A look-alike that does not parse as a timing fact gets no exemption.
+    const lookAlike = redactExportValue(
+      { timeToFirstTokenMs: 1, tokens: { output: 3 } },
+      tokenNames,
+      [],
+    );
+    expect(lookAlike.ok && lookAlike.value).toEqual({
+      timeToFirstTokenMs: "[redacted]",
+      tokens: "[redacted]",
+    });
   });
 });
 

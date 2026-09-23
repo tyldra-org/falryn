@@ -33,6 +33,8 @@ import {
   DEFAULT_RETRY_BACKOFF,
   decideAttemptAction,
   evaluateRetry,
+  GENERATION_TIMING_VERSION,
+  MAX_GENERATION_REQUESTS,
   type ModelAttemptBinding,
   type TurnCorrelation,
   type TurnLifecycleFact,
@@ -459,6 +461,9 @@ function outcomeForAttemptRecord(classification: AttemptClassification): Termina
   }
 }
 
+/** Bound for recording a completed attempt after the turn was cancelled. */
+const ATTEMPT_RECEIPT_SETTLEMENT_MS = 30_000;
+
 async function persistFacts(
   journal: TurnEventJournalPort | undefined,
   facts: readonly TurnLifecycleFact[],
@@ -716,6 +721,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
             signal: input.signal,
             modelInput: input.modelInput ?? null,
             ...(promptCache === undefined ? {} : { promptCache }),
+            ...(input.generation === undefined ? {} : { generation: input.generation }),
           });
 
           elapsedMs = Math.max(elapsedMs, Number(options.clock.now()) - Number(startedAt));
@@ -782,12 +788,24 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
                   ...(runnerResult.output?.admissions === undefined
                     ? {}
                     : { admissions: runnerResult.output.admissions }),
+                  ...(runnerResult.output?.generation === undefined
+                    ? {}
+                    : {
+                        generation: {
+                          version: GENERATION_TIMING_VERSION,
+                          // The task's provider-request ceiling keeps an attempt within
+                          // this bound; the slice keeps the receipt valid regardless.
+                          requests: runnerResult.output.generation.slice(-MAX_GENERATION_REQUESTS),
+                        },
+                      }),
                   correlation: correlationFor(afterAttempt),
                   modelAttemptId: identity.modelAttemptId,
                   outcome: attemptOutcome,
                 },
               ],
-              input.signal,
+              // The attempt already ran. Cancellation stops new work, not the
+              // record of what happened, so its receipt gets bounded settlement.
+              AbortSignal.timeout(ATTEMPT_RECEIPT_SETTLEMENT_MS),
             );
           }
 

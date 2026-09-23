@@ -20,6 +20,7 @@ import type {
   AttemptFact,
   AttemptIdentity,
   EffectiveExecutionPolicy,
+  GenerationTiming,
   RetryBackoff,
   TurnSnapshot,
 } from "../../../domain/sessions/index.ts";
@@ -42,6 +43,7 @@ import type {
   ProductResources,
   ProductTaskResources,
 } from "../../orchestration/product-resources.ts";
+import type { GenerationTimingSink } from "../../providers/generation-timing.ts";
 import type { TurnCoordinator, TurnCoordinatorError } from "../turn-coordinator.ts";
 import type { TurnEventJournalPort } from "../turn-event-journal.ts";
 
@@ -143,6 +145,8 @@ export type AttemptRunnerRequest = {
   readonly signal: AbortSignal;
   readonly modelInput: AttemptModelInput | null;
   readonly promptCache?: PromptCachePolicy;
+  /** Live and final generation timing for this attempt's provider streams. */
+  readonly generation?: GenerationTimingSink;
 };
 
 export type AttemptRunnerResult = {
@@ -152,6 +156,8 @@ export type AttemptRunnerResult = {
   /** Model-facing output retained by the product entrypoint, never by retry policy. */
   readonly output?: {
     readonly processing?: readonly import("../../../domain/sessions/model-processing.ts").ProcessingReceipt[];
+    /** One final timing fact per consumed provider stream, in request order. */
+    readonly generation?: readonly GenerationTiming[];
     readonly admissions?: readonly ResourceAdmissionReceipt[];
     readonly text: string;
     readonly reasoning: string;
@@ -214,6 +220,8 @@ export type RunTurnAttemptPolicyInput = {
    * Defaults to `null`.
    */
   readonly elapsedBudgetMs?: number | null;
+  /** Live and final generation timing for every attempt of this turn. */
+  readonly generation?: GenerationTimingSink;
 };
 
 export type AttemptRecord = {

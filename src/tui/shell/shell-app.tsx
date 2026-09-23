@@ -79,6 +79,7 @@ import {
 } from "../workspace/index.ts";
 import type { ActivityModel } from "./activity-model.ts";
 import { AppShell } from "./app-shell.tsx";
+import { generationStatus, useGenerationEntry } from "./generation-status.ts";
 import type { SessionCreationPort } from "./session-creation.ts";
 import { ShellErrorBoundary } from "./shell-error-boundary.tsx";
 import {
@@ -284,6 +285,14 @@ function ResolvedShell(
 ): ReactNode {
   const keymap = useKeymap();
   const activeKeys = useActiveKeys({ includeBindings: true });
+  const generation = generationStatus(
+    useGenerationEntry(
+      props.submission && "generation" in props.submission
+        ? (props.submission as import("../composer/product-submission.ts").ProductSubmissionPort)
+            .generation
+        : undefined,
+    ),
+  );
   const rows = commandRows(props.runtime.commandState, activeCommandIds(activeKeys));
   const composer: ComposerModel = {
     state: props.runtime.state.composer,
@@ -339,6 +348,7 @@ function ResolvedShell(
         : [],
     status: {
       ...props.model.status,
+      ...(generation === undefined ? {} : { generation }),
       ...(processing
         ? {
             processing: {

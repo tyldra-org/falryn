@@ -417,6 +417,7 @@ function contentOf(block: TranscriptBlock): readonly LabelledContent[] {
     case "model-reasoning":
       return [{ label: "reasoning", content: block.text }];
     case "model-outcome":
+      return [{ label: "generation", content: block.generation }];
     case "turn-outcome":
       return [];
     case "tool-request":
