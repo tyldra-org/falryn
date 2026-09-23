@@ -147,6 +147,12 @@ export {
   resumable,
   TRANSCRIPT_PROJECTION_GENERATION,
 } from "./transcript/generation.ts";
+export type { GenerationRatePhase } from "./transcript/generation-rate.ts";
+export {
+  GENERATION_RATE_LABEL_WIDTH,
+  generationDetail,
+  generationRateLabel,
+} from "./transcript/generation-rate.ts";
 export type {
   NativeTranscriptRange,
   TranscriptIdentityPick,

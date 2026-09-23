@@ -1754,6 +1754,39 @@ for that selection. The per-attempt count and schema-token budgets still bound
 the disclosed set, and rejected or unselected descriptors continue to carry
 explicit omission receipts.
 
+## Generation timing
+
+Every provider request stream in a model attempt records its own timing. A
+turn that calls a tool between two streams reports two entries, and tool
+execution, focused confirmation, hooks and retry backoff fall between them. The
+tap in `src/application/providers/generation-timing.ts` reads the clock as each
+event leaves the adapter. That happens before history capture batches deltas
+and before the stream consumer's queue can coalesce them, so neither changes a
+recorded time or count.
+
+The final fact holds time to first output, the span from first output to
+terminal, output tokens with their source, a separate reasoning count when one
+is known, and a rate. Provider-reported usage wins. Without it the count is an
+estimate over received text, and without text it is `unknown`, never zero.
+Spans under 250 ms or counts under 8 tokens report `insufficient-sample`. A
+clock reading that goes backwards makes the rate `unavailable`. A stream that
+ends without a normal finish, including a cancelled one, is `partial`.
+
+The live rate uses a two-second trailing window, is always an estimate, and
+updates at most four times per second. Each live turn executor keeps its own
+activity, so a delegated child's stream never enters its parent's status or
+totals. The TUI status line shows the running or last rate as a fixed-width
+label such as `42 tok/s est. live`. It is the first text a narrow line drops.
+
+Final facts persist as an optional versioned `generation` field on
+`model.attempt.completed`. That event is now written with bounded settlement
+after cancellation, so a cancelled attempt keeps its partial fact. `falryn run`
+lists each entry in human and JSON output, JSONL carries the event, and
+`falryn replay` and TUI transcript expansion show stored facts without a
+provider call. Attempts recorded before this field existed show `unavailable`.
+Export keeps parsed timing facts intact. Transcript streaming-block footers
+(#740) and agent task-tree rows (#161) do not render the rate yet.
+
 ## Live context, index, and memory
 
 `falryn run` and the interactive composer open a durable index database scoped

@@ -66,6 +66,11 @@ import {
   processProductResources,
 } from "../orchestration/product-resources.ts";
 import {
+  createGenerationTimingRecorder,
+  type GenerationTimingRecorder,
+  timeProviderStream,
+} from "../providers/generation-timing.ts";
+import {
   processingPromptCache,
   promptCacheStablePrefixDigest,
 } from "../providers/provider-prompt-cache.ts";
@@ -856,6 +861,8 @@ export function createProductAttemptRunner(
       let launchedRequests = 0;
       let sentResults = 0;
       const usage: (UsageUnits | null)[] = [];
+      // In request order. Output settles any stream still running as partial.
+      const timings: GenerationTimingRecorder[] = [];
       const providerMetadata: Record<string, string> = {};
       let briefRequest = input.brief?.request ?? null;
       let briefReceipt = input.brief?.receipt ?? null;
@@ -1147,29 +1154,46 @@ export function createProductAttemptRunner(
               },
               { signal },
             );
-            const value = await consumer.consume({
-              turnId: request.turnId,
-              configurationGeneration: request.configurationGeneration,
-              events: recordProviderHistory({
-                admittedSignal: signal,
-                onProposal(id) {
-                  if (observedProposals.size >= 128 && !observedProposals.has(id))
-                    throw new Error("history-proposal-bound");
-                  observedProposals.add(id);
-                },
-                events: source,
-                history,
-                resources: taskResources,
-                turnId: request.turnId,
-                attemptId: String(request.identity.modelAttemptId),
-                request: launchedRequests,
-                generation: Number(request.boundConfigurationGeneration),
-                catalogGeneration: Number(options.registry.generation),
-                disclosureDigest,
-              }),
-              signal,
-              abortAs: () => (deadline.timedOut() ? "timeout" : "cancel"),
+            const timing = createGenerationTimingRecorder({
+              clock: options.clock,
+              modelAttemptId: String(request.identity.modelAttemptId),
+              requestId: String(currentRequest.requestId),
+              sink: request.generation,
             });
+            timings.push(timing);
+            let value: ProviderStreamConsumeOutcome;
+            try {
+              value = await consumer.consume({
+                turnId: request.turnId,
+                configurationGeneration: request.configurationGeneration,
+                events: recordProviderHistory({
+                  admittedSignal: signal,
+                  onProposal(id) {
+                    if (observedProposals.size >= 128 && !observedProposals.has(id))
+                      throw new Error("history-proposal-bound");
+                    observedProposals.add(id);
+                  },
+                  events: timeProviderStream(source, timing),
+                  history,
+                  resources: taskResources,
+                  turnId: request.turnId,
+                  attemptId: String(request.identity.modelAttemptId),
+                  request: launchedRequests,
+                  generation: Number(request.boundConfigurationGeneration),
+                  catalogGeneration: Number(options.registry.generation),
+                  disclosureDigest,
+                }),
+                signal,
+                abortAs: () => (deadline.timedOut() ? "timeout" : "cancel"),
+              });
+            } catch (error) {
+              timing.finish("partial", null);
+              throw error;
+            }
+            timing.finish(
+              value.kind === "finished" ? "complete" : "partial",
+              value.snapshot?.usage ?? null,
+            );
             if (value.kind !== "finished") {
               for (const [index, proposalId] of [...observedProposals].entries()) {
                 const saved = await history.recordWithinAdmission(
@@ -1350,6 +1374,10 @@ export function createProductAttemptRunner(
         briefReceipt,
         providerMetadata: { ...providerMetadata },
         processing: [...processingReceipts],
+        generation: timings.flatMap((timing) => {
+          const settled = timing.finish("partial", null);
+          return settled === null ? [] : [settled];
+        }),
       });
 
       try {

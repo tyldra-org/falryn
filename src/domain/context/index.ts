@@ -206,6 +206,7 @@ export {
   DEFAULT_PROMPT_MAX_TOOL_DESCRIPTION_BYTES,
   DEFAULT_PROMPT_MAX_TOTAL_TOKENS,
   estimatePromptTokens,
+  estimateTokensForLength,
   isPromptExclusionReason,
   isPromptSectionRole,
   MAX_PROMPT_SECTION_INPUTS,

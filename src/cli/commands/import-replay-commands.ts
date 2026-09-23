@@ -87,9 +87,25 @@ export type ReplayCommandPayload = {
   readonly streamId: string;
   readonly turnCount: number;
   readonly artifactCount: number;
+  /**
+   * Stored generation timing per replayed model attempt. `unavailable` marks an
+   * attempt recorded before timing existed or one that never completed.
+   */
+  readonly generation: readonly ReplayGeneration[];
   readonly truncated: boolean;
   readonly effectFree: true;
 };
+
+export type ReplayGeneration = {
+  readonly turnId: string;
+  readonly modelAttemptId: string;
+} & (
+  | {
+      readonly status: "recorded";
+      readonly requests: readonly import("../../domain/sessions/index.ts").GenerationTiming[];
+    }
+  | { readonly status: "unavailable" }
+);
 
 function resultFor<Command extends CommandId, Payload>(
   command: Command,
@@ -434,6 +450,17 @@ export async function runReplay(
           : { packageData: replayed.value.packageData }),
         turnCount: replayed.value.turns.length,
         artifactCount: replayed.value.artifacts.length,
+        generation: replayed.value.turns.flatMap((turn) =>
+          turn.attempts.map(
+            (attempt): ReplayGeneration => ({
+              turnId: String(turn.turnId),
+              modelAttemptId: String(attempt.modelAttemptId),
+              ...(attempt.generation === null
+                ? { status: "unavailable" as const }
+                : { status: "recorded" as const, requests: attempt.generation.requests }),
+            }),
+          ),
+        ),
         history: replayed.value.history,
         truncated: replayed.value.truncated,
         effectFree: true,

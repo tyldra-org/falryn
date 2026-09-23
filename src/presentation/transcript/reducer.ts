@@ -46,11 +46,13 @@ import type { RuntimeEvent } from "../../domain/sessions/index.ts";
 import type { TranscriptBlock } from "./blocks.ts";
 import type { CoalescedTranscript } from "./coalesce.ts";
 import { applyRevision, EMPTY_TRANSCRIPT } from "./coalesce.ts";
+import type { BoundedText } from "./disclosure.ts";
 import { bound, complete, omitted } from "./disclosure.ts";
 import type { ResumePoint, SequenceAnomaly } from "./gaps.ts";
 import { detectAnomalies } from "./gaps.ts";
 import type { TranscriptCursor } from "./generation.ts";
 import { TRANSCRIPT_PROJECTION_GENERATION } from "./generation.ts";
+import { generationDetail } from "./generation-rate.ts";
 
 export type TranscriptProjection = {
   readonly generation: number;
@@ -70,6 +72,17 @@ export const EMPTY_PROJECTION: TranscriptProjection = {
   refusedRevisions: 0,
   cursors: [],
 };
+
+function generationText(
+  record: Extract<
+    RuntimeEvent,
+    { readonly kind: "model.attempt.completed" }
+  >["payload"]["generation"],
+): BoundedText {
+  if (record === undefined) return omitted("attempt recorded before generation timing");
+  if (record.requests.length === 0) return complete("No provider stream was consumed.");
+  return bound(record.requests.map(generationDetail).join("\n"));
+}
 
 function invocationResultOutput(
   event: Extract<RuntimeEvent, { readonly kind: "capability.invocation.completed" }>,
@@ -440,6 +453,7 @@ export function blockFor(event: RuntimeEvent, history?: HistoryPayload): Transcr
         summary: complete("Model attempt finished."),
         invocationId: null,
         outcome: event.payload.outcome,
+        generation: generationText(event.payload.generation),
       };
 
     case "capability.invocation.started":

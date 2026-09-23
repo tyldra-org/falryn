@@ -1,5 +1,6 @@
 /** Human projections for provider management and coding runs. */
 
+import { generationDetail } from "../../../presentation/index.ts";
 import type { CodingRunPayload, ProviderCommandPayload } from "../../commands.ts";
 import type { RenderedPayload } from "./payload.ts";
 import { paint, type Session } from "./session.ts";
@@ -101,6 +102,9 @@ export function renderCodingRun(
       `  Tool results ${payload.toolResults ?? 0}`,
       `  Tools shown  ${payload.disclosedTools ?? 0}`,
     );
+  }
+  for (const timing of payload.generation ?? []) {
+    lines.push(`  Generation   ${safe(generationDetail(timing))}`);
   }
   return { lines, diagnostics: [] };
 }

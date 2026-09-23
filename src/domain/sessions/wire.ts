@@ -11,6 +11,7 @@ import {
   MAX_SANDBOX_RECEIPT_BYTES,
   sandboxReceiptSchema,
 } from "../security/sandbox.ts";
+import { generationTimingRecordSchema } from "./generation-timing.ts";
 import { historyPayloadSchema } from "./history.ts";
 import { processingPreferenceSchema, processingReceiptSchema } from "./model-processing.ts";
 /**
@@ -489,16 +490,25 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
       (event) => event.payload.receipt.binding.admission.attempt === event.modelAttemptId,
       "Processing attempt identity mismatch.",
     ),
-  z.object({
-    ...envelopeSpine,
-    ...modelIdentity,
-    kind: z.literal("model.attempt.completed"),
-    correlation: turnCorrelationSchema,
-    payload: z.object({
-      outcome: terminalOutcomeSchema,
-      admissions: z.array(resourceAdmissionReceiptSchema).max(65).optional(),
-    }),
-  }),
+  z
+    .object({
+      ...envelopeSpine,
+      ...modelIdentity,
+      kind: z.literal("model.attempt.completed"),
+      correlation: turnCorrelationSchema,
+      payload: z.object({
+        outcome: terminalOutcomeSchema,
+        admissions: z.array(resourceAdmissionReceiptSchema).max(65).optional(),
+        generation: generationTimingRecordSchema.optional(),
+      }),
+    })
+    .refine(
+      (event) =>
+        event.payload.generation?.requests.every(
+          (entry) => entry.modelAttemptId === event.modelAttemptId,
+        ) ?? true,
+      "Generation timing attempt identity mismatch.",
+    ),
   z.object({
     ...envelopeSpine,
     ...toolIdentity,
@@ -654,6 +664,7 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
       return {
         outcome: outcomeToJson(event.payload.outcome),
         ...(event.payload.admissions === undefined ? {} : { admissions: event.payload.admissions }),
+        ...(event.payload.generation === undefined ? {} : { generation: event.payload.generation }),
       };
     case "capability.invocation.completed":
       return {

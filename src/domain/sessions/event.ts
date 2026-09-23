@@ -324,7 +324,11 @@ export type ModelAttemptStartedEvent = Envelope<
 export type ModelAttemptCompletedEvent = Envelope<
   "model.attempt.completed",
   TurnCorrelation,
-  TerminalPayload & { readonly admissions?: readonly ResourceAdmissionReceipt[] | undefined }
+  TerminalPayload & {
+    readonly admissions?: readonly ResourceAdmissionReceipt[] | undefined;
+    /** Absent on records written before generation timing existed. */
+    readonly generation?: import("./generation-timing.ts").GenerationTimingRecord | undefined;
+  }
 > & { readonly modelAttemptId: ModelAttemptId };
 
 export type ModelProcessingRecordedEvent = Envelope<

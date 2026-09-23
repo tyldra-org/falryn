@@ -451,3 +451,27 @@ describe("an unknown fallback", () => {
     expect(textOf(rows)).not.toContain(SECRET);
   });
 });
+
+describe("model attempt generation timing", () => {
+  function outcomeWith(generation: TranscriptBlock["summary"]): TranscriptBlock {
+    const block = ofKind("model-outcome");
+    if (block.kind !== "model-outcome") throw new Error("the corpus returned the wrong kind");
+    return { ...block, generation };
+  }
+
+  test("expanding the attempt shows its timing detail", () => {
+    const detail = "42 tok/s · time to first token 320 ms · generation 2.5 s";
+    const rows = build(outcomeWith(complete(detail)), { expanded: true, columns: 200 });
+    expect(textOf(contentRowsOf(rows))).toContain(detail);
+    // Collapsed, the detail stays out of the way.
+    expect(textOf(build(outcomeWith(complete(detail)), { columns: 200 }))).not.toContain(detail);
+  });
+
+  test("an attempt recorded before timing existed says why nothing is shown", () => {
+    const rows = build(outcomeWith(omitted("attempt recorded before generation timing")), {
+      expanded: true,
+      columns: 200,
+    });
+    expect(textOf(rows)).toContain("attempt recorded before generation timing");
+  });
+});

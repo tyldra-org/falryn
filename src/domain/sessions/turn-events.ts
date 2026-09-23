@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import type { CompositionProvenance } from "../capabilities/composition.ts";
 import type { ProfileTransitionReceipt } from "../configuration/profile-transition.ts";
 import type { CatalogHistory } from "../extensions/catalog-history.ts";
+import type { GenerationTimingRecord } from "./generation-timing.ts";
 import type { HistoryPayload } from "./history.ts";
 import type { ProcessingReceipt } from "./model-processing.ts";
 /**
@@ -108,6 +109,7 @@ export type TurnLifecycleFact =
   | {
       readonly kind: "model.attempt.completed";
       readonly admissions?: ModelAttemptCompletedEvent["payload"]["admissions"];
+      readonly generation?: GenerationTimingRecord;
       readonly correlation: TurnCorrelation;
       readonly modelAttemptId: ModelAttemptId;
       readonly outcome: TerminalOutcome;
@@ -297,6 +299,7 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
         payload: {
           outcome: fact.outcome,
           ...(fact.admissions === undefined ? {} : { admissions: fact.admissions }),
+          ...(fact.generation === undefined ? {} : { generation: fact.generation }),
         },
       };
       return event;
@@ -349,6 +352,8 @@ export type ReplayedAttempt = {
   readonly outcome: TerminalOutcome | null;
   readonly binding: ModelAttemptBinding | null;
   readonly processing: readonly ProcessingReceipt[] | null;
+  /** Null for attempts recorded before generation timing existed, or not yet completed. */
+  readonly generation: GenerationTimingRecord | null;
 };
 
 export type ReplayedInvocation = {
@@ -405,6 +410,7 @@ type MutableAttempt = {
   outcome: TerminalOutcome | null;
   binding: ModelAttemptBinding | null;
   processing: readonly ProcessingReceipt[] | null;
+  generation: GenerationTimingRecord | null;
 };
 
 type MutableInvocation = {
@@ -508,6 +514,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             outcome: null,
             binding: null,
             processing: null,
+            generation: null,
           };
           turn.attempts.set(event.modelAttemptId, attempt);
           turn.attemptOrder.push(event.modelAttemptId);
@@ -536,6 +543,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             outcome: null,
             binding: null,
             processing: null,
+            generation: null,
           };
           turn.attempts.set(event.modelAttemptId, attempt);
           turn.attemptOrder.push(event.modelAttemptId);
@@ -554,12 +562,14 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
             outcome: null,
             binding: null,
             processing: null,
+            generation: null,
           };
           turn.attempts.set(event.modelAttemptId, attempt);
           turn.attemptOrder.push(event.modelAttemptId);
         }
         attempt.completedAt = event.occurredAt;
         attempt.outcome = event.payload.outcome;
+        attempt.generation = event.payload.generation ?? null;
         break;
       }
       case "capability.invocation.started": {
@@ -696,6 +706,7 @@ function freezeTurn(turn: MutableTurn): ReplayedTurn {
               outcome: attempt.outcome,
               binding: attempt.binding,
               processing: attempt.processing,
+              generation: attempt.generation,
             },
           ];
     }),

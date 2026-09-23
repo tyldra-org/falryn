@@ -13,6 +13,8 @@ import {
   turnCompleted as reflectionTurnCompleted,
   turnStarted as reflectionTurnStarted,
 } from "../../domain/fixtures.ts";
+import { generationTimingSchema } from "../../domain/sessions/index.ts";
+import { renderHuman } from "../output/render-human.ts";
 import { resultEvents } from "../output/result-events.ts";
 import { languageStartupFixture } from "./language-startup.test-support.ts";
 /**
@@ -735,6 +737,90 @@ describe("runCoding", () => {
             part.kind === "text" && part.text.includes("Executable tools for this attempt: none"),
         ),
     ).toBe(true);
+  });
+
+  test("falryn run reports, stores and replays generation timing per provider stream", async () => {
+    const seeded = await seededHome();
+    await writeFile(join(seeded.primary, "matrix.ts"), LIVE_TURN_MATRIX_CONTEXT, "utf8");
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const fixture = createLiveTurnMatrixFixture(null, "cap-1123-generation");
+    const result = await runCoding(
+      services,
+      { promptParts: [LIVE_TURN_MATRIX_PROMPT] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: fixture.provider,
+        processCapture: fixture.processCapture,
+        toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+        identities: {
+          sessionId: "session-1123-generation",
+          turnId: "turn-1123-generation",
+          traceId: "trace-1123-generation",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    // The tool request and the final answer are separate streams of one attempt.
+    const generation = result.payload?.generation ?? [];
+    expect(generation).toHaveLength(2);
+    expect(new Set(generation.map((timing) => timing.modelAttemptId)).size).toBe(1);
+    expect(new Set(generation.map((timing) => timing.requestId)).size).toBe(2);
+    for (const timing of generation) {
+      expect(generationTimingSchema.safeParse(timing).success).toBe(true);
+      expect(timing.completion).toBe("complete");
+    }
+    // JSON output keeps the measurement names intact.
+    expect(JSON.parse(JSON.stringify(result)).payload.generation).toEqual(generation);
+    const human = renderHuman({
+      result,
+      color: "none",
+      symbols: "unicode",
+      columns: 240,
+      verbose: false,
+    }).result;
+    expect(human.match(/ {2}Generation {3}.* tok\/s/gu)).toHaveLength(2);
+    expect(human).toContain(`request ${generation[1]?.requestId}`);
+
+    const reopened = await openProductArtifactSession(services());
+    if (reopened === null) throw new Error("product store unavailable");
+    const stored = await reopened.eventStore.readFrom(
+      { streamId: streamId.from("live-turn:session-1123-generation"), afterSequence: null },
+      100,
+    );
+    if (!stored.ok) throw new Error("stored events unavailable");
+    const completed = stored.value.find((event) => event.kind === "model.attempt.completed");
+    expect(
+      completed?.kind === "model.attempt.completed" ? completed.payload.generation : null,
+    ).toEqual({ version: 1 as const, requests: [...generation] });
+    await reopened.close();
+
+    for (const format of ["json", "human"] as const) {
+      const streams = createRecordingCliStreams({ stdin: null });
+      const code = await dispatch({
+        argv: ["--format", format, "replay", "session-1123-generation"],
+        streams,
+        services: providerFor(seeded),
+      });
+      expect(code).toBe(0);
+      const out = streams.resultWrites().join("");
+      if (format === "json") {
+        expect(
+          (JSON.parse(out) as { payload: { generation: unknown } }).payload.generation,
+        ).toEqual([
+          {
+            turnId: "turn-1123-generation",
+            modelAttemptId: generation[0]?.modelAttemptId,
+            status: "recorded",
+            requests: generation,
+          },
+        ]);
+      } else {
+        expect(out.match(/ {2}Generation {3}.* tok\/s/gu)).toHaveLength(2);
+      }
+    }
+    expect(fixture.requests).toHaveLength(2);
   });
 
   test("runs and replays the shared durable live-turn matrix through falryn run", async () => {

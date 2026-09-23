@@ -203,6 +203,8 @@ export type CodingRunPayload = {
   readonly briefReceipt?: BriefReceipt | null;
   readonly providerUsage?: UsageUnits | null;
   readonly providerRequests?: number;
+  /** Final generation timing per consumed provider stream of this turn. */
+  readonly generation?: readonly import("../../domain/sessions/index.ts").GenerationTiming[];
 };
 
 export type CodingRunResult = CommandResultOf<typeof CODING_RUN_COMMAND, CodingRunPayload>;
@@ -1118,6 +1120,7 @@ export async function runCoding(
         briefReceipt: attempted.briefReceipt,
         providerUsage: attempted.providerUsage,
         providerRequests: attempted.providerRequests,
+        ...(attempted.generation === undefined ? {} : { generation: attempted.generation }),
       },
       errors,
       cleanupUncertain ? { kind: "failed", effect: "uncertain" } : attempted.terminalOutcome,

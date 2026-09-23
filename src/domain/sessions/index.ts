@@ -141,6 +141,27 @@ export {
   summarize,
 } from "./export.ts";
 export type {
+  GenerationDeltaSample,
+  GenerationObservation,
+  GenerationRate,
+  GenerationTiming,
+  GenerationTimingRecord,
+  GenerationTokenSource,
+  GenerationUsage,
+} from "./generation-timing.ts";
+export {
+  GENERATION_LIVE_INTERVAL_MS,
+  GENERATION_LIVE_WINDOW_MS,
+  GENERATION_MIN_SAMPLE_MS,
+  GENERATION_MIN_SAMPLE_TOKENS,
+  GENERATION_TIMING_VERSION,
+  generationTimingRecordSchema,
+  generationTimingSchema,
+  liveGenerationRate,
+  MAX_GENERATION_REQUESTS,
+  summarizeGeneration,
+} from "./generation-timing.ts";
+export type {
   ActiveTurnTarget,
   FollowUpEntry,
   FollowUpQueue,
