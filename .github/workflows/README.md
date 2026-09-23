@@ -1,12 +1,13 @@
 # Workflows
 
-Three workflows.
+Four workflows.
 
 | Workflow | Question | Trigger |
 | --- | --- | --- |
 | [`ci.yml`](ci.yml) | Is this revision safe to merge? | every pull request, and every push to `main` |
 | [`pr-checks.yml`](pr-checks.yml) | Does the PR meet contribution requirements, and which area, size, and author-trust labels apply? | PR updates, `/recheck-vouch`, and trust-list or workflow changes |
 | [`issue-governance.yml`](issue-governance.yml) | Is the public issue contract complete and are declared labels reconciled? | issue metadata or state changes |
+| [`dependency-pins.yml`](dependency-pins.yml) | Do the reviewed dependency pins match this Dependabot update? | Dependabot `bun` pull requests |
 
 `Validate contribution metadata` remains the required `main` check in
 `pr-checks.yml`. It loads the policy from the
@@ -172,8 +173,31 @@ Dependabot (`.github/dependabot.yml`) keeps GitHub Actions SHAs current weekly
 and opens Bun package version-update PRs for **every** direct dependency in
 `package.json` (production and development, including packages added later —
 no Dependabot.yml edit required). Groups only batch those updates into fewer
-PRs. Landing still needs a human to refresh `tools/quality/repository-integrity.ts`.
-Dependabot does not bump the Bun runtime pin.
+PRs. Dependabot does not bump the Bun runtime pin.
+
+## `dependency-pins.yml`
+
+Dependabot changes `package.json` and `bun.lock` but not the reviewed version
+pins in `tools/quality/repository-integrity.ts` or the schema URL in
+`biome.json`, so every package update used to fail `Dependency integrity` until
+a maintainer pushed the same mechanical commit. This workflow pushes it.
+
+It runs only on `pull_request` events from `dependabot[bot]` for
+`dependabot/bun/` branches of this repository. It installs no dependencies and
+runs `bun run sync:dependency-pins`, which imports nothing from
+`node_modules`, so no package code executes beside its write token. The script
+changes only `version` fields and the Biome schema version. It refuses, without
+writing, when a version is not exact, a package has no reviewed policy entry, or
+a package moved between `dependencies` and `devDependencies`. A new license,
+repository, or install hook still fails `Dependency integrity`, so admission
+stays a human decision. The job commits only when a file changed, and its own
+push has a different actor, so it cannot trigger itself.
+
+Pushing with `GITHUB_TOKEN` starts the PR's CI in an approval-required state; a
+maintainer approves the run from the PR. To skip that step, add a Dependabot
+secret named `PIN_SYNC_TOKEN` (a fine-grained token limited to this repository
+with contents write). It must be a Dependabot secret, because Actions secrets
+are not passed to Dependabot-triggered runs.
 
 Its optional `working-directory` input installs into a subdirectory checkout
 when a job needs a second tree with its own manifest.
