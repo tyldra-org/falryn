@@ -121,3 +121,54 @@ test("uncertain commit is reconciled by the durable mutation identity", async ()
   expect(count.ok && count.value[0]?.count).toBe(1);
   await f.store.close();
 });
+test("group records and placements edited outside a mutation read as corruption", async () => {
+  const f = await workFixture();
+  const organize = {
+    ...f.request([
+      { kind: "add", itemId: "task", fields: workFields },
+      { kind: "place", nodeId: "task", parentId: null, position: { at: "end" } },
+    ]),
+    version: 2,
+  };
+  workValue(await f.send(organize));
+  const grouped = {
+    ...f.request(
+      [
+        {
+          kind: "group",
+          groupId: "todo",
+          subject: "Todo",
+          parentId: null,
+          position: { at: "end" },
+        },
+      ],
+      2,
+    ),
+    version: 2,
+  };
+  const receipt = workValue(await f.send(grouped)).receipt;
+  expect(receipt?.version).toBe(2);
+  const node = (nodeId: string) =>
+    f.send({
+      version: 2,
+      action: "node",
+      queueId: "queue-1",
+      scopeGeneration: "scope-1",
+      expectedRevision: 3,
+      nodeId,
+    });
+  expect(workCode(await node("todo"))).toBe("ok");
+  const tamper = (statement: string) => {
+    const written = f.store.write((sql) => {
+      sql.run(statement);
+    });
+    expect(written.ok).toBeTrue();
+  };
+  tamper(
+    `UPDATE work_groups SET record=replace(record,'"Todo"','"Renamed"') WHERE group_id='todo'`,
+  );
+  expect(workCode(await node("todo"))).toBe("corrupt");
+  tamper("UPDATE work_placements SET order_key='zzz' WHERE node_id='task'");
+  expect(workCode(await node("task"))).toBe("corrupt");
+  await f.store.close();
+});

@@ -5,6 +5,7 @@ import {
   type WorkQueue,
   workFieldsSchema,
 } from "../../domain/orchestration/work-queue.ts";
+import { completedWork } from "../../domain/orchestration/work-queue-mutations.ts";
 import type {
   WorkMutation,
   WorkQueueRequest,
@@ -61,16 +62,37 @@ async function send(
   if (!result.ok) throw new Error(`workflow-task-list-${result.error.code}`);
   return result.value;
 }
-const accepted = (item: WorkItem) =>
-  item.disposition === "completed" &&
-  item.acceptance?.criteriaRevision === item.criteriaRevision &&
-  item.evidence.length > 0;
+/** The store's accepted-completion predicate, including retained archived completions. */
+const accepted = completedWork;
+const nodeIdSchema = taskListSelectionSchema.shape.items.element.shape.id;
+type Manifest = NonNullable<WorkQueueResponse["manifest"]>;
+/**
+ * A selection that cannot be admitted as requested. Nothing was launched. The
+ * handle names the exact revision and selection so a caller can split it into
+ * smaller, separately authorized selections.
+ */
+export class TaskListSelectionRefusal extends Error {
+  constructor(
+    readonly code: "selection-empty" | "selection-limit" | "graph-limit" | "external-prerequisite",
+    readonly manifest: Manifest | null,
+    readonly handle: {
+      readonly queueId: string;
+      readonly revision: number;
+      readonly groups: readonly string[];
+      readonly tasks: readonly string[];
+    },
+  ) {
+    super(`workflow-task-list-${code}`);
+  }
+}
 
 /** Configuration alone cannot call this function: the task consumer must explicitly admit its selection. */
 export async function prepareTaskListWorkflow(options: {
   readonly actions: Actions;
   readonly queue: WorkQueue;
   readonly selected: readonly string[];
+  /** Groups to expand to their descendant tasks at `queue.revision`; never executable themselves. */
+  readonly groups?: readonly string[];
   readonly autoCascade?: boolean;
   readonly source: string;
   readonly sourceGeneration: string;
@@ -83,10 +105,13 @@ export async function prepareTaskListWorkflow(options: {
   ): Extract<WorkflowNode, { kind: "agent" }>;
 }) {
   const { queue, actions, signal } = options;
+  const groups = options.groups ?? [];
   if (
-    options.selected.length === 0 ||
+    (options.selected.length === 0 && groups.length === 0) ||
     options.selected.length > 256 ||
-    new Set(options.selected).size !== options.selected.length
+    groups.length > 256 ||
+    new Set(options.selected).size !== options.selected.length ||
+    new Set(groups).size !== groups.length
   )
     throw new Error("workflow-task-list-selection-invalid");
   const selection = {
@@ -94,13 +119,79 @@ export async function prepareTaskListWorkflow(options: {
     scopeGeneration: queue.scope.generation,
     expectedRevision: queue.revision,
   };
+  const handle = {
+    queueId: queue.id,
+    revision: queue.revision,
+    groups: [...groups],
+    tasks: [...options.selected],
+  };
+  let chosen: readonly string[] = options.selected;
+  let manifest: Manifest | null = null;
+  const excluded = {
+    accepted: 0,
+    archived: 0,
+    cancelled: 0,
+    blocked: [] as string[],
+    unavailable: [] as string[],
+  };
+  if (groups.length > 0) {
+    // One read at the pinned revision; a concurrent change surfaces as stale, never as a smaller set.
+    manifest =
+      (
+        await send(
+          actions,
+          {
+            version: 2,
+            action: "expand",
+            ...selection,
+            groups: groups.map((id) => nodeIdSchema.parse(id)),
+            tasks: options.selected.map((id) => nodeIdSchema.parse(id)),
+          },
+          signal,
+        )
+      ).manifest ?? null;
+    if (manifest === null || manifest.revision !== queue.revision)
+      throw new Error("workflow-task-list-stale-page");
+    const admissible: string[] = [];
+    for (const entry of manifest.tasks) {
+      if (entry.status === "admissible") admissible.push(entry.id);
+      else if (
+        entry.status === "accepted" ||
+        entry.status === "archived" ||
+        entry.status === "cancelled"
+      )
+        excluded[entry.status] += 1;
+      else excluded[entry.status].push(entry.id);
+    }
+    if (admissible.length === 0)
+      throw new TaskListSelectionRefusal("selection-empty", manifest, handle);
+    if (
+      admissible.length > 256 ||
+      excluded.blocked.length > 256 ||
+      excluded.unavailable.length > 256
+    )
+      throw new TaskListSelectionRefusal("selection-limit", manifest, handle);
+    chosen = admissible;
+  }
   const loaded: { item: WorkItem; dependencies: WorkItem["id"][] }[] = [];
-  for (const id of options.selected) {
+  for (const id of chosen) {
     const itemId = taskListSelectionSchema.shape.items.element.shape.id.parse(id);
     const shown = await send(actions, { version: 1, action: "show", ...selection, itemId }, signal);
     const item = shown.items?.[0];
-    if (!item || item.deleted || item.blockers.length > 0 || item.claim || !item.agentType)
+    if (
+      !item ||
+      item.deleted ||
+      item.blockers.length > 0 ||
+      item.claim ||
+      (!accepted(item) && ["cancelled", "archived"].includes(item.disposition))
+    )
       throw new Error("workflow-task-list-item-unavailable");
+    if (!item.agentType) {
+      // A group member without a registered executor is reported, not launched.
+      if (manifest === null) throw new Error("workflow-task-list-item-unavailable");
+      excluded.unavailable.push(item.id);
+      continue;
+    }
     const edges = await send(
       actions,
       { version: 1, action: "edges", ...selection, itemId, direction: "dependencies", after: null },
@@ -127,8 +218,10 @@ export async function prepareTaskListWorkflow(options: {
       if (!dependency || !accepted(dependency)) waiting = true;
     }
     if (!waiting) included.add(item.id);
-    else if (options.autoCascade) throw new Error("workflow-task-list-external-prerequisite");
+    else if (options.autoCascade)
+      throw new TaskListSelectionRefusal("external-prerequisite", manifest, handle);
   }
+  if (loaded.length === 0) throw new TaskListSelectionRefusal("selection-empty", manifest, handle);
   const nodes: WorkflowNode[] = [];
   for (const { item, dependencies } of loaded) {
     if (!included.has(item.id)) continue;
@@ -198,6 +291,9 @@ export async function prepareTaskListWorkflow(options: {
       dependencies,
       node: included.has(item.id) ? key(item.id) : null,
     })),
+    ...(manifest === null
+      ? {}
+      : { hierarchy: { revision: manifest.revision, groups: manifest.groups, excluded } }),
   });
   const decoded = decodeWorkflowDefinition({
     version: 1,
@@ -208,7 +304,11 @@ export async function prepareTaskListWorkflow(options: {
     outputs: {},
     taskList,
   });
-  if (!decoded.ok) throw new Error("workflow-task-list-graph-invalid");
+  // Node and byte limits apply after expansion and generated joins; nothing is truncated.
+  if (!decoded.ok)
+    throw manifest === null
+      ? new Error("workflow-task-list-graph-invalid")
+      : new TaskListSelectionRefusal("graph-limit", manifest, handle);
   return decoded.definition;
 }
 

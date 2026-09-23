@@ -1,4 +1,5 @@
 import { MIGRATION_0030 } from "../orchestration/schedule-store.ts";
+import { MIGRATION_0031 } from "../orchestration/work-queue-schema.ts";
 import { MIGRATION_0027 } from "../sessions/activation-schema.ts";
 import { MIGRATION_0026 } from "../sessions/history-schema.ts";
 import { MIGRATION_0028 } from "../workspace/profile-preferences.ts";
@@ -116,6 +117,7 @@ describe("a fresh database", () => {
       MIGRATION_0028.version,
       MIGRATION_0029.version,
       MIGRATION_0030.version,
+      MIGRATION_0031.version,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -191,6 +193,8 @@ describe("a fresh database", () => {
       "work_dependency_dependents",
       "work_dependency_mutations",
       "work_dependency_reverse_history",
+      "work_placement_children",
+      "work_placement_mutations",
       "workflow_owner_runs",
     ]);
     await store.close();
@@ -249,6 +253,7 @@ describe("a fresh database", () => {
       MIGRATION_0028.version,
       MIGRATION_0029.version,
       MIGRATION_0030.version,
+      MIGRATION_0031.version,
     ]);
     expect(
       upgraded.read(
