@@ -1,0 +1,69 @@
+name: Dependency pins
+
+# Dependabot bumps package.json and bun.lock but not the reviewed version pins
+# in tools/quality/repository-integrity.ts or Biome's schema URL, so every
+# package update used to fail `Dependency integrity` until a maintainer pushed
+# the mechanical pin commit. This job pushes that commit. License, repository,
+# and install-hook changes still fail the integrity check for human review.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  sync:
+    name: Sync dependency integrity pins
+    # Only Dependabot's own package-update branches in this repository. The
+    # commit this job pushes has another actor, so it cannot trigger itself.
+    if: >-
+      github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'dependabot/bun/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      # PIN_SYNC_TOKEN is an optional Dependabot secret. Without it the push
+      # uses GITHUB_TOKEN, and the resulting CI run waits for a maintainer to
+      # approve it.
+      - name: Check out the Dependabot branch
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          token: ${{ secrets.PIN_SYNC_TOKEN || github.token }}
+
+      # No dependency install: the sync script imports nothing from
+      # node_modules, so no package code runs beside a writable token.
+      - name: Set up Bun without dependencies
+        uses: ./.github/actions/setup-bun
+        with:
+          install: "false"
+
+      - name: Rewrite the version pins from package.json
+        run: bun run tools/quality/dependency-pin-sync.ts
+
+      - name: Commit and push changed pins
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if git diff --quiet -- tools/quality/repository-integrity.ts biome.json; then
+            echo "Pins already match package.json."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- tools/quality/repository-integrity.ts biome.json
+          git commit -m "build(deps): sync integrity pins with the Dependabot update"
+          git push origin "HEAD:refs/heads/${HEAD_REF}"
