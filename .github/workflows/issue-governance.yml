@@ -3,7 +3,7 @@ name: Issue governance
 on:
   issues:
     types:
-      [opened, edited, reopened, closed, assigned, unassigned, labeled, unlabeled, milestoned, demilestoned]
+      [opened, edited, reopened, closed, assigned, unassigned, labeled, unlabeled]
 
 concurrency:
   group: issue-governance-${{ github.event.issue.number }}

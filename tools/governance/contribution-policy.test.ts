@@ -361,23 +361,22 @@ describe("contribution policy", () => {
   });
 });
 
-test("public checks reject repository release metadata without reading private planning", async () => {
-  const input = maintainerIssue({ milestone: { title: "Private planning value" } });
-  const error =
-    "remove the repository milestone; release scheduling belongs in the private Project";
-  expect(policy.validateIssue(input)).toEqual([error]);
+test("public checks accept release milestones on issues", async () => {
+  const input = maintainerIssue({ milestone: { title: "v0.4 Extensions and Collaboration" } });
+  expect(policy.validateIssue(input)).toEqual([]);
   const writes = await runIssueWorkflow({
     ...input,
     labels: [{ name: "roadmap" }, { name: "type: feature" }, { name: "area: runtime" }],
   });
-  expect(writes).toHaveLength(1);
-  expect(writes[0]?.payload.body).toContain(error);
-  expect(writes[0]?.payload.body).not.toContain("Private planning value");
+  expect(writes.some((write) => String(write.payload.body ?? "").includes("milestone"))).toBe(
+    false,
+  );
 });
 
-test("PR planning metadata stays private", () => {
+test("public checks accept release milestones on pull requests", () => {
   expect(
-    policy.validatePullRequest(pullRequest({ milestone: { title: "Private planning value" } }))
-      .errors,
-  ).toEqual(["remove the repository milestone; release scheduling belongs in the private Project"]);
+    policy.validatePullRequest(
+      pullRequest({ milestone: { title: "v0.4 Extensions and Collaboration" } }),
+    ).errors,
+  ).toEqual([]);
 });
