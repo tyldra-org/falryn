@@ -25,8 +25,8 @@ merge permission. `issue-governance.yml` maps an issue form's declared work
 type and primary area to canonical labels, then comments on missing evidence for
 the selected format. It reads current issue state, leaves an unchanged reminder
 alone, and removes its reminder when the issue passes. It never asks for an
-assignee or private Project field. It flags a repository milestone on an issue
-or PR using only public metadata, without echoing the milestone name.
+assignee or private planning field. Release milestones are public planning
+metadata, so milestone changes do not trigger it.
 
 Metadata validation runs only on `pull_request` with read-only permissions.
 Area and size labeling run on `pull_request_target` for opened, reopened, and
