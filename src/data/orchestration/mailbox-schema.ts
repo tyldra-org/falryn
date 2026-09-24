@@ -29,3 +29,16 @@ export const MIGRATION_0018: Migration = {
     "CREATE TABLE peer_mailbox_events (sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL REFERENCES peer_messages(id), revision INTEGER NOT NULL CHECK(revision BETWEEN 1 AND 16), fact TEXT NOT NULL CHECK(fact IN ('transition','conflict')), receipt TEXT NOT NULL CHECK(length(CAST(receipt AS BLOB))<=4096), UNIQUE(id,revision)) STRICT",
   ],
 };
+
+export const PEER_ROUTE_TABLES = ["peer_route_grants", "peer_route_grant_versions"] as const;
+/** Recipient-owned directional route grants and their revision history. */
+export const MIGRATION_0032: Migration = {
+  version: 32,
+  name: "peer-route-grants",
+  destructive: false,
+  statements: [
+    "CREATE TABLE peer_route_grants (sequence INTEGER PRIMARY KEY AUTOINCREMENT, id TEXT NOT NULL UNIQUE, sender TEXT NOT NULL REFERENCES peer_endpoints(id), recipient TEXT NOT NULL REFERENCES peer_endpoints(id), revision INTEGER NOT NULL CHECK(revision>=1), state TEXT NOT NULL CHECK(state IN ('active','revoked')), expires_at INTEGER NOT NULL, record TEXT NOT NULL CHECK(length(CAST(record AS BLOB))<=4096), UNIQUE(sender,recipient), CHECK(sender != recipient)) STRICT",
+    "CREATE INDEX peer_route_recipient ON peer_route_grants(recipient,state)",
+    "CREATE TABLE peer_route_grant_versions (id TEXT NOT NULL REFERENCES peer_route_grants(id), revision INTEGER NOT NULL, record TEXT NOT NULL CHECK(length(CAST(record AS BLOB))<=4096), PRIMARY KEY(id,revision)) STRICT",
+  ],
+};

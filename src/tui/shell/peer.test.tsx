@@ -68,3 +68,42 @@ test("peer actions use the user control port and Escape cancels only its wait", 
   expect(await shell.frame()).toContain("Local peer wait cancelled");
   expect(turns).toBe(0);
 });
+test("route views render as the same JSON the CLI prints", async () => {
+  const route = {
+    direction: "alice/main#1 -> bob/main#1",
+    revision: 2,
+    status: "revoked",
+    reason: "route-revoked",
+    expiresAt: 1_790_000_000_000,
+  };
+  const results = [{ ok: true, value: { items: [route], complete: true } }];
+  const requests: unknown[] = [];
+  using shell = await mount(
+    <ShellApp
+      theme={{
+        variant: "dark",
+        colorLevel: "truecolor",
+        symbols: "unicode",
+        reducedMotion: true,
+        generation: 1,
+      }}
+      model={model}
+      onExit={() => {}}
+      submission={{
+        submit: (snapshot) => ({ kind: "accepted", snapshot }),
+        async peer(input) {
+          requests.push(input);
+          return results[requests.length - 1] ?? { ok: false, error: { code: "invalid" } };
+        },
+      }}
+    />,
+    { shape: { columns: 220, rows: 30 } },
+  );
+  await shell.frame();
+  await shell.press("\t");
+  await shell.press("\t");
+  await shell.type('/peer {"operation":"routes"}');
+  await shell.press("\r");
+  expect(await shell.frame()).toContain(JSON.stringify(results[0]));
+  expect(requests).toEqual([{ operation: "routes" }]);
+});

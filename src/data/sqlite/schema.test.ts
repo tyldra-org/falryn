@@ -1,3 +1,4 @@
+import { MIGRATION_0032 } from "../orchestration/mailbox-schema.ts";
 import { MIGRATION_0030 } from "../orchestration/schedule-store.ts";
 import { MIGRATION_0031 } from "../orchestration/work-queue-schema.ts";
 import { MIGRATION_0027 } from "../sessions/activation-schema.ts";
@@ -118,6 +119,7 @@ describe("a fresh database", () => {
       MIGRATION_0029.version,
       MIGRATION_0030.version,
       MIGRATION_0031.version,
+      MIGRATION_0032.version,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -177,6 +179,7 @@ describe("a fresh database", () => {
       "peer_message_inbox",
       "peer_message_outbox",
       "peer_open_subscriptions",
+      "peer_route_recipient",
       "provider_continuation_states_by_age",
       "question_owner_requests",
       "reflection_requests_by_session",
@@ -254,6 +257,7 @@ describe("a fresh database", () => {
       MIGRATION_0029.version,
       MIGRATION_0030.version,
       MIGRATION_0031.version,
+      MIGRATION_0032.version,
     ]);
     expect(
       upgraded.read(

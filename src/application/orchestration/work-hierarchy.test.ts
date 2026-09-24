@@ -699,13 +699,15 @@ describe("compatibility", () => {
   async function rollBackToSchema30(store: SqliteStorePort) {
     const written = store.write((sql) => {
       for (const table of [
+        "peer_route_grant_versions",
+        "peer_route_grants",
         "work_placement_versions",
         "work_placements",
         "work_group_versions",
         "work_groups",
       ])
         sql.run(`DROP TABLE ${table}`);
-      sql.run(`DELETE FROM ${MIGRATION_TABLE} WHERE version = 31`);
+      sql.run(`DELETE FROM ${MIGRATION_TABLE} WHERE version >= 31`);
     });
     expect(written.ok).toBeTrue();
   }
@@ -721,7 +723,7 @@ describe("compatibility", () => {
     await f.store.close();
 
     const migrated = await openProductStoreOrThrow(f.root);
-    expect(migrated.report.appliedThisRun).toEqual([31]);
+    expect(migrated.report.appliedThisRun).toEqual([31, 32]);
     const c = client(actionsFor(migrated));
     expect(c.ids(await c.query("children", { parentId: null, after: null, limit: 10 }))).toEqual([
       "alpha",

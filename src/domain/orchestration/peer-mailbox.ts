@@ -174,21 +174,83 @@ export type PeerSubscriptionInput = Pick<
   "id" | "sender" | "recipient" | "predicate" | "deadline"
 >;
 export type MailboxPage<T> = { items: T[]; cursor: MailboxCursor; complete: boolean };
+/**
+ * Directional authority for one exact sender to reach one exact recipient in a
+ * different scope. The recipient owns it. It binds both endpoints' scope digests
+ * as granted, so a trust, workspace or environment change invalidates it; it
+ * never lets the sender claim the recipient's scope.
+ */
+export const PEER_ROUTE_RIGHTS = ["discover", "send"] as const;
+export const peerRouteGrantSchema = z.strictObject({
+  version: z.literal(1),
+  id: digest,
+  sender: peerIdentitySchema,
+  recipient: peerIdentitySchema,
+  senderScope: peerScopeSchema,
+  recipientScope: peerScopeSchema,
+  rights: z.array(z.enum(PEER_ROUTE_RIGHTS)).min(1).max(PEER_ROUTE_RIGHTS.length),
+  revision: z.number().int().min(1).max(Number.MAX_SAFE_INTEGER),
+  state: z.enum(["active", "revoked"]),
+  grantedAt: timestamp,
+  expiresAt: timestamp,
+  changedAt: timestamp,
+});
+export type PeerRouteGrant = z.infer<typeof peerRouteGrantSchema>;
+export const peerRouteId = (sender: PeerIdentity, recipient: PeerIdentity) =>
+  canonicalDigest(["peer-route", sender, recipient]);
+/** Why a route cannot carry traffic now. Shown identically on every surface. */
+export const PEER_ROUTE_REASONS = [
+  "route-missing",
+  "route-revoked",
+  "route-expired",
+  "route-scope-changed",
+  "route-endpoint-retired",
+  "route-stale",
+  "route-right-missing",
+  "route-ambiguous",
+  "cross-scope-artifact",
+  "scope-mismatch",
+  "same-scope",
+  "not-in-registry",
+] as const;
+export type PeerRouteReason = (typeof PEER_ROUTE_REASONS)[number];
+export type PeerRouteView = PeerRouteGrant & {
+  /** Human-readable direction: only `sender` may reach `recipient`. */
+  readonly direction: string;
+  readonly status: "active" | "revoked" | "expired" | "invalid";
+  readonly reason: PeerRouteReason | null;
+};
+/** The exact grant revision a sender presents; admission refuses any other. */
+export type PeerRouteProof = { readonly id: string; readonly revision: number };
+export type PeerRoutePreview = {
+  readonly direction: string;
+  readonly sender: PeerEndpoint;
+  readonly recipient: PeerEndpoint;
+  readonly rights: readonly (typeof PEER_ROUTE_RIGHTS)[number][];
+  /** Pass as `expectedRevision` to grant or revoke; 0 when no grant exists. */
+  readonly expectedRevision: number;
+  readonly current: PeerRouteView | null;
+  readonly reply: "requires-reverse-grant";
+};
+export const PEER_FAILURE_CODES = [
+  "unsupported",
+  "invalid",
+  "denied",
+  "stale",
+  "conflict",
+  "full",
+  "rate-limited",
+  "unavailable",
+  "uncertain",
+  "corrupt",
+  "not-found",
+  "expired",
+  "cancelled",
+  "held",
+] as const;
 export type PeerFailure = {
-  code:
-    | "invalid"
-    | "denied"
-    | "stale"
-    | "conflict"
-    | "full"
-    | "rate-limited"
-    | "unavailable"
-    | "uncertain"
-    | "corrupt"
-    | "not-found"
-    | "expired"
-    | "cancelled"
-    | "held";
+  reason?: PeerRouteReason | undefined;
+  code: (typeof PEER_FAILURE_CODES)[number];
 };
 export type PeerResult<T> = Result<T, PeerFailure>;
 export const peerKey = (identity: PeerIdentity) => canonicalDigest(identity);
@@ -255,7 +317,49 @@ export type MailboxRepository = {
     phase: "started" | "unavailable",
     now: number,
   ): PeerResult<MailboxReceipt>;
-  admit(lease: PeerLease, message: PeerMessage, now: number): PeerResult<MailboxReceipt>;
+  /** A cross-scope admission must present the exact current route grant revision. */
+  admit(
+    lease: PeerLease,
+    message: PeerMessage,
+    now: number,
+    route?: PeerRouteProof | null,
+  ): PeerResult<MailboxReceipt>;
+  /** Recipient view of a proposed direction before any grant exists. */
+  routePreview(lease: PeerLease, sender: PeerIdentity, now: number): PeerResult<PeerRoutePreview>;
+  /** Only the recipient's direct user controls may grant. */
+  grantRoute(
+    lease: PeerLease,
+    sender: PeerIdentity,
+    input: {
+      readonly expectedRevision: number;
+      readonly expiresAt: number;
+      readonly rights: readonly (typeof PEER_ROUTE_RIGHTS)[number][];
+    },
+    now: number,
+  ): PeerResult<PeerRouteView>;
+  /**
+   * Either end may withdraw; narrowing authority needs no counterpart consent.
+   * `direction` is relative to `lease`; null selects the only route with `peer`.
+   */
+  revokeRoute(
+    lease: PeerLease,
+    peer: PeerIdentity,
+    direction: "incoming" | "outgoing" | null,
+    expectedRevision: number,
+    now: number,
+  ): PeerResult<PeerRouteView>;
+  routes(
+    lease: PeerLease,
+    after: number,
+    limit: number,
+    now: number,
+  ): PeerResult<MailboxPage<PeerRouteView>>;
+  /** The sender's current proof for `recipient`, or null when scopes already match. */
+  routeProof(
+    lease: PeerLease,
+    recipient: PeerIdentity,
+    now: number,
+  ): PeerResult<PeerRouteProof | null>;
   acknowledge(lease: PeerLease, ack: DeliveryAck, now: number): PeerResult<MailboxReceipt>;
   inspect(
     lease: PeerLease,

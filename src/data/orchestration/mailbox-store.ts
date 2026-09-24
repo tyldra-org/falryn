@@ -9,16 +9,22 @@ import {
   type MailboxRepository,
   mailboxReceiptSchema,
   messageKey,
+  PEER_ROUTE_RIGHTS,
   type PeerEndpoint,
   type PeerIdentity,
   type PeerLease,
   type PeerMessage,
   type PeerResult,
+  type PeerRouteGrant,
+  type PeerRouteProof,
+  type PeerRouteView,
   type PeerSubscription,
   type PeerSubscriptionInput,
   peerEndpointSchema,
   peerKey,
   peerMessageSchema,
+  peerRouteGrantSchema,
+  peerRouteId,
   peerSubscriptionSchema,
   samePeer,
   samePeerScope,
@@ -207,7 +213,8 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
       if (
         checked.handling === "replied" ||
         checked.handling === "refused" ||
-        checked.delivery === "expired"
+        checked.delivery === "expired" ||
+        (checked.policy === "revoked" && checked.wait === "settled")
       )
         sql.run(
           "INSERT OR IGNORE INTO peer_notifications(id,endpoint,kind) VALUES($id,$endpoint,'settlement')",
@@ -291,12 +298,93 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
       },
     )[0];
   }
+  const identityLabel = (identity: PeerIdentity) =>
+    `${identity.sessionId}/${identity.agentId}#${identity.generation}`;
+  function readGrant(sql: SqliteStatements, id: string): PeerResult<PeerRouteGrant | null> {
+    const row = sql.all("SELECT * FROM peer_route_grants WHERE id=$id", { id })[0];
+    if (!row) return ok(null);
+    const parsed = peerRouteGrantSchema.safeParse(JSON.parse(String(row.record)));
+    if (
+      !parsed.success ||
+      parsed.data.id !== row.id ||
+      parsed.data.id !== peerRouteId(parsed.data.sender, parsed.data.recipient) ||
+      peerKey(parsed.data.sender) !== row.sender ||
+      peerKey(parsed.data.recipient) !== row.recipient ||
+      parsed.data.revision !== row.revision ||
+      parsed.data.state !== row.state ||
+      parsed.data.expiresAt !== row.expires_at
+    )
+      return err({ code: "corrupt" });
+    return ok(parsed.data);
+  }
+  function putGrant(sql: SqliteStatements, grant: PeerRouteGrant) {
+    const record = JSON.stringify(peerRouteGrantSchema.parse(grant));
+    sql.run(
+      "INSERT INTO peer_route_grants(id,sender,recipient,revision,state,expires_at,record) VALUES($id,$sender,$recipient,$revision,$state,$expires,$record) ON CONFLICT(id) DO UPDATE SET revision=excluded.revision,state=excluded.state,expires_at=excluded.expires_at,record=excluded.record",
+      {
+        id: grant.id,
+        sender: peerKey(grant.sender),
+        recipient: peerKey(grant.recipient),
+        revision: grant.revision,
+        state: grant.state,
+        expires: grant.expiresAt,
+        record,
+      },
+    );
+    sql.run(
+      "INSERT INTO peer_route_grant_versions(id,revision,record) VALUES($id,$revision,$record)",
+      { id: grant.id, revision: grant.revision, record },
+    );
+  }
+  /** Validity is derived from current endpoint rows every time, never cached. */
+  function routeView(sql: SqliteStatements, grant: PeerRouteGrant, now: number): PeerRouteView {
+    const direction = `${identityLabel(grant.sender)} -> ${identityLabel(grant.recipient)}`;
+    if (grant.state === "revoked")
+      return { ...grant, direction, status: "revoked", reason: "route-revoked" };
+    if (grant.expiresAt <= now)
+      return { ...grant, direction, status: "expired", reason: "route-expired" };
+    const sender = endpoint(sql, grant.sender);
+    const recipient = endpoint(sql, grant.recipient);
+    if (
+      !sender.ok ||
+      !recipient.ok ||
+      !sender.value.current ||
+      !recipient.value.current ||
+      [sender.value.endpoint.state, recipient.value.endpoint.state].some(
+        (state) => state === "retired" || state === "terminal",
+      )
+    )
+      return { ...grant, direction, status: "invalid", reason: "route-endpoint-retired" };
+    if (
+      !samePeerScope(sender.value.endpoint.scope, grant.senderScope) ||
+      !samePeerScope(recipient.value.endpoint.scope, grant.recipientScope)
+    )
+      return { ...grant, direction, status: "invalid", reason: "route-scope-changed" };
+    return { ...grant, direction, status: "active", reason: null };
+  }
+  function activeRoute(
+    sql: SqliteStatements,
+    sender: PeerIdentity,
+    recipient: PeerIdentity,
+    now: number,
+    right: (typeof PEER_ROUTE_RIGHTS)[number],
+  ): PeerResult<PeerRouteView> {
+    const grant = readGrant(sql, peerRouteId(sender, recipient));
+    if (!grant.ok) return grant;
+    if (grant.value === null) return err({ code: "denied", reason: "route-missing" });
+    const view = routeView(sql, grant.value, now);
+    if (view.status !== "active")
+      return err({ code: "denied", reason: view.reason ?? "route-missing" });
+    if (!view.rights.includes(right)) return err({ code: "denied", reason: "route-right-missing" });
+    return ok(view);
+  }
   function persist(
     sql: SqliteStatements,
     lease: PeerLease,
     raw: PeerMessage,
     now: number,
     receiving: boolean,
+    route: PeerRouteProof | null = null,
   ): PeerResult<MailboxReceipt> {
     const parsed = peerMessageSchema.safeParse(raw);
     if (!parsed.success || Buffer.byteLength(JSON.stringify(raw)) > MAILBOX_LIMITS.envelopeBytes)
@@ -310,11 +398,24 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
     const recipient = endpoint(sql, message.recipient);
     if (!sender.ok || !recipient.ok) return err({ code: "unavailable" });
     if (!sender.value.current || !recipient.value.current) return err({ code: "stale" });
-    if (
-      !samePeerScope(sender.value.endpoint.scope, message.scope) ||
-      !samePeerScope(recipient.value.endpoint.scope, message.scope)
-    )
-      return err({ code: "denied" });
+    // A sender always writes in its own scope; a grant never lets it claim another.
+    if (!samePeerScope(sender.value.endpoint.scope, message.scope))
+      return err({ code: "denied", reason: "scope-mismatch" });
+    let crossScope = false;
+    if (!samePeerScope(recipient.value.endpoint.scope, message.scope)) {
+      const granted = activeRoute(sql, message.sender, message.recipient, now, "send");
+      if (!granted.ok) return granted;
+      // Admission binds the exact revision the sender checked, or refuses as stale.
+      if (
+        receiving &&
+        (route?.id !== granted.value.id || route.revision !== granted.value.revision)
+      )
+        return err({ code: "stale", reason: "route-stale" });
+      // No artifact transfer contract exists across scopes; nothing is copied to compensate.
+      if (message.artifacts.length > 0)
+        return err({ code: "denied", reason: "cross-scope-artifact" });
+      crossScope = true;
+    }
     if (
       [sender.value.endpoint, recipient.value.endpoint].some(
         (item) => item.state === "retired" || item.state === "terminal",
@@ -342,7 +443,12 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
       )
         return err({ code: "denied" });
     }
-    const policy = allowed(sql, message.sender, message.recipient);
+    // The recipient's own hold/refuse still applies; an exact grant stands in for an allow row.
+    const policy =
+      allowed(sql, message.sender, message.recipient) ??
+      (crossScope
+        ? { mode: "allow", muted: 0, per_minute: MAILBOX_LIMITS.sendsPerMinute }
+        : undefined);
     if (!policy || policy.mode === "refuse") return err({ code: "denied" });
     if (
       receiving &&
@@ -495,8 +601,9 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
         const current = owner(sql, lease, now);
         if (!current.ok) return current;
         const notices = [];
+        // An exact route stands in for an unmuted allow row, as it does at admission.
         for (const row of sql.all(
-          "SELECT n.id,n.kind FROM peer_notifications n JOIN peer_messages m ON m.id=n.id LEFT JOIN peer_policies p ON p.sender=m.sender AND p.recipient=m.recipient WHERE n.endpoint=$endpoint AND n.consumed=0 AND coalesce(p.muted,1)=0 ORDER BY m.sequence LIMIT $limit",
+          "SELECT n.id,n.kind FROM peer_notifications n JOIN peer_messages m ON m.id=n.id LEFT JOIN peer_policies p ON p.sender=m.sender AND p.recipient=m.recipient LEFT JOIN peer_route_grants g ON g.sender=m.sender AND g.recipient=m.recipient WHERE n.endpoint=$endpoint AND n.consumed=0 AND coalesce(p.muted,CASE WHEN g.id IS NULL THEN 1 ELSE 0 END)=0 ORDER BY m.sequence LIMIT $limit",
           { endpoint: peerKey(lease.identity), limit: MAILBOX_LIMITS.pending },
         )) {
           const loaded = load(sql, String(row.id));
@@ -696,11 +803,15 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
           !remote.value.current ||
           remote.value.endpoint.state === "retired" ||
           remote.value.endpoint.state === "terminal" ||
-          remote.value.endpoint.leaseUntil <= now ||
-          !samePeerScope(remote.value.endpoint.scope, recipient.value.scope)
+          remote.value.endpoint.leaseUntil <= now
         )
           return err({ code: "stale" });
         const policy = allowed(sql, sender, lease.identity);
+        if (!samePeerScope(remote.value.endpoint.scope, recipient.value.scope)) {
+          const granted = activeRoute(sql, sender, lease.identity, now, "send");
+          if (!granted.ok) return granted;
+          return policy?.mode === "refuse" ? err({ code: "denied" }) : ok(undefined);
+        }
         return policy && policy.mode !== "refuse" ? ok(undefined) : err({ code: "denied" });
       });
     },
@@ -874,8 +985,12 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
         const remote = endpoint(sql, sender);
         if (!recipient.ok) return recipient;
         if (!remote.ok) return remote;
-        if (!samePeerScope(recipient.value.scope, remote.value.endpoint.scope))
-          return err({ code: "denied" });
+        if (!samePeerScope(recipient.value.scope, remote.value.endpoint.scope)) {
+          // Hold or refuse applies separately to a sender this recipient has granted.
+          const grant = readGrant(sql, peerRouteId(sender, lease.identity));
+          if (!grant.ok) return grant;
+          if (grant.value === null) return err({ code: "denied", reason: "route-missing" });
+        }
         sql.run(
           "INSERT INTO peer_policies(recipient,sender,mode,muted,per_minute) VALUES($recipient,$sender,$mode,$muted,$rate) ON CONFLICT(recipient,sender) DO UPDATE SET mode=excluded.mode,muted=excluded.muted,per_minute=excluded.per_minute",
           {
@@ -932,8 +1047,8 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
         const current = owner(sql, lease, now);
         if (!current.ok) return current;
         const rows = sql.all(
-          "SELECT e.sequence,e.record FROM peer_endpoints e JOIN peer_policies p ON p.recipient=e.id WHERE p.sender=$sender AND p.mode!='refuse' AND e.sequence>$after AND NOT EXISTS (SELECT 1 FROM peer_endpoints newer WHERE newer.session=e.session AND newer.agent=e.agent AND newer.generation>e.generation) ORDER BY e.sequence LIMIT $limit",
-          { sender: peerKey(lease.identity), after, limit: limit + 1 },
+          "SELECT e.sequence,e.record FROM peer_endpoints e WHERE e.sequence>$after AND (EXISTS (SELECT 1 FROM peer_policies p WHERE p.recipient=e.id AND p.sender=$sender AND p.mode!='refuse') OR (EXISTS (SELECT 1 FROM peer_route_grants g WHERE g.recipient=e.id AND g.sender=$sender AND g.state='active' AND g.expires_at>$now) AND NOT EXISTS (SELECT 1 FROM peer_policies p WHERE p.recipient=e.id AND p.sender=$sender AND p.mode='refuse'))) AND NOT EXISTS (SELECT 1 FROM peer_endpoints newer WHERE newer.session=e.session AND newer.agent=e.agent AND newer.generation>e.generation) ORDER BY e.sequence LIMIT $limit",
+          { sender: peerKey(lease.identity), after, limit: limit + 1, now },
         );
         const items = rows.slice(0, limit).map((row) => {
           const peer = peerEndpointSchema.parse(JSON.parse(String(row.record)));
@@ -941,10 +1056,13 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
             ? { ...peer, state: "offline" as const }
             : peer;
         });
+        const visible = (item: PeerEndpoint) =>
+          samePeerScope(item.scope, current.value.scope)
+            ? allowed(sql, lease.identity, item.identity)?.mode !== undefined &&
+              allowed(sql, lease.identity, item.identity)?.mode !== "refuse"
+            : activeRoute(sql, lease.identity, item.identity, now, "discover").ok;
         return ok({
-          items: items.filter(
-            (item) => samePeerScope(item.scope, current.value.scope) && item.state !== "retired",
-          ),
+          items: items.filter((item) => item.state !== "retired" && visible(item)),
           cursor: {
             version: 1,
             endpoint: lease.identity,
@@ -955,7 +1073,199 @@ export function createMailboxRepository(store: SqliteStorePort): MailboxReposito
       });
     },
     propose: (lease, message, now) => write((sql) => persist(sql, lease, message, now, false)),
-    admit: (lease, message, now) => write((sql) => persist(sql, lease, message, now, true)),
+    admit: (lease, message, now, route = null) =>
+      write((sql) => persist(sql, lease, message, now, true, route)),
+    routePreview(lease, sender, now) {
+      return write((sql) => {
+        const recipient = owner(sql, lease, now);
+        if (!recipient.ok) return recipient;
+        if (samePeer(sender, lease.identity)) return err({ code: "invalid" });
+        const remote = endpoint(sql, sender);
+        if (!remote.ok)
+          return remote.error.code === "not-found"
+            ? err({ code: "unsupported", reason: "not-in-registry" })
+            : remote;
+        if (samePeerScope(remote.value.endpoint.scope, recipient.value.scope))
+          return err({ code: "invalid", reason: "same-scope" });
+        const prior = readGrant(sql, peerRouteId(sender, lease.identity));
+        if (!prior.ok) return prior;
+        return ok({
+          direction: `${identityLabel(sender)} -> ${identityLabel(lease.identity)}`,
+          sender: remote.value.endpoint,
+          recipient: recipient.value,
+          rights: [...PEER_ROUTE_RIGHTS],
+          expectedRevision: prior.value?.revision ?? 0,
+          current: prior.value === null ? null : routeView(sql, prior.value, now),
+          reply: "requires-reverse-grant",
+        });
+      });
+    },
+    grantRoute(lease, sender, input, now) {
+      const rights = [...new Set(input.rights)];
+      if (
+        !Number.isSafeInteger(input.expectedRevision) ||
+        input.expectedRevision < 0 ||
+        rights.length === 0 ||
+        rights.some((right) => !PEER_ROUTE_RIGHTS.includes(right)) ||
+        !Number.isSafeInteger(input.expiresAt) ||
+        input.expiresAt <= now ||
+        input.expiresAt > now + MAILBOX_LIMITS.expiryMs
+      )
+        return err({ code: "invalid" });
+      return write((sql) => {
+        const recipient = owner(sql, lease, now);
+        if (!recipient.ok) return recipient;
+        if (samePeer(sender, lease.identity)) return err({ code: "invalid" });
+        const remote = endpoint(sql, sender);
+        if (!remote.ok)
+          return remote.error.code === "not-found"
+            ? err({ code: "unsupported", reason: "not-in-registry" })
+            : remote;
+        if (
+          !remote.value.current ||
+          remote.value.endpoint.state === "retired" ||
+          remote.value.endpoint.state === "terminal"
+        )
+          return err({ code: "stale", reason: "route-endpoint-retired" });
+        if (samePeerScope(remote.value.endpoint.scope, recipient.value.scope))
+          return err({ code: "invalid", reason: "same-scope" });
+        const id = peerRouteId(sender, lease.identity);
+        const prior = readGrant(sql, id);
+        if (!prior.ok) return prior;
+        if ((prior.value?.revision ?? 0) !== input.expectedRevision)
+          return err({ code: "stale", reason: "route-stale" });
+        // Reactivating a revoked or expired grant counts against the bound like a new one.
+        if (
+          (prior.value === null ||
+            prior.value.state !== "active" ||
+            prior.value.expiresAt <= now) &&
+          Number(
+            sql.all(
+              "SELECT count(*) AS total FROM peer_route_grants WHERE state='active' AND expires_at>$now AND (recipient=$me OR sender=$me)",
+              { me: peerKey(lease.identity), now },
+            )[0]?.total,
+          ) >= MAILBOX_LIMITS.peers
+        )
+          return err({ code: "full" });
+        const grant: PeerRouteGrant = {
+          version: 1,
+          id,
+          sender,
+          recipient: lease.identity,
+          senderScope: remote.value.endpoint.scope,
+          recipientScope: recipient.value.scope,
+          rights,
+          revision: (prior.value?.revision ?? 0) + 1,
+          state: "active",
+          grantedAt: now,
+          expiresAt: input.expiresAt,
+          changedAt: now,
+        };
+        putGrant(sql, grant);
+        return ok(routeView(sql, grant, now));
+      });
+    },
+    revokeRoute(lease, peer, direction, expectedRevision, now) {
+      return write((sql) => {
+        const current = owner(sql, lease, now, true);
+        if (!current.ok) return current;
+        const incoming = readGrant(sql, peerRouteId(peer, lease.identity));
+        if (!incoming.ok) return incoming;
+        const outgoing = readGrant(sql, peerRouteId(lease.identity, peer));
+        if (!outgoing.ok) return outgoing;
+        if (direction === null && incoming.value !== null && outgoing.value !== null)
+          return err({ code: "invalid", reason: "route-ambiguous" });
+        const grant =
+          direction === "incoming"
+            ? incoming.value
+            : direction === "outgoing"
+              ? outgoing.value
+              : (incoming.value ?? outgoing.value);
+        if (grant === null) return err({ code: "not-found", reason: "route-missing" });
+        if (grant.revision !== expectedRevision)
+          return err({ code: "stale", reason: "route-stale" });
+        if (grant.state === "revoked") return ok(routeView(sql, grant, now));
+        const revoked: PeerRouteGrant = {
+          ...grant,
+          state: "revoked",
+          revision: grant.revision + 1,
+          changedAt: now,
+        };
+        putGrant(sql, revoked);
+        // Deny not-yet-admitted delivery and wake its waiters; admitted evidence stays truthful.
+        for (const row of sql.all(
+          "SELECT id FROM peer_messages WHERE sender=$sender AND recipient=$recipient AND accepted=0",
+          { sender: peerKey(grant.sender), recipient: peerKey(grant.recipient) },
+        )) {
+          const loaded = load(sql, String(row.id));
+          if (!loaded.ok) throw new Error("corrupt peer route evidence");
+          const receipt = loaded.value.receipt;
+          if (
+            receipt.tombstoned ||
+            receipt.policy === "revoked" ||
+            !["proposed", "unavailable"].includes(receipt.delivery)
+          )
+            continue;
+          const changed = change(sql, receipt, {
+            policy: "revoked",
+            reason: "revoked",
+            wait: receipt.wait === "open" ? "settled" : receipt.wait,
+          });
+          if (!changed.ok) throw new Error("peer route revision capacity");
+        }
+        return ok(routeView(sql, revoked, now));
+      });
+    },
+    routes(lease, after, limit, now) {
+      if (
+        !Number.isSafeInteger(after) ||
+        after < 0 ||
+        !Number.isInteger(limit) ||
+        limit < 1 ||
+        limit > MAILBOX_LIMITS.page
+      )
+        return err({ code: "invalid" });
+      return write((sql) => {
+        const current = owner(sql, lease, now, true);
+        if (!current.ok) return current;
+        const rows = sql.all(
+          "SELECT sequence,id FROM peer_route_grants WHERE (sender=$me OR recipient=$me) AND sequence>$after ORDER BY sequence LIMIT $limit",
+          { me: peerKey(lease.identity), after, limit: limit + 1 },
+        );
+        const items: PeerRouteView[] = [];
+        for (const row of rows.slice(0, limit)) {
+          const grant = readGrant(sql, String(row.id));
+          if (!grant.ok) return grant;
+          if (grant.value === null) return err({ code: "corrupt" });
+          items.push(routeView(sql, grant.value, now));
+        }
+        return ok({
+          items,
+          cursor: {
+            version: 1,
+            endpoint: lease.identity,
+            after: Number(rows[Math.min(rows.length, limit) - 1]?.sequence ?? after),
+          },
+          complete: rows.length <= limit,
+        });
+      });
+    },
+    routeProof(lease, recipient, now) {
+      return write((sql) => {
+        const current = owner(sql, lease, now);
+        if (!current.ok) return current;
+        const target = endpoint(sql, recipient);
+        if (!target.ok)
+          return target.error.code === "not-found"
+            ? err({ code: "unsupported", reason: "not-in-registry" })
+            : target;
+        if (samePeerScope(target.value.endpoint.scope, current.value.scope)) return ok(null);
+        const granted = activeRoute(sql, lease.identity, recipient, now, "send");
+        return granted.ok
+          ? ok({ id: granted.value.id, revision: granted.value.revision })
+          : granted;
+      });
+    },
     acknowledge(lease, ack, now) {
       return write((sql) => {
         const loaded = access(sql, lease, ack.key, now);
