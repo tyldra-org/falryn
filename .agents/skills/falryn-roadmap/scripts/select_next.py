@@ -16,6 +16,18 @@ def key(issue: dict) -> str:
     return f"{issue['repository']}#{issue['number']}"
 
 
+def release_catalog(snapshot: dict) -> list[str]:
+    """Release milestone titles in their audited v<major>.<minor> decimal order."""
+    titles = {milestone['title'] for entry in snapshot['milestones']
+              for milestone in entry['milestones']}
+    ordered = []
+    for title in titles:
+        match = re.match(r'v(\d+)\.(\d+)(?:\s|$)', title)
+        if match:
+            ordered.append((float(f'{match[1]}.{match[2]}'), title))
+    return [title for _, title in sorted(ordered)]
+
+
 def in_scope(issue: dict, scope: str | None, issues: dict) -> bool:
     if scope is None:
         return True
@@ -41,7 +53,7 @@ def select(snapshot: dict, report: dict, owner: str, scope: str | None,
     issues = {key(issue): issue for issue in snapshot['issues']}
     if scope is not None and scope not in issues:
         raise ValueError('scope is absent from this snapshot')
-    catalog = [option['name'] for option in snapshot['targetReleaseOptions']]
+    catalog = release_catalog(snapshot)
     if release is not None and release not in catalog:
         raise ValueError('target release is absent from this snapshot')
     releases = None if release is None else {release}
@@ -98,10 +110,10 @@ def main() -> int:
     parser.add_argument('--falryn-root', type=Path, required=True,
                         help='Trusted, identity-verified Falryn checkout')
     parser.add_argument('--snapshot', type=Path, required=True,
-                        help='Private schema-v3 Roadmap snapshot; never fetched by this helper')
+                        help='Private schema-v4 Roadmap snapshot; never fetched by this helper')
     parser.add_argument('--owner', required=True, help='Verified authenticated GitHub login')
     parser.add_argument('--scope', help='Exact owner/repository#N issue or parent tree')
-    parser.add_argument('--target-release', help='Exact private release name')
+    parser.add_argument('--target-release', help='Exact release milestone title')
     parser.add_argument('--through-release', help='Inclusive end of an audited release range')
     args = parser.parse_args()
     try:

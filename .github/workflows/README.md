@@ -14,7 +14,7 @@ Four workflows.
 trusted base revision, validates meaningful template content, and verifies the
 owning issue is an open, unblocked, metadata-complete PR-sized leaf with a
 fully checked Contribution checklist or maintainer Ready checklist. The
-maintainer-applied `roadmap` label selects that issue format, not private Project
+maintainer-applied `roadmap` label selects that issue format, not Roadmap
 membership or readiness. Maintainer issues retain the auditor's Outcome and
 completion-proof heading vocabulary; public submissions retain the public form.
 The area, size, and vouch label jobs receive
@@ -35,17 +35,15 @@ triggers. Separate per-PR concurrency groups prevent label runs from cancelling
 metadata validation or each other. The vouch label matrix still depends only on
 its target-selection job; the other jobs run independently.
 
-The private Roadmap is a separate maintainer product-development system.
-Project membership marks an issue as adopted into that plan. Only those issues
-are subject to private Status, Priority, Readiness, Target release, hierarchy,
-liveness, and sequencing checks from `bun run audit:issues` and
+The Roadmap is the maintainer product-development plan. Organization-only
+Roadmap priority and Readiness issue fields mark an issue as adopted into it.
+Only those issues are subject to the release milestone, priority, readiness,
+hierarchy, liveness, and sequencing checks from `bun run audit:issues` and
 `bun run audit:roadmap`, documented in the vendored
 [`audit evidence`](../../.agents/skills/falryn-roadmap/references/audits.md)
-guide. The Roadmap does not auto-add every repository issue. Its existing-item
-and subissue reconciliation workflows remain enabled. The API cannot expose every
-workflow filter or effect, so maintainers verify those settings against the
+guide and the
 [`Roadmap governance`](../../.agents/skills/falryn-roadmap/references/governance.md)
-contract after Project maintenance. [`CONTRIBUTOR-READINESS.md`](../../CONTRIBUTOR-READINESS.md)
+contract. [`CONTRIBUTOR-READINESS.md`](../../CONTRIBUTOR-READINESS.md)
 explains the public/private boundary.
 
 Issue governance and PR metadata validation apply to every human account,

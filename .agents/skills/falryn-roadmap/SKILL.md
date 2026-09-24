@@ -1,6 +1,6 @@
 ---
 name: falryn-roadmap
-description: Select one next Falryn Roadmap issue or maintain authenticated Project readiness, dependencies, ordering and state. Use for Next, Roadmap selection, parent sequencing or Project governance, not ordinary questions or public work outside the Project.
+description: Select one next Falryn Roadmap issue or maintain authenticated Roadmap readiness, releases, dependencies and ordering. Use for Next, Roadmap selection, parent sequencing or Roadmap governance, not ordinary questions or public work outside the Roadmap.
 ---
 
 # Falryn Roadmap
@@ -22,8 +22,9 @@ evidence; falryn-work owns the choice of follow-up command. Complete an explicit
 Next request when access and evidence permit, rather than returning the same
 request without performing its selection.
 
-1. Establish authenticated access to Project 1 and both canonical repositories
-   under [audits](references/audits.md). Resolve the current gh account.
+1. Establish authenticated access to both canonical repositories and the
+   organization-only Roadmap fields under [audits](references/audits.md).
+   Resolve the current gh account.
 2. Obtain the required clean audit generation. Broad Next uses the whole generated
    list. Explicit issue, parent or release scope filters that list. Conversation
    history never silently changes a broad request into a prerequisite chain.
@@ -44,9 +45,9 @@ python3 <skill-root>/scripts/select_next.py \
 ```
 
 For explicit scope, add `--scope tyldra-org/falryn#N` for an issue or parent tree,
-with the actual repository identity, or `--target-release <exact-private-name>`.
+with the actual repository identity, or `--target-release <exact-milestone-title>`.
 Both filters may apply. For an exact range, use `--target-release <first>` with
-`--through-release <last>`. Bounds are inclusive in the audited option order;
+`--through-release <last>`. Bounds are inclusive in the audited release order;
 unknown or reversed bounds are rejected. This filters one sequence, not several
 independently ranked runs. Verify of a range assesses every required issue in
 that catalog interval; it does not deliver the selector's single recommendation.
@@ -84,9 +85,9 @@ and [audits](references/audits.md) for exact commands and refresh scopes. Read
 field implementation only when changing its contract. An explicit maintenance
 request may repair records within scope; Next reports diagnostics without editing.
 
-Keep private Project values, issue bodies and snapshots out of public artifacts.
+Keep private field values, issue bodies and snapshots out of public artifacts.
 Missing authority makes only the dependent operation unavailable. Do not guess
-private order or impose Project fields on ordinary contributions.
+private order or impose Roadmap fields on ordinary contributions.
 
 For skill maintenance, validate this pair with the sibling falryn-work
 validator and run `python3 -B scripts/test_select_next.py --falryn-root

@@ -2,53 +2,50 @@ import { Buffer } from "node:buffer";
 import { declaresStandalone } from "./issue-governance-body";
 import {
   CLOSED_PRIORITIES,
-  DEFAULT_LIVENESS_GRACE_HOURS,
   type IssueKey,
   OPEN_PRIORITIES,
   READINESS_VALUES,
+  ROADMAP_PLANNING_FIELDS,
   ROADMAP_PRIORITY_OPTIONS,
   ROADMAP_READINESS_OPTIONS,
-  ROADMAP_REQUIRED_WORKFLOWS,
-  ROADMAP_STATUS_OPTIONS,
   type RoadmapClosingPullRequest,
   type RoadmapDeliverySequenceEntry,
   type RoadmapFieldOption,
   type RoadmapGovernanceCode,
   type RoadmapGovernanceDiagnostic,
   type RoadmapGovernanceIssue,
-  type RoadmapGovernanceOptions,
   type RoadmapGovernanceReport,
   type RoadmapGovernanceSnapshot,
   type RoadmapIssueState,
   type RoadmapLivenessDecision,
   type RoadmapRelation,
+  type RoadmapStatus,
 } from "./roadmap-governance/contracts.ts";
 
 export {
+  ROADMAP_PLANNING_FIELDS,
   ROADMAP_PRIORITY_OPTIONS,
   ROADMAP_READINESS_OPTIONS,
   ROADMAP_REPOSITORIES,
-  ROADMAP_REQUIRED_WORKFLOWS,
-  ROADMAP_STATUS_OPTIONS,
   type RoadmapClosingPullRequest,
   type RoadmapDeliverySequenceEntry,
   type RoadmapFieldOption,
   type RoadmapGovernanceCode,
   type RoadmapGovernanceDiagnostic,
   type RoadmapGovernanceIssue,
-  type RoadmapGovernanceOptions,
   type RoadmapGovernanceReport,
   type RoadmapGovernanceSnapshot,
   type RoadmapIssueState,
   type RoadmapLivenessDecision,
-  type RoadmapNonIssueProjectItem,
+  type RoadmapMilestone,
+  type RoadmapPlanning,
+  type RoadmapPlanningField,
   type RoadmapPriority,
-  type RoadmapProjectItem,
-  type RoadmapProjectWorkflow,
   type RoadmapPullRequestState,
   type RoadmapReadiness,
   type RoadmapRelation,
   type RoadmapRepositoryIssueCount,
+  type RoadmapRepositoryMilestones,
   type RoadmapStatus,
 } from "./roadmap-governance/contracts.ts";
 export { parseRoadmapGovernanceSnapshot } from "./roadmap-governance/parsing.ts";
@@ -127,22 +124,64 @@ function effectiveRelationState(
   return issues.get(issueKey(relation.repository, relation.number))?.state ?? relation.state;
 }
 
-function hoursBetween(earlier: string, later: string): number | null {
-  const earlierTime = Date.parse(earlier);
-  const laterTime = Date.parse(later);
-  if (!Number.isFinite(earlierTime) || !Number.isFinite(laterTime) || laterTime < earlierTime) {
-    return null;
-  }
-  return (laterTime - earlierTime) / 3_600_000;
-}
-
 type ReleaseCatalog = ReadonlyMap<
   string,
   { readonly rank: number; readonly state: RoadmapIssueState }
 >;
 
 function targetRelease(issue: RoadmapGovernanceIssue): string | null {
-  return issue.projectItems[0]?.targetRelease ?? null;
+  return issue.planning?.release ?? null;
+}
+
+/**
+ * The order a release milestone title encodes: `v<major>.<minor>` compared as a
+ * decimal, so `v0.35` falls between `v0.3` and `v0.4`. Null when the title
+ * does not start with a version.
+ */
+export function releaseOrderKey(title: string): number | null {
+  const match = /^v(\d+)\.(\d+)(?:\s|$)/.exec(title);
+  return match === null ? null : Number(`${match[1]}.${match[2]}`);
+}
+
+/**
+ * Status is derived, never stored: a closed issue is Done; an open leaf is In
+ * Progress while it has an open closing pull request; an open parent is In
+ * Progress once any native child has started. Everything else is Todo.
+ */
+export function roadmapStatus(
+  issue: RoadmapGovernanceIssue,
+  issues: ReadonlyMap<IssueKey, RoadmapGovernanceIssue>,
+): RoadmapStatus {
+  if (issue.state === "CLOSED") {
+    return "Done";
+  }
+  if (issue.subIssues.length === 0) {
+    return openPullRequests(issue).length > 0 ? "In Progress" : "Todo";
+  }
+  return hasStartedChild(issue, issues, new Set()) ? "In Progress" : "Todo";
+}
+
+function hasStartedChild(
+  issue: RoadmapGovernanceIssue,
+  issues: ReadonlyMap<IssueKey, RoadmapGovernanceIssue>,
+  visiting: Set<IssueKey>,
+): boolean {
+  const key = issueKey(issue.repository, issue.number);
+  if (visiting.has(key)) {
+    return false;
+  }
+  visiting.add(key);
+  return issue.subIssues.some((relation) => {
+    const child = issues.get(issueKey(relation.repository, relation.number));
+    if (child === undefined) {
+      return relation.state === "CLOSED";
+    }
+    return (
+      child.state === "CLOSED" ||
+      openPullRequests(child).length > 0 ||
+      (child.subIssues.length > 0 && hasStartedChild(child, issues, visiting))
+    );
+  });
 }
 
 function releaseRank(name: string | null, releases: ReleaseCatalog): number {
@@ -170,7 +209,7 @@ function declaresEarlyPrerequisiteRelease(
     return false;
   }
   const declaration = `early-prerequisite-v1; parent ${parent.repository}#${parent.number}; child ${childRelease}; parent ${parentRelease}.`;
-  return issue.projectItems[0]?.releaseException === declaration;
+  return issue.planning?.releaseException === declaration;
 }
 
 function priorityRank(priority: string): number {
@@ -245,30 +284,9 @@ function transitiveDependentCounts(
   return counts;
 }
 
-function validParentContinuation(
-  issue: RoadmapGovernanceIssue,
-  issues: ReadonlyMap<IssueKey, RoadmapGovernanceIssue>,
-): boolean {
-  let hasStartedChild = false;
-  for (const relation of issue.subIssues) {
-    const child = issues.get(issueKey(relation.repository, relation.number));
-    if (child === undefined) {
-      continue;
-    }
-    if (child.state === "CLOSED") {
-      hasStartedChild = true;
-      continue;
-    }
-    const status = child.projectItems[0]?.status;
-    if (status === "In Progress" || status === "Done") {
-      hasStartedChild = true;
-    }
-  }
-  return hasStartedChild;
-}
-
 function sequence(
   issues: ReadonlyMap<IssueKey, RoadmapGovernanceIssue>,
+  allIssues: ReadonlyMap<IssueKey, RoadmapGovernanceIssue>,
   releases: ReleaseCatalog,
 ): readonly RoadmapDeliverySequenceEntry[] {
   const edges = new Map<IssueKey, Set<IssueKey>>();
@@ -313,9 +331,7 @@ function sequence(
   }
   const dependentCounts = transitiveDependentCounts(issues, edges);
   const isActive = (issue: RoadmapGovernanceIssue): boolean =>
-    issue.projectItems[0]?.status === "In Progress" &&
-    issue.subIssues.length === 0 &&
-    openPullRequests(issue).length > 0;
+    issue.subIssues.length === 0 && roadmapStatus(issue, allIssues) === "In Progress";
   const compareKeys = (leftKey: IssueKey, rightKey: IssueKey): number => {
     const left = issues.get(leftKey);
     const right = issues.get(rightKey);
@@ -327,8 +343,7 @@ function sequence(
       return activeDifference;
     }
     const p0Difference =
-      Number(right.projectItems[0]?.priority === "P0") -
-      Number(left.projectItems[0]?.priority === "P0");
+      Number(right.planning?.priority === "P0") - Number(left.planning?.priority === "P0");
     if (p0Difference !== 0) {
       return p0Difference;
     }
@@ -339,8 +354,7 @@ function sequence(
       return releaseDifference;
     }
     const priorityDifference =
-      priorityRank(left.projectItems[0]?.priority ?? "") -
-      priorityRank(right.projectItems[0]?.priority ?? "");
+      priorityRank(left.planning?.priority ?? "") - priorityRank(right.planning?.priority ?? "");
     if (priorityDifference !== 0) {
       return priorityDifference;
     }
@@ -377,11 +391,13 @@ function sequence(
   const result: RoadmapDeliverySequenceEntry[] = [];
   for (const key of ordered) {
     const issue = issues.get(key);
-    const item = issue?.projectItems[0];
-    const release = item?.targetRelease;
+    const item = issue?.planning;
+    const release = item?.release;
+    const status = issue === undefined ? null : roadmapStatus(issue, allIssues);
     if (
       issue === undefined ||
       item === undefined ||
+      item === null ||
       issue.subIssues.length > 0 ||
       release === null ||
       release === undefined ||
@@ -390,7 +406,7 @@ function sequence(
       (item.readiness !== "Ready" &&
         item.readiness !== "Needs Planning" &&
         item.readiness !== "Needs Decision") ||
-      (item.status !== "Todo" && item.status !== "In Progress")
+      (status !== "Todo" && status !== "In Progress")
     ) {
       continue;
     }
@@ -402,7 +418,7 @@ function sequence(
       targetRelease: release,
       priority: item.priority,
       readiness: item.readiness,
-      status: item.status,
+      status,
       openTransitiveDependents: dependentCounts.get(key) ?? 0,
       crossReleasePrerequisite: crossReleasePrerequisites.has(key),
     });
@@ -410,126 +426,138 @@ function sequence(
   return result;
 }
 
-export function analyzeRoadmapGovernance(
+/**
+ * The release catalog: every milestone title in the Roadmap repositories, which
+ * must exist in each repository with the same state and a distinct version
+ * order. Invalid entries become diagnostics and stay out of the catalog.
+ */
+function releaseCatalog(
   snapshot: RoadmapGovernanceSnapshot,
-  options: RoadmapGovernanceOptions = {},
-): RoadmapGovernanceReport {
-  const graceHours = options.livenessGraceHours ?? DEFAULT_LIVENESS_GRACE_HOURS;
-  if (!Number.isFinite(graceHours) || graceHours < 0) {
-    throw new Error("livenessGraceHours must be a non-negative finite number");
-  }
-  const diagnostics: RoadmapGovernanceDiagnostic[] = [];
-  const liveness: RoadmapLivenessDecision[] = [];
-  const releases = new Map<string, { rank: number; state: RoadmapIssueState }>();
-  let invalidReleases =
-    snapshot.targetReleaseOptions.length === 0 || snapshot.targetReleaseOptions.length > 50;
-  for (const [rank, option] of snapshot.targetReleaseOptions.entries()) {
-    const stateLine = option.description.split("\n")[0];
-    const state =
-      stateLine === "State: OPEN" ? "OPEN" : stateLine === "State: CLOSED" ? "CLOSED" : null;
-    if (
-      state === null ||
-      option.name.trim() !== option.name ||
-      option.name.length === 0 ||
-      releases.has(option.name)
-    ) {
-      invalidReleases = true;
-    } else {
-      releases.set(option.name, { rank, state });
+  diagnostics: RoadmapGovernanceDiagnostic[],
+): ReleaseCatalog {
+  const problems: string[] = [];
+  for (const entry of snapshot.milestones) {
+    const seen = new Set<string>();
+    for (const milestone of entry.milestones) {
+      if (seen.has(milestone.title)) {
+        problems.push(`${entry.repository} has duplicate milestones titled ${milestone.title}`);
+      }
+      seen.add(milestone.title);
     }
   }
-  if (invalidReleases) {
-    diagnostics.push({
-      code: "target-release-field-invalid",
-      repository: "*",
-      issueNumber: 0,
-      message:
-        "Target release requires 1–50 unique non-empty options whose descriptions begin with State: OPEN or State: CLOSED",
-    });
+  const titles = [
+    ...new Set(snapshot.milestones.flatMap((entry) => entry.milestones.map((m) => m.title))),
+  ];
+  const releases: { title: string; key: number; state: RoadmapIssueState }[] = [];
+  for (const title of titles) {
+    const key = releaseOrderKey(title);
+    if (key === null) {
+      problems.push(`milestone ${title} must start with v<major>.<minor>`);
+      continue;
+    }
+    const states = snapshot.milestones.map(
+      (entry) => entry.milestones.find((milestone) => milestone.title === title)?.state ?? null,
+    );
+    const missing = snapshot.milestones
+      .filter((_, index) => states[index] === null)
+      .map((entry) => entry.repository);
+    if (missing.length > 0) {
+      problems.push(`release ${title} is missing from ${missing.join(", ")}`);
+      continue;
+    }
+    const [state] = states;
+    if (state === null || state === undefined || states.some((entry) => entry !== state)) {
+      problems.push(`release ${title} must have the same open or closed state in every repository`);
+      continue;
+    }
+    releases.push({ title, key, state });
   }
-  if (snapshot.projectPublic) {
-    diagnostics.push({
-      code: "project-public",
-      repository: "*",
-      issueNumber: 0,
-      message: "Release planning requires a private Project",
-    });
+  releases.sort((left, right) => left.key - right.key || compareText(left.title, right.title));
+  for (let index = 1; index < releases.length; index += 1) {
+    const previous = releases[index - 1];
+    const current = releases[index];
+    if (previous !== undefined && current !== undefined && previous.key === current.key) {
+      problems.push(`releases ${previous.title} and ${current.title} share one version order`);
+    }
   }
+  if (releases.length === 0) {
+    problems.push("no release milestones exist");
+  }
+  for (const message of problems) {
+    diagnostics.push({ code: "release-catalog-invalid", repository: "*", issueNumber: 0, message });
+  }
+  return new Map(releases.map((release, rank) => [release.title, { rank, state: release.state }]));
+}
+
+/** The organization-only planning fields must match the contract exactly. */
+function validatePlanningFields(
+  snapshot: RoadmapGovernanceSnapshot,
+  diagnostics: RoadmapGovernanceDiagnostic[],
+): void {
+  const expected = [
+    {
+      name: ROADMAP_PLANNING_FIELDS.priority,
+      dataType: "SINGLE_SELECT",
+      options: ROADMAP_PRIORITY_OPTIONS,
+    },
+    {
+      name: ROADMAP_PLANNING_FIELDS.readiness,
+      dataType: "SINGLE_SELECT",
+      options: ROADMAP_READINESS_OPTIONS,
+    },
+    { name: ROADMAP_PLANNING_FIELDS.releaseException, dataType: "TEXT", options: [] },
+  ] as const;
+  for (const expectation of expected) {
+    const matches = snapshot.planningFields.filter((field) => field.name === expectation.name);
+    const field = matches[0];
+    const problem =
+      matches.length !== 1 || field === undefined
+        ? "must exist exactly once"
+        : field.visibility !== "ORG_ONLY"
+          ? "must be organization-only"
+          : field.dataType !== expectation.dataType
+            ? `must be ${expectation.dataType}`
+            : !sameFieldOptions(field.options, expectation.options)
+              ? "options must match the contract names, descriptions, colors, and order"
+              : null;
+    if (problem !== null) {
+      diagnostics.push({
+        code: "planning-field-invalid",
+        repository: "*",
+        issueNumber: 0,
+        message: `${expectation.name} ${problem}`,
+      });
+    }
+  }
+}
+
+export function analyzeRoadmapGovernance(
+  snapshot: RoadmapGovernanceSnapshot,
+): RoadmapGovernanceReport {
+  const diagnostics: RoadmapGovernanceDiagnostic[] = [];
+  const liveness: RoadmapLivenessDecision[] = [];
+  const releases = releaseCatalog(snapshot, diagnostics);
+  validatePlanningFields(snapshot, diagnostics);
 
   const allIssues = new Map<IssueKey, RoadmapGovernanceIssue>(
     snapshot.issues.map((issue) => [issueKey(issue.repository, issue.number), issue]),
   );
   const managedIssues = new Map<IssueKey, RoadmapGovernanceIssue>(
-    [...allIssues].filter(([, issue]) => issue.projectItems.length > 0),
+    [...allIssues].filter(([, issue]) => issue.planning !== null),
   );
   const issues = new Map<IssueKey, RoadmapGovernanceIssue>(
     [...managedIssues].filter(([, issue]) => issue.state === "OPEN"),
   );
 
-  if (!sameFieldOptions(snapshot.statusOptions, ROADMAP_STATUS_OPTIONS)) {
-    diagnostics.push({
-      code: "status-field-invalid",
-      repository: "*",
-      issueNumber: 0,
-      message: "Status option names, descriptions, colors, and order do not match the contract",
-    });
-  }
-  if (!sameFieldOptions(snapshot.priorityOptions, ROADMAP_PRIORITY_OPTIONS)) {
-    diagnostics.push({
-      code: "priority-field-invalid",
-      repository: "*",
-      issueNumber: 0,
-      message: "Priority option names, descriptions, colors, and order do not match the contract",
-    });
-  }
-  if (!sameFieldOptions(snapshot.readinessOptions, ROADMAP_READINESS_OPTIONS)) {
-    diagnostics.push({
-      code: "readiness-field-invalid",
-      repository: "*",
-      issueNumber: 0,
-      message: "Readiness option names, descriptions, colors, and order do not match the contract",
-    });
-  }
-  for (const name of ROADMAP_REQUIRED_WORKFLOWS) {
-    const matches = snapshot.projectWorkflows.filter((workflow) => workflow.name === name);
-    if (matches.length !== 1 || matches[0]?.enabled !== true) {
-      diagnostics.push({
-        code: "project-workflow-invalid",
-        repository: "*",
-        issueNumber: 0,
-        message: `required Project workflow must exist exactly once and be enabled: ${name}`,
-      });
-    }
-  }
-  for (const item of snapshot.nonIssueProjectItems) {
-    diagnostics.push({
-      code: "non-issue-project-item",
-      repository: snapshot.projectOwner,
-      issueNumber: 0,
-      message: `Project item ${item.id} has non-issue content kind ${item.contentKind}`,
-    });
-  }
-
   for (const issue of [...snapshot.issues].sort((left, right) => {
     const repositoryDifference = compareText(left.repository, right.repository);
     return repositoryDifference !== 0 ? repositoryDifference : left.number - right.number;
   })) {
-    if (issue.projectItems.length === 0) {
+    const item = issue.planning;
+    if (item === null) {
       continue;
     }
-    if (issue.projectItems.length > 1) {
-      add(
-        diagnostics,
-        "project-membership-count",
-        issue,
-        `expected at most one Project item; found ${issue.projectItems.length}`,
-      );
-      continue;
-    }
-    const item = issue.projectItems[0];
-    if (item === undefined) {
-      continue;
-    }
+    const status = roadmapStatus(issue, allIssues);
 
     if (issue.state === "OPEN" && item.releaseException !== null) {
       const parent =
@@ -604,14 +632,6 @@ export function analyzeRoadmapGovernance(
           "planning-relationship-missing",
           issue,
           "missing native parent or explicit Standalone declaration",
-        );
-      }
-      if (item.status !== "Todo" && item.status !== "In Progress") {
-        add(
-          diagnostics,
-          "status-invalid",
-          issue,
-          `open issue status must be Todo or In Progress; found ${item.status ?? "none"}`,
         );
       }
       if (item.priority === "Historical") {
@@ -696,16 +716,12 @@ export function analyzeRoadmapGovernance(
           `open leaf must use Ready, Needs Planning, or Needs Decision; found ${item.readiness}`,
         );
       }
-      if (
-        issue.subIssues.length === 0 &&
-        item.status === "In Progress" &&
-        item.readiness !== "Ready"
-      ) {
+      if (issue.subIssues.length === 0 && status === "In Progress" && item.readiness !== "Ready") {
         add(
           diagnostics,
           "in-progress-readiness-invalid",
           issue,
-          `In Progress leaf must remain Ready; found ${item.readiness ?? "none"}`,
+          `leaf with an open closing pull request must be Ready; found ${item.readiness ?? "none"}`,
         );
       }
 
@@ -725,39 +741,9 @@ export function analyzeRoadmapGovernance(
           issue,
           "parent outcome cannot own a closing pull request",
         );
-      } else if (issue.subIssues.length === 0 && activeClosingPullRequests.length > 0) {
-        if (item.status !== "In Progress") {
-          add(
-            diagnostics,
-            "active-closing-pr-status-mismatch",
-            issue,
-            "leaf with an open closing pull request must be In Progress",
-          );
-        }
-      }
-      if (
-        issue.subIssues.length > 0 &&
-        item.status === "Todo" &&
-        issue.subIssues.some((relation) => {
-          const child = allIssues.get(issueKey(relation.repository, relation.number));
-          return (
-            child !== undefined &&
-            (child.state === "CLOSED" ||
-              child.projectItems[0]?.status === "In Progress" ||
-              child.projectItems[0]?.status === "Done" ||
-              openPullRequests(child).length > 0)
-          );
-        })
-      ) {
-        add(
-          diagnostics,
-          "parent-status-mismatch",
-          issue,
-          "Todo parent has an active native child and must be In Progress",
-        );
       }
 
-      if (item.status === "In Progress") {
+      if (status === "In Progress") {
         const openBlockers = issue.blockedBy.filter(
           (blocker) => effectiveRelationState(blocker, allIssues) === "OPEN",
         );
@@ -774,86 +760,28 @@ export function analyzeRoadmapGovernance(
           });
           add(diagnostics, "in-progress-blocked", issue, detail);
         } else if (issue.subIssues.length > 0) {
-          if (validParentContinuation(issue, allIssues)) {
-            liveness.push({
-              repository: issue.repository,
-              issueNumber: issue.number,
-              kind: "parent-continuation",
-              detail: issue.subIssues.some(
-                (relation) =>
-                  allIssues.get(issueKey(relation.repository, relation.number))?.state === "OPEN",
-              )
-                ? "open parent has started and remaining children"
-                : "all native children are closed; integrated verification remains",
-            });
-          } else {
-            add(
-              diagnostics,
-              "parent-in-progress-invalid",
-              issue,
-              "In Progress parent has no started child plus remaining open child",
-            );
-          }
-        } else if (openPullRequests(issue).length > 0) {
+          liveness.push({
+            repository: issue.repository,
+            issueNumber: issue.number,
+            kind: "parent-continuation",
+            detail: issue.subIssues.some(
+              (relation) =>
+                allIssues.get(issueKey(relation.repository, relation.number))?.state === "OPEN",
+            )
+              ? "open parent has started and remaining children"
+              : "all native children are closed; integrated verification remains",
+          });
+        } else {
           liveness.push({
             repository: issue.repository,
             issueNumber: issue.number,
             kind: "open-pull-request",
             detail: "open closing pull request proves active delivery",
           });
-        } else if (
-          issue.closingPullRequests.some((pullRequest) => pullRequest.state === "MERGED")
-        ) {
-          liveness.push({
-            repository: issue.repository,
-            issueNumber: issue.number,
-            kind: "stale",
-            detail: "linked closing pull request merged while the issue remains open",
-          });
-        } else if (
-          issue.closingPullRequests.some((pullRequest) => pullRequest.state === "CLOSED")
-        ) {
-          const detail = "linked closing pull request closed without merge or an open replacement";
-          liveness.push({
-            repository: issue.repository,
-            issueNumber: issue.number,
-            kind: "stale",
-            detail,
-          });
-          add(diagnostics, "in-progress-closing-pr-closed", issue, detail);
-        } else {
-          const elapsed =
-            item.statusUpdatedAt === null
-              ? null
-              : hoursBetween(item.statusUpdatedAt, snapshot.generatedAt);
-          if (elapsed !== null && elapsed <= graceHours) {
-            liveness.push({
-              repository: issue.repository,
-              issueNumber: issue.number,
-              kind: "grace-period",
-              detail: `${elapsed.toFixed(1)} hours without an open closing pull request`,
-            });
-          } else {
-            liveness.push({
-              repository: issue.repository,
-              issueNumber: issue.number,
-              kind: "stale",
-              detail:
-                elapsed === null
-                  ? "missing or invalid Status timestamp"
-                  : `${elapsed.toFixed(1)} hours without an open closing pull request`,
-            });
-            add(
-              diagnostics,
-              "stale-in-progress",
-              issue,
-              liveness.at(-1)?.detail ?? "stale In Progress issue",
-            );
-          }
         }
       }
       if (
-        item.status !== "In Progress" &&
+        issue.subIssues.length === 0 &&
         openPullRequests(issue).length === 0 &&
         issue.closingPullRequests.some((pullRequest) => pullRequest.state === "CLOSED")
       ) {
@@ -886,14 +814,6 @@ export function analyzeRoadmapGovernance(
         }
       }
     } else {
-      if (item.status !== "Done") {
-        add(
-          diagnostics,
-          "closed-status-invalid",
-          issue,
-          `closed issue status must be Done; found ${item.status ?? "none"}`,
-        );
-      }
       if (!isOneOf(item.priority, CLOSED_PRIORITIES)) {
         add(
           diagnostics,
@@ -929,12 +849,12 @@ export function analyzeRoadmapGovernance(
         }
         return;
       }
-      if (target.projectItems.length === 0 && (kind !== "blocker" || relation.state === "OPEN")) {
+      if (target.planning === null && (kind !== "blocker" || relation.state === "OPEN")) {
         add(
           diagnostics,
           "relationship-target-missing",
           issue,
-          `${kind} ${targetKey} is outside the Roadmap-owned issue set`,
+          `${kind} ${targetKey} is outside the Roadmap`,
         );
       }
       if (relation.state !== target.state) {
@@ -1046,7 +966,7 @@ export function analyzeRoadmapGovernance(
 
   return {
     diagnostics,
-    deliverySequence: diagnostics.length === 0 ? sequence(issues, releases) : [],
+    deliverySequence: diagnostics.length === 0 ? sequence(issues, allIssues, releases) : [],
     liveness: liveness.sort((left, right) => {
       const repositoryDifference = compareText(left.repository, right.repository);
       return repositoryDifference !== 0

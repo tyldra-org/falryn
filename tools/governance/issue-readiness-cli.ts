@@ -12,7 +12,7 @@ import {
   type IssueState,
   parseIssueReadinessSnapshot,
 } from "./issue-readiness.ts";
-import { mergeProjectItemSources } from "./project-item-sources.ts";
+import { ROADMAP_PLANNING_FIELDS } from "./roadmap-governance/contracts.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -22,8 +22,6 @@ type CliOptions = {
   readonly source:
     | { readonly kind: "live"; readonly repository: string }
     | { readonly kind: "snapshot"; readonly path: string };
-  readonly projectOwner: string;
-  readonly projectNumber: number;
   readonly snapshotOut: string | null;
   readonly baselinePath: string | null;
   readonly docsRoot: string | null;
@@ -115,15 +113,27 @@ function relationFromGraphQl(value: unknown, subject: string): IssueReadinessRel
   };
 }
 
-function liveIssueFromGraphQl(
-  value: unknown,
-  roadmapItemCount: number,
-  roadmapStatuses: readonly string[],
-  targetReleases: readonly string[],
-): IssueReadinessIssue {
+const ROADMAP_FIELD_NAMES = new Set<string>(Object.values(ROADMAP_PLANNING_FIELDS));
+
+/** Whether an issue's field values include a Roadmap planning field. */
+export function carriesRoadmapField(issueFieldValues: unknown, subject: string): boolean {
+  return completeConnectionNodes(issueFieldValues, subject).some((value, index) => {
+    const field = asRecord(
+      asRecord(value, `${subject}.nodes[${index}]`).field,
+      `${subject}.nodes[${index}].field`,
+    );
+    return ROADMAP_FIELD_NAMES.has(
+      stringValue(field.name, `${subject}.nodes[${index}].field.name`),
+    );
+  });
+}
+
+export function liveIssueFromGraphQl(value: unknown): IssueReadinessIssue {
   const record = asRecord(value, "live issue");
   const parent =
     record.parent === null ? null : relationFromGraphQl(record.parent, "live issue.parent");
+  const milestone =
+    record.milestone === null ? null : asRecord(record.milestone, "live issue.milestone");
   return {
     number: positiveInteger(record.number, "live issue.number"),
     title: stringValue(record.title, "live issue.title"),
@@ -136,9 +146,9 @@ function liveIssueFromGraphQl(
     labels: completeConnectionNodes(record.labels, "live issue.labels").map((entry) =>
       stringValue(asRecord(entry, "label").name, "label.name"),
     ),
-    targetRelease: targetReleases.length === 1 ? (targetReleases[0] ?? null) : null,
-    roadmapItemCount,
-    roadmapStatuses,
+    targetRelease:
+      milestone === null ? null : stringValue(milestone.title, "live issue.milestone.title"),
+    roadmap: carriesRoadmapField(record.issueFieldValues, "live issue.issueFieldValues"),
     parent,
     subIssues: completeConnectionNodes(record.subIssues, "live issue.subIssues").map(
       (entry, index) => relationFromGraphQl(entry, `live issue.subIssues.nodes[${index}]`),
@@ -149,155 +159,7 @@ function liveIssueFromGraphQl(
   };
 }
 
-/** The Roadmap fields readiness needs from one Project item. */
-export type RoadmapItemFields = {
-  readonly id: string;
-  readonly statuses: readonly string[];
-  readonly targetReleases: readonly string[];
-};
-
-export type RoadmapMembership = {
-  readonly itemCount: number;
-  readonly statuses: readonly string[];
-  readonly targetReleases: readonly string[];
-  /** Items the issue reported that the Project list omitted. */
-  readonly recovered: number;
-};
-
-/**
- * Single-select item fields shared by the Project list and issue-side reads.
- * GitHub allows at most 50 fields per Project; `totalCount` still guards truncation.
- */
-const ITEM_FIELD_VALUES = `fieldValues(first:50){totalCount nodes{... on ProjectV2ItemFieldSingleSelectValue{name field{... on ProjectV2SingleSelectField{name}}}}}`;
-
-export function roadmapItemFields(value: unknown, subject: string): RoadmapItemFields {
-  const item = asRecord(value, subject);
-  const statuses: string[] = [];
-  const targetReleases: string[] = [];
-  for (const fieldValue of completeConnectionNodes(item.fieldValues, `${subject}.fieldValues`)) {
-    const fieldRecord = asRecord(fieldValue, `${subject} field value`);
-    if (typeof fieldRecord.name !== "string" || typeof fieldRecord.field !== "object") {
-      continue;
-    }
-    const field = asRecord(fieldRecord.field, `${subject} field value.field`);
-    if (field.name === "Target release") {
-      targetReleases.push(fieldRecord.name);
-    }
-    if (field.name === "Status") {
-      statuses.push(fieldRecord.name);
-    }
-  }
-  return { id: stringValue(item.id, `${subject}.id`), statuses, targetReleases };
-}
-
-/**
- * One issue's Roadmap membership: the Project list's items merged with the
- * issue's own non-archived items on the same Project, so a lagging list cannot
- * drop a live item.
- */
-export function roadmapMembershipForIssue(
-  listed: readonly RoadmapItemFields[],
-  issueProjectItems: unknown,
-  projectId: string,
-  subject: string,
-): RoadmapMembership {
-  const issueSide = completeConnectionNodes(issueProjectItems, subject)
-    .map((value, index) => {
-      const itemSubject = `${subject}.nodes[${index}]`;
-      const project = asRecord(asRecord(value, itemSubject).project, `${itemSubject}.project`);
-      return {
-        projectId: stringValue(project.id, `${itemSubject}.project.id`),
-        fields: roadmapItemFields(value, itemSubject),
-      };
-    })
-    .filter((entry) => entry.projectId === projectId)
-    .map((entry) => entry.fields);
-  const merged = mergeProjectItemSources(listed, issueSide);
-  return {
-    itemCount: merged.items.length,
-    statuses: merged.items.flatMap((item) => item.statuses),
-    targetReleases: merged.items.flatMap((item) => item.targetReleases),
-    recovered: merged.recovered,
-  };
-}
-
-async function loadRoadmapStatuses(
-  repository: string,
-  projectOwner: string,
-  projectNumber: number,
-): Promise<{
-  readonly projectId: string;
-  readonly items: ReadonlyMap<number, readonly RoadmapItemFields[]>;
-}> {
-  const query = `query($after:String) {
-  repositoryOwner(login:${JSON.stringify(projectOwner)}) {
-    ... on Organization { projectV2(number:${projectNumber}) { ...ProjectItems } }
-    ... on User { projectV2(number:${projectNumber}) { ...ProjectItems } }
-  }
-}
-fragment ProjectItems on ProjectV2 {
-  id public
-  items(first:100,after:$after) {
-    pageInfo { hasNextPage endCursor }
-    nodes {
-      id
-      content { ... on Issue { number repository { nameWithOwner } } }
-      ${ITEM_FIELD_VALUES}
-    }
-  }
-}`;
-  const membership = new Map<number, RoadmapItemFields[]>();
-  let projectId: string | null = null;
-  let after: string | null = null;
-  while (true) {
-    const args = ["api", "graphql", "-f", `query=${query}`];
-    if (after !== null) {
-      args.push("-F", `after=${after}`);
-    }
-    const data = asRecord(await runGh(args), "Roadmap GraphQL response");
-    const root = asRecord(data.data, "Roadmap GraphQL response.data");
-    const repositoryOwner = asRecord(root.repositoryOwner, "Roadmap owner");
-    const project = asRecord(repositoryOwner.projectV2, "Roadmap project");
-    if (project.public !== false) {
-      throw new Error("Roadmap must be private");
-    }
-    const currentProjectId = stringValue(project.id, "Roadmap project.id");
-    if (projectId !== null && projectId !== currentProjectId) {
-      throw new Error("Roadmap must remain the same Project during collection");
-    }
-    projectId = currentProjectId;
-    const items = asRecord(project.items, "Roadmap project.items");
-    for (const value of arrayValue(items.nodes, "Roadmap project.items.nodes")) {
-      const item = asRecord(value, "Roadmap item");
-      if (item.content === null || typeof item.content !== "object") {
-        continue;
-      }
-      const content = asRecord(item.content, "Roadmap item.content");
-      if (typeof content.number !== "number" || typeof content.repository !== "object") {
-        continue;
-      }
-      const contentRepository = asRecord(content.repository, "Roadmap item.repository");
-      if (contentRepository.nameWithOwner !== repository) {
-        continue;
-      }
-      const number = positiveInteger(content.number, "Roadmap item.number");
-      const current = membership.get(number) ?? [];
-      current.push(roadmapItemFields(item, "Roadmap item"));
-      membership.set(number, current);
-    }
-    const pageInfo = asRecord(items.pageInfo, "Roadmap project.items.pageInfo");
-    if (pageInfo.hasNextPage !== true) {
-      return { projectId, items: membership };
-    }
-    after = stringValue(pageInfo.endCursor, "Roadmap project.items.pageInfo.endCursor");
-  }
-}
-
-async function loadLiveSnapshot(
-  repository: string,
-  projectOwner: string,
-  projectNumber: number,
-): Promise<IssueReadinessSnapshot> {
+async function loadLiveSnapshot(repository: string): Promise<IssueReadinessSnapshot> {
   const [owner, name, extra] = repository.split("/");
   if (
     owner === undefined ||
@@ -308,8 +170,8 @@ async function loadLiveSnapshot(
   ) {
     throw new Error("--live must use owner/repository");
   }
-  // projectItems: the Project item list can lag; each issue's own items fill that gap.
-  const query = `query($after:String){repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){issues(states:OPEN,first:100,after:$after,orderBy:{field:CREATED_AT,direction:ASC}){pageInfo{hasNextPage endCursor}nodes{number title body state updatedAt assignees(first:100){totalCount nodes{login}} labels(first:100){totalCount nodes{name}} parent{number state} subIssues(first:100){totalCount nodes{number state}} blockedBy(first:100){totalCount nodes{number state}} projectItems(first:10,includeArchived:false){totalCount nodes{id project{id} ${ITEM_FIELD_VALUES}}}}}}}`;
+  const fieldName = "field{... on IssueFieldCommon{name}}";
+  const query = `query($after:String){repository(owner:${JSON.stringify(owner)},name:${JSON.stringify(name)}){issues(states:OPEN,first:100,after:$after,orderBy:{field:CREATED_AT,direction:ASC}){pageInfo{hasNextPage endCursor}nodes{number title body state updatedAt milestone{title} assignees(first:100){totalCount nodes{login}} labels(first:100){totalCount nodes{name}} parent{number state} subIssues(first:100){totalCount nodes{number state}} blockedBy(first:100){totalCount nodes{number state}} issueFieldValues(first:30){totalCount nodes{... on IssueFieldSingleSelectValue{${fieldName}} ... on IssueFieldTextValue{${fieldName}} ... on IssueFieldDateValue{${fieldName}} ... on IssueFieldNumberValue{${fieldName}} ... on IssueFieldMultiSelectValue{${fieldName}}}}}}}}`;
   const issueRecords: unknown[] = [];
   let after: string | null = null;
   while (true) {
@@ -329,32 +191,9 @@ async function loadLiveSnapshot(
     after = stringValue(pageInfo.endCursor, "GraphQL issues.pageInfo.endCursor");
   }
 
-  const membership = await loadRoadmapStatuses(repository, projectOwner, projectNumber);
-  let recovered = 0;
   const issues = issueRecords
-    .map((value) => {
-      const record = asRecord(value, "live issue");
-      const number = positiveInteger(record.number, "live issue.number");
-      const roadmap = roadmapMembershipForIssue(
-        membership.items.get(number) ?? [],
-        record.projectItems,
-        membership.projectId,
-        `live issue #${number}.projectItems`,
-      );
-      recovered += roadmap.recovered;
-      return liveIssueFromGraphQl(
-        value,
-        roadmap.itemCount,
-        roadmap.statuses,
-        roadmap.targetReleases,
-      );
-    })
+    .map(liveIssueFromGraphQl)
     .sort((left, right) => left.number - right.number);
-  if (recovered > 0) {
-    console.error(
-      `issue readiness capture: recovered ${recovered} open issue item(s) missing from the Project item list`,
-    );
-  }
   return {
     schemaVersion: ISSUE_READINESS_SCHEMA_VERSION,
     repository,
@@ -365,8 +204,6 @@ async function loadLiveSnapshot(
 
 function parseCli(argv: readonly string[]): CliOptions {
   let source: CliOptions["source"] | null = null;
-  let projectOwner = "tyldra-org";
-  let projectNumber = 1;
   let snapshotOut: string | null = null;
   let baselinePath: string | null = null;
   let docsRoot: string | null = null;
@@ -395,15 +232,6 @@ function parseCli(argv: readonly string[]): CliOptions {
         }
         source = { kind: "snapshot", path: next() };
         break;
-      case "--project-owner":
-        projectOwner = next();
-        break;
-      case "--project-number":
-        projectNumber = Number(next());
-        if (!Number.isSafeInteger(projectNumber) || projectNumber < 1) {
-          throw new Error("--project-number must be a positive integer");
-        }
-        break;
       case "--snapshot-out":
         snapshotOut = next();
         break;
@@ -423,7 +251,7 @@ function parseCli(argv: readonly string[]): CliOptions {
   if (source === null) {
     throw new Error("choose --live owner/repository or --snapshot path");
   }
-  return { source, projectOwner, projectNumber, snapshotOut, baselinePath, docsRoot, json };
+  return { source, snapshotOut, baselinePath, docsRoot, json };
 }
 
 async function readSnapshot(path: string): Promise<IssueReadinessSnapshot> {
@@ -435,11 +263,7 @@ async function main(): Promise<void> {
     const options = parseCli(process.argv.slice(2));
     const snapshot =
       options.source.kind === "live"
-        ? await loadLiveSnapshot(
-            options.source.repository,
-            options.projectOwner,
-            options.projectNumber,
-          )
+        ? await loadLiveSnapshot(options.source.repository)
         : await readSnapshot(options.source.path);
     if (options.snapshotOut !== null) {
       await writeFile(options.snapshotOut, `${JSON.stringify(snapshot, null, 2)}\n`);
@@ -457,7 +281,7 @@ async function main(): Promise<void> {
       ...(baseline === undefined ? {} : { baseline }),
       ...(documentationPaths === undefined ? {} : { documentationPaths }),
     });
-    const roadmapIssueCount = snapshot.issues.filter((issue) => issue.roadmapItemCount > 0).length;
+    const roadmapIssueCount = snapshot.issues.filter((issue) => issue.roadmap).length;
     if (options.json) {
       console.log(
         JSON.stringify(

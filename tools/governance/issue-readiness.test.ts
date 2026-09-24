@@ -29,8 +29,7 @@ function issue(overrides: Partial<IssueReadinessIssue> = {}): IssueReadinessIssu
     assignees: ["maintainer"],
     labels: ["type: chore", "area: docs"],
     targetRelease: "Release A",
-    roadmapItemCount: 1,
-    roadmapStatuses: ["Todo"],
+    roadmap: true,
     parent: null,
     subIssues: [],
     blockedBy: [],
@@ -40,7 +39,7 @@ function issue(overrides: Partial<IssueReadinessIssue> = {}): IssueReadinessIssu
 
 function snapshot(issues: readonly IssueReadinessIssue[]): IssueReadinessSnapshot {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     repository: "tyldra-org/falryn",
     generatedAt: "2026-09-02T00:00:00Z",
     issues,
@@ -126,8 +125,8 @@ describe("issue readiness audit", () => {
   });
 
   test("rejects malformed or duplicate snapshot identities", () => {
-    expect(() => parseIssueReadinessSnapshot({ schemaVersion: 1 })).toThrow(
-      "snapshot.schemaVersion must be 3",
+    expect(() => parseIssueReadinessSnapshot({ schemaVersion: 3 })).toThrow(
+      "snapshot.schemaVersion must be 4",
     );
     expect(() => parseIssueReadinessSnapshot(snapshot([issue(), issue()]))).toThrow(
       "snapshot contains duplicate issue #1",
@@ -140,8 +139,6 @@ describe("issue readiness audit", () => {
       assignees: [],
       labels: ["type: docs", "bug"],
       targetRelease: null,
-      roadmapItemCount: 2,
-      roadmapStatuses: ["Todo", "Done"],
     });
 
     expect(codes(snapshot([invalid]))).toEqual([
@@ -149,7 +146,6 @@ describe("issue readiness audit", () => {
       "work-type-count",
       "area-missing",
       "target-release-missing",
-      "roadmap-status-count",
       "planning-relationship-missing",
       "body-empty",
       "heading-missing",
@@ -157,13 +153,12 @@ describe("issue readiness audit", () => {
     ]);
   });
 
-  test("ignores contribution issues outside the private Roadmap", () => {
+  test("ignores contribution issues outside the Roadmap", () => {
     const contribution = issue({
       assignees: [],
       labels: [],
       targetRelease: null,
-      roadmapItemCount: 0,
-      roadmapStatuses: [],
+      roadmap: false,
       body: "A public contribution report may start with partial context.",
     });
 
@@ -270,7 +265,7 @@ describe("issue readiness audit", () => {
     ]);
   });
 
-  test("detects title changes but keeps private release changes out of public bodies", () => {
+  test("detects title changes but keeps release changes out of issue bodies", () => {
     const previous = snapshot([issue()]);
     const current = snapshot([issue({ title: "Renamed fixture", targetRelease: "Release B" })]);
 
@@ -278,8 +273,8 @@ describe("issue readiness audit", () => {
   });
 });
 
-test("private release changes do not require public body edits", () => {
+test("release milestone changes do not require body edits", () => {
   const original = snapshot([issue()]);
-  const changed = snapshot([issue({ targetRelease: "Different private release" })]);
+  const changed = snapshot([issue({ targetRelease: "v0.5 Different release" })]);
   expect(auditIssueReadiness(changed, { baseline: original })).toEqual([]);
 });

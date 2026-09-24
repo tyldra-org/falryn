@@ -2,7 +2,7 @@
 
 This repository contains everything needed to inspect, build, test, and change
 Falryn from a public checkout. Product work starts from a public Falryn issue.
-Private documentation and Project access may help maintainers coordinate a
+Private documentation and Roadmap access may help maintainers coordinate a
 delivery, but they are never prerequisites for implementing a Ready public
 issue.
 
@@ -19,7 +19,8 @@ file.
 | What does a pull request need? | [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md) |
 | What do repository checks enforce? | `package.json`, `.github/workflows/`, and their source scripts |
 | What are the long-lived product and architecture contracts? | The private Falryn Docs repository, for authenticated maintainers |
-| What is the delivery order or Project state? | The private Falryn Roadmap, for authenticated maintainers |
+| Which release is an issue in? | Its repository milestone |
+| What is the delivery order and planning state? | The Falryn Roadmap audits, for authenticated maintainers |
 
 If a public issue is marked Ready, its body must contain every baseline,
 boundary, failure rule, wiring point, test expectation, and documentation-impact
@@ -146,14 +147,18 @@ access to the maintainer's release targets or private Roadmap.
    depends on private text for implementation behavior.
 5. Create or continue one short-lived branch for that contribution.
 
-Maintainer product work uses a separate private lane. When a maintainer
-deliberately adds an issue to the Falryn Roadmap, that issue also receives the
-Roadmap's assignee, Target release, Status, Priority, Readiness, hierarchy, and
-delivery rules. Issues outside the Project do not inherit those requirements.
-Release scheduling stays in the private Project’s Target release field. Public
-issues and PRs do not carry repository milestones or private release names.
-The authenticated auditors read the Project field; contributor checks do not
-need private access.
+Maintainer product work uses a separate lane. When a maintainer deliberately
+adopts an issue into the Falryn Roadmap, it receives the organization-only
+Roadmap priority and Readiness fields, a release milestone, a sole assignee, and
+the Roadmap's hierarchy and delivery rules. Issues without Roadmap fields do not
+inherit those requirements.
+
+Releases are public milestones in Falryn and Falryn Docs, titled
+`v<major>.<minor> <name>` and ordered by that version, so `v0.35` falls between
+`v0.3` and `v0.4`. Priority, Readiness and release exceptions stay private.
+Status is not recorded: a closed issue is done, an open leaf is in progress while
+it has an open closing pull request, and an open parent is in progress once a
+native child has started. Contributor checks do not need private access.
 
 Repository automation uses the maintainer-applied `roadmap` label to select the
 maintainer issue format. It checks Outcome, Completion proof, and repository
@@ -161,12 +166,12 @@ classification without requiring the public form's exact headings. A delivery
 PR still requires a fully checked Ready checklist, or the original Contribution
 checklist when an adopted contribution retains that form, and an open,
 unblocked leaf. Issues without the label use the public contribution form.
-The label selects formatting only; it neither proves private Project membership
+The label selects formatting only; it neither proves Roadmap membership
 nor replaces the authenticated readiness and Roadmap audits.
 
 A retained Contribution checklist satisfies the public PR check's checklist
 requirement. An adopted Roadmap issue still needs the Ready checklist evidence
-enforced by the authenticated auditor. Issues outside the Project do not need
+enforced by the authenticated auditor. Issues outside the Roadmap do not need
 that extra evidence.
 
 Parents collect integrated outcomes. They do not own branches or large pull
@@ -268,7 +273,7 @@ Use the repository template. Every non-Dependabot pull request must:
 - use a conventional title suitable for the final squash commit subject.
 
 Do not commit credentials, snapshots, contributor-specific absolute paths, or
-private issue, Project, or documentation content. Keep validation and delivery
+private issue, planning-field, or documentation content. Keep validation and delivery
 detail in the pull request rather than copying it into a subject-only squash
 commit.
 

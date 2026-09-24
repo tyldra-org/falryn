@@ -16,9 +16,10 @@ build and validate the product. Public source, issue, and pull-request work must
 not require private documentation or Roadmap access. Do not copy private
 roadmaps, detailed future designs, unannounced capabilities, or research here.
 
-Release scheduling uses the private Project
-`Target release` field; never recreate repository milestones or publish its
-option values in public handoffs.
+Releases are public repository milestones in Falryn and Falryn Docs, ordered by
+the `v<major>.<minor>` version in their titles. Roadmap priority, readiness and
+release exceptions are organization-only issue fields; never copy their values
+into public handoffs.
 
 ## Before acting
 
@@ -50,7 +51,7 @@ option values in public handoffs.
 | GitHub issues, pull requests, Actions, Projects, or merge state | github-operations |
 | Local diff, branch, or pull-request review | change-review plus the relevant stack skill |
 | Falryn Plan, Implement, Review, Verify, Merge, Deliver, or workflow maintenance | falryn-work |
-| Next, new Roadmap work selection, parent sequencing, or private Project governance | falryn-roadmap |
+| Next, new Roadmap work selection, parent sequencing, or Roadmap governance | falryn-roadmap |
 
 Load `software-engineering-discipline` only from the global installation at
 `~/.agents/skills/software-engineering-discipline/SKILL.md`. Follow its

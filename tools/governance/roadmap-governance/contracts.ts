@@ -1,14 +1,12 @@
-export const SCHEMA_VERSION = 3 as const;
-
-export const ROADMAP_STATUS_OPTIONS = [
-  { name: "Todo", description: "This item hasn't been started", color: "GREEN" },
-  {
-    name: "In Progress",
-    description: "This is actively being worked on",
-    color: "YELLOW",
-  },
-  { name: "Done", description: "This has been completed", color: "PURPLE" },
-] as const;
+/**
+ * Roadmap planning contract.
+ *
+ * Releases are repository milestones titled `v<major>.<minor> <name>` and ordered
+ * by that version as a decimal, so `v0.35` falls between `v0.3` and `v0.4`.
+ * Priority, Readiness and release exceptions are organization-only issue fields.
+ * Status is derived from issue state, closing pull requests and native children.
+ */
+export const SCHEMA_VERSION = 4 as const;
 
 export const ROADMAP_PRIORITY_OPTIONS = [
   {
@@ -69,14 +67,12 @@ export const ROADMAP_READINESS_OPTIONS = [
   },
 ] as const;
 
-export const ROADMAP_REQUIRED_WORKFLOWS = [
-  "Auto-add sub-issues to project",
-  "Auto-close issue",
-  "Item added to project",
-  "Item closed",
-  "Pull request linked to issue",
-  "Pull request merged",
-] as const;
+/** Organization-only issue fields that hold private planning facts. */
+export const ROADMAP_PLANNING_FIELDS = {
+  priority: "Roadmap priority",
+  readiness: "Readiness",
+  releaseException: "Release exception",
+} as const;
 
 export const OPEN_PRIORITIES = ["P0", "P1", "P2", "P3"] as const;
 
@@ -90,10 +86,6 @@ export const READINESS_VALUES = [
   "Historical",
 ] as const;
 
-const ROADMAP_STATUSES = ["Todo", "In Progress", "Done"] as const;
-
-export const DEFAULT_LIVENESS_GRACE_HOURS = 7 * 24;
-
 export const ROADMAP_REPOSITORIES = ["tyldra-org/falryn", "tyldra-org/falryn-docs"] as const;
 
 export type RoadmapIssueState = "OPEN" | "CLOSED";
@@ -104,7 +96,7 @@ export type RoadmapPriority = (typeof CLOSED_PRIORITIES)[number];
 
 export type RoadmapReadiness = (typeof READINESS_VALUES)[number];
 
-export type RoadmapStatus = (typeof ROADMAP_STATUSES)[number];
+export type RoadmapStatus = "Todo" | "In Progress" | "Done";
 
 export type RoadmapFieldOption = {
   readonly name: string;
@@ -112,9 +104,22 @@ export type RoadmapFieldOption = {
   readonly color: string;
 };
 
-export type RoadmapProjectWorkflow = {
+/** An organization issue field as captured, with options in their configured order. */
+export type RoadmapPlanningField = {
   readonly name: string;
-  readonly enabled: boolean;
+  readonly dataType: string;
+  readonly visibility: string;
+  readonly options: readonly RoadmapFieldOption[];
+};
+
+export type RoadmapMilestone = {
+  readonly title: string;
+  readonly state: RoadmapIssueState;
+};
+
+export type RoadmapRepositoryMilestones = {
+  readonly repository: string;
+  readonly milestones: readonly RoadmapMilestone[];
 };
 
 export type RoadmapRelation = {
@@ -131,13 +136,15 @@ export type RoadmapClosingPullRequest = {
   readonly updatedAt: string;
 };
 
-export type RoadmapProjectItem = {
-  readonly id: string;
-  readonly status: string | null;
-  readonly statusUpdatedAt: string | null;
+/**
+ * An issue's planning facts. Present only on Roadmap issues: an issue joins the
+ * Roadmap when it carries a Roadmap priority, Readiness or Release exception.
+ */
+export type RoadmapPlanning = {
   readonly priority: string | null;
   readonly readiness: string | null;
-  readonly targetRelease: string | null;
+  /** The issue's milestone title. */
+  readonly release: string | null;
   readonly releaseException: string | null;
 };
 
@@ -156,7 +163,7 @@ export type RoadmapGovernanceIssue = {
   readonly subIssues: readonly RoadmapRelation[];
   readonly blockedBy: readonly RoadmapRelation[];
   readonly closingPullRequests: readonly RoadmapClosingPullRequest[];
-  readonly projectItems: readonly RoadmapProjectItem[];
+  readonly planning: RoadmapPlanning | null;
 };
 
 export type RoadmapRepositoryIssueCount = {
@@ -164,34 +171,21 @@ export type RoadmapRepositoryIssueCount = {
   readonly count: number;
 };
 
-export type RoadmapNonIssueProjectItem = {
-  readonly id: string;
-  readonly contentKind: string;
-};
-
 export type RoadmapGovernanceSnapshot = {
   readonly schemaVersion: typeof SCHEMA_VERSION;
   readonly generatedAt: string;
-  readonly projectOwner: string;
-  readonly projectNumber: number;
-  readonly projectId: string;
+  /** The organization that owns the repositories and planning fields. */
+  readonly owner: string;
   readonly repositories: readonly string[];
   readonly repositoryIssueCounts: readonly RoadmapRepositoryIssueCount[];
-  readonly statusOptions: readonly RoadmapFieldOption[];
-  readonly priorityOptions: readonly RoadmapFieldOption[];
-  readonly readinessOptions: readonly RoadmapFieldOption[];
-  readonly targetReleaseOptions: readonly RoadmapFieldOption[];
-  readonly projectPublic: boolean;
-  readonly projectWorkflows: readonly RoadmapProjectWorkflow[];
+  readonly planningFields: readonly RoadmapPlanningField[];
+  readonly milestones: readonly RoadmapRepositoryMilestones[];
   readonly issues: readonly RoadmapGovernanceIssue[];
-  readonly nonIssueProjectItems: readonly RoadmapNonIssueProjectItem[];
 };
 
 export type RoadmapGovernanceCode =
-  | "project-membership-count"
-  | "non-issue-project-item"
-  | "project-public"
-  | "target-release-field-invalid"
+  | "planning-field-invalid"
+  | "release-catalog-invalid"
   | "release-exception-invalid"
   | "assignee-count"
   | "work-type-count"
@@ -205,30 +199,19 @@ export type RoadmapGovernanceCode =
   | "hierarchy-depth-invalid"
   | "hierarchy-target-release-missing"
   | "hierarchy-target-release-mismatch"
-  | "status-field-invalid"
-  | "status-invalid"
-  | "closed-status-invalid"
-  | "priority-field-invalid"
   | "priority-invalid"
   | "open-historical-priority"
   | "p0-approval-missing"
-  | "readiness-field-invalid"
   | "readiness-invalid"
   | "readiness-evidence-mismatch"
   | "decision-evidence-missing"
   | "in-progress-readiness-invalid"
   | "parent-readiness-invalid"
   | "closed-readiness-invalid"
-  | "project-workflow-invalid"
-  | "stale-in-progress"
   | "in-progress-blocked"
-  | "in-progress-closing-pr-closed"
   | "abandoned-closing-pr"
-  | "active-closing-pr-status-mismatch"
   | "parent-closing-pr-forbidden"
   | "multiple-active-closing-prs"
-  | "parent-status-mismatch"
-  | "parent-in-progress-invalid"
   | "open-issue-merged-closing-pr"
   | "dependency-cycle"
   | "external-open-blocker"
@@ -257,7 +240,7 @@ export type RoadmapDeliverySequenceEntry = {
 export type RoadmapLivenessDecision = {
   readonly repository: string;
   readonly issueNumber: number;
-  readonly kind: "parent-continuation" | "open-pull-request" | "grace-period" | "stale";
+  readonly kind: "parent-continuation" | "open-pull-request" | "stale";
   readonly detail: string;
 };
 
@@ -265,10 +248,6 @@ export type RoadmapGovernanceReport = {
   readonly diagnostics: readonly RoadmapGovernanceDiagnostic[];
   readonly deliverySequence: readonly RoadmapDeliverySequenceEntry[];
   readonly liveness: readonly RoadmapLivenessDecision[];
-};
-
-export type RoadmapGovernanceOptions = {
-  readonly livenessGraceHours?: number;
 };
 
 export type JsonRecord = { readonly [key: string]: unknown };
