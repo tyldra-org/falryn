@@ -26,7 +26,7 @@ only when an issue, PR or delivery scope needs resolution.
 | Next | Route selection to [falryn-roadmap](../falryn-roadmap/SKILL.md); it starts no delivery |
 
 A question, greeting, walkthrough or ordinary edit keeps its ordinary scope.
-Answer it from relevant evidence. Do not turn it into Next, create a Project task,
+Answer it from relevant evidence. Do not turn it into Next, adopt a Roadmap issue,
 or infer permission to publish. "What should I work on next?" requests selection;
 "What changed in this PR?" requests an assessment of that PR.
 
@@ -41,7 +41,7 @@ only Falryn coordination; it does not repeat those skills' procedures.
 Use [work](references/work.md) for the contract, delivery state, proof, merge and
 recovery. Use [documentation](references/documentation.md) for canonical owners,
 private access and companions. Load [falryn-roadmap](../falryn-roadmap/SKILL.md)
-only for Project-governed admission, state changes, selection or parent ordering.
+only for Roadmap admission, planning-field changes, selection or parent ordering.
 Ordinary public contributions do not require private planning access.
 
 Both Implement and Deliver include the [completion check](references/work.md#prove-the-result).

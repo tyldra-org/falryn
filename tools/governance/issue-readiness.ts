@@ -1,9 +1,8 @@
 import { declaresStandalone } from "./issue-governance-body";
 
-export const ISSUE_READINESS_SCHEMA_VERSION = 3 as const;
+export const ISSUE_READINESS_SCHEMA_VERSION = 4 as const;
 export const DEFAULT_MAXIMUM_ISSUE_BODY_BYTES = 65_536;
 
-const ROADMAP_STATUSES = new Set(["Todo", "In Progress", "Done"]);
 const REQUIRED_HEADINGS = ["Outcome", "Completion proof"] as const;
 const SHARED_MARKER = "<!-- shared-delivery-governance-v1 -->";
 const LEGACY_SHARED_MARKER = "<!-- whole-product-excellence-contract-2026-08-24 -->";
@@ -30,9 +29,10 @@ export type IssueReadinessIssue = {
   readonly updatedAt: string;
   readonly assignees: readonly string[];
   readonly labels: readonly string[];
+  /** The issue's release milestone title. */
   readonly targetRelease: string | null;
-  readonly roadmapItemCount: number;
-  readonly roadmapStatuses: readonly string[];
+  /** Whether the issue carries a Roadmap planning field. */
+  readonly roadmap: boolean;
   readonly parent: IssueReadinessRelation | null;
   readonly subIssues: readonly IssueReadinessRelation[];
   readonly blockedBy: readonly IssueReadinessRelation[];
@@ -50,7 +50,6 @@ export type IssueReadinessCode =
   | "work-type-count"
   | "area-missing"
   | "target-release-missing"
-  | "roadmap-status-count"
   | "planning-relationship-missing"
   | "parent-reference-missing"
   | "hierarchy-reciprocity"
@@ -113,9 +112,9 @@ function positiveInteger(value: unknown, subject: string): number {
   return value;
 }
 
-function nonNegativeInteger(value: unknown, subject: string): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 0) {
-    throw new Error(`${subject} must be a non-negative integer`);
+function booleanValue(value: unknown, subject: string): boolean {
+  if (typeof value !== "boolean") {
+    throw new Error(`${subject} must be a boolean`);
   }
   return value;
 }
@@ -159,10 +158,7 @@ function parseIssue(value: unknown, index: number): IssueReadinessIssue {
       stringValue(entry, `${subject}.labels[${itemIndex}]`),
     ),
     targetRelease: nullableString(record.targetRelease, `${subject}.targetRelease`),
-    roadmapItemCount: nonNegativeInteger(record.roadmapItemCount, `${subject}.roadmapItemCount`),
-    roadmapStatuses: arrayValue(record.roadmapStatuses, `${subject}.roadmapStatuses`).map(
-      (entry, itemIndex) => stringValue(entry, `${subject}.roadmapStatuses[${itemIndex}]`),
-    ),
+    roadmap: booleanValue(record.roadmap, `${subject}.roadmap`),
     parent,
     subIssues: arrayValue(record.subIssues, `${subject}.subIssues`).map((entry, itemIndex) =>
       parseRelation(entry, `${subject}.subIssues[${itemIndex}]`),
@@ -378,13 +374,13 @@ export function auditIssueReadiness(
   const baseline = baselineByNumber(options.baseline);
   const openIssues = new Map(
     snapshot.issues
-      .filter((issue) => issue.state === "OPEN" && issue.roadmapItemCount > 0)
+      .filter((issue) => issue.state === "OPEN" && issue.roadmap)
       .map((issue) => [issue.number, issue] as const),
   );
   const diagnostics: IssueReadinessDiagnostic[] = [];
 
   for (const issue of [...snapshot.issues].sort((left, right) => left.number - right.number)) {
-    if (issue.roadmapItemCount === 0) {
+    if (!issue.roadmap) {
       continue;
     }
     const workTypes = issue.labels.filter((label) => label === "bug" || label.startsWith("type:"));
@@ -408,20 +404,7 @@ export function auditIssueReadiness(
       add(diagnostics, "area-missing", issue.number, "missing area:* label");
     }
     if (issue.targetRelease === null) {
-      add(diagnostics, "target-release-missing", issue.number, "missing Target release");
-    }
-    const validStatuses = issue.roadmapStatuses.filter((status) => ROADMAP_STATUSES.has(status));
-    if (
-      issue.roadmapItemCount !== 1 ||
-      issue.roadmapStatuses.length !== 1 ||
-      validStatuses.length !== 1
-    ) {
-      add(
-        diagnostics,
-        "roadmap-status-count",
-        issue.number,
-        `expected one Project item with one Todo/In Progress/Done status; found ${issue.roadmapItemCount} item(s) and ${issue.roadmapStatuses.join(", ") || "no status"}`,
-      );
+      add(diagnostics, "target-release-missing", issue.number, "missing release milestone");
     }
     const blockerReferences = declaredBlockerReferences(issue.body, issue.number);
     if (issue.parent === null && issue.subIssues.length === 0 && !declaresStandalone(issue.body)) {

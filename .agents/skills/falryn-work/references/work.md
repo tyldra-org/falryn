@@ -132,7 +132,7 @@ Verify that the resulting commits contain the assessed changes and preserve the
 acceptance and integration proof. Refresh evidence affected by landing before
 the final completion report; reuse unchanged proof rather than repeating the
 entire review or test suite. Verify actual issue closure. Reconcile applicable
-Project, parent and documentation state without declaring incomplete acceptance Done.
+Roadmap field, parent and documentation state without declaring incomplete acceptance Done.
 Run affected Roadmap audits. Safely synchronize eligible clean default checkouts
 through git-operations; preserve dirty, detached, divergent or locked checkouts.
 Report merge SHAs and recovery through a new revert PR. Branch deletion and

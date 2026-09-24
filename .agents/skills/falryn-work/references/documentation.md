@@ -14,9 +14,9 @@ owners through `DOCUMENTATION-MAP.md` and the issue's canonical links.
 Authenticated gh access may replace local inspection when the operation allows.
 Never clone private repositories automatically or rewrite an unrelated remote.
 
-Roadmap operations need `tyldra-org` Project 1 and its required fields; use
+Roadmap operations need the organization-only Roadmap issue fields; use
 [falryn-roadmap](../../falryn-roadmap/SKILL.md). Repository access does not prove
-Project access. Recheck needed authority at mutation boundaries and after
+field access. Recheck needed authority at mutation boundaries and after
 identity or repository changes. Lost required access is unavailable. Continue
 independent authorized public work, but never call private verification complete.
 
@@ -51,7 +51,7 @@ validation prove it, and reconcile current-behavior claims after delivery.
 
 ## Respect the destination
 
-Private text, issue bodies, paths, Project values, snapshots and authenticated
+Private text, issue bodies, paths, planning-field values, snapshots and authenticated
 responses stay out of public commits, issues, PRs, logs and artifacts. Public
 records may include the necessary delivery classification and verified companion
 relationship. Never place credentials in command arguments or snapshots.

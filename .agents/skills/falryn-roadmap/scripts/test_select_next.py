@@ -27,9 +27,8 @@ def issue(number, owner='maintainer', readiness='Needs Planning', repository=REP
         'state': 'OPEN', 'createdAt': STAMP, 'updatedAt': STAMP, 'closedAt': None,
         'assignees': [owner], 'labels': ['type: infrastructure', 'area: docs'],
         'parent': None, 'subIssues': [], 'blockedBy': [], 'closingPullRequests': [],
-        'projectItems': [{'id': f'{repository}-{number}', 'status': 'Todo',
-                          'statusUpdatedAt': STAMP, 'priority': 'P2', 'readiness': readiness,
-                          'targetRelease': 'Synthetic A', 'releaseException': None}],
+        'planning': {'priority': 'P2', 'readiness': readiness,
+                     'release': 'v0.1 Synthetic A', 'releaseException': None},
     }
 
 
@@ -38,16 +37,17 @@ def relation(item):
 
 
 def snapshot(issues):
+    milestones = [{'title': f'v0.{index} Synthetic {name}', 'state': 'OPEN'}
+                  for index, name in ((1, 'A'), (2, 'B'))]
     return {
-        **CONTRACT, 'schemaVersion': 3, 'generatedAt': STAMP,
-        'projectOwner': 'tyldra-org', 'projectNumber': 1, 'projectId': 'synthetic-project',
-        'projectPublic': False, 'repositories': [REPOSITORY, DOCS],
+        **CONTRACT, 'schemaVersion': 4, 'generatedAt': STAMP, 'owner': 'tyldra-org',
+        'repositories': [REPOSITORY, DOCS],
         'repositoryIssueCounts': [{'repository': repo,
                                   'count': sum(i['repository'] == repo for i in issues)}
                                  for repo in (REPOSITORY, DOCS)],
-        'targetReleaseOptions': [{'name': f'Synthetic {name}', 'description': 'State: OPEN',
-                                  'color': 'BLUE'} for name in ('A', 'B')],
-        'issues': issues, 'nonIssueProjectItems': [],
+        'milestones': [{'repository': repo, 'milestones': milestones}
+                       for repo in (REPOSITORY, DOCS)],
+        'issues': issues,
     }
 
 
@@ -70,7 +70,7 @@ class SelectionTests(unittest.TestCase):
         other, blocked, planning, ready = [issue(n) for n in range(1, 5)]
         other['assignees'] = ['another-owner']
         blocked['blockedBy'] = [relation(other)]
-        ready['projectItems'][0]['readiness'] = 'Ready'
+        ready['planning']['readiness'] = 'Ready'
         result = self.run_selection(snapshot([other, blocked, planning, ready]))
         self.assertEqual(result['issue'], f'{REPOSITORY}#3')
         self.assertEqual(result['position'], 3)
@@ -101,7 +101,7 @@ class SelectionTests(unittest.TestCase):
 
     def test_parent_scope_selects_child_without_renumbering(self):
         outside, parent, child = issue(1), issue(2, readiness='Parent'), issue(3)
-        outside['projectItems'][0]['priority'] = 'P1'
+        outside['planning']['priority'] = 'P1'
         parent['subIssues'] = [relation(child)]
         child['parent'] = relation(parent)
         child['body'] = child['body'].replace('Planning relationship: Standalone-v1.', '')
@@ -111,14 +111,13 @@ class SelectionTests(unittest.TestCase):
 
     def test_release_filter_preserves_order(self):
         first, second = issue(1), issue(2)
-        second['projectItems'][0]['targetRelease'] = 'Synthetic B'
-        result = self.run_selection(snapshot([first, second]), '--target-release', 'Synthetic B')
+        second['planning']['release'] = 'v0.2 Synthetic B'
+        result = self.run_selection(snapshot([first, second]), '--target-release', 'v0.2 Synthetic B')
         self.assertEqual(result['issue'], f'{REPOSITORY}#2')
         self.assertEqual(result['position'], 2)
 
     def test_docs_identity_and_open_pr_candidates(self):
         target = issue(1, owner='Maintainer', readiness='Ready', repository=DOCS)
-        target['projectItems'][0]['status'] = 'In Progress'
         target['closingPullRequests'] = [
             {'repository': DOCS, 'number': n, 'state': state, 'isDraft': False,
              'updatedAt': STAMP} for n, state in ((3, 'CLOSED'), (4, 'OPEN'))]
@@ -128,17 +127,17 @@ class SelectionTests(unittest.TestCase):
 
     def test_release_range_uses_catalog_order(self):
         first, second = issue(1, owner='someone-else'), issue(2)
-        second['projectItems'][0]['targetRelease'] = 'Synthetic B'
+        second['planning']['release'] = 'v0.2 Synthetic B'
         result = self.run_selection(snapshot([first, second]),
-                                    '--target-release', 'Synthetic A',
-                                    '--through-release', 'Synthetic B')
+                                    '--target-release', 'v0.1 Synthetic A',
+                                    '--through-release', 'v0.2 Synthetic B')
         self.assertEqual(result['issue'], f'{REPOSITORY}#2')
         self.assertEqual(result['position'], 2)
 
     def test_reversed_release_range_is_unavailable(self):
         result = self.run_selection(snapshot([issue(1)]),
-                                    '--target-release', 'Synthetic B',
-                                    '--through-release', 'Synthetic A', expected_code=2)
+                                    '--target-release', 'v0.2 Synthetic B',
+                                    '--through-release', 'v0.1 Synthetic A', expected_code=2)
         self.assertIn('reversed', result)
 
     def test_no_owned_candidate(self):
@@ -147,15 +146,15 @@ class SelectionTests(unittest.TestCase):
 
     def test_audit_diagnostic_prevents_selection(self):
         data = snapshot([issue(1)])
-        data['projectPublic'] = True
+        data['planningFields'] = [dict(field, visibility='ALL') for field in data['planningFields']]
         result = self.run_selection(data, expected_code=1)
         self.assertEqual(result['state'], 'audit-failed')
-        self.assertIn('project-public', result['diagnosticCodes'])
+        self.assertIn('planning-field-invalid', result['diagnosticCodes'])
         self.assertNotIn('issue', result)
 
     def test_invalid_schema_is_unavailable(self):
         data = snapshot([issue(1)])
-        data['schemaVersion'] = 2
+        data['schemaVersion'] = 3
         result = self.run_selection(data, expected_code=2)
         self.assertIn('unavailable', result)
 
@@ -169,9 +168,10 @@ if __name__ == '__main__':
     options, remaining = parser.parse_known_args()
     ROOT = options.falryn_root.resolve()
     module = (ROOT / 'tools/governance/roadmap-governance/contracts.ts').as_uri()
-    code = (f'const c = await import({json.dumps(module)}); console.log(JSON.stringify({{'
-            'statusOptions:c.ROADMAP_STATUS_OPTIONS, priorityOptions:c.ROADMAP_PRIORITY_OPTIONS,'
-            'readinessOptions:c.ROADMAP_READINESS_OPTIONS,'
-            'projectWorkflows:c.ROADMAP_REQUIRED_WORKFLOWS.map(name=>({name,enabled:true}))}));')
+    code = (f'const c = await import({json.dumps(module)}); const f = c.ROADMAP_PLANNING_FIELDS;'
+            'console.log(JSON.stringify({planningFields:['
+            '{name:f.priority,dataType:"SINGLE_SELECT",visibility:"ORG_ONLY",options:c.ROADMAP_PRIORITY_OPTIONS},'
+            '{name:f.readiness,dataType:"SINGLE_SELECT",visibility:"ORG_ONLY",options:c.ROADMAP_READINESS_OPTIONS},'
+            '{name:f.releaseException,dataType:"TEXT",visibility:"ORG_ONLY",options:[]}]}));')
     CONTRACT = json.loads(subprocess.check_output(['bun', '-e', code], cwd=ROOT, text=True))
     unittest.main(argv=[sys.argv[0], *remaining])

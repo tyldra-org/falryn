@@ -2,34 +2,26 @@ import { describe, expect, test } from "bun:test";
 import {
   analyzeRoadmapGovernance,
   parseRoadmapGovernanceSnapshot,
+  ROADMAP_PLANNING_FIELDS,
   ROADMAP_PRIORITY_OPTIONS,
   ROADMAP_READINESS_OPTIONS,
-  ROADMAP_REQUIRED_WORKFLOWS,
-  ROADMAP_STATUS_OPTIONS,
   type RoadmapGovernanceIssue,
   type RoadmapGovernanceSnapshot,
+  type RoadmapPlanning,
+  releaseOrderKey,
+  roadmapStatus,
 } from "./roadmap-governance";
-import {
-  assertAllProjectIssueItemsConsumed,
-  fieldValues,
-  loadOpenIssueRelations,
-  parseCli,
-  projectItemFromGraphQl,
-  projectItemsForIssue,
-} from "./roadmap-governance-cli";
+import { loadOpenIssueRelations, parseCli, planningFromRest } from "./roadmap-governance-cli";
 
 const REPOSITORY = "tyldra-org/falryn";
 
-function projectItem(
-  overrides: Partial<RoadmapGovernanceIssue["projectItems"][number]> = {},
-): RoadmapGovernanceIssue["projectItems"][number] {
+const RELEASES = ["v0.1 Release A", "v0.2 Release B", "v0.3 Release C"] as const;
+
+function planned(overrides: Partial<RoadmapPlanning> = {}): RoadmapPlanning {
   return {
-    id: "item-1",
-    status: "Todo",
-    statusUpdatedAt: "2026-09-01T00:00:00.000Z",
     priority: "P2",
     readiness: "Needs Planning",
-    targetRelease: "Release A",
+    release: "v0.1 Release A",
     releaseException: null,
     ...overrides,
   };
@@ -42,6 +34,7 @@ function issue(
   } = {},
 ): RoadmapGovernanceIssue {
   const { targetRelease, releaseException, ...rest } = overrides;
+  const planning = rest.planning === undefined ? planned() : rest.planning;
   return {
     repository: REPOSITORY,
     number: 1,
@@ -69,11 +62,14 @@ Planning relationship: Standalone-v1.
     blockedBy: [],
     closingPullRequests: [],
     ...rest,
-    projectItems: (rest.projectItems ?? [projectItem()]).map((item) => ({
-      ...item,
-      ...(targetRelease === undefined ? {} : { targetRelease }),
-      ...(releaseException === undefined ? {} : { releaseException }),
-    })),
+    planning:
+      planning === null
+        ? null
+        : {
+            ...planning,
+            ...(targetRelease === undefined ? {} : { release: targetRelease }),
+            ...(releaseException === undefined ? {} : { releaseException }),
+          },
   };
 }
 
@@ -84,22 +80,26 @@ function readyBody(): string {
   );
 }
 
+function openPullRequest(number = 10) {
+  return {
+    repository: REPOSITORY,
+    number,
+    state: "OPEN" as const,
+    isDraft: false,
+    updatedAt: "2026-09-02T00:00:00.000Z",
+  };
+}
+
+const MILESTONES = [
+  { title: "v0.0 Retired release", state: "CLOSED" as const },
+  ...RELEASES.map((title) => ({ title, state: "OPEN" as const })),
+];
+
 function snapshot(issues: readonly RoadmapGovernanceIssue[]): RoadmapGovernanceSnapshot {
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     generatedAt: "2026-09-03T00:00:00.000Z",
-    projectOwner: "tyldra-org",
-    projectNumber: 1,
-    projectId: "project-1",
-    projectPublic: false,
-    targetReleaseOptions: [
-      { name: "Retired release", description: "State: CLOSED", color: "GRAY" },
-      ...["Release A", "Release B", "Release C"].map((name) => ({
-        name,
-        description: "State: OPEN",
-        color: "BLUE",
-      })),
-    ],
+    owner: "tyldra-org",
     repositories: [REPOSITORY, "tyldra-org/falryn-docs"],
     repositoryIssueCounts: [
       {
@@ -111,12 +111,31 @@ function snapshot(issues: readonly RoadmapGovernanceIssue[]): RoadmapGovernanceS
         count: issues.filter((entry) => entry.repository === "tyldra-org/falryn-docs").length,
       },
     ],
-    statusOptions: ROADMAP_STATUS_OPTIONS,
-    priorityOptions: ROADMAP_PRIORITY_OPTIONS,
-    readinessOptions: ROADMAP_READINESS_OPTIONS,
-    projectWorkflows: ROADMAP_REQUIRED_WORKFLOWS.map((name) => ({ name, enabled: true })),
+    planningFields: [
+      {
+        name: ROADMAP_PLANNING_FIELDS.priority,
+        dataType: "SINGLE_SELECT",
+        visibility: "ORG_ONLY",
+        options: ROADMAP_PRIORITY_OPTIONS,
+      },
+      {
+        name: ROADMAP_PLANNING_FIELDS.readiness,
+        dataType: "SINGLE_SELECT",
+        visibility: "ORG_ONLY",
+        options: ROADMAP_READINESS_OPTIONS,
+      },
+      {
+        name: ROADMAP_PLANNING_FIELDS.releaseException,
+        dataType: "TEXT",
+        visibility: "ORG_ONLY",
+        options: [],
+      },
+    ],
+    milestones: [
+      { repository: REPOSITORY, milestones: MILESTONES },
+      { repository: "tyldra-org/falryn-docs", milestones: MILESTONES },
+    ],
     issues,
-    nonIssueProjectItems: [],
   };
 }
 
@@ -126,32 +145,47 @@ function codes(input: RoadmapGovernanceSnapshot): readonly string[] {
 
 describe("roadmap governance CLI validation", () => {
   test("rejects partial live repository selection", () => {
-    expect(() =>
-      parseCli(["--live", REPOSITORY, "--project-owner", "tyldra-org", "--project-number", "1"]),
-    ).toThrow("live audit requires exactly");
+    expect(() => parseCli(["--live", REPOSITORY])).toThrow("live audit requires exactly");
+    expect(() => parseCli(["--live", REPOSITORY, "--project-number", "1"])).toThrow(
+      "unknown argument: --project-number",
+    );
   });
 
-  test("rejects Project issues outside the canonical repository audit", () => {
-    const projectItems = new Map([
-      ["canonical-node", [projectItem()]],
-      ["outside-node", [projectItem({ id: "outside-item" })]],
-    ]);
-    expect(() =>
-      assertAllProjectIssueItemsConsumed(projectItems, new Set(["canonical-node"])),
-    ).toThrow("1 issue item(s) outside the canonical repository audit");
+  test("orders releases by the version in the milestone title", () => {
+    expect(releaseOrderKey("v0.35 Live Product Coding Agent")).toBe(0.35);
+    expect(releaseOrderKey("v0.3 Intelligence")).toBeLessThan(releaseOrderKey("v0.35 Live") ?? 0);
+    expect(releaseOrderKey("v0.35 Live")).toBeLessThan(releaseOrderKey("v0.4 Extensions") ?? 0);
+    expect(releaseOrderKey("Community")).toBeNull();
   });
 
-  test("rejects duplicate Project field names on an item", () => {
-    const value = {
-      totalCount: 2,
-      nodes: [
-        { name: "Todo", field: { id: "field-1", name: "Status" } },
-        { name: "Todo", field: { id: "field-2", name: "Status" } },
+  test("reads planning facts from the REST issue record", () => {
+    const record = {
+      milestone: { title: "v0.4 Extensions and Collaboration" },
+      issue_field_values: [
+        { issue_field_name: "Roadmap priority", single_select_option: { name: "P2" } },
+        { issue_field_name: "Readiness", single_select_option: { name: "Ready" } },
+        { issue_field_name: "Release exception", value: "early-prerequisite-v1; …" },
+        { issue_field_name: "Priority", single_select_option: { name: "High" } },
       ],
     };
-    expect(() => fieldValues(value, "fieldValues")).toThrow(
-      "fieldValues contains duplicate field name Status",
-    );
+    expect(planningFromRest(record, "issue")).toEqual({
+      priority: "P2",
+      readiness: "Ready",
+      release: "v0.4 Extensions and Collaboration",
+      releaseException: "early-prerequisite-v1; …",
+    });
+    expect(
+      planningFromRest(
+        {
+          milestone: { title: "v0.4 Extensions and Collaboration" },
+          issue_field_values: [
+            { issue_field_name: "Priority", single_select_option: { name: "High" } },
+          ],
+        },
+        "issue",
+      ),
+    ).toBeNull();
+    expect(planningFromRest({ milestone: null }, "issue")).toBeNull();
   });
 });
 
@@ -220,21 +254,19 @@ describe("live closing-pull-request collection", () => {
         number: 2,
         body: readyBody(),
         ...relations,
-        projectItems: [projectItem({ status: "In Progress", readiness: "Ready" })],
+        planning: planned({ readiness: "Ready" }),
       });
       const report = analyzeRoadmapGovernance(snapshot([subject]));
       if (scenario === "closed") {
-        expect(report.diagnostics.map((entry) => entry.code)).toEqual([
-          "in-progress-closing-pr-closed",
-        ]);
+        expect(report.diagnostics.map((entry) => entry.code)).toEqual(["abandoned-closing-pr"]);
         expect(report.deliverySequence).toEqual([]);
       } else if (scenario === "replacement") {
         expect(report.diagnostics).toEqual([]);
         expect(report.liveness[0]?.kind).toBe("open-pull-request");
       } else {
-        expect(report.liveness[0]?.detail).toBe(
-          "linked closing pull request merged while the issue remains open",
-        );
+        expect(report.diagnostics.map((entry) => entry.code)).toEqual([
+          "open-issue-merged-closing-pr",
+        ]);
       }
     },
   );
@@ -263,132 +295,6 @@ describe("live closing-pull-request collection", () => {
         },
       })),
     ).rejects.toThrow("closedByPullRequestsReferences");
-  });
-});
-
-describe("issue-side Project item collection", () => {
-  function relationsPage(projectItems: unknown) {
-    return async () => ({
-      data: {
-        repository: {
-          allIssues: { totalCount: 1 },
-          issues: {
-            totalCount: 1,
-            pageInfo: { hasNextPage: false, endCursor: null },
-            nodes: [
-              {
-                number: 2,
-                parent: null,
-                subIssues: { totalCount: 0, nodes: [] },
-                blockedBy: { totalCount: 0, nodes: [] },
-                closedByPullRequestsReferences: { totalCount: 0, nodes: [] },
-                projectItems,
-              },
-            ],
-          },
-        },
-      },
-    });
-  }
-
-  function itemNode(id: string, projectId: string) {
-    return {
-      id,
-      type: "ISSUE",
-      project: { id: projectId },
-      content: { id: "issue-node-2" },
-      fieldValues: {
-        totalCount: 4,
-        nodes: [
-          { name: "Todo", updatedAt: "2026-09-02T00:00:00.000Z", field: { name: "Status" } },
-          { name: "P2", field: { name: "Priority" } },
-          { name: "Needs Planning", field: { name: "Readiness" } },
-          { name: "Release A", field: { name: "Target release" } },
-        ],
-      },
-    };
-  }
-
-  test("requests non-archived issue-side items and records their Project", async () => {
-    const queries: string[] = [];
-    const page = relationsPage({
-      totalCount: 2,
-      nodes: [itemNode("roadmap-item", "project-1"), itemNode("other-item", "project-9")],
-    });
-    const collected = await loadOpenIssueRelations(REPOSITORY, async (args) => {
-      queries.push(args.find((arg) => arg.startsWith("query=")) ?? "");
-      return page();
-    });
-    expect(queries[0]).toMatch(/projectItems\(first:10,includeArchived:false\)/);
-    const relations = collected.relations.get(2);
-    expect(relations?.issueProjectItems.map((entry) => entry.projectId)).toEqual([
-      "project-1",
-      "project-9",
-    ]);
-    expect(relations?.issueProjectItems[0]?.item).toEqual(
-      projectItem({
-        id: "roadmap-item",
-        statusUpdatedAt: "2026-09-02T00:00:00.000Z",
-      }),
-    );
-  });
-
-  test("refuses a truncated issue-side item connection", async () => {
-    await expect(
-      loadOpenIssueRelations(REPOSITORY, relationsPage({ totalCount: 11, nodes: [] })),
-    ).rejects.toThrow("projectItems");
-  });
-
-  test("recovers only the audited Project's item when the list omits it", async () => {
-    const recovered = projectItem({ id: "roadmap-item" });
-    const relations = {
-      parent: null,
-      subIssues: [],
-      blockedBy: [],
-      closingPullRequests: [],
-      issueProjectItems: [
-        { projectId: "project-1", item: recovered },
-        { projectId: "project-9", item: projectItem({ id: "other-item" }) },
-      ],
-    };
-    expect(projectItemsForIssue([], relations, "project-1")).toEqual({
-      items: [recovered],
-      recovered: 1,
-    });
-    expect(projectItemsForIssue([], undefined, "project-1")).toEqual({
-      items: [],
-      recovered: 0,
-    });
-  });
-
-  test("keeps a native child inside the Roadmap when only the issue reports its item", () => {
-    const parent = issue({
-      number: 10,
-      subIssues: [{ repository: REPOSITORY, number: 11, state: "OPEN" }],
-      projectItems: [projectItem({ id: "parent-item", readiness: "Parent" })],
-    });
-    const listedChild = issue({
-      number: 11,
-      parent: { repository: REPOSITORY, number: 10, state: "OPEN" },
-      projectItems: [],
-    });
-    const omitted = codes(snapshot([parent, listedChild]));
-    expect(omitted).toContain("relationship-target-missing");
-
-    const merged = projectItemsForIssue(
-      listedChild.projectItems,
-      {
-        parent: listedChild.parent,
-        subIssues: [],
-        blockedBy: [],
-        closingPullRequests: [],
-        issueProjectItems: [{ projectId: "project-1", item: projectItem({ id: "child-item" }) }],
-      },
-      "project-1",
-    );
-    const recovered = codes(snapshot([parent, { ...listedChild, projectItems: merged.items }]));
-    expect(recovered).not.toContain("relationship-target-missing");
-    expect(recovered).not.toContain("hierarchy-target-release-missing");
   });
 });
 
@@ -456,24 +362,6 @@ describe("parseRoadmapGovernanceSnapshot", () => {
       ),
     ).toThrow("closedAt follows updatedAt");
     expect(() =>
-      parseRoadmapGovernanceSnapshot(
-        snapshot([
-          issue({
-            state: "CLOSED",
-            updatedAt: "2026-09-02T00:00:00.000Z",
-            closedAt: "2026-09-02T00:00:00.000Z",
-            projectItems: [
-              projectItem({
-                status: "Done",
-                statusUpdatedAt: "2026-09-01T12:00:00.000Z",
-                readiness: "Historical",
-              }),
-            ],
-          }),
-        ]),
-      ),
-    ).toThrow("Done precedes closedAt");
-    expect(() =>
       parseRoadmapGovernanceSnapshot({
         ...snapshot([issue()]),
         generatedAt: "2026-08-31T00:00:00.000Z",
@@ -489,109 +377,116 @@ describe("analyzeRoadmapGovernance", () => {
       title: "Delivered behavior",
       state: "CLOSED",
       closedAt: "2026-09-02T00:00:00.000Z",
-      projectItems: [
-        projectItem({
-          id: "item-2",
-          status: "Done",
-          priority: "Historical",
-          readiness: "Historical",
-        }),
-      ],
+      planning: planned({
+        priority: "Historical",
+        readiness: "Historical",
+      }),
     });
     expect(analyzeRoadmapGovernance(snapshot([issue(), closed])).diagnostics).toEqual([]);
   });
 
-  test("requires complete Project field schemas", () => {
-    const input = {
-      ...snapshot([issue()]),
-      statusOptions: ROADMAP_STATUS_OPTIONS.slice(0, 1),
-      priorityOptions: ROADMAP_PRIORITY_OPTIONS.slice(0, 4),
-      readinessOptions: [],
-    };
-    expect(codes(input)).toEqual([
-      "priority-field-invalid",
-      "readiness-field-invalid",
-      "status-field-invalid",
-    ]);
-  });
-
-  test("requires exact Project option metadata and enabled automation", () => {
+  test("requires the organization-only planning fields exactly", () => {
     const value = snapshot([issue()]);
+    const [priority, readiness, exception] = value.planningFields;
+    if (priority === undefined || readiness === undefined || exception === undefined) {
+      throw new Error("fixture planning fields are missing");
+    }
+    expect(codes({ ...value, planningFields: [readiness, exception] })).toEqual([
+      "planning-field-invalid",
+    ]);
     expect(
       codes({
         ...value,
-        priorityOptions: value.priorityOptions.map((option) =>
-          option.name === "P2" ? { ...option, description: "Normal work" } : option,
-        ),
-        projectWorkflows: value.projectWorkflows.filter(
-          (workflow) => workflow.name !== "Auto-add sub-issues to project",
-        ),
+        planningFields: [{ ...priority, visibility: "ALL" }, readiness, exception],
       }),
-    ).toEqual(["priority-field-invalid", "project-workflow-invalid"]);
-
+    ).toEqual(["planning-field-invalid"]);
     expect(
       codes({
         ...value,
-        projectWorkflows: value.projectWorkflows.map((workflow) =>
-          workflow.name === "Item added to project" ? { ...workflow, enabled: false } : workflow,
-        ),
-      }),
-    ).toEqual(["project-workflow-invalid"]);
-
-    expect(
-      codes({
-        ...value,
-        projectWorkflows: [
-          ...value.projectWorkflows,
-          { name: "Item added to project", enabled: true },
+        planningFields: [
+          {
+            ...priority,
+            options: priority.options.map((option) =>
+              option.name === "P2" ? { ...option, description: "Normal work" } : option,
+            ),
+          },
+          readiness,
+          exception,
         ],
       }),
-    ).toEqual(["project-workflow-invalid"]);
-  });
-
-  test("rejects non-issue Project items", () => {
-    const value = snapshot([issue()]);
+    ).toEqual(["planning-field-invalid"]);
     expect(
       codes({
         ...value,
-        nonIssueProjectItems: [{ id: "project-item-pr", contentKind: "PULL_REQUEST" }],
+        planningFields: [priority, readiness, { ...exception, dataType: "SINGLE_SELECT" }],
       }),
-    ).toEqual(["non-issue-project-item"]);
+    ).toEqual(["planning-field-invalid"]);
   });
 
-  test("ignores contribution issues outside the Project and rejects duplicate membership", () => {
-    const contribution = issue({ projectItems: [] });
-    const duplicate = issue({
-      number: 2,
-      projectItems: [projectItem({ id: "item-2a" }), projectItem({ id: "item-2b" })],
+  test("requires one release catalog shared by both repositories", () => {
+    const value = snapshot([issue()]);
+    const [falryn, docs] = value.milestones;
+    if (falryn === undefined || docs === undefined) {
+      throw new Error("fixture milestones are missing");
+    }
+    const withDocs = (milestones: typeof docs.milestones) => ({
+      ...value,
+      milestones: [falryn, { ...docs, milestones }],
     });
+    expect(codes(withDocs(docs.milestones.slice(1)))).toEqual(["release-catalog-invalid"]);
+    expect(
+      codes(
+        withDocs(
+          docs.milestones.map((milestone) =>
+            milestone.title === "v0.1 Release A" ? { ...milestone, state: "CLOSED" } : milestone,
+          ),
+        ),
+      ),
+    ).toEqual(["release-catalog-invalid", "target-release-order-unknown"]);
+    expect(
+      codes({
+        ...value,
+        milestones: value.milestones.map((entry) => ({
+          ...entry,
+          milestones: [...entry.milestones, { title: "Community", state: "OPEN" as const }],
+        })),
+      }),
+    ).toEqual(["release-catalog-invalid"]);
+    expect(
+      codes({
+        ...value,
+        milestones: value.milestones.map((entry) => ({
+          ...entry,
+          milestones: [
+            ...entry.milestones,
+            { title: "v0.10 Duplicate order", state: "OPEN" as const },
+          ],
+        })),
+      }),
+    ).toEqual(["release-catalog-invalid"]);
+  });
+
+  test("ignores contribution issues without Roadmap fields", () => {
+    const contribution = issue({ planning: null });
     expect(codes(snapshot([contribution]))).toEqual([]);
     expect(analyzeRoadmapGovernance(snapshot([contribution])).deliverySequence).toEqual([]);
-    expect(codes(snapshot([duplicate]))).toEqual(["project-membership-count"]);
   });
 
   test("requires valid classifications for Roadmap-owned issues", () => {
     const invalid = issue({
-      projectItems: [
-        projectItem({
-          status: "Done",
-          priority: "Historical",
-          readiness: "Historical",
-        }),
-      ],
+      planning: planned({
+        priority: "Historical",
+        readiness: "Historical",
+      }),
     });
-    expect(codes(snapshot([invalid]))).toEqual([
-      "open-historical-priority",
-      "readiness-invalid",
-      "status-invalid",
-    ]);
+    expect(codes(snapshot([invalid]))).toEqual(["open-historical-priority", "readiness-invalid"]);
   });
 
   test("requires open Roadmap dependencies to be adopted into the Project", () => {
     const planned = issue({
       blockedBy: [{ repository: REPOSITORY, number: 2, state: "OPEN" }],
     });
-    const contribution = issue({ number: 2, projectItems: [] });
+    const contribution = issue({ number: 2, planning: null });
 
     expect(codes(snapshot([planned, contribution]))).toEqual(["relationship-target-missing"]);
   });
@@ -632,12 +527,12 @@ describe("analyzeRoadmapGovernance", () => {
 
   test("requires explicit dated approval for open P0", () => {
     const missingApproval = issue({
-      projectItems: [projectItem({ priority: "P0" })],
+      planning: planned({ priority: "P0" }),
     });
     const approved = issue({
       number: 2,
       body: `${issue().body}\nP0 approval: @owner on 2026-09-03 — active release emergency.\n`,
-      projectItems: [projectItem({ id: "item-2", priority: "P0" })],
+      planning: planned({ priority: "P0" }),
     });
     const report = analyzeRoadmapGovernance(snapshot([missingApproval, approved]));
     expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
@@ -648,7 +543,7 @@ describe("analyzeRoadmapGovernance", () => {
 
   test("requires evidence before Ready", () => {
     const readyWithoutEvidence = issue({
-      projectItems: [projectItem({ readiness: "Ready" })],
+      planning: planned({ readiness: "Ready" }),
     });
     const readyWithEvidence = issue({
       number: 2,
@@ -664,7 +559,7 @@ Planning relationship: Standalone-v1.
 
 - [x] Verify the source baseline.
 `,
-      projectItems: [projectItem({ id: "item-2", readiness: "Ready" })],
+      planning: planned({ readiness: "Ready" }),
     });
     expect(codes(snapshot([readyWithoutEvidence, readyWithEvidence]))).toEqual([
       "readiness-evidence-mismatch",
@@ -673,12 +568,12 @@ Planning relationship: Standalone-v1.
 
   test("requires a named decision owner for Needs Decision", () => {
     const missingDecision = issue({
-      projectItems: [projectItem({ readiness: "Needs Decision" })],
+      planning: planned({ readiness: "Needs Decision" }),
     });
     const namedDecision = issue({
       number: 2,
       body: `${issue().body}\nDecision required: @maintainer — choose the public fallback behavior.\n`,
-      projectItems: [projectItem({ id: "item-2", readiness: "Needs Decision" })],
+      planning: planned({ readiness: "Needs Decision" }),
     });
     const report = analyzeRoadmapGovernance(snapshot([missingDecision, namedDecision]));
     expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
@@ -692,7 +587,7 @@ Planning relationship: Standalone-v1.
 
   test("requires active implementation leaves to remain Ready", () => {
     const input = issue({
-      projectItems: [projectItem({ status: "In Progress", readiness: "Needs Planning" })],
+      planning: planned({ readiness: "Needs Planning" }),
       closingPullRequests: [
         {
           repository: REPOSITORY,
@@ -707,7 +602,7 @@ Planning relationship: Standalone-v1.
   });
 
   test("rejects an open issue assigned to a closed release", () => {
-    const input = issue({ targetRelease: "Retired release" });
+    const input = issue({ targetRelease: "v0.0 Retired release" });
     const report = analyzeRoadmapGovernance(snapshot([input]));
     expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
       "target-release-closed",
@@ -719,12 +614,12 @@ Planning relationship: Standalone-v1.
     const mismatchedChild = issue({
       number: 2,
       parent: { repository: REPOSITORY, number: 1, state: "CLOSED" },
-      projectItems: [projectItem({ id: "item-2" })],
+      planning: planned(),
     });
     const parent = issue({
       body: "## Outcome\n\nDeliver an integrated outcome.\n",
       subIssues: [{ repository: REPOSITORY, number: 2, state: "OPEN" }],
-      projectItems: [projectItem({ readiness: "Parent" })],
+      planning: planned({ readiness: "Parent" }),
     });
     const mismatchReport = analyzeRoadmapGovernance(snapshot([parent, mismatchedChild]));
     expect(mismatchReport.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
@@ -735,7 +630,7 @@ Planning relationship: Standalone-v1.
     const unlinkedChild = issue({
       number: 2,
       parent: null,
-      projectItems: [projectItem({ id: "item-2" })],
+      planning: planned(),
     });
     const reciprocityReport = analyzeRoadmapGovernance(snapshot([parent, unlinkedChild]));
     expect(reciprocityReport.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
@@ -747,21 +642,21 @@ Planning relationship: Standalone-v1.
   test("requires native children to preserve the parent release", () => {
     const parent = issue({
       body: "## Outcome\n\nDeliver the parent.\n",
-      targetRelease: "Release C",
+      targetRelease: "v0.3 Release C",
       subIssues: [{ repository: REPOSITORY, number: 2, state: "OPEN" }],
-      projectItems: [projectItem({ readiness: "Parent" })],
+      planning: planned({ readiness: "Parent" }),
     });
     const child = issue({
       number: 2,
-      targetRelease: "Release B",
+      targetRelease: "v0.2 Release B",
       parent: { repository: REPOSITORY, number: 1, state: "OPEN" },
-      projectItems: [projectItem({ id: "item-2" })],
+      planning: planned(),
     });
     expect(codes(snapshot([parent, child]))).toEqual(["hierarchy-target-release-mismatch"]);
     const declared = issue({
       ...child,
       releaseException:
-        "early-prerequisite-v1; parent tyldra-org/falryn#1; child Release B; parent Release C.",
+        "early-prerequisite-v1; parent tyldra-org/falryn#1; child v0.2 Release B; parent v0.3 Release C.",
     });
     expect(codes(snapshot([parent, declared]))).toEqual([]);
 
@@ -771,20 +666,15 @@ Planning relationship: Standalone-v1.
       closedAt: "2026-09-01T12:00:00.000Z",
       updatedAt: "2026-09-01T12:00:00.000Z",
       parent: null,
-      projectItems: [
-        projectItem({
-          id: "item-2",
-          status: "Done",
-          statusUpdatedAt: "2026-09-01T13:00:00.000Z",
-          readiness: "Historical",
-        }),
-      ],
+      planning: planned({
+        readiness: "Historical",
+      }),
     });
     const parentWithClosedChild = issue({
       ...parent,
-      targetRelease: "Release C",
+      targetRelease: "v0.3 Release C",
       subIssues: [{ repository: REPOSITORY, number: 2, state: "CLOSED" }],
-      projectItems: [projectItem({ status: "In Progress", readiness: "Parent" })],
+      planning: planned({ readiness: "Parent" }),
     });
     expect(codes(snapshot([parentWithClosedChild, closedChild]))).toEqual([
       "hierarchy-target-release-mismatch",
@@ -800,20 +690,16 @@ Planning relationship: Standalone-v1.
       targetRelease: "Unordered historical release",
       updatedAt: "2026-09-01T12:00:00.000Z",
       closedAt: "2026-09-01T12:00:00.000Z",
-      projectItems: [
-        projectItem({
-          status: "Done",
-          statusUpdatedAt: "2026-09-01T13:00:00.000Z",
-          priority: "Historical",
-          readiness: "Historical",
-        }),
-      ],
+      planning: planned({
+        priority: "Historical",
+        readiness: "Historical",
+      }),
     });
     const childOfUnknownParent = issue({
       ...child,
       parent: { repository: REPOSITORY, number: 1, state: "CLOSED" },
       releaseException:
-        "early-prerequisite-v1; parent tyldra-org/falryn#1; child Release B; parent Unordered historical release.",
+        "early-prerequisite-v1; parent tyldra-org/falryn#1; child v0.2 Release B; parent Unordered historical release.",
     });
     expect(codes(snapshot([unknownClosedParent, childOfUnknownParent]))).toEqual([
       "hierarchy-target-release-mismatch",
@@ -825,19 +711,19 @@ Planning relationship: Standalone-v1.
     const grandparent = issue({
       body: "## Outcome\n\nDeliver the grandparent.\n",
       subIssues: [{ repository: REPOSITORY, number: 2, state: "OPEN" }],
-      projectItems: [projectItem({ readiness: "Parent" })],
+      planning: planned({ readiness: "Parent" }),
     });
     const middle = issue({
       number: 2,
       body: "## Outcome\n\nDeliver the middle outcome.\n",
       parent: { repository: REPOSITORY, number: 1, state: "OPEN" },
       subIssues: [{ repository: REPOSITORY, number: 3, state: "OPEN" }],
-      projectItems: [projectItem({ id: "item-2", readiness: "Parent" })],
+      planning: planned({ readiness: "Parent" }),
     });
     const child = issue({
       number: 3,
       parent: { repository: REPOSITORY, number: 2, state: "OPEN" },
-      projectItems: [projectItem({ id: "item-3" })],
+      planning: planned(),
     });
     expect(codes(snapshot([grandparent, middle, child]))).toEqual(["hierarchy-depth-invalid"]);
   });
@@ -846,12 +732,12 @@ Planning relationship: Standalone-v1.
     const child = issue({
       number: 2,
       parent: { repository: REPOSITORY, number: 1, state: "OPEN" },
-      projectItems: [projectItem({ id: "item-2" })],
+      planning: planned(),
     });
     const parent = issue({
       body: "## Outcome\n\nDeliver an integrated outcome.\n",
       subIssues: [{ repository: REPOSITORY, number: 2, state: "OPEN" }],
-      projectItems: [projectItem({ readiness: "Parent" })],
+      planning: planned({ readiness: "Parent" }),
     });
     const report = analyzeRoadmapGovernance(snapshot([parent, child]));
     expect(report.diagnostics).toEqual([]);
@@ -863,15 +749,15 @@ Planning relationship: Standalone-v1.
       number: 10,
       title: "Build prerequisite",
       createdAt: "2026-09-02T00:00:00.000Z",
-      targetRelease: "Release B",
-      projectItems: [projectItem({ id: "item-10", priority: "P3" })],
+      targetRelease: "v0.2 Release B",
+      planning: planned({ priority: "P3" }),
     });
     const dependent = issue({
       number: 20,
       title: "Deliver earlier-release outcome",
       createdAt: "2026-09-01T00:00:00.000Z",
       blockedBy: [{ repository: REPOSITORY, number: 10, state: "OPEN" }],
-      projectItems: [projectItem({ id: "item-20", priority: "P1" })],
+      planning: planned({ priority: "P1" }),
     });
     const report = analyzeRoadmapGovernance(snapshot([dependent, prerequisite]));
     expect(report.deliverySequence.map((entry) => entry.issueNumber)).toEqual([10, 20]);
@@ -888,7 +774,7 @@ Planning relationship: Standalone-v1.
       number: 1,
       createdAt: "2026-09-01T00:00:00Z",
       updatedAt: "2026-09-01T00:30:00Z",
-      projectItems: [projectItem({ id: "item-1" })],
+      planning: planned(),
     });
     const report = analyzeRoadmapGovernance(snapshot([later, earlier]));
     expect(report.diagnostics).toEqual([]);
@@ -899,42 +785,40 @@ Planning relationship: Standalone-v1.
     const earlyP2 = issue({
       number: 2,
       createdAt: "2026-08-01T00:00:00.000Z",
-      projectItems: [projectItem({ id: "item-2", priority: "P2" })],
+      planning: planned({ priority: "P2" }),
     });
     const p1Unlocker = issue({
       number: 3,
       createdAt: "2026-08-02T00:00:00.000Z",
-      projectItems: [projectItem({ id: "item-3", priority: "P1" })],
+      planning: planned({ priority: "P1" }),
     });
     const blocked = issue({
       number: 4,
       blockedBy: [{ repository: REPOSITORY, number: 3, state: "OPEN" }],
-      projectItems: [projectItem({ id: "item-4", priority: "P1" })],
+      planning: planned({ priority: "P1" }),
     });
     const laterRelease = issue({
       number: 5,
       body: `${issue().body}\nP0 approval: @owner on 2026-09-03 — active release emergency.\n`,
-      targetRelease: "Release C",
-      projectItems: [projectItem({ id: "item-5", priority: "P0" })],
+      targetRelease: "v0.3 Release C",
+      planning: planned({ priority: "P0" }),
     });
     const report = analyzeRoadmapGovernance(snapshot([earlyP2, p1Unlocker, blocked, laterRelease]));
     expect(report.deliverySequence.map((entry) => entry.issueNumber)).toEqual([5, 3, 4, 2]);
   });
 
-  test("accepts parent continuity and detects stale leaf activity", () => {
+  test("derives Status from issue state, closing pull requests and children", () => {
     const startedChild = issue({
       number: 2,
       state: "CLOSED",
       closedAt: "2026-09-01T00:00:00.000Z",
       parent: { repository: REPOSITORY, number: 1, state: "OPEN" },
-      projectItems: [
-        projectItem({ id: "item-2", status: "Done", priority: "P2", readiness: "Historical" }),
-      ],
+      planning: planned({ priority: "P2", readiness: "Historical" }),
     });
     const remainingChild = issue({
       number: 3,
       parent: { repository: REPOSITORY, number: 1, state: "OPEN" },
-      projectItems: [projectItem({ id: "item-3" })],
+      planning: planned(),
     });
     const parent = issue({
       body: "## Outcome\n\nDeliver an integrated outcome.\n",
@@ -942,24 +826,32 @@ Planning relationship: Standalone-v1.
         { repository: REPOSITORY, number: 2, state: "CLOSED" },
         { repository: REPOSITORY, number: 3, state: "OPEN" },
       ],
-      projectItems: [projectItem({ status: "In Progress", readiness: "Parent" })],
+      planning: planned({ readiness: "Parent" }),
     });
-    const stale = issue({
+    const unstartedLeaf = issue({
       number: 4,
       body: readyBody(),
-      projectItems: [
-        projectItem({
-          id: "item-4",
-          status: "In Progress",
-          readiness: "Ready",
-          statusUpdatedAt: "2026-08-01T00:00:00.000Z",
-        }),
-      ],
+      planning: planned({ readiness: "Ready" }),
     });
-    const report = analyzeRoadmapGovernance(
-      snapshot([parent, startedChild, remainingChild, stale]),
+    const activeLeaf = issue({
+      number: 5,
+      body: readyBody(),
+      planning: planned({ readiness: "Ready" }),
+      closingPullRequests: [openPullRequest()],
+    });
+    const all = [parent, startedChild, remainingChild, unstartedLeaf, activeLeaf];
+    const byKey = new Map(
+      all.map((entry) => [`${entry.repository}#${entry.number}` as const, entry]),
     );
-    expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toEqual(["stale-in-progress"]);
+    expect(all.map((entry) => roadmapStatus(entry, byKey))).toEqual([
+      "In Progress",
+      "Done",
+      "Todo",
+      "Todo",
+      "In Progress",
+    ]);
+    const report = analyzeRoadmapGovernance(snapshot(all));
+    expect(report.diagnostics).toEqual([]);
     expect(report.liveness).toEqual([
       {
         repository: REPOSITORY,
@@ -969,10 +861,15 @@ Planning relationship: Standalone-v1.
       },
       {
         repository: REPOSITORY,
-        issueNumber: 4,
-        kind: "stale",
-        detail: "792.0 hours without an open closing pull request",
+        issueNumber: 5,
+        kind: "open-pull-request",
+        detail: "open closing pull request proves active delivery",
       },
+    ]);
+    expect(report.deliverySequence.map((row) => [row.issueNumber, row.status])).toEqual([
+      [5, "In Progress"],
+      [3, "Todo"],
+      [4, "Todo"],
     ]);
   });
 
@@ -982,19 +879,12 @@ Planning relationship: Standalone-v1.
       state: "CLOSED",
       closedAt: "2026-09-02T00:00:00.000Z",
       parent: { repository: REPOSITORY, number: 1, state: "OPEN" },
-      projectItems: [
-        projectItem({
-          id: "item-2",
-          status: "Done",
-          priority: "P2",
-          readiness: "Historical",
-        }),
-      ],
+      planning: planned({ priority: "P2", readiness: "Historical" }),
     });
     const parent = issue({
       body: "## Outcome\n\nDeliver the integrated parent.\n",
       subIssues: [{ repository: REPOSITORY, number: 2, state: "CLOSED" }],
-      projectItems: [projectItem({ status: "In Progress", readiness: "Parent" })],
+      planning: planned({ readiness: "Parent" }),
     });
     const report = analyzeRoadmapGovernance(snapshot([parent, closedChild]));
     expect(report.diagnostics).toEqual([]);
@@ -1003,51 +893,27 @@ Planning relationship: Standalone-v1.
     );
   });
 
-  test("reconciles active child, parent, and closing-pull-request status", () => {
+  test("rejects parent pull requests and competing leaf pull requests", () => {
     const child = issue({
       number: 2,
       body: readyBody(),
       parent: { repository: REPOSITORY, number: 1, state: "OPEN" },
-      projectItems: [projectItem({ id: "item-2", status: "In Progress", readiness: "Ready" })],
+      planning: planned({ readiness: "Ready" }),
     });
     const parent = issue({
       body: "## Outcome\n\nDeliver the integrated parent.\n",
       subIssues: [{ repository: REPOSITORY, number: 2, state: "OPEN" }],
-      closingPullRequests: [
-        {
-          repository: REPOSITORY,
-          number: 11,
-          state: "OPEN",
-          isDraft: true,
-          updatedAt: "2026-09-02T00:00:00.000Z",
-        },
-      ],
-      projectItems: [projectItem({ readiness: "Parent" })],
+      closingPullRequests: [openPullRequest(11)],
+      planning: planned({ readiness: "Parent" }),
     });
-    const todoLeafWithPullRequest = issue({
+    const competing = issue({
       number: 3,
-      closingPullRequests: [
-        {
-          repository: REPOSITORY,
-          number: 12,
-          state: "OPEN",
-          isDraft: true,
-          updatedAt: "2026-09-02T00:00:00.000Z",
-        },
-        {
-          repository: REPOSITORY,
-          number: 13,
-          state: "OPEN",
-          isDraft: true,
-          updatedAt: "2026-09-02T00:00:00.000Z",
-        },
-      ],
-      projectItems: [projectItem({ id: "item-3" })],
+      body: readyBody(),
+      planning: planned({ readiness: "Ready" }),
+      closingPullRequests: [openPullRequest(12), openPullRequest(13)],
     });
-    expect(codes(snapshot([parent, child, todoLeafWithPullRequest]))).toEqual([
+    expect(codes(snapshot([parent, child, competing]))).toEqual([
       "parent-closing-pr-forbidden",
-      "parent-status-mismatch",
-      "active-closing-pr-status-mismatch",
       "multiple-active-closing-prs",
     ]);
   });
@@ -1058,16 +924,8 @@ Planning relationship: Standalone-v1.
       number: 2,
       body: readyBody(),
       blockedBy: [{ repository: REPOSITORY, number: 1, state: "OPEN" }],
-      projectItems: [projectItem({ id: "item-2", status: "In Progress", readiness: "Ready" })],
-      closingPullRequests: [
-        {
-          repository: REPOSITORY,
-          number: 100,
-          state: "OPEN",
-          isDraft: true,
-          updatedAt: "2026-09-02T00:00:00.000Z",
-        },
-      ],
+      planning: planned({ readiness: "Ready" }),
+      closingPullRequests: [openPullRequest(100)],
     });
     const report = analyzeRoadmapGovernance(snapshot([blocker, blocked]));
     expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
@@ -1077,41 +935,10 @@ Planning relationship: Standalone-v1.
     expect(report.deliverySequence).toEqual([]);
   });
 
-  test("accepts a bounded no-PR grace period and an open closing PR", () => {
-    const grace = issue({
-      body: readyBody(),
-      projectItems: [
-        projectItem({
-          status: "In Progress",
-          statusUpdatedAt: "2026-09-02T00:00:00.000Z",
-          readiness: "Ready",
-        }),
-      ],
-    });
-    const withPullRequest = issue({
-      number: 2,
-      body: readyBody(),
-      projectItems: [projectItem({ id: "item-2", status: "In Progress", readiness: "Ready" })],
-      closingPullRequests: [
-        {
-          repository: REPOSITORY,
-          number: 100,
-          state: "OPEN",
-          isDraft: true,
-          updatedAt: "2026-09-02T00:00:00.000Z",
-        },
-      ],
-    });
-    const report = analyzeRoadmapGovernance(snapshot([grace, withPullRequest]));
-    expect(report.diagnostics).toEqual([]);
-    expect(report.liveness.map((entry) => entry.kind)).toEqual([
-      "grace-period",
-      "open-pull-request",
-    ]);
-  });
-
-  test("rejects Todo work with an abandoned closing pull request", () => {
+  test("treats a leaf whose closing pull request closed unmerged as abandoned Todo", () => {
     const abandoned = issue({
+      body: readyBody(),
+      planning: planned({ readiness: "Ready" }),
       closingPullRequests: [
         {
           repository: REPOSITORY,
@@ -1126,24 +953,8 @@ Planning relationship: Standalone-v1.
     expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toEqual([
       "abandoned-closing-pr",
     ]);
+    expect(report.liveness).toEqual([]);
     expect(report.deliverySequence).toEqual([]);
-  });
-
-  test("rejects In Progress after its closing pull request closes unmerged", () => {
-    const stale = issue({
-      body: readyBody(),
-      projectItems: [projectItem({ status: "In Progress", readiness: "Ready" })],
-      closingPullRequests: [
-        {
-          repository: "tyldra-org/falryn",
-          number: 10,
-          state: "CLOSED",
-          isDraft: false,
-          updatedAt: "2026-09-02T00:00:00.000Z",
-        },
-      ],
-    });
-    expect(codes(snapshot([stale]))).toEqual(["in-progress-closing-pr-closed"]);
   });
 
   test("detects a dependency and hierarchy cycle", () => {
@@ -1153,7 +964,7 @@ Planning relationship: Standalone-v1.
     const second = issue({
       number: 2,
       blockedBy: [{ repository: REPOSITORY, number: 1, state: "OPEN" }],
-      projectItems: [projectItem({ id: "item-2" })],
+      planning: planned(),
     });
     expect(codes(snapshot([first, second]))).toContain("dependency-cycle");
   });
@@ -1170,54 +981,43 @@ Planning relationship: Standalone-v1.
   });
 });
 
-describe("private release planning", () => {
-  test("uses the Project option order without a compiled release catalog", () => {
-    const first = issue({ number: 1, targetRelease: "Release A" });
-    const second = issue({ number: 2, targetRelease: "Release B" });
+describe("release planning", () => {
+  test("orders releases by milestone title version, not milestone listing order", () => {
+    const first = issue({ number: 1, targetRelease: "v0.2 Release B" });
+    const second = issue({ number: 2, targetRelease: "v0.1 Release A" });
     const original = snapshot([first, second]);
-    const reordered = {
+    const reversed = {
       ...original,
-      targetReleaseOptions: [...original.targetReleaseOptions].reverse(),
+      milestones: original.milestones.map((entry) => ({
+        ...entry,
+        milestones: [...entry.milestones].reverse(),
+      })),
     };
-    expect(
-      analyzeRoadmapGovernance(original).deliverySequence.map((row) => row.issueNumber),
-    ).toEqual([1, 2]);
-    expect(
-      analyzeRoadmapGovernance(reordered).deliverySequence.map((row) => row.issueNumber),
-    ).toEqual([2, 1]);
+    for (const value of [original, reversed]) {
+      expect(
+        analyzeRoadmapGovernance(value).deliverySequence.map((row) => row.issueNumber),
+      ).toEqual([2, 1]);
+    }
   });
 
-  test("rejects absent, duplicate and malformed release catalogs and a public Project", () => {
-    const original = snapshot([issue()]);
-    const duplicate = { name: "Release A", description: "State: OPEN", color: "BLUE" };
-    for (const targetReleaseOptions of [
-      [],
-      [duplicate, duplicate],
-      [{ name: "Release A", description: "Open", color: "BLUE" }],
-      [{ name: " Release A", description: "State: OPEN", color: "BLUE" }],
-    ]) {
-      const report = analyzeRoadmapGovernance({ ...original, targetReleaseOptions });
-      expect(report.diagnostics.map((row) => row.code)).toContain("target-release-field-invalid");
-      expect(report.deliverySequence).toEqual([]);
-    }
-    expect(codes({ ...original, projectPublic: true })).toEqual(["project-public"]);
-    expect(codes(snapshot([issue({ targetRelease: "Unknown release" })]))).toEqual([
+  test("reports unknown and missing releases", () => {
+    expect(codes(snapshot([issue({ targetRelease: "v9.9 Unknown release" })]))).toEqual([
       "target-release-order-unknown",
     ]);
     expect(codes(snapshot([issue({ targetRelease: null })]))).toEqual(["target-release-missing"]);
   });
 
-  test("does not accept a public-body exception or an orphaned private exception", () => {
+  test("accepts a release exception only from its planning field and matching releases", () => {
     const parent = issue({
-      targetRelease: "Release C",
+      targetRelease: "v0.3 Release C",
       subIssues: [{ repository: REPOSITORY, number: 2, state: "OPEN" }],
-      projectItems: [projectItem({ readiness: "Parent" })],
+      planning: planned({ readiness: "Parent" }),
     });
     const declaration =
-      "early-prerequisite-v1; parent tyldra-org/falryn#1; child Release B; parent Release C.";
+      "early-prerequisite-v1; parent tyldra-org/falryn#1; child v0.2 Release B; parent v0.3 Release C.";
     const child = issue({
       number: 2,
-      targetRelease: "Release B",
+      targetRelease: "v0.2 Release B",
       parent: { repository: REPOSITORY, number: 1, state: "OPEN" },
       body: `Release exception: ${declaration}`,
     });
@@ -1230,35 +1030,11 @@ describe("private release planning", () => {
     );
   });
 
-  test("rejects old snapshots instead of interpreting repository milestones as Project fields", () => {
+  test("rejects schema-3 Project snapshots", () => {
     expect(() =>
-      parseRoadmapGovernanceSnapshot({ ...snapshot([issue()]), schemaVersion: 2 }),
-    ).toThrow("schemaVersion must be 3");
-    const original = snapshot([issue()]);
-    const { targetReleaseOptions: _options, ...missing } = original;
-    expect(() => parseRoadmapGovernanceSnapshot(missing)).toThrow("targetReleaseOptions");
-  });
-
-  test("collects release selection and exception from Project fields only", () => {
-    const base = {
-      id: "item",
-      type: "ISSUE",
-      content: { id: "issue", milestone: { title: "Wrong source" } },
-      fieldValues: {
-        totalCount: 2,
-        nodes: [
-          { name: "Release B", field: { name: "Target release" } },
-          { text: "private exception", field: { name: "Release exception" } },
-        ],
-      },
-    };
-    expect(projectItemFromGraphQl(base, "item").item).toMatchObject({
-      targetRelease: "Release B",
-      releaseException: "private exception",
-    });
-    expect(
-      projectItemFromGraphQl({ ...base, fieldValues: { totalCount: 0, nodes: [] } }, "item").item
-        .targetRelease,
-    ).toBeNull();
+      parseRoadmapGovernanceSnapshot({ ...snapshot([issue()]), schemaVersion: 3 }),
+    ).toThrow("schemaVersion must be 4");
+    const { milestones: _milestones, ...missing } = snapshot([issue()]);
+    expect(() => parseRoadmapGovernanceSnapshot(missing)).toThrow("snapshot.milestones");
   });
 });

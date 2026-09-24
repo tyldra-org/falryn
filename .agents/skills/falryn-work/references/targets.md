@@ -11,7 +11,7 @@ numbers or body prose, to resolve ownership.
 | `Parent issue #N`, `Docs parent issue #N` | Parent in the respective repository |
 | `Parent chain #N`, `Docs parent chain #N` | Explicit remaining child-delivery scope |
 | Full GitHub URL | Exact host, repository and object in that URL |
-| `Falryn Roadmap`, `Target release "name"` or an exact range | Selection or assessment through falryn-roadmap |
+| `Falryn Roadmap`, `Target release "milestone title"` or an exact range | Selection or assessment through falryn-roadmap |
 
 Never substitute the same number from the other repository. For a PR, resolve
 its owning issue and actual closing relationship. Approved issue-free maintenance

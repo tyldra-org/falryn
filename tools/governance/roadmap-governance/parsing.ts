@@ -7,11 +7,13 @@ import {
   type RoadmapGovernanceIssue,
   type RoadmapGovernanceSnapshot,
   type RoadmapIssueState,
-  type RoadmapProjectItem,
-  type RoadmapProjectWorkflow,
+  type RoadmapMilestone,
+  type RoadmapPlanning,
+  type RoadmapPlanningField,
   type RoadmapPullRequestState,
   type RoadmapRelation,
   type RoadmapRepositoryIssueCount,
+  type RoadmapRepositoryMilestones,
   SCHEMA_VERSION,
 } from "./contracts.ts";
 
@@ -110,19 +112,38 @@ function parseFieldOption(value: unknown, subject: string): RoadmapFieldOption {
   const record = asRecord(value, subject);
   return {
     name: stringValue(record.name, `${subject}.name`),
-    description: stringValue(record.description, `${subject}.description`),
+    description: textValue(record.description, `${subject}.description`),
     color: stringValue(record.color, `${subject}.color`),
   };
 }
 
-function parseProjectWorkflow(value: unknown, subject: string): RoadmapProjectWorkflow {
+function parsePlanningField(value: unknown, subject: string): RoadmapPlanningField {
   const record = asRecord(value, subject);
-  if (typeof record.enabled !== "boolean") {
-    throw new Error(`${subject}.enabled must be a boolean`);
-  }
   return {
     name: stringValue(record.name, `${subject}.name`),
-    enabled: record.enabled,
+    dataType: stringValue(record.dataType, `${subject}.dataType`),
+    visibility: stringValue(record.visibility, `${subject}.visibility`),
+    options: arrayValue(record.options, `${subject}.options`).map((option, index) =>
+      parseFieldOption(option, `${subject}.options[${index}]`),
+    ),
+  };
+}
+
+function parseMilestone(value: unknown, subject: string): RoadmapMilestone {
+  const record = asRecord(value, subject);
+  return {
+    title: stringValue(record.title, `${subject}.title`),
+    state: issueState(record.state, `${subject}.state`),
+  };
+}
+
+function parseRepositoryMilestones(value: unknown, subject: string): RoadmapRepositoryMilestones {
+  const record = asRecord(value, subject);
+  return {
+    repository: repositoryValue(record.repository, `${subject}.repository`),
+    milestones: arrayValue(record.milestones, `${subject}.milestones`).map((entry, index) =>
+      parseMilestone(entry, `${subject}.milestones[${index}]`),
+    ),
   };
 }
 
@@ -149,21 +170,25 @@ function parsePullRequest(value: unknown, subject: string): RoadmapClosingPullRe
   };
 }
 
-function parseProjectItem(value: unknown, subject: string): RoadmapProjectItem {
+function parsePlanning(value: unknown, subject: string): RoadmapPlanning | null {
+  if (value === null) {
+    return null;
+  }
   const record = asRecord(value, subject);
-  const item: RoadmapProjectItem = {
-    id: stringValue(record.id, `${subject}.id`),
-    status: nullableString(record.status, `${subject}.status`),
-    statusUpdatedAt: nullableTimestamp(record.statusUpdatedAt, `${subject}.statusUpdatedAt`),
+  const planning: RoadmapPlanning = {
     priority: nullableString(record.priority, `${subject}.priority`),
     readiness: nullableString(record.readiness, `${subject}.readiness`),
-    targetRelease: nullableString(record.targetRelease, `${subject}.targetRelease`),
+    release: nullableString(record.release, `${subject}.release`),
     releaseException: nullableString(record.releaseException, `${subject}.releaseException`),
   };
-  if ((item.status === null) !== (item.statusUpdatedAt === null)) {
-    throw new Error(`${subject}.status and statusUpdatedAt must both be null or present`);
+  if (
+    planning.priority === null &&
+    planning.readiness === null &&
+    planning.releaseException === null
+  ) {
+    throw new Error(`${subject} must carry a Roadmap field; use null for issues off the Roadmap`);
   }
-  return item;
+  return planning;
 }
 
 function parseIssue(value: unknown, index: number): RoadmapGovernanceIssue {
@@ -194,10 +219,7 @@ function parseIssue(value: unknown, index: number): RoadmapGovernanceIssue {
     ).map((entry, pullRequestIndex) =>
       parsePullRequest(entry, `${subject}.closingPullRequests[${pullRequestIndex}]`),
     ),
-    projectItems: arrayValue(record.projectItems, `${subject}.projectItems`).map(
-      (entry, projectItemIndex) =>
-        parseProjectItem(entry, `${subject}.projectItems[${projectItemIndex}]`),
-    ),
+    planning: parsePlanning(record.planning, `${subject}.planning`),
   };
   if ((issue.state === "OPEN") !== (issue.closedAt === null)) {
     throw new Error(`${subject}.state and closedAt disagree`);
@@ -211,17 +233,6 @@ function parseIssue(value: unknown, index: number): RoadmapGovernanceIssue {
   if (issue.closedAt !== null && Date.parse(issue.closedAt) > Date.parse(issue.updatedAt)) {
     throw new Error(`${subject}.closedAt follows updatedAt`);
   }
-  if (issue.closedAt !== null) {
-    for (const [index, item] of issue.projectItems.entries()) {
-      if (
-        item.status === "Done" &&
-        item.statusUpdatedAt !== null &&
-        Date.parse(item.statusUpdatedAt) < Date.parse(issue.closedAt)
-      ) {
-        throw new Error(`${subject}.projectItems[${index}].Done precedes closedAt`);
-      }
-    }
-  }
   return issue;
 }
 
@@ -230,19 +241,15 @@ export function parseRoadmapGovernanceSnapshot(value: unknown): RoadmapGovernanc
   if (record.schemaVersion !== SCHEMA_VERSION) {
     throw new Error(`snapshot.schemaVersion must be ${SCHEMA_VERSION}`);
   }
-  if (typeof record.projectPublic !== "boolean") {
-    throw new Error("snapshot.projectPublic must be a boolean");
-  }
   const repositories = stringArray(record.repositories, "snapshot.repositories").map(
     (repository, index) => repositoryValue(repository, `snapshot.repositories[${index}]`),
   );
   if (!sameStrings(repositories, ROADMAP_REPOSITORIES)) {
     throw new Error(`snapshot.repositories must be exactly ${ROADMAP_REPOSITORIES.join(", ")}`);
   }
-  const projectOwner = stringValue(record.projectOwner, "snapshot.projectOwner");
-  const projectNumber = positiveInteger(record.projectNumber, "snapshot.projectNumber");
-  if (projectOwner !== "tyldra-org" || projectNumber !== 1) {
-    throw new Error("snapshot must target tyldra-org Roadmap Project 1");
+  const owner = stringValue(record.owner, "snapshot.owner");
+  if (owner !== "tyldra-org") {
+    throw new Error("snapshot must target the tyldra-org organization");
   }
   const generatedAt = timestampValue(record.generatedAt, "snapshot.generatedAt");
   const generatedAtMs = Date.parse(generatedAt);
@@ -264,6 +271,15 @@ export function parseRoadmapGovernanceSnapshot(value: unknown): RoadmapGovernanc
   ) {
     throw new Error("snapshot.repositoryIssueCounts must cover each canonical repository once");
   }
+  const milestones = arrayValue(record.milestones, "snapshot.milestones").map((entry, index) =>
+    parseRepositoryMilestones(entry, `snapshot.milestones[${index}]`),
+  );
+  if (
+    milestones.length !== ROADMAP_REPOSITORIES.length ||
+    !milestones.every((entry, index) => entry.repository === ROADMAP_REPOSITORIES[index])
+  ) {
+    throw new Error("snapshot.milestones must cover each canonical repository once");
+  }
   const identities = new Set<string>();
   for (const issue of issues) {
     if (!repositories.includes(issue.repository)) {
@@ -280,11 +296,6 @@ export function parseRoadmapGovernanceSnapshot(value: unknown): RoadmapGovernanc
     ];
     if (issue.closedAt !== null) {
       observedTimes.push(["closedAt", issue.closedAt]);
-    }
-    for (const [index, item] of issue.projectItems.entries()) {
-      if (item.statusUpdatedAt !== null) {
-        observedTimes.push([`projectItems[${index}].statusUpdatedAt`, item.statusUpdatedAt]);
-      }
     }
     for (const [index, pullRequest] of issue.closingPullRequests.entries()) {
       observedTimes.push([`closingPullRequests[${index}].updatedAt`, pullRequest.updatedAt]);
@@ -306,41 +317,13 @@ export function parseRoadmapGovernanceSnapshot(value: unknown): RoadmapGovernanc
   return {
     schemaVersion: SCHEMA_VERSION,
     generatedAt,
-    projectOwner,
-    projectPublic: record.projectPublic,
-    projectNumber,
-    projectId: stringValue(record.projectId, "snapshot.projectId"),
+    owner,
     repositories,
     repositoryIssueCounts,
-    statusOptions: arrayValue(record.statusOptions, "snapshot.statusOptions").map((option, index) =>
-      parseFieldOption(option, `snapshot.statusOptions[${index}]`),
+    planningFields: arrayValue(record.planningFields, "snapshot.planningFields").map(
+      (field, index) => parsePlanningField(field, `snapshot.planningFields[${index}]`),
     ),
-    priorityOptions: arrayValue(record.priorityOptions, "snapshot.priorityOptions").map(
-      (option, index) => parseFieldOption(option, `snapshot.priorityOptions[${index}]`),
-    ),
-    readinessOptions: arrayValue(record.readinessOptions, "snapshot.readinessOptions").map(
-      (option, index) => parseFieldOption(option, `snapshot.readinessOptions[${index}]`),
-    ),
-    targetReleaseOptions: arrayValue(
-      record.targetReleaseOptions,
-      "snapshot.targetReleaseOptions",
-    ).map((option, index) => parseFieldOption(option, `snapshot.targetReleaseOptions[${index}]`)),
-    projectWorkflows: arrayValue(record.projectWorkflows, "snapshot.projectWorkflows").map(
-      (workflow, index) => parseProjectWorkflow(workflow, `snapshot.projectWorkflows[${index}]`),
-    ),
+    milestones,
     issues,
-    nonIssueProjectItems: arrayValue(
-      record.nonIssueProjectItems,
-      "snapshot.nonIssueProjectItems",
-    ).map((value, index) => {
-      const item = asRecord(value, `snapshot.nonIssueProjectItems[${index}]`);
-      return {
-        id: stringValue(item.id, `snapshot.nonIssueProjectItems[${index}].id`),
-        contentKind: stringValue(
-          item.contentKind,
-          `snapshot.nonIssueProjectItems[${index}].contentKind`,
-        ),
-      };
-    }),
   };
 }

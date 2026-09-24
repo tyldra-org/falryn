@@ -45,8 +45,8 @@ Public contribution and private product planning are independent:
 | Repository automation | Map the declared work type and primary area to canonical labels, then report only missing public contribution evidence. |
 | Maintainer | Review the contribution on its public merits. Separately decide whether to adopt it into the private product-development Roadmap. |
 
-A contribution issue may remain unassigned, have no milestone, and have no
-private Project item. That is valid. Contributors do not supply or wait for
+A contribution issue may remain unassigned, have no release milestone, and carry
+no Roadmap fields. That is valid. Contributors do not supply or wait for
 Status, Priority, or Readiness. For a large or direction-setting change, wait
 for a maintainer to confirm public scope before spending substantial effort.
 
@@ -75,20 +75,20 @@ checklist must be non-empty and fully checked; an adopted public contribution
 may retain its Contribution checklist. Classification, open-leaf, and native
 blocker checks still apply. Author identity, body text, and the identity of the
 person editing an issue do not select this format. The label does not establish
-private Project membership or verified readiness.
+Roadmap membership or verified readiness.
 
 Issue automation reads the current issue before validating it. It updates its
 own reminder only when the diagnostic text changes and removes that reminder
 when the selected contract passes. It does not modify human comments.
 
-If a maintainer adopts an issue into product development, Project membership
-becomes the private ownership marker. Only then do the sole assignee, Target release,
-Status, P0-P3 Priority, Readiness, native hierarchy, liveness, and deterministic
-sequence rules apply. The maintainer workflow lives in the vendored
+If a maintainer adopts an issue into product development, its organization-only
+Roadmap priority and Readiness fields mark the adoption. Only then do the sole
+assignee, release milestone, P0-P3 priority, Readiness, native hierarchy,
+liveness, and deterministic sequence rules apply. The maintainer workflow lives in the vendored
 [Roadmap governance guide](.agents/skills/falryn-roadmap/references/governance.md).
 It must not leak into the public contribution check.
 
-Audit snapshots may contain issue bodies and private Project metadata. They stay
+Audit snapshots may contain issue bodies and private planning fields. They stay
 outside both repositories and never enter public reports. An unavailable private
 audit is reported as unavailable, not reconstructed from labels, milestones,
 issue numbers, recency, or board position.

@@ -11,7 +11,7 @@ work can use them without a personal installation or private documentation.
 | TypeScript engineering | `typescript-engineering` |
 | Terminal UI engineering | `opentui-engineering` |
 | Selected Falryn work and manual command boundaries | [falryn-work](falryn-work/SKILL.md) |
-| Next, parent ordering and private Project governance | [falryn-roadmap](falryn-roadmap/SKILL.md) |
+| Next, parent ordering and Roadmap governance | [falryn-roadmap](falryn-roadmap/SKILL.md) |
 
 The portable skills contain no Falryn strategy or repository policy. Git and
 GitHub skills own state changes and evidence; `change-review` owns assessment.
