@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
+import { mergeProjectItemSources, type ProjectItemSourceMerge } from "./project-item-sources";
 import {
   analyzeRoadmapGovernance,
   parseRoadmapGovernanceSnapshot,
@@ -216,6 +217,32 @@ export function projectItemFromGraphQl(
   };
 }
 
+/**
+ * One Project item's identity and Roadmap fields. Both the Project's paged item
+ * list and each open issue's own `projectItems` select exactly this shape so
+ * `projectItemFromGraphQl` parses them identically.
+ */
+const PROJECT_ITEM_SELECTION = `
+  id type
+  content {
+    ... on Issue { id }
+    ... on PullRequest { id }
+    ... on DraftIssue { id }
+  }
+  fieldValues(first:50) {
+    totalCount
+    nodes {
+      ... on ProjectV2ItemFieldTextValue {
+        text
+        field { ... on ProjectV2Field { id name } }
+      }
+      ... on ProjectV2ItemFieldSingleSelectValue {
+        name updatedAt
+        field { ... on ProjectV2SingleSelectField { id name } }
+      }
+    }
+  }`;
+
 async function loadProject(projectOwner: string, projectNumber: number): Promise<LiveProject> {
   const query = `query($after:String) {
     repositoryOwner(login:${JSON.stringify(projectOwner)}) {
@@ -241,27 +268,7 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
     items(first:100,after:$after) {
       totalCount
       pageInfo { hasNextPage endCursor }
-      nodes {
-        id type
-        content {
-          ... on Issue { id }
-          ... on PullRequest { id }
-          ... on DraftIssue { id }
-        }
-        fieldValues(first:100) {
-          totalCount
-          nodes {
-            ... on ProjectV2ItemFieldTextValue {
-              text
-              field { ... on ProjectV2Field { id name } }
-            }
-            ... on ProjectV2ItemFieldSingleSelectValue {
-              name updatedAt
-              field { ... on ProjectV2SingleSelectField { id name } }
-            }
-          }
-        }
-      }
+      nodes { ${PROJECT_ITEM_SELECTION} }
     }
   }`;
   let after: string | null = null;
@@ -414,10 +421,46 @@ async function loadProject(projectOwner: string, projectNumber: number): Promise
   };
 }
 
-type OpenIssueRelations = Pick<
+/** A Project item as read from its issue, tagged with the Project that owns it. */
+export type IssueSideProjectItem = {
+  readonly projectId: string;
+  readonly item: RoadmapProjectItem;
+};
+
+export type OpenIssueRelations = Pick<
   RoadmapGovernanceIssue,
   "parent" | "subIssues" | "blockedBy" | "closingPullRequests"
->;
+> & {
+  /** Non-archived items read through the issue's own `projectItems` connection. */
+  readonly issueProjectItems: readonly IssueSideProjectItem[];
+};
+
+/**
+ * One issue's items on the audited Project: the Project list's items merged
+ * with the issue's own reads, so a lagging list cannot drop a live item.
+ */
+export function projectItemsForIssue(
+  listed: readonly RoadmapProjectItem[],
+  relations: OpenIssueRelations | undefined,
+  projectId: string,
+): ProjectItemSourceMerge<RoadmapProjectItem> {
+  const issueSide = (relations?.issueProjectItems ?? [])
+    .filter((entry) => entry.projectId === projectId)
+    .map((entry) => entry.item);
+  return mergeProjectItemSources(listed, issueSide);
+}
+
+function issueSideProjectItems(value: unknown, subject: string): readonly IssueSideProjectItem[] {
+  return completeConnectionNodes(value, subject).map((node, index) => {
+    const itemSubject = `${subject}.nodes[${index}]`;
+    const record = asRecord(node, itemSubject);
+    const project = asRecord(record.project, `${itemSubject}.project`);
+    return {
+      projectId: stringValue(project.id, `${itemSubject}.project.id`),
+      item: projectItemFromGraphQl(node, itemSubject).item,
+    };
+  });
+}
 
 async function runGhRest(path: string): Promise<unknown> {
   const { stdout } = await execFileAsync("gh", ["api", "--method", "GET", path], {
@@ -473,6 +516,11 @@ export async function loadOpenIssueRelations(
             totalCount
             nodes { number state isDraft updatedAt repository { nameWithOwner } }
           }
+          # The Project item list can lag; the issue's own items fill that gap.
+          projectItems(first:10,includeArchived:false) {
+            totalCount
+            nodes { project { id } ${PROJECT_ITEM_SELECTION} }
+          }
         }
       }
     }
@@ -519,6 +567,7 @@ export async function loadOpenIssueRelations(
           record.closedByPullRequestsReferences,
           `${subject}.closedByPullRequestsReferences`,
         ),
+        issueProjectItems: issueSideProjectItems(record.projectItems, `${subject}.projectItems`),
       });
     }
     const pageInfo = asRecord(connection.pageInfo, `${repository} relationship issues.pageInfo`);
@@ -551,10 +600,12 @@ export function assertAllProjectIssueItemsConsumed(
 
 async function loadRepositoryIssues(
   repository: string,
+  projectId: string,
   projectItems: ReadonlyMap<string, readonly RoadmapProjectItem[]>,
   consumedProjectContentIds: Set<string>,
-): Promise<readonly RoadmapGovernanceIssue[]> {
+): Promise<{ readonly issues: readonly RoadmapGovernanceIssue[]; readonly recovered: number }> {
   const { relations, totalIssueCount } = await loadOpenIssueRelations(repository);
+  let recovered = 0;
   const records: JsonRecord[] = [];
   for (let page = 1; ; page += 1) {
     const value = await runGhRest(
@@ -596,6 +647,8 @@ async function loadRepositoryIssues(
     if (projectItems.has(nodeId)) {
       consumedProjectContentIds.add(nodeId);
     }
+    const merged = projectItemsForIssue(projectItems.get(nodeId) ?? [], relation, projectId);
+    recovered += merged.recovered;
     return {
       repository,
       number,
@@ -611,7 +664,7 @@ async function loadRepositoryIssues(
       subIssues: relation?.subIssues ?? [],
       blockedBy: relation?.blockedBy ?? [],
       closingPullRequests: relation?.closingPullRequests ?? [],
-      projectItems: projectItems.get(nodeId) ?? [],
+      projectItems: merged.items,
     };
   });
   if (issues.length !== totalIssueCount) {
@@ -625,7 +678,7 @@ async function loadRepositoryIssues(
       `${repository} open issue mismatch: REST returned ${openRestCount}, GraphQL returned ${relations.size}`,
     );
   }
-  return issues;
+  return { issues, recovered };
 }
 
 async function loadLiveSnapshot(options: CliOptions): Promise<RoadmapGovernanceSnapshot> {
@@ -634,12 +687,24 @@ async function loadLiveSnapshot(options: CliOptions): Promise<RoadmapGovernanceS
   }
   const project = await loadProject(options.projectOwner, options.projectNumber);
   const consumedProjectContentIds = new Set<string>();
-  const issueGroups = await Promise.all(
+  const repositoryResults = await Promise.all(
     options.source.repositories.map((repository) =>
-      loadRepositoryIssues(repository, project.itemsByContentId, consumedProjectContentIds),
+      loadRepositoryIssues(
+        repository,
+        project.id,
+        project.itemsByContentId,
+        consumedProjectContentIds,
+      ),
     ),
   );
   assertAllProjectIssueItemsConsumed(project.itemsByContentId, consumedProjectContentIds);
+  const issueGroups = repositoryResults.map((result) => result.issues);
+  const recovered = repositoryResults.reduce((total, result) => total + result.recovered, 0);
+  if (recovered > 0) {
+    process.stderr.write(
+      `roadmap capture: recovered ${recovered} open issue item(s) missing from the Project item list\n`,
+    );
+  }
   return {
     schemaVersion: 3,
     generatedAt: new Date().toISOString(),

@@ -15,6 +15,7 @@ import {
   loadOpenIssueRelations,
   parseCli,
   projectItemFromGraphQl,
+  projectItemsForIssue,
 } from "./roadmap-governance-cli";
 
 const REPOSITORY = "tyldra-org/falryn";
@@ -200,6 +201,7 @@ describe("live closing-pull-request collection", () => {
                       totalCount: secondPage ? native.length : 0,
                       nodes: secondPage ? native : [],
                     },
+                    projectItems: { totalCount: 0, nodes: [] },
                   },
                 ],
               },
@@ -253,6 +255,7 @@ describe("live closing-pull-request collection", () => {
                   subIssues: { totalCount: 0, nodes: [] },
                   blockedBy: { totalCount: 0, nodes: [] },
                   closedByPullRequestsReferences: { totalCount: 101, nodes: [] },
+                  projectItems: { totalCount: 0, nodes: [] },
                 },
               ],
             },
@@ -260,6 +263,132 @@ describe("live closing-pull-request collection", () => {
         },
       })),
     ).rejects.toThrow("closedByPullRequestsReferences");
+  });
+});
+
+describe("issue-side Project item collection", () => {
+  function relationsPage(projectItems: unknown) {
+    return async () => ({
+      data: {
+        repository: {
+          allIssues: { totalCount: 1 },
+          issues: {
+            totalCount: 1,
+            pageInfo: { hasNextPage: false, endCursor: null },
+            nodes: [
+              {
+                number: 2,
+                parent: null,
+                subIssues: { totalCount: 0, nodes: [] },
+                blockedBy: { totalCount: 0, nodes: [] },
+                closedByPullRequestsReferences: { totalCount: 0, nodes: [] },
+                projectItems,
+              },
+            ],
+          },
+        },
+      },
+    });
+  }
+
+  function itemNode(id: string, projectId: string) {
+    return {
+      id,
+      type: "ISSUE",
+      project: { id: projectId },
+      content: { id: "issue-node-2" },
+      fieldValues: {
+        totalCount: 4,
+        nodes: [
+          { name: "Todo", updatedAt: "2026-09-02T00:00:00.000Z", field: { name: "Status" } },
+          { name: "P2", field: { name: "Priority" } },
+          { name: "Needs Planning", field: { name: "Readiness" } },
+          { name: "Release A", field: { name: "Target release" } },
+        ],
+      },
+    };
+  }
+
+  test("requests non-archived issue-side items and records their Project", async () => {
+    const queries: string[] = [];
+    const page = relationsPage({
+      totalCount: 2,
+      nodes: [itemNode("roadmap-item", "project-1"), itemNode("other-item", "project-9")],
+    });
+    const collected = await loadOpenIssueRelations(REPOSITORY, async (args) => {
+      queries.push(args.find((arg) => arg.startsWith("query=")) ?? "");
+      return page();
+    });
+    expect(queries[0]).toMatch(/projectItems\(first:10,includeArchived:false\)/);
+    const relations = collected.relations.get(2);
+    expect(relations?.issueProjectItems.map((entry) => entry.projectId)).toEqual([
+      "project-1",
+      "project-9",
+    ]);
+    expect(relations?.issueProjectItems[0]?.item).toEqual(
+      projectItem({
+        id: "roadmap-item",
+        statusUpdatedAt: "2026-09-02T00:00:00.000Z",
+      }),
+    );
+  });
+
+  test("refuses a truncated issue-side item connection", async () => {
+    await expect(
+      loadOpenIssueRelations(REPOSITORY, relationsPage({ totalCount: 11, nodes: [] })),
+    ).rejects.toThrow("projectItems");
+  });
+
+  test("recovers only the audited Project's item when the list omits it", async () => {
+    const recovered = projectItem({ id: "roadmap-item" });
+    const relations = {
+      parent: null,
+      subIssues: [],
+      blockedBy: [],
+      closingPullRequests: [],
+      issueProjectItems: [
+        { projectId: "project-1", item: recovered },
+        { projectId: "project-9", item: projectItem({ id: "other-item" }) },
+      ],
+    };
+    expect(projectItemsForIssue([], relations, "project-1")).toEqual({
+      items: [recovered],
+      recovered: 1,
+    });
+    expect(projectItemsForIssue([], undefined, "project-1")).toEqual({
+      items: [],
+      recovered: 0,
+    });
+  });
+
+  test("keeps a native child inside the Roadmap when only the issue reports its item", () => {
+    const parent = issue({
+      number: 10,
+      subIssues: [{ repository: REPOSITORY, number: 11, state: "OPEN" }],
+      projectItems: [projectItem({ id: "parent-item", readiness: "Parent" })],
+    });
+    const listedChild = issue({
+      number: 11,
+      parent: { repository: REPOSITORY, number: 10, state: "OPEN" },
+      projectItems: [],
+    });
+    const omitted = codes(snapshot([parent, listedChild]));
+    expect(omitted).toContain("relationship-target-missing");
+
+    const merged = projectItemsForIssue(
+      listedChild.projectItems,
+      {
+        parent: listedChild.parent,
+        subIssues: [],
+        blockedBy: [],
+        closingPullRequests: [],
+        issueProjectItems: [{ projectId: "project-1", item: projectItem({ id: "child-item" }) }],
+      },
+      "project-1",
+    );
+    const recovered = codes(snapshot([parent, { ...listedChild, projectItems: merged.items }]));
+    expect(recovered).not.toContain("relationship-target-missing");
+    expect(recovered).not.toContain("hierarchy-target-release-missing");
   });
 });
 

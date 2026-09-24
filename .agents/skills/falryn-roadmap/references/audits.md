@@ -37,6 +37,12 @@ Any required audit diagnostic suppresses selection. Command/access failures are
 failed or unavailable, never a pass. Public issues outside the Project are not
 subject to private fields and do not suppress maintainer routing.
 
+Live capture merges the Project's paged item list with each open issue's own
+non-archived Project items, because GitHub's item index can lag behind item
+creation. The issue-side value wins for an item both sources report. A nonzero
+stderr count reports items the list omitted. An item that neither source
+reports remains a diagnostic.
+
 ## Reuse and refresh
 
 Replay captures without another network load:
