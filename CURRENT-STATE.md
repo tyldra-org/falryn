@@ -2410,8 +2410,30 @@ The task-list adapter builds an immutable selected graph and uses existing
 work-item claims and evidence submission. `autoCascade` defaults to false.
 With explicit cascade admission, accepted prerequisite evidence unlocks later
 registered-agent nodes through this scheduler. An agent response alone leaves
-its item waiting for native criteria validation. The task-list UI and automatic
-consumer composition remain separate; configuration alone starts nothing.
+its item waiting for native criteria validation.
+
+Interactive sessions and `falryn run` compose one work-queue action owner for
+root workflows. It routes each request to the location its queue record names
+across `workspace-state`, `user-state` and `memory`; records naming different
+locations for one ID are refused as `conflicting-identity`, and queue creation
+or resume is not routed. Its authority acts as `local-user` for the host
+session: it reads, claims and submits evidence but never creates queues or
+accepts completion. Session-bound queues stay usable only from their own
+session; project and shared queues are usable from any session in the
+workspace. A claim is admitted only for a live task-list run in the workspace,
+and is observed through the persisted run and its process task, so a restart
+never relaunches work or resets a claim. Evidence sources must be finalized,
+available artifacts whose digest matches the stated generation. The runtime's
+`taskLists.prepare` turns an existing queue selection into a workflow
+definition, deriving each agent node from the task's registered `agentType`
+within that definition's capability and effect ceilings; unregistered,
+unavailable or incompatible agents are refused before launch. The user-role
+authority accepts completion only with `user` authority. Its command, queue
+creation, the task-list UI and automatic consumers remain with #949 and #1112;
+configuration alone starts nothing.
+
+A task-list run waiting for acceptance ends its process task, while the durable
+run and claim stay waiting. A later `resume` drives the run after acceptance.
 
 Integration tests observe two provider requests for parent authoring/final
 response around a native list→stat graph, and four for a graph adding one model

@@ -71,6 +71,7 @@ import { createRecordingCliStreams } from "../output/streams.ts";
 import { resolveCodingPrompt, runCoding } from "./coding-run.ts";
 import { openProductArtifactSession } from "./product-artifact-session.ts";
 import { CLI_EVENT_STREAM, createServiceProvider } from "./services.ts";
+import { seedProjectTaskList } from "./task-list.test-support.ts";
 
 const homes: string[] = [];
 
@@ -1947,6 +1948,45 @@ describe("runCoding", () => {
           value: { state: "terminal" },
         });
       }
+    } finally {
+      await session.close();
+    }
+  });
+
+  +test("executes an existing project task list through the live workflow host and waits for acceptance", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const handle = { id: "task-list-run", generation: "run-1" };
+    const seeding = await openProductArtifactSession(services());
+    if (!seeding) throw new Error("Missing session");
+    const taskList = await seedProjectTaskList(seeding, {
+      workspaceId: "task-list-workspace",
+      clock: services().clock,
+    }).finally(() => seeding.close());
+    const result = await runCoding(
+      services,
+      { promptParts: ["Run the selected task list"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+          script: taskList.script(handle),
+        }),
+        identities: {
+          sessionId: "task-list-session",
+          turnId: "task-list-turn",
+          traceId: "task-list-trace",
+          workspaceId: "task-list-workspace",
+        },
+      },
+    );
+    expect(result.outcome.kind, JSON.stringify(requests.at(-1)?.messages)).toBe("completed");
+    const session = await openProductArtifactSession(services());
+    if (!session) throw new Error("Missing session");
+    try {
+      await taskList.expectAwaitingAcceptance(session, handle, requests);
     } finally {
       await session.close();
     }

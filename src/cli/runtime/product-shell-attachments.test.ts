@@ -55,6 +55,7 @@ import {
 } from "./product-configuration.ts";
 import { composeProductShellAttachments } from "./product-shell-attachments.ts";
 import { CLI_EVENT_STREAM, createServiceProvider } from "./services.ts";
+import { seedProjectTaskList } from "./task-list.test-support.ts";
 
 const GLOBALS: GlobalOptions = {
   color: "auto",
@@ -1127,3 +1128,131 @@ for (const kind of ["lsp", "dap"] as const) {
     30_000,
   );
 }
+
+test("the interactive host executes an existing project task list and waits for acceptance", async () => {
+  const home = await mkdtemp(join(tmpdir(), "falryn-tui-task-list-"));
+  homes.push(home);
+  const state = join(home, "state");
+  const config = join(home, "config");
+  const primary = join(home, "primary");
+  for (const directory of [home, state, config, primary]) {
+    await mkdir(directory, { recursive: true });
+    await chmod(directory, 0o700);
+  }
+  const services = createServiceProvider(GLOBALS, {
+    home: localPath(home),
+    platform: "darwin",
+    environment: createStaticEnvironment({ FALRYN_STATE_DIR: state, FALRYN_CONFIG_DIR: config }),
+    currentDirectory: localPath(primary),
+  })();
+  const durable = await openProductArtifactSession(services);
+  if (durable === null) throw new Error("Fixture storage unavailable");
+  const workspace = createWorkspaceSet([
+    {
+      rootId: workspaceRootId.from("task-list-workspace"),
+      name: "workspace",
+      path: localPath(primary),
+    },
+  ]);
+  if (!workspace.ok) throw new Error("Fixture workspace unavailable");
+  const taskList = await seedProjectTaskList(durable, {
+    workspaceId: "task-list-workspace",
+    clock: services.clock,
+  });
+  const handle = { id: "task-list-run", generation: "run-1" };
+  const requests: ModelRequest[] = [];
+  const model = modelId.from("deterministic-echo");
+  const adapter = createDeterministicProviderAdapter({
+    profileId: "demo",
+    displayName: "Demo provider",
+    supportedModels: [model],
+    script: taskList.script(handle),
+    onRequest: (request) => requests.push(request),
+  });
+  const profile = {
+    profileId: "demo",
+    providerId: adapter.identity.providerId,
+    adapterKind: "deterministic" as const,
+    displayName: "Demo provider",
+    endpoint: null,
+    credential: null,
+    organization: null,
+    project: null,
+    enabledModels: [model],
+    transportCompatibility: null,
+    modelCapabilities: [],
+    discovery: "static" as const,
+    timeouts: { connectMs: 1_000, requestMs: 10_000 },
+  };
+  const attachments = await composeProductShellAttachments({
+    eventStore: durable.eventStore,
+    clock: services.clock,
+    fileSystem: createInMemoryFileSystem({ nodes: { [primary]: { kind: "directory" } } }),
+    workspaceSet: workspace.value,
+    configurationGeneration: configurationGeneration.from(0),
+    artifacts: durable.artifacts,
+    tasks: durable.tasks,
+    joins: durable.joins,
+    workflows: durable.workflows,
+    workQueues: durable.workQueues,
+    index: createEphemeralProductIndexPort(),
+    provider: {
+      kind: "ready",
+      adapter,
+      session: {
+        kind: "ready",
+        release: async () => {},
+        connection: { profile, account: null, updatedAt: services.clock.now() },
+        auth: {
+          profileId: "demo",
+          state: "ready",
+          consumer: "provider:demo",
+          observedAt: instant(0),
+          health: null,
+          code: null,
+          retryable: false,
+        },
+        catalog: {
+          generation: 1,
+          provenance: "static-config",
+          fetchedAt: instant(0),
+          expiresAt: null,
+          models: [
+            {
+              schemaVersion: 1,
+              modelId: model,
+              displayName: null,
+              inputModalities: ["text"],
+              outputModalities: ["text"],
+              tools: "supported",
+              structuredOutput: "supported",
+              streaming: "supported",
+              reasoning: "supported",
+              reasoningControls: ["balanced"],
+              completeness: "complete",
+              availability: "available",
+              provenance: ["profile-declaration"],
+              contextTokens: 128_000,
+              outputTokens: 8_000,
+            },
+          ],
+        },
+      },
+    },
+  });
+  if (attachments === null) throw new Error("Shell composition unavailable");
+  try {
+    const submitted = await attachments.submission.submit(
+      snapshotOf("Run the selected task list", 1),
+    );
+    if (submitted.kind === "unavailable") throw new Error(submitted.reason);
+    expect(
+      attachments.transcriptFeed.events().find((event) => event.kind === "turn.completed")?.payload,
+    ).toMatchObject({ outcome: { kind: "completed" } });
+    await durable.tasks.drain();
+    await taskList.expectAwaitingAcceptance(durable, handle, requests);
+  } finally {
+    await attachments.close();
+    await durable.close();
+  }
+});

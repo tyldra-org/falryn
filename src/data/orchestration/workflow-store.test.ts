@@ -82,3 +82,21 @@ test("checkpoint, event and revision commit together; stale writes and corrupt r
   expect(recovered.get(record.handle)).toMatchObject({ ok: false, error: { code: "corrupt" } });
   await restarted.close();
 });
+
+test("finds a workspace's run by generation after reopen and never another workspace's", async () => {
+  const root = await temporaryRoot("falryn-workflow-store-");
+  const db = await openProductStoreOrThrow(root);
+  const record = workflowRecordFixture();
+  expect(createWorkflowStore(db).create(record)).toEqual(ok(record));
+  await db.close();
+  const reopened = await openProductStoreOrThrow(root);
+  const store = createWorkflowStore(reopened);
+  expect(store.find("workspace-1", "generation-1")).toEqual(ok(record));
+  expect(store.find("workspace-2", "generation-1")).toEqual(ok(null));
+  expect(store.find("workspace-1", "generation-2")).toEqual(ok(null));
+  expect(store.find("workspace-1", "not a generation")).toMatchObject({
+    ok: false,
+    error: { code: "invalid-handle" },
+  });
+  await reopened.close();
+});

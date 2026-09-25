@@ -318,7 +318,11 @@ export function bindTaskListWorkflowHost(
   options: {
     readonly actions: Actions;
     readonly actor: string;
-    /** Existing native work validation owns acceptance; absence keeps the workflow waiting. */
+    /**
+     * Existing native work validation owns acceptance. Without this owner a
+     * waiting task list ends its process task; the durable run stays waiting
+     * for acceptance and a later resume drives it again.
+     */
     readonly changed?: (selection: TaskListSelection, signal: AbortSignal) => Promise<void>;
   },
 ): WorkflowHost {
@@ -517,14 +521,17 @@ export function bindTaskListWorkflowHost(
       record.definition.taskList
         ? settled(record, node, signal)
         : host.question(node, record, signal),
-    ...(options.changed
-      ? {
-          wait: (record: WorkflowRecord, signal: AbortSignal) =>
-            record.definition.taskList
-              ? (options.changed?.(record.definition.taskList, signal) ?? Promise.resolve())
-              : (host.wait?.(record, signal) ?? Promise.resolve()),
-        }
-      : {}),
+    wait(record: WorkflowRecord, signal: AbortSignal) {
+      if (record.definition.taskList)
+        return options.changed
+          ? options.changed(record.definition.taskList, signal)
+          : Promise.reject(new Error("workflow-task-list-acceptance-owner-unavailable"));
+      if (host.wait) return host.wait(record, signal);
+      // Other waits keep only the in-process resume wake.
+      return new Promise<void>((resolve) =>
+        signal.addEventListener("abort", () => resolve(), { once: true }),
+      );
+    },
     reusable: (node, prior, record, signal) =>
       record.definition.taskList
         ? Promise.resolve(false)

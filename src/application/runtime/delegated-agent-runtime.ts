@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { ArtifactStorePort } from "../../domain/artifacts/artifact.ts";
 import { canonicalJson } from "../../domain/extensions/canonical.ts";
 import { capabilityId, sessionId, streamId, turnId } from "../../domain/foundation/index.ts";
+import type { WorkQueueStore } from "../../domain/orchestration/work-queue.ts";
 import type { WorkflowStore } from "../../domain/orchestration/workflow-state.ts";
 import { createToolRegistry } from "../../domain/tools/index.ts";
 import {
@@ -27,6 +28,13 @@ import {
 } from "../orchestration/delegation.ts";
 import type { PeerMailbox, PeerMailboxFactory } from "../orchestration/peer-mailbox.ts";
 import type { ProcessTaskSupervisor } from "../orchestration/process-task-supervisor.ts";
+import { processProductResources } from "../orchestration/product-resources.ts";
+import {
+  createProductTaskLists,
+  createProductWorkQueueActions,
+  createProductWorkQueueAuthority,
+  PRODUCT_WORK_ACTOR,
+} from "../orchestration/work-queue-authority.ts";
 import { composeDelegationTool, DELEGATE_CAPABILITY } from "../tools/delegation-tool.ts";
 import { composePeerTool, PEER_CAPABILITY } from "../tools/peer-tool.ts";
 import { isClosedProductToolSchema } from "../tools/product-tool-schema.ts";
@@ -46,12 +54,18 @@ import {
   composeScheduleProductRuntime,
   type ProductSchedulePorts,
 } from "./schedule-product-runtime.ts";
-import { composeWorkflowRuntime, type WorkflowRuntimeOptions } from "./workflow-runtime.ts";
+import {
+  composeWorkflowRuntime,
+  processTaskFenced,
+  type WorkflowRuntimeOptions,
+} from "./workflow-runtime.ts";
 
 export type DelegatedRuntimeOptions = {
   readonly schedules?: ProductSchedulePorts;
   readonly workflows?: WorkflowStore;
   readonly workflowQuestions?: WorkflowRuntimeOptions["questions"];
+  /** The host's registered work-queue locations; with workflows, task lists reach live runs. */
+  readonly workQueues?: { at(locator: string): Promise<WorkQueueStore | null> };
   readonly peers?: PeerMailboxFactory;
   readonly joins?: import("../orchestration/agent-joins.ts").AgentJoins;
   readonly tasks: ProcessTaskSupervisor;
@@ -120,6 +134,32 @@ export function composeDelegatedAgentRuntime(
         .map((entry) => entry.capabilityId) ?? [],
     ),
   };
+  // Workflow and scheduled runs act for the session's local user: they read,
+  // claim and submit evidence, and never create queues or accept completion.
+  // Live host sessions are durable, so session-bound queues are persistent.
+  const { workQueues, workflows: workflowStore, joins } = options;
+  const taskLists =
+    workQueues && workflowStore && joins
+      ? createProductTaskLists({
+          agents: registry,
+          actions: createProductWorkQueueActions({
+            at: (locator) => workQueues.at(locator),
+            resources: ports.resources ?? processProductResources,
+            generation: () => String(currentGeneration()),
+            now: () => Number(ports.clock.now()),
+            authority: createProductWorkQueueAuthority({
+              role: "workflow",
+              sessionId: String(ports.correlation.sessionId),
+              workspaceId: String(ports.correlation.workspaceId),
+              persistentSession: true,
+              agents: registry,
+              artifacts: options.artifacts,
+              workflows: workflowStore,
+              fenced: (task) => processTaskFenced(joins, task),
+            }),
+          }),
+        })
+      : null;
   const delegation = createDelegation({
     registry,
     clock: ports.clock,
@@ -385,6 +425,9 @@ export function composeDelegatedAgentRuntime(
               artifacts: options.artifacts,
               preferences,
               ...(options.workflowQuestions ? { questions: options.workflowQuestions } : {}),
+              ...(taskLists
+                ? { taskLists: { actions: taskLists.actions, actor: PRODUCT_WORK_ACTOR } }
+                : {}),
               async provider(profile, signal) {
                 const current = providers.get(profile);
                 if (current) return current;
@@ -448,14 +491,17 @@ export function composeDelegatedAgentRuntime(
       void schedules?.close();
       return composed;
     }
-    if (!schedules) return composed;
+    // The task-list port serves the root session only; delegated children never select tasks.
+    const port = parent === undefined && workflows ? taskLists : null;
     return {
       ok: true as const,
       value: {
         ...composed.value,
-        schedules,
+        ...(schedules ? { schedules } : {}),
+        /** Prepares task-list workflows from existing queue selections (#949, #1112). */
+        taskLists: port,
         closeBindings() {
-          void schedules.close();
+          void schedules?.close();
           composed.value.closeBindings();
         },
       },

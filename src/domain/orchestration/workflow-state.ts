@@ -102,6 +102,11 @@ export type WorkflowStore = {
     sessionId: string,
     after?: WorkflowHandle,
   ): WorkflowResult<readonly WorkflowReceipt[]>;
+  /**
+   * The current record of the workspace's run with this handle generation, or
+   * null. Generations are random per run; a duplicate is refused, never guessed.
+   */
+  find(workspaceId: string, generation: string): WorkflowResult<WorkflowRecord | null>;
 };
 export const workflowReceiptSchema = z.strictObject({
   version: z.literal(1),
