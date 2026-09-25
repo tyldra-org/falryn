@@ -551,6 +551,7 @@ async function launchShell(
               },
               agentRegistry: agentRegistryFrom(configuration),
               workflows: productArtifactSession.workflows,
+              workQueues: productArtifactSession.workQueues,
               schedules: productArtifactSession.schedules,
               ...(productArtifactSession.workflowQuestions
                 ? { workflowQuestions: productArtifactSession.workflowQuestions }

@@ -172,6 +172,7 @@ export type ProductShellAttachmentPorts = {
   readonly tasks?: ProcessTaskSupervisor;
   readonly workflows?: import("../../domain/orchestration/workflow-state.ts").WorkflowStore;
   readonly workflowQuestions?: import("../../application/orchestration/workflow-questions.ts").WorkflowQuestions;
+  readonly workQueues?: import("../../application/runtime/delegated-agent-runtime.ts").DelegatedRuntimeOptions["workQueues"];
   readonly joins?: import("../../application/orchestration/agent-joins.ts").AgentJoins;
   readonly taskNotices?: ProcessTaskNotices;
   /** Application-owned focused confirmation host for consequential tool calls. */
@@ -505,6 +506,7 @@ export async function composeProductShellAttachments(
               ...(ports.workflows ? { workflows: ports.workflows } : {}),
               ...(ports.schedules ? { schedules: ports.schedules } : {}),
               ...(ports.workflowQuestions ? { workflowQuestions: ports.workflowQuestions } : {}),
+              ...(ports.workQueues ? { workQueues: ports.workQueues } : {}),
               ...(ports.joins ? { joins: ports.joins } : {}),
               ...(ports.peers ? { peers: ports.peers } : {}),
               ...(profile

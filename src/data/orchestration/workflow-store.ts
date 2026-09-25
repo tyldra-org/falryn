@@ -260,5 +260,18 @@ export function createWorkflowStore(store: SqliteStorePort): WorkflowStore {
       });
       return result;
     },
+    find(workspace, generation) {
+      if (!workflowHandleSchema.shape.generation.safeParse(generation).success)
+        return err({ code: "invalid-handle" });
+      return write((sql) => {
+        const rows = sql.all(
+          "SELECT id FROM workflow_runs WHERE workspace_id=$workspace AND generation=$generation LIMIT 2",
+          { workspace, generation },
+        );
+        if (rows.length > 1) return err({ code: "ambiguous-generation" });
+        const row = rows[0];
+        return row === undefined ? ok(null) : load(sql, { id: String(row.id), generation });
+      });
+    },
   };
 }

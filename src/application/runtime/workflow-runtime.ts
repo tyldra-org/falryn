@@ -52,6 +52,25 @@ export type WorkflowRuntimeOptions = {
   readonly reusable?: WorkflowHost["reusable"];
   readonly taskLists?: Parameters<typeof bindTaskListWorkflowHost>[1];
 };
+
+/**
+ * A run's process task is fenced once it ended without its supervisor, or ended
+ * with a known effect; its nodes can no longer be executing.
+ */
+export function processTaskFenced(
+  joins: Pick<AgentJoins, "task">,
+  task: Parameters<AgentJoins["task"]>[0] | null | undefined,
+): boolean {
+  if (!task) return false;
+  const result = joins.task(task);
+  return (
+    result.ok &&
+    result.value.state === "terminal" &&
+    (["supervisor-vanished", "supervisor-replaced"].includes(result.value.terminal.reason) ||
+      result.value.terminal.effect !== "uncertain")
+  );
+}
+
 export function composeWorkflowRuntime(
   ports: ProductAgentRuntimePorts,
   options: WorkflowRuntimeOptions,
@@ -208,16 +227,7 @@ export function composeWorkflowRuntime(
               reason: "workflow-question-owner-unavailable",
             })),
           async fenced(task) {
-            if (!task) return false;
-            const result = options.joins.task(task);
-            return (
-              result.ok &&
-              result.value.state === "terminal" &&
-              (["supervisor-vanished", "supervisor-replaced"].includes(
-                result.value.terminal.reason,
-              ) ||
-                result.value.terminal.effect !== "uncertain")
-            );
+            return processTaskFenced(options.joins, task);
           },
           reusable:
             options.reusable ??

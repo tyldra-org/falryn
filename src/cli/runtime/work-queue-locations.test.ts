@@ -1,6 +1,11 @@
 import { afterEach, expect, test } from "bun:test";
 import { createProductResources } from "../../application/orchestration/product-resources.ts";
 import {
+  createProductWorkQueueActions,
+  createProductWorkQueueAuthority,
+  PRODUCT_WORK_ACTOR,
+} from "../../application/orchestration/work-queue-authority.ts";
+import {
   workAuthority,
   workFields,
   workScope,
@@ -17,6 +22,126 @@ import { createSystemClock } from "../../domain/foundation/index.ts";
 import { openBunSqlite } from "../../integrations/storage/bun-sqlite.ts";
 
 afterEach(removeTemporaryRoots);
+test("the product router reaches queues by their recorded location across shared storage", async () => {
+  const root = await temporaryRoot("falryn-queue-router-");
+  const state = await openProductStoreOrThrow(root);
+  const clock = createSystemClock();
+  const locations = createWorkQueueLocations({
+    state,
+    stateRoot: root,
+    clock,
+    open: openBunSqlite,
+  });
+  const resources = createProductResources(clock);
+  const authority = (role: "workflow" | "user", sessionId = "session-1") =>
+    createProductWorkQueueAuthority({
+      role,
+      sessionId,
+      workspaceId: "workspace-1",
+      persistentSession: true,
+      agents: { resolve: () => null },
+      artifacts: {
+        get: () => ({
+          ok: true,
+          value: { availability: "available", finalizedAt: 1, digest: "g1" },
+        }),
+      } as never,
+      workflows: { find: () => ({ ok: true, value: null }) },
+    });
+  let mutation = 0;
+  // Queue creation belongs to #949's command; it writes to the selected location directly.
+  async function create(locator: string, queueId: string, scope: object, sessionId?: string) {
+    const store = await locations.at(locator);
+    if (store === null) throw new Error("missing location");
+    const actions = createWorkQueueActions(store, {
+      authority: authority("user", sessionId),
+      resources: resources.openTask("configuration-1"),
+    });
+    const provenance = () => ({
+      mutationId: `edit-${mutation++}`,
+      source: "prompt-1",
+      sourceGeneration: "g1",
+      reason: "record work",
+    });
+    const queue = workValue(
+      await actions.execute(
+        JSON.stringify({
+          version: 1,
+          action: "create",
+          queueId,
+          objective: "Work",
+          scope: { ...workScope, owner: PRODUCT_WORK_ACTOR, locator, ...scope },
+          ...provenance(),
+        }),
+      ),
+    ).queue;
+    if (!queue) throw new Error("missing queue");
+    const added = workValue(
+      await actions.execute(
+        JSON.stringify({
+          version: 1,
+          action: "mutate",
+          queueId,
+          scopeGeneration: queue.scope.generation,
+          expectedRevision: queue.revision,
+          operations: [{ kind: "add", itemId: "a", fields: workFields }],
+          ...provenance(),
+        }),
+      ),
+    ).queue;
+    return { queueId, scopeGeneration: queue.scope.generation, expectedRevision: added?.revision };
+  }
+  try {
+    const project = await create("workspace-state", "project-queue", {
+      kind: "project",
+      sessionId: null,
+    });
+    const foreignSession = await create(
+      "workspace-state",
+      "session-queue",
+      { kind: "session", sessionId: "session-2" },
+      "session-2",
+    );
+    await create("workspace-state", "duplicate", { kind: "project", sessionId: null });
+    await create("memory", "duplicate", { kind: "memory", sessionId: "session-1" });
+    const router = createProductWorkQueueActions({
+      at: locations.at,
+      resources,
+      generation: () => "configuration-1",
+      authority: authority("workflow"),
+      now: () => Date.now(),
+    });
+    const send = async (value: object) => router.execute(JSON.stringify({ version: 1, ...value }));
+    const shown = await send({ action: "show", ...project, itemId: "a" });
+    expect(shown.ok && String(shown.value.items?.[0]?.id)).toBe("a");
+    expect(await send({ action: "show", ...foreignSession, itemId: "a" })).toMatchObject({
+      ok: false,
+      error: { code: "denied" },
+    });
+    expect(
+      await send({ action: "show", ...project, queueId: "duplicate", itemId: "a" }),
+    ).toMatchObject({ ok: false, error: { code: "conflicting-identity" } });
+    expect(
+      await send({ action: "show", ...project, queueId: "missing", itemId: "a" }),
+    ).toMatchObject({ ok: false, error: { code: "unavailable" } });
+    expect(
+      await send({
+        action: "create",
+        queueId: "new-queue",
+        objective: "Work",
+        scope: { ...workScope, kind: "project", sessionId: null, locator: "workspace-state" },
+        mutationId: "create-new",
+        source: "prompt-1",
+        sourceGeneration: "g1",
+        reason: "record work",
+      }),
+    ).toMatchObject({ ok: false, error: { code: "unsupported" } });
+  } finally {
+    expect(await locations.close()).toBeTrue();
+    await state.close();
+  }
+});
+
 test("registered selection, ephemeral lifetime, resumed locator and shared persistence", async () => {
   const root = await temporaryRoot("falryn-queue-locations-");
   const state = await openProductStoreOrThrow(root);

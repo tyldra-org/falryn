@@ -3,7 +3,9 @@ import { z } from "zod";
 import { removeTemporaryRoots } from "../../data/fixtures.ts";
 import { createAgentJoinStore } from "../../data/orchestration/agent-join-store.ts";
 import { createMailboxRepository } from "../../data/orchestration/mailbox-store.ts";
+import { createSqliteWorkQueueStore } from "../../data/orchestration/work-queue-store.ts";
 import { createWorkflowStore } from "../../data/orchestration/workflow-store.ts";
+import { artifactId } from "../../domain/artifacts/artifact.ts";
 import { createCapabilityRegistry } from "../../domain/capabilities/index.ts";
 import { sourceFixture } from "../../domain/context/instruction-sources.fixtures.ts";
 import { EMPTY_SOURCE_PREFERENCES } from "../../domain/context/instruction-sources.ts";
@@ -17,6 +19,7 @@ import {
   turnId,
   workspaceId,
 } from "../../domain/foundation/index.ts";
+import type { WorkQueue } from "../../domain/orchestration/work-queue.ts";
 import type { ToolInvocationOutcome } from "../../domain/tools/index.ts";
 import {
   createToolRegistry,
@@ -55,6 +58,12 @@ import { openPeerMailbox, type PeerMailbox } from "../orchestration/peer-mailbox
 import { createProcessTaskFixture, taskValue } from "../orchestration/process-task.fixtures.ts";
 import { createProcessTaskSupervisor } from "../orchestration/process-task-supervisor.ts";
 import { createProductResources } from "../orchestration/product-resources.ts";
+import {
+  createProductWorkQueueAuthority,
+  PRODUCT_WORK_ACTOR,
+  type ProductTaskLists,
+} from "../orchestration/work-queue-authority.ts";
+import { createWorkQueueActions } from "../orchestration/work-queues.ts";
 import { composePeerTool, PEER_CAPABILITY } from "../tools/peer-tool.ts";
 import { createWorkspacePatcher } from "../workspace/workspace-patch.ts";
 import {
@@ -66,6 +75,22 @@ import { processingProduct } from "./product-processing.fixture.ts";
 import type { ToolRunnerRequest } from "./tool-call-loop.ts";
 
 afterEach(removeTemporaryRoots);
+type TaskListContext = {
+  readonly runtime: Extract<ReturnType<typeof composeDelegatedAgentRuntime>, { ok: true }>["value"];
+  readonly store: ReturnType<typeof workQueueStore>;
+  readonly resources: ReturnType<typeof createProductResources>;
+  readonly clock: Awaited<ReturnType<typeof createProcessTaskFixture>>["clock"];
+  readonly database: Awaited<ReturnType<typeof createProcessTaskFixture>>["database"];
+  readonly artifacts: Awaited<ReturnType<typeof createProcessTaskFixture>>["artifacts"];
+};
+function workQueueStore(
+  database: Awaited<ReturnType<typeof createProcessTaskFixture>>["database"],
+) {
+  return createSqliteWorkQueueStore(database, {
+    locator: "workspace-state",
+    durability: "durable",
+  });
+}
 const inspect = "builtin:workspace/inspect@1";
 const delegate = "builtin:orchestration/delegate@1";
 const explorerResult = JSON.stringify({
@@ -122,6 +147,11 @@ async function run(
     nativeDenied?: boolean;
     withPeers?: boolean;
     withWorkflows?: boolean;
+    /** Registers the fixture database's workspace-state queue location with the workflows. */
+    withTaskLists?: {
+      before(context: TaskListContext): Promise<void>;
+      after(context: TaskListContext): Promise<void>;
+    };
     prompt?: string;
     processing?: boolean;
     instructions?: ProductInstructions;
@@ -259,7 +289,17 @@ async function run(
     },
     {
       tasks,
-      ...(options.withWorkflows ? { workflows: createWorkflowStore(f.database) } : {}),
+      ...(options.withWorkflows || options.withTaskLists
+        ? { workflows: createWorkflowStore(f.database) }
+        : {}),
+      ...(options.withTaskLists
+        ? {
+            workQueues: {
+              at: async (locator: string) =>
+                locator === "workspace-state" ? workQueueStore(f.database) : null,
+            },
+          }
+        : {}),
       joins: createAgentJoins({
         store: createAgentJoinStore(f.database),
         tasks: f.tasks,
@@ -303,6 +343,15 @@ async function run(
     },
   );
   if (!composed.ok) throw new Error(composed.error.code);
+  const taskListContext = {
+    runtime: composed.value,
+    store: workQueueStore(f.database),
+    resources,
+    clock: f.clock,
+    database: f.database,
+    artifacts: f.artifacts,
+  };
+  await options.withTaskLists?.before(taskListContext);
   const executor = createProductLiveTurnExecutor({
     runtime: composed.value,
     clock: f.clock,
@@ -321,6 +370,7 @@ async function run(
       afterParent();
       await tasks.drain();
     }
+    await options.withTaskLists?.after(taskListContext);
     return {
       result,
       requests,
@@ -1022,4 +1072,206 @@ test("workflow model steps retain named receipts when preferences change between
     "workflow-route",
     "workflow-route",
   ]);
+});
+
+test("a root workflow runs an existing project task through the runtime port and waits for the user", async () => {
+  const signal = new AbortController().signal;
+  const scope = {
+    kind: "project" as const,
+    generation: "scope-1",
+    configurationGeneration: 0,
+    sessionId: null,
+    workspaceId: "workspace-fixture",
+    owner: PRODUCT_WORK_ACTOR,
+    members: [],
+    locator: "workspace-state",
+  };
+  let definition: unknown = null;
+  let queue: WorkQueue | null | undefined = null;
+  let source = { source: "list-source", sourceGeneration: "" };
+  let mutation = 0;
+  const provenance = () => ({ ...source, mutationId: `edit-${mutation++}`, reason: "test" });
+  const userActions = (context: TaskListContext) =>
+    createWorkQueueActions(context.store, {
+      resources: context.resources.openTask("0"),
+      now: () => Number(context.clock.now()),
+      authority: createProductWorkQueueAuthority({
+        role: "user",
+        sessionId: "agent-test-parent",
+        workspaceId: "workspace-fixture",
+        persistentSession: true,
+        agents: createAgentRegistry(starterAgentRegistrations()),
+        artifacts: context.artifacts,
+        workflows: createWorkflowStore(context.database),
+      }),
+    });
+  const port = (context: TaskListContext) => {
+    const found = (context.runtime as { readonly taskLists?: ProductTaskLists | null }).taskLists;
+    if (!found) throw new Error("task-list port unavailable");
+    return found;
+  };
+  const observed = await run(
+    (request, index) => {
+      if (request.tools.some((tool) => tool.name === "workflow"))
+        return index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "task-list-workflow",
+              name: "workflow",
+              argumentFragments: [
+                JSON.stringify({
+                  operation: "execute",
+                  handle: { id: "task-list-run", generation: "run-1" },
+                  definitionJson: JSON.stringify(definition),
+                  argumentsJson: "{}",
+                }),
+              ],
+            }
+          : { kind: "text", text: "The task waits for acceptance." };
+      return { kind: "text", text: explorerResult };
+    },
+    {
+      prompt: "Run the selected task list",
+      withTaskLists: {
+        async before(context) {
+          const bytes = new TextEncoder().encode("task list source");
+          const ingested = await context.artifacts.ingest({
+            artifactId: artifactId.from("list-source"),
+            mediaType: "text/plain",
+            encoding: "identity",
+            sensitivity: "user-content",
+            origin: "user-supplied",
+            invocationId: null,
+            declaredByteLength: bytes.byteLength,
+            content: (async function* () {
+              yield bytes;
+            })(),
+          });
+          if (!ingested.ok) throw new Error(ingested.error.code);
+          source = { ...source, sourceGeneration: String(ingested.value.record.digest) };
+          const user = userActions(context);
+          const send = async (value: object) =>
+            taskValue(await user.execute(JSON.stringify({ version: 1, ...value }), signal));
+          queue = (
+            await send({
+              action: "create",
+              queueId: "queue-1",
+              scope,
+              objective: "Tasks",
+              ...provenance(),
+            })
+          ).queue;
+          queue = (
+            await send({
+              action: "mutate",
+              queueId: "queue-1",
+              scopeGeneration: scope.generation,
+              expectedRevision: queue?.revision,
+              operations: [
+                {
+                  kind: "add",
+                  itemId: "a",
+                  fields: {
+                    subject: "Inspect the owner",
+                    objective: "Report where the owner lives",
+                    description: "",
+                    activeForm: null,
+                    agentType: "builtin/falryn/agents:explorer",
+                    metadata: {},
+                    criteria: ["The owner is located"],
+                  },
+                },
+              ],
+              ...provenance(),
+            })
+          ).queue;
+          if (!queue) throw new Error("missing queue");
+          definition = await port(context).prepare({
+            queue,
+            selected: ["a"],
+            ...source,
+            id: "user/tasks:runtime",
+            signal,
+          });
+        },
+        async after(context) {
+          const actions = port(context).actions;
+          const first = queue?.revision ?? 0;
+          const show = async () => {
+            for (let revision = first; revision < first + 8; revision++) {
+              const shown = await actions.execute(
+                JSON.stringify({
+                  version: 1,
+                  action: "show",
+                  queueId: "queue-1",
+                  scopeGeneration: scope.generation,
+                  expectedRevision: revision,
+                  itemId: "a",
+                }),
+                signal,
+              );
+              const item = shown.ok ? shown.value.items?.[0] : undefined;
+              if (item) return { item, revision };
+            }
+            throw new Error("item unavailable");
+          };
+          const submitted = await show();
+          expect(submitted.item).toMatchObject({
+            disposition: "completion-claimed",
+            acceptance: null,
+          });
+          expect(submitted.item.claim?.holder).toMatchObject({
+            actor: PRODUCT_WORK_ACTOR,
+            generation: "run-1",
+          });
+          const record = taskValue(
+            createWorkflowStore(context.database).find("workspace-fixture", "run-1"),
+          );
+          expect(record?.state).toBe("waiting");
+          expect(record?.nodes.find((node) => node.state === "waiting")?.reason).toBe(
+            "workflow-task-list-acceptance-required",
+          );
+          const validate = {
+            version: 1,
+            action: "mutate",
+            queueId: "queue-1",
+            scopeGeneration: scope.generation,
+            expectedRevision: submitted.revision,
+            operations: [
+              {
+                kind: "validate",
+                itemId: "a",
+                itemRevision: submitted.item.revision,
+                criteriaRevision: submitted.item.criteriaRevision,
+                claimGeneration: submitted.item.claimGeneration,
+                evidence: submitted.item.evidence,
+                authority: "user",
+                verdict: "accept",
+                reason: "Owner located",
+              },
+            ],
+          };
+          expect(
+            await actions.execute(JSON.stringify({ ...validate, ...provenance() }), signal),
+          ).toMatchObject({ ok: false, error: { code: "denied" } });
+          taskValue(
+            await userActions(context).execute(
+              JSON.stringify({ ...validate, ...provenance() }),
+              signal,
+            ),
+          );
+          expect((await show()).item).toMatchObject({
+            disposition: "completed",
+            acceptance: { actor: PRODUCT_WORK_ACTOR, authority: "user" },
+          });
+        },
+      },
+    },
+  );
+  expect(observed.result.terminalOutcome.kind).toBe("completed");
+  const children = observed.requests.filter(
+    (request) => !request.tools.some((tool) => tool.name === "workflow"),
+  );
+  expect(children).toHaveLength(1);
+  expect(JSON.stringify(children[0]?.messages)).toContain("Report where the owner lives");
 });
