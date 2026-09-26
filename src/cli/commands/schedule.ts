@@ -94,6 +94,7 @@ export async function runSchedule(
         scratch: product.scratch,
         tasks: product.tasks,
         workflows: product.workflows,
+        workQueues: product.workQueues,
         joins: product.joins,
         schedules: { ...product.schedules, autostart: command.operation === "host" },
         publishNativePackages: product.publishNativePackages,

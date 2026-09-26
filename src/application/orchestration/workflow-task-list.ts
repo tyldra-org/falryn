@@ -64,6 +64,8 @@ async function send(
 }
 /** The store's accepted-completion predicate, including retained archived completions. */
 const accepted = completedWork;
+/** A task-list node whose agent settled and whose evidence awaits native acceptance. */
+export const TASK_LIST_ACCEPTANCE_WAIT = "workflow-task-list-acceptance-required";
 const nodeIdSchema = taskListSelectionSchema.shape.items.element.shape.id;
 type Manifest = NonNullable<WorkQueueResponse["manifest"]>;
 /**
@@ -91,7 +93,11 @@ export async function prepareTaskListWorkflow(options: {
   readonly actions: Actions;
   readonly queue: WorkQueue;
   readonly selected: readonly string[];
-  /** Groups to expand to their descendant tasks at `queue.revision`; never executable themselves. */
+  /**
+   * Groups to expand to their descendant tasks at `queue.revision`; never executable
+   * themselves. Supplying groups, even none, selects through that revision's manifest,
+   * which reports accepted, blocked and unavailable tasks instead of refusing them.
+   */
   readonly groups?: readonly string[];
   readonly autoCascade?: boolean;
   readonly source: string;
@@ -134,7 +140,7 @@ export async function prepareTaskListWorkflow(options: {
     blocked: [] as string[],
     unavailable: [] as string[],
   };
-  if (groups.length > 0) {
+  if (options.groups !== undefined) {
     // One read at the pinned revision; a concurrent change surfaces as stale, never as a smaller set.
     manifest =
       (
@@ -453,7 +459,7 @@ export function bindTaskListWorkflowHost(
     return {
       state: "waiting",
       effect: node.effect,
-      reason: "workflow-task-list-acceptance-required",
+      reason: TASK_LIST_ACCEPTANCE_WAIT,
     };
   }
   return {

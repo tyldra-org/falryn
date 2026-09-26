@@ -73,6 +73,20 @@ export async function scheduleCliJourney(binary: readonly string[], root: string
   }
   const enabled = await invoke({ operation: "enable", id: "sample", expectedRevision: 1 });
   expect(enabled.state).toBe("enabled");
+  // The CLI host composes the registered queue locations, so a task-list selector reaches its owner.
+  const selection = await invoke({
+    operation: "preview",
+    definition: {
+      ...definition,
+      target: { kind: "task-list", queueId: "absent", scopeGeneration: "scope-1", tasks: ["a"] },
+    },
+  });
+  expect(selection).toMatchObject({
+    valid: false,
+    blocker: "task-list-unavailable",
+    target: null,
+    executionStarted: false,
+  });
   const workflowDefinition = {
     ...definition,
     target: {
