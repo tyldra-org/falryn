@@ -79,6 +79,11 @@ export type ScheduleCommand = z.infer<typeof scheduleCommandSchema>;
 export type ScheduleValidation = ScheduleResult<ScheduleBinding>;
 export type ScheduleAuthority = {
   validate(record: ScheduleRecord, signal: AbortSignal): Promise<ScheduleValidation>;
+  /** Target-specific evidence for preview and inspection; it never starts work. */
+  preview?(
+    record: ScheduleRecord,
+    signal: AbortSignal,
+  ): Promise<ScheduleResult<Readonly<Record<string, unknown>> | null>>;
 };
 export function createScheduleActions(options: {
   store: ScheduleStore;
@@ -88,6 +93,10 @@ export function createScheduleActions(options: {
   defaults?(): ScheduleDefaults;
 }) {
   const { store, workspace } = options;
+  const targetPreview = async (record: ScheduleRecord, signal: AbortSignal) => {
+    const preview = await options.authority.preview?.(record, signal);
+    return preview?.ok ? preview.value : null;
+  };
   const summary = (record: ScheduleRecord) => {
     const now = options.now();
     const next = scheduleWindow(
@@ -163,6 +172,7 @@ export function createScheduleActions(options: {
           kind: "schedule-preview",
           valid: valid.ok,
           blocker: valid.ok ? null : valid.error.code,
+          target: valid.ok ? await targetPreview(record, signal) : null,
           executionStarted: false,
         });
       }
@@ -204,6 +214,7 @@ export function createScheduleActions(options: {
           ...summary(record),
           availability: validation.ok ? "available" : "unavailable",
           blocker: validation.ok ? record.blocker : validation.error.code,
+          target: validation.ok ? await targetPreview(record, signal) : null,
         });
       }
       if (command.operation === "delete-preview") {

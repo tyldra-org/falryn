@@ -2229,8 +2229,28 @@ The host executes existing built-in actions and typed workflows through shared
 capability admission, task resources, policy, hooks, provider bindings and
 artifact capture. Workflows with model nodes require an available concrete
 main model route. Missing targets or producers remain unavailable. Grouped Todo
-selection and named-route/quota-reset scheduling remain separate integrations
-under #1112 and #1113.
+Named-route and quota-reset scheduling remain a separate integration under #1113.
+
+A `task-list` target selects existing Todo work by queue, scope generation and
+stable group and task IDs (at most 256 of each), with `autoCascade` false by
+default. Only a `project` or `shared` queue in the host workspace qualifies,
+and only user-created schedules may target one. Preview and inspect return the
+selector's current revision-bound manifest (task statuses with counts) and start
+nothing. Session-bound, foreign or rescoped queues and missing groups are refused
+before enable. Each occurrence expands the selector once at the queue's current
+revision, freezes that manifest as a finalized artifact, and prepares the
+task-list workflow at the same revision with the manifest as its evidence
+source. A queue edited in between is refused as `task-list-selection-stale`
+after at most three reads. The run uses the occurrence's attempt ID as its handle
+generation. Overlapping groups deduplicate. Accepted, cancelled, claimed and
+archived tasks never launch, and tasks added later join only later occurrences.
+With nothing admissible, the occurrence settles `succeeded` with no effect and
+reason `task-list-no-work`. Once every remaining node awaits acceptance, the
+occurrence settles with reason `task-list-acceptance-required`: `succeeded`,
+`partial` when a node failed or was skipped, or `uncertain`. Its result is the
+frozen manifest, and per-task outcomes stay with the linked run and queue items.
+Restart reconciles from the persisted run and never relaunches work. Accepting
+tasks, and continuing a run after acceptance, belong to the task owner.
 
 A live qualified Falryn host is required. Interactive sessions and live coding
 runs compose this host; `falryn schedule host` runs it until interruption.
@@ -2429,8 +2449,8 @@ definition, deriving each agent node from the task's registered `agentType`
 within that definition's capability and effect ceilings; unregistered,
 unavailable or incompatible agents are refused before launch. The user-role
 authority accepts completion only with `user` authority. Its command, queue
-creation, the task-list UI and automatic consumers remain with #949 and #1112;
-configuration alone starts nothing.
+creation and the task-list UI remain with #949; scheduled selections use the
+`task-list` schedule target. Configuration alone starts nothing.
 
 A task-list run waiting for acceptance ends its process task, while the durable
 run and claim stay waiting. A later `resume` drives the run after acceptance.

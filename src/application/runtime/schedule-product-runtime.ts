@@ -26,6 +26,7 @@ import type {
 import {
   decodeWorkflowDefinition,
   validWorkflowArguments,
+  type WorkflowDefinition,
 } from "../../domain/orchestration/workflow-definition.ts";
 import type { WorkflowRecord, WorkflowStore } from "../../domain/orchestration/workflow-state.ts";
 import type {
@@ -37,6 +38,14 @@ import type { ModelPreferences } from "../../providers/configuration/policy-sche
 import { processProductResources } from "../orchestration/product-resources.ts";
 import { createScheduleActions } from "../orchestration/schedule-actions.ts";
 import { createScheduleRuntime, type ScheduleExecutor } from "../orchestration/schedule-runtime.ts";
+import {
+  awaitingTaskAcceptance,
+  prepareScheduledTaskList,
+  previewScheduledSelection,
+  readScheduledSelection,
+  type ScheduledTaskListOccurrence,
+} from "../orchestration/schedule-task-list.ts";
+import type { ProductTaskLists } from "../orchestration/work-queue-authority.ts";
 import type { WorkflowActions } from "../orchestration/workflow-actions.ts";
 import { createWorkflowRegistry } from "../orchestration/workflow-registry.ts";
 import { createProductToolGateway } from "../tools/product-tool-gateway.ts";
@@ -67,8 +76,47 @@ function settledTask(task: ProcessTaskSnapshot, at: number): ScheduleTerminal | 
     at,
   };
 }
-function settledWorkflow(record: WorkflowRecord, at: number): ScheduleTerminal | null {
+const DELEGATE = "builtin:orchestration/delegate@1";
+const WORKFLOW = "builtin:orchestration/workflow@1";
+function workflowEffect(record: WorkflowRecord, completedRun: boolean): ScheduleTerminal["effect"] {
+  return record.state === "uncertain" || record.nodes.some((node) => node.effect === "uncertain")
+    ? "uncertain"
+    : record.nodes.some((node) => node.effect === "partial")
+      ? "partial"
+      : record.nodes.some((node) => node.effect === "completed")
+        ? completedRun
+          ? "completed"
+          : "partial"
+        : "none";
+}
+/**
+ * A run's occurrence outcome. A task-list run settles for its occurrence once its
+ * remaining work awaits acceptance; its result is the frozen selection manifest.
+ */
+function settledWorkflow(
+  record: WorkflowRecord,
+  at: number,
+  manifest: ScheduleTerminal["result"] = null,
+): ScheduleTerminal | null {
   const state = record.state;
+  const result = record.definition.taskList ? manifest : record.output;
+  if (awaitingTaskAcceptance(record)) {
+    const effect = workflowEffect(record, true);
+    return {
+      status:
+        effect === "uncertain"
+          ? "uncertain"
+          : record.nodes.some((node) =>
+                ["failed", "skipped", "cancelled", "timed-out"].includes(node.state),
+              )
+            ? "partial"
+            : "succeeded",
+      effect,
+      reason: "task-list-acceptance-required",
+      result,
+      at,
+    };
+  }
   if (!["completed", "failed", "cancelled", "timed-out", "uncertain"].includes(state)) return null;
   return {
     status:
@@ -77,18 +125,9 @@ function settledWorkflow(record: WorkflowRecord, at: number): ScheduleTerminal |
         : state === "failed" || state === "cancelled" || state === "timed-out"
           ? state
           : "uncertain",
-    effect:
-      state === "uncertain" || record.nodes.some((node) => node.effect === "uncertain")
-        ? "uncertain"
-        : record.nodes.some((node) => node.effect === "partial")
-          ? "partial"
-          : record.nodes.some((node) => node.effect === "completed")
-            ? state === "completed"
-              ? "completed"
-              : "partial"
-            : "none",
+    effect: workflowEffect(record, state === "completed"),
     reason: `workflow-${state}`,
-    result: record.output,
+    result,
     at,
   };
 }
@@ -99,10 +138,13 @@ export function composeScheduleProductRuntime(
     tools: ProductToolBundle;
     workflows: WorkflowActions | null;
     workflowStore?: WorkflowStore;
+    /** The root session's task-list port; required for task-list targets. */
+    taskLists?: ProductTaskLists | null;
     preferences(): ModelPreferences;
   },
 ) {
   const { schedules } = options;
+  const taskLists = options.taskLists ?? null;
   const workspace = String(ports.correlation.workspaceId);
   const resources = ports.resources ?? processProductResources;
   const now = () => Number(ports.clock.now());
@@ -112,28 +154,50 @@ export function composeScheduleProductRuntime(
         composeWorkflowTool(ports.correlation.configurationGeneration, options.workflows),
       ])
     : options.tools;
-  const idsFor = (record: ScheduleRecord) =>
-    record.definition.target.kind === "action"
-      ? [record.definition.target.capability]
-      : [
-          ...new Set(
-            record.definition.target.definition.nodes.flatMap((node) =>
-              node.kind === "action"
-                ? [node.capability]
-                : node.kind === "agent"
-                  ? ["builtin:orchestration/delegate@1", ...node.capabilities]
-                  : [],
-            ),
-          ),
-        ];
+  const nodeIds = (definition: WorkflowDefinition) => [
+    ...new Set(
+      definition.nodes.flatMap((node) =>
+        node.kind === "action"
+          ? [node.capability]
+          : node.kind === "agent"
+            ? [DELEGATE, ...node.capabilities]
+            : [],
+      ),
+    ),
+  ];
+  /** Task-list agents are known only once an occurrence prepares its selection. */
+  const idsFor = (record: ScheduleRecord, prepared?: WorkflowDefinition) => {
+    const target = record.definition.target;
+    if (target.kind === "action") return [target.capability];
+    if (target.kind === "workflow") return nodeIds(target.definition);
+    return prepared ? nodeIds(prepared) : [DELEGATE];
+  };
+  /** The frozen selection manifest a task-list run names as its evidence source. */
+  const manifestOf = (record: WorkflowRecord): ScheduleTerminal["result"] => {
+    const source = record.definition.taskList?.source;
+    const id = source === undefined ? null : artifactId.parse(source);
+    if (!id?.ok || !ports.historyArtifacts) return null;
+    const found = ports.historyArtifacts.get(id.value);
+    return found.ok && found.value
+      ? { artifactId: id.value, digest: found.value.digest, byteLength: found.value.byteLength }
+      : null;
+  };
   async function validate(record: ScheduleRecord, signal: AbortSignal) {
     if (record.workspace !== workspace || signal.aborted)
       return err({ code: "workspace-unavailable" });
     const configuration = await schedules.current(record, signal);
     if (!configuration.ok) return configuration;
     if (!schedules.process) return err({ code: "schedule-host-unavailable" });
-    if (record.definition.target.kind === "workflow" && !options.workflows)
+    const target = record.definition.target;
+    if (target.kind !== "action" && !options.workflows)
       return err({ code: "workflow-owner-unavailable" });
+    if (target.kind === "task-list") {
+      // Task lists belong to the user's queues; package and imported sources cannot select them.
+      if (record.source.kind !== "user") return err({ code: "task-list-source-denied" });
+      if (!taskLists) return err({ code: "task-list-owner-unavailable" });
+      const selection = await readScheduledSelection(taskLists.actions, target, signal);
+      if (!selection.ok) return selection;
+    }
     if (
       record.definition.target.kind === "workflow" &&
       (!decodeWorkflowDefinition(record.definition.target.definition).ok ||
@@ -179,15 +243,17 @@ export function composeScheduleProductRuntime(
       const source = record.source;
       if (source.kind === "package") {
         const effects =
-          record.definition.target.kind === "action"
-            ? [entry.manifest.effectFor?.(record.definition.target.input) ?? entry.manifest.effect]
-            : record.definition.target.definition.nodes.flatMap((node) =>
-                node.kind === "action" && node.capability === id
-                  ? [node.effect]
-                  : node.kind === "agent"
-                    ? [...node.effects]
-                    : [],
-              );
+          target.kind === "action"
+            ? [entry.manifest.effectFor?.(target.input) ?? entry.manifest.effect]
+            : target.kind === "workflow"
+              ? target.definition.nodes.flatMap((node) =>
+                  node.kind === "action" && node.capability === id
+                    ? [node.effect]
+                    : node.kind === "agent"
+                      ? [...node.effects]
+                      : [],
+                )
+              : [];
         if (effects.some((effect) => !source.effects.includes(effect)))
           return err({ code: "package-schedule-effect-denied" });
       }
@@ -201,10 +267,11 @@ export function composeScheduleProductRuntime(
       });
     }
     if (
-      record.definition.target.kind === "workflow" &&
-      record.definition.target.definition.nodes.some(
-        (node) => node.kind === "model" || node.kind === "agent",
-      ) &&
+      (target.kind === "task-list" ||
+        (target.kind === "workflow" &&
+          target.definition.nodes.some(
+            (node) => node.kind === "model" || node.kind === "agent",
+          ))) &&
       !options.preferences().roles.default
     )
       return err({ code: "model-route-unavailable" });
@@ -225,6 +292,11 @@ export function composeScheduleProductRuntime(
   }
   const executor: ScheduleExecutor = {
     validate,
+    async preview(record, signal) {
+      const target = record.definition.target;
+      if (target.kind !== "task-list" || !taskLists) return ok(null);
+      return previewScheduledSelection(taskLists.actions, target, signal);
+    },
     async execute(record, attempt, signal, link) {
       const at = () => now();
       const terminal = (
@@ -267,6 +339,29 @@ export function composeScheduleProductRuntime(
       }
       const deadline = AbortSignal.timeout(Math.max(1, attempt.deadline - now()));
       const combined = AbortSignal.any([signal, deadline]);
+      // A task-list occurrence freezes its selection before any native authority is granted.
+      const selected = record.definition.target;
+      const occurrence: ScheduledTaskListOccurrence | null =
+        selected.kind !== "task-list"
+          ? null
+          : taskLists
+            ? await prepareScheduledTaskList({
+                taskLists,
+                artifacts,
+                target: selected,
+                attempt: attempt.id,
+                signal: combined,
+              })
+            : {
+                kind: "settled",
+                terminal: {
+                  status: "unavailable",
+                  effect: "none",
+                  reason: "task-list-owner-unavailable",
+                  result: null,
+                },
+              };
+      const prepared = occurrence?.kind === "prepared" ? occurrence : null;
       const gateway = createProductToolGateway({
         clock: ports.clock,
         resources,
@@ -293,7 +388,7 @@ export function composeScheduleProductRuntime(
         delegation: {
           route: options.preferences().roles.default ?? null,
           binding: null,
-          capabilities: idsFor(record),
+          capabilities: idsFor(record, prepared?.definition),
           effects: ["observation", "mutation", "external", "interactive"],
         },
         async instructionsCurrent(checkSignal) {
@@ -310,22 +405,36 @@ export function composeScheduleProductRuntime(
       const run = async () => {
         try {
           const target = record.definition.target;
-          const id =
-            target.kind === "action" ? target.capability : "builtin:orchestration/workflow@1";
+          if (occurrence?.kind === "settled") {
+            const settled = occurrence.terminal;
+            return terminal(settled.status, settled.effect, settled.reason, settled.result);
+          }
+          const workflowTarget =
+            target.kind === "workflow"
+              ? { definition: target.definition, arguments: target.arguments }
+              : prepared
+                ? { definition: prepared.definition, arguments: {} }
+                : null;
+          const id = target.kind === "action" ? target.capability : WORKFLOW;
           const entry = bundle.registry.resolveByCapabilityId(capabilityId.from(id));
           if (!entry) return terminal("unavailable", "none", "target-unavailable");
-          const handle = { id: attempt.id, generation: `schedule-${record.generation}` };
-          if (target.kind === "workflow" && !link({ workflow: handle, task: null }))
+          // Claims resolve a run by generation, so each task-list occurrence owns a unique one.
+          const handle = {
+            id: attempt.id,
+            generation: prepared ? attempt.id : `schedule-${record.generation}`,
+          };
+          if (workflowTarget && !link({ workflow: handle, task: null }))
             return terminal("uncertain", "uncertain", "workflow-link-unavailable");
-          const input =
-            target.kind === "action"
+          const input = workflowTarget
+            ? {
+                operation: "execute",
+                handle,
+                definitionJson: canonicalJson(workflowTarget.definition),
+                argumentsJson: canonicalJson(workflowTarget.arguments),
+              }
+            : target.kind === "action"
               ? target.input
-              : {
-                  operation: "execute",
-                  handle,
-                  definitionJson: canonicalJson(target.definition),
-                  argumentsJson: canonicalJson(target.arguments),
-                };
+              : {};
           const parsed = entry.manifest.inputSchema.safeParse(input);
           if (!parsed.success) return terminal("unavailable", "none", "target-input-invalid");
           let exactOutput: Readonly<Record<string, unknown>> | null = null;
@@ -342,7 +451,7 @@ export function composeScheduleProductRuntime(
             input: parsed.data,
             signal: combined,
           });
-          if (target.kind === "workflow") {
+          if (workflowTarget) {
             let cancellationDeadline: number | null = null;
             // A workflow receipt may be nonterminal. Settlement comes from its durable owner.
             for (;;) {
@@ -350,7 +459,7 @@ export function composeScheduleProductRuntime(
               if (!read?.ok) break;
               const workflow = read.value;
               if (workflow.task) link({ workflow: handle, task: workflow.task });
-              const settled = settledWorkflow(workflow, now());
+              const settled = settledWorkflow(workflow, now(), prepared?.manifest ?? null);
               if (settled) return settled;
               if (combined.aborted) {
                 // The original request signal already reaches the workflow owner.
@@ -454,7 +563,7 @@ export function composeScheduleProductRuntime(
     async reconcile(attempt) {
       if (attempt.workflow) {
         const read = options.workflowStore?.get(attempt.workflow);
-        return read?.ok ? settledWorkflow(read.value, now()) : null;
+        return read?.ok ? settledWorkflow(read.value, now(), manifestOf(read.value)) : null;
       }
       if (attempt.task) {
         const read = schedules.tasks.get(attempt.task);

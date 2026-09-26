@@ -446,6 +446,7 @@ export function composeDelegatedAgentRuntime(
             tools: baseTools,
             workflows,
             ...(options.workflows ? { workflowStore: options.workflows } : {}),
+            taskLists: workflows ? taskLists : null,
             preferences,
           })
         : null;

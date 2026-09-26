@@ -6,6 +6,7 @@ import type { Result } from "../foundation/result.ts";
 import { processBirthIdentitySchema } from "../process/process-identity.ts";
 import { processTaskArtifactSchema, processTaskHandleSchema } from "./process-task.ts";
 import { scheduleTimingSchema } from "./schedule-trigger.ts";
+import { workItemIdSchema, workQueueIdSchema, workReferenceSchema } from "./work-queue.ts";
 import { workflowDefinitionSchema } from "./workflow-definition.ts";
 import { workflowHandleSchema } from "./workflow-state.ts";
 
@@ -21,6 +22,27 @@ export const scheduleKeySchema = z
   .min(1)
   .max(128)
   .regex(/^[a-zA-Z0-9][a-zA-Z0-9._:-]*$/u);
+const selectedIds = z
+  .array(workItemIdSchema)
+  .max(256)
+  .refine((ids) => new Set(ids).size === ids.length, "duplicate-selection")
+  .default([]);
+/**
+ * An existing Todo selection by stable IDs. Each occurrence expands it once at
+ * the queue's then-current revision; the selector itself never names a title,
+ * row position or executor.
+ */
+export const scheduleTaskListTargetSchema = z
+  .strictObject({
+    kind: z.literal("task-list"),
+    queueId: workQueueIdSchema,
+    scopeGeneration: workReferenceSchema,
+    groups: selectedIds,
+    tasks: selectedIds,
+    autoCascade: z.boolean().default(false),
+  })
+  .refine((target) => target.groups.length + target.tasks.length > 0, "empty-selection");
+export type ScheduleTaskListTarget = z.infer<typeof scheduleTaskListTargetSchema>;
 export const scheduleDefinitionSchema = z
   .strictObject({
     version: z.literal(1),
@@ -36,6 +58,7 @@ export const scheduleDefinitionSchema = z
         definition: workflowDefinitionSchema,
         arguments: z.json(),
       }),
+      scheduleTaskListTargetSchema,
     ]),
     overlap: z
       .discriminatedUnion("kind", [
@@ -54,7 +77,12 @@ export const scheduleDefinitionSchema = z
     lookbackMs: z.int().min(1000).max(SCHEDULE_LIMITS.lookbackMs).default(86_400_000),
   })
   .superRefine((value, context) => {
-    const input = value.target.kind === "action" ? value.target.input : value.target.arguments;
+    const input =
+      value.target.kind === "action"
+        ? value.target.input
+        : value.target.kind === "workflow"
+          ? value.target.arguments
+          : value.target;
     if (
       Buffer.byteLength(canonicalJson(input)) > SCHEDULE_LIMITS.inputBytes ||
       Buffer.byteLength(canonicalJson(value)) > SCHEDULE_LIMITS.definitionBytes

@@ -28,7 +28,7 @@ import type {
 import type { AgentRegistry } from "./agent-registry.ts";
 import type { ProductResources } from "./product-resources.ts";
 import { createWorkQueueActions, type WorkQueueResponse } from "./work-queues.ts";
-import { prepareTaskListWorkflow } from "./workflow-task-list.ts";
+import { prepareTaskListWorkflow, TASK_LIST_ACCEPTANCE_WAIT } from "./workflow-task-list.ts";
 
 /** The local user the product already names for workflow questions. */
 export const PRODUCT_WORK_ACTOR = "local-user";
@@ -49,8 +49,6 @@ const TERMINAL_RUN_STATES = new Set<WorkflowRecord["state"]>([
   "uncertain",
 ]);
 const ACTIVE_NODE_STATES = new Set<WorkflowNodeRecord["state"]>(["pending", "running", "waiting"]);
-/** The task-list host's reason for a node whose execution settled and awaits the user. */
-const ACCEPTANCE_WAIT = "workflow-task-list-acceptance-required";
 
 export type ProductWorkQueueAuthorityOptions = {
   readonly role: ProductWorkRole;
@@ -123,7 +121,7 @@ export function createProductWorkQueueAuthority(
       if (node.state === "uncertain" || node.effect === "uncertain")
         return { ...execution, state: "uncertain" as const };
       // The task-list host waits here only after its agent settled and evidence was submitted.
-      if (node.state === "waiting" && node.reason === ACCEPTANCE_WAIT)
+      if (node.state === "waiting" && node.reason === TASK_LIST_ACCEPTANCE_WAIT)
         return { ...execution, state: "settled" as const };
       if (ACTIVE_NODE_STATES.has(node.state)) {
         if (run.task !== null && node.state !== "pending" && options.fenced?.(run.task) === true)
