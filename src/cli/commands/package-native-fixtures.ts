@@ -1,6 +1,7 @@
 import { expect } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
+import type { HookGrantRequirement } from "../../domain/extensions/hook-http.ts";
 import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
 import { type ExtraPackageFixture, preparePackageCliFixture } from "./package-health-fixtures.ts";
 
@@ -10,7 +11,7 @@ export async function prepareNativeCliFixture(
   extra?: ExtraPackageFixture,
 ) {
   const fixture = await preparePackageCliFixture(command, root, "healthy", true, extra);
-  const intent = {
+  let intent = {
     operationId: randomUUID(),
     packageId: "fixture",
     expectedRevision: 1,
@@ -20,7 +21,19 @@ export async function prepareNativeCliFixture(
       contributions: [fixture.contribution, ...fixture.extraContributions],
     },
   };
-  const preview = await fixture.invoke(["package", "enable"], intent, packageReceiptSchema);
+  let preview = await fixture.invoke(["package", "enable"], intent, packageReceiptSchema);
+  // HTTP hooks need the user's approval: answer the requirements the refusal lists.
+  if (preview.code === "hook-grant-required" && extra?.grant) {
+    const { requirements } = z
+      .object({ requirements: z.array(z.custom<HookGrantRequirement>()) })
+      .parse(preview.data);
+    intent = {
+      ...intent,
+      operationId: randomUUID(),
+      nativeActivation: { ...intent.nativeActivation, grants: requirements.map(extra.grant) },
+    } as typeof intent;
+    preview = await fixture.invoke(["package", "enable"], intent, packageReceiptSchema);
+  }
   expect(preview).toMatchObject({
     status: "preview",
     code: "native-activation-confirmation-required",

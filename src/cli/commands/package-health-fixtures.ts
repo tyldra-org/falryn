@@ -15,6 +15,10 @@ export type ExtraPackageFixture = {
     typeof import("../../domain/extensions/manifest.ts").contributionDeclarationSchema
   >[];
   files: Readonly<Record<string, string>>;
+  /** How the user answers each HTTP hook's approval requirement at enable time. */
+  grant?: (
+    requirement: import("../../domain/extensions/hook-http.ts").HookGrantRequirement,
+  ) => import("../../domain/extensions/hook-http.ts").HookGrant;
 };
 export async function preparePackageCliFixture(
   command: readonly string[],

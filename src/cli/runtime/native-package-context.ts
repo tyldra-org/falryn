@@ -2,6 +2,7 @@ import { join } from "node:path";
 import { createPackageExecutionAdmission } from "../../application/extensions/package-execution-admission.ts";
 import { packageToolContract } from "../../application/extensions/package-tool-contract.ts";
 import {
+  nativeDeclaration,
   type PreparedPackage,
   preparePackage,
 } from "../../application/extensions/prepare-package.ts";
@@ -136,9 +137,11 @@ export function createNativePackageContext(options: {
     );
     if (!selected) throw new ExtensionInputError("native-contribution-missing");
     const isHook = selected.identity.nativeKind === "hook";
+    // An HTTP hook starts no package code; its request goes through the governed egress owner.
+    const isHttpHook = isHook && nativeDeclaration(selected).hook?.handler.kind === "http-v1";
     const isSchedule = selected.identity.nativeKind === "schedule";
     const isPrompt = selected.identity.nativeKind === "prompt";
-    const dataOnly = isSchedule || isPrompt;
+    const dataOnly = isSchedule || isPrompt || isHttpHook;
     if (!dataOnly && !qualified()) throw new ExtensionInputError("native-tool-host-unavailable");
     const admitted = await createPackageExecutionAdmission({
       packages: records.packages,
@@ -148,7 +151,9 @@ export function createNativePackageContext(options: {
         ? { declarationKind: "schedule" as const }
         : isPrompt
           ? { declarationKind: "prompt" as const }
-          : { protocol: isHook ? HOOK_COMMAND_PROTOCOL : PACKAGE_TOOL_PROTOCOL }),
+          : isHttpHook
+            ? { declarationKind: "http-hook" as const }
+            : { protocol: isHook ? HOOK_COMMAND_PROTOCOL : PACKAGE_TOOL_PROTOCOL }),
       authority: (installed, contribution, signal) =>
         admission(control, installed, contribution, signal),
     })(

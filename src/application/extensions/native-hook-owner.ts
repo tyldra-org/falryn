@@ -1,5 +1,6 @@
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import { hookCommandContract } from "../../domain/extensions/hook-command-profile.ts";
+import { httpHookContract } from "../../domain/extensions/hook-http.ts";
 import { contributionDeclarationSchema } from "../../domain/extensions/manifest.ts";
 import type { HookHealth } from "../../domain/tools/hook-health.ts";
 import {
@@ -11,16 +12,20 @@ import {
 import type { NativeRegistrationOwner } from "./native-registration.ts";
 
 export const PACKAGE_HOOK_OWNER = "falryn-hook-registry-v1";
+/** The package handler kinds a host can run; others stay unavailable. */
+export type PackageHookHandlerKind = "external-command-v1" | "http-v1";
 export type PackageHookInvocation = {
   packageId: string;
   expectedRevision: number;
   contribution: string;
   activation: string;
+  handler: PackageHookHandlerKind;
   envelope: ToolHookEnvelope;
   context: ToolHookContext;
 };
 export function createNativeHookOwner(options: {
-  qualified(): boolean;
+  /** Whether this host can run the handler kind at all. */
+  qualified(handler: PackageHookHandlerKind): boolean;
   health?(identity: string, generation: string): HookHealth;
   execute(input: PackageHookInvocation): Promise<ToolHookDecision>;
 }): NativeRegistrationOwner {
@@ -29,12 +34,16 @@ export function createNativeHookOwner(options: {
     kind: "hook",
     register({ entry, contribution, activation, generation, hookGeneration }) {
       try {
-        if (!options.qualified())
-          throw new ExtensionInputError("hook-execution-profile-unavailable");
         if (entry.source.kind !== "package") throw new ExtensionInputError("hook-package-required");
         const declaration = contributionDeclarationSchema.parse(contribution.declaration);
         const packageId = entry.source.owner.packageId;
-        const registration = hookCommandContract(declaration);
+        const registration =
+          declaration.hook?.handler.kind === "http-v1"
+            ? httpHookContract(declaration)
+            : hookCommandContract(declaration);
+        const handler = registration.handler.kind === "http-v1" ? "http-v1" : "external-command-v1";
+        if (!options.qualified(handler))
+          throw new ExtensionInputError("hook-execution-profile-unavailable");
         if (!isToolHookPoint(registration.point))
           throw new ExtensionInputError("hook-publisher-unavailable");
         const owner = `p${canonicalDigest({ packageId: entry.source.owner.packageId, scope: activation.scopeKey }).slice(7, 70)}`;
@@ -71,6 +80,7 @@ export function createNativeHookOwner(options: {
               expectedRevision: activation.installedRevision,
               contribution: contribution.identityDigest,
               activation: canonicalDigest(activation),
+              handler,
               envelope,
               context,
             }),

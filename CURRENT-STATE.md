@@ -997,6 +997,17 @@ Health never enables native catalog bindings or automatic model invocation.
 `falryn package enable --input request.json` accepts a separate `nativeActivation`
 object with `scope` (`user` or `workspace`), `expectedRevision` (the activation
 revision, initially 0), and `contributions` (exact inspection identity digests).
+Each selected `http-v1` hook also needs one entry in `grants`: its `contribution`,
+exactly its declared `url`, and, when the hook names a credential, the user's
+`credential` reference (`operating-system-keychain` or `environment` store, locator,
+optional account label); `null` when it names none. A request without them fails as
+`hook-grant-required` and lists each hook's `requirements`; a different URL or
+credential shape fails as `hook-grant-destination-mismatch` or
+`hook-grant-credential-mismatch`, and a grant for anything else as
+`hook-grant-unexpected`. The preview repeats the requirements, and confirmation
+stores the grants with the activation, so disabling, withdrawing trust or updating
+the package revokes them with it. Activations without grants keep their exact
+stored digests.
 The outer `expectedRevision` is the installed package revision. Preview binds
 current trust, scope, installed bytes, dependency locks and configuration; repeat
 the same request with its returned `confirmation` to save activation. Migration
@@ -3189,7 +3200,8 @@ cleanup facts, health and remediation. External process transport, exit/signal,
 response decoding and omitted stream-byte counts remain separate; unknown effects
 stay unknown. Raw stdout/stderr, input, headers, prompts and nested exceptions are
 excluded from diagnostics. Strict remote/model receipt variants use nullable
-usage and effect uncertainty; their live adapters remain unavailable. Queue and
+usage and effect uncertainty; the HTTP adapter produces remote receipts, while MCP
+tool and model adapters remain unavailable. Queue and
 overflow receipts retain the captured binding. Failure receipts become transcript
 notices, including passive replay/export. Audit or health-store failure refuses
 required gates; after native settlement, persistence failure remains visible
@@ -3201,9 +3213,9 @@ handler/mode combinations. External entrypoints require inventory digest locks.
 handler and availability; human output reports the same unavailable reason.
 Inspection neither activates handlers nor exposes arguments or credentials.
 The handler union includes built-in, command, HTTP, MCP and evaluator declarations.
-Built-ins and explicitly installed/trusted/native-activated Python package hooks
-execute at the two gateway points. Other publishers and remote/evaluator adapters
-remain unavailable. One scheduler applies the declared class budgets: local
+Built-ins and explicitly installed/trusted/native-activated Python and HTTP package
+hooks execute at the two gateway points. Other publishers, MCP tool hooks and
+evaluator adapters remain unavailable. One scheduler applies the declared class budgets: local
 50 ms default/1,000 ms maximum/2,000 ms cumulative; remote 5/10/20 seconds;
 evaluator 10/30 seconds; mixed chains 60 seconds. The enclosing deadline always
 narrows them. Inspection displays resolved timeout, chain ceiling, blocking mode
@@ -3216,6 +3228,29 @@ execution declaration uses loader `python`, protocol `falryn-hook-command-v1`,
 and the same locked package-relative entrypoint and arguments as the hook.
 `src/cli/commands/package-hook-fixtures.ts` is a complete manifest/script example.
 Native package enablement uses the existing explicit activation confirmation.
+
+An `http-v1` hook declares an exact HTTPS URL, `nonlocalOptIn`, `authority.effects`
+with `external` (optionally `observation`) and, when it names a
+`credentialReference`, only that name in `secretReferences`; it has no execution and
+no other authority. It runs no package code, so it needs no Python or sandbox host.
+Each invocation rechecks the installed package and activation, then sends one POST
+of the shared hook input document (at most 64 KiB) to exactly the granted URL, with
+the granted credential as a bearer token resolved for that contribution alone.
+Every resolved address must be publicly routable: loopback, private, link-local,
+shared, documentation, multicast and reserved space, and IPv6 forms embedding such
+IPv4 addresses, fail as `hook-destination-private`, including when mixed with public
+answers. The connection is pinned to the checked address while TLS verifies the
+hostname, so a later rebinding cannot redirect it. Redirects fail as
+`hook-redirect-refused`, other non-2xx statuses as `hook-http-status`, and 204, empty,
+malformed, trailing, wrong-invocation and over-16-KiB responses as
+`invalid-hook-response` or `hook-response-too-large`. The decision is decoded by the
+same codec and native revalidation as command hooks; success is never consent.
+Receipts keep transport, status, HTTP status, response validity, omitted bytes and
+an unknown effect once sent, never headers, bodies or credentials. Cancellation,
+timeout and disconnect after sending are never retried. Async HTTP observers enter
+the same bounded queue; a headless run cancels queued observers when it ends, so
+they never outlive it. `src/domain/extensions/hook-fixtures.ts` has an example
+declaration.
 Missing or different runtimes remain unavailable; built-in hooks need no Python.
 There is no PATH search, interpreter installation, shell sourcing or fallback.
 

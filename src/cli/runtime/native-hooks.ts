@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { HookHttpPort } from "../../application/extensions/hook-http-port.ts";
 import { createNativeHookOwner } from "../../application/extensions/native-hook-owner.ts";
 import {
   createPackageExecutionAdmission,
@@ -12,6 +13,7 @@ import {
   HOOK_COMMAND_PROTOCOL,
   hookCommandContract,
 } from "../../domain/extensions/hook-command-profile.ts";
+import { httpHookContract } from "../../domain/extensions/hook-http.ts";
 import {
   type NativeActivationStore,
   nativeActivationKey,
@@ -24,6 +26,7 @@ export function composeNativeHooks(
   context: Context,
   records: CatalogRepositories,
   activations: NativeActivationStore,
+  http: HookHttpPort,
 ) {
   const host = createHostHookCommand({
     directory: join(context.root, "hook-processes"),
@@ -35,6 +38,7 @@ export function composeNativeHooks(
     {
       controller: AbortController;
       users: number;
+      handler: "external-command-v1" | "http-v1";
       packageId: string;
       scope: string;
       namespace: string;
@@ -67,16 +71,17 @@ export function composeNativeHooks(
         );
         const installed = records.packages.current(generation.packageId);
         // Replacement publication alone drains old work. Explicit disable, trust withdrawal,
-        // uninstall and stricter host policy revoke the owning execution generation.
+        // uninstall and stricter host policy revoke the owning execution generation. Losing
+        // the command host revokes only command handlers.
         if (
-          !host.available() ||
+          (generation.handler === "external-command-v1" && !host.available()) ||
           (current && (!current.enabled || current.trust !== "accepted")) ||
           (installed.ok && !installed.value.current)
         )
           generation.controller.abort();
       }
       return createNativeHookOwner({
-        qualified: host.available,
+        qualified: (handler) => handler === "http-v1" || host.available(),
         health: records.hookHealth,
         async execute(input) {
           const key = `${input.activation}:${input.contribution}`;
@@ -90,6 +95,7 @@ export function composeNativeHooks(
             generation = {
               controller: new AbortController(),
               users: 0,
+              handler: input.handler,
               packageId: input.packageId,
               scope: entry.source.activation.scopeAuthorityId,
               namespace: entry.contribution.namespace,
@@ -114,7 +120,9 @@ export function composeNativeHooks(
               packages: records.packages,
               bytes: context.bytes,
               host: context.host,
-              protocol: HOOK_COMMAND_PROTOCOL,
+              ...(input.handler === "http-v1"
+                ? { declarationKind: "http-hook" as const }
+                : { protocol: HOOK_COMMAND_PROTOCOL }),
               async authority(installed, contribution, signal) {
                 const authority = await context.admission(control, installed, contribution, signal);
                 const current = activations.get(nativeActivationKey(activation));
@@ -136,7 +144,6 @@ export function composeNativeHooks(
               requiredControls: [],
             };
             const admitted = await capture(request, signal);
-            const registration = hookCommandContract(admitted.declaration);
             const current = async () => {
               try {
                 return (
@@ -147,21 +154,36 @@ export function composeNativeHooks(
                 return false;
               }
             };
+            const wire = {
+              version: 1 as const,
+              invocationId: `${input.envelope.invocationId}:${input.envelope.phase}`,
+              contribution: {
+                packageId: input.packageId,
+                contributionId: input.contribution,
+                generation: Number(input.envelope.registrationGeneration),
+              },
+              envelope: input.envelope.catalog,
+            };
+            if (input.handler === "http-v1") {
+              // Only the user's grant on this exact activation approves the endpoint.
+              const grant = activation.grants?.find(
+                (value) => value.contribution === input.contribution,
+              );
+              if (!grant) throw new HookExecutionError("hook-destination-unapproved");
+              return http.run({
+                registration: httpHookContract(admitted.declaration),
+                grant,
+                wire,
+                context: { ...input.context, signal },
+                current,
+              });
+            }
             return host.run({
               snapshot: admitted.snapshot,
-              registration,
+              registration: hookCommandContract(admitted.declaration),
               context: { ...input.context, signal },
               current,
-              wire: {
-                version: 1,
-                invocationId: `${input.envelope.invocationId}:${input.envelope.phase}`,
-                contribution: {
-                  packageId: input.packageId,
-                  contributionId: input.contribution,
-                  generation: Number(input.envelope.registrationGeneration),
-                },
-                envelope: input.envelope.catalog,
-              },
+              wire,
             });
           })().catch((error: unknown) => {
             if (error instanceof PackageAdmissionError) throw new HookExecutionError(error.code);

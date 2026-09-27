@@ -2,14 +2,27 @@
 import { z } from "zod";
 import type { Result } from "../foundation/result.ts";
 import { canonicalDigest } from "./canonical.ts";
+import { hookGrantSchema } from "./hook-http.ts";
 import { digestSchema, generationSchema } from "./identity.ts";
 import { scopeAuthoritySchema } from "./scope-controls.ts";
+
+/**
+ * One grant per selected HTTP hook contribution; none for anything else. Absent rather
+ * than empty, so an activation without grants keeps the digest it always had.
+ */
+const grants = z
+  .array(hookGrantSchema)
+  .min(1)
+  .max(1_024)
+  .refine((value) => new Set(value.map((grant) => grant.contribution)).size === value.length)
+  .optional();
 
 export const nativeActivationRequestSchema = z
   .strictObject({
     scope: z.enum(["user", "workspace", "session", "process", "development"]),
     expectedRevision: generationSchema,
     contributions: z.array(digestSchema).min(1).max(1_024),
+    grants,
   })
   .refine((value) => new Set(value.contributions).size === value.contributions.length);
 
@@ -25,6 +38,8 @@ export const nativeActivationSchema = z
     configuration: digestSchema,
     contributions: z.array(digestSchema).min(1).max(1_024),
     revision: z.int().positive(),
+    /** The user's approvals for HTTP hook destinations and credentials (#1175). */
+    grants,
   })
   .refine((value) => new Set(value.contributions).size === value.contributions.length);
 export type NativeActivation = z.infer<typeof nativeActivationSchema>;
