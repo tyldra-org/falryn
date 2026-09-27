@@ -140,6 +140,16 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
     availability: (state) => (state.overlayOpen ? AVAILABLE : unavailable("no overlay is open")),
   },
   {
+    id: "questions.reopen",
+    title: "Show waiting questions",
+    description: "Show a structured question you left without answering.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["question", "answer", "reopen", "waiting"],
+    availability: (state) =>
+      state.hasWaitingQuestions ? AVAILABLE : unavailable("no question is waiting"),
+  },
+  {
     id: "view.scrollUp",
     title: "Scroll up",
     description: "Move the view up by a bounded amount.",

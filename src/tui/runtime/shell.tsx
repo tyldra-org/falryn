@@ -46,6 +46,7 @@ import { initialActivityCursor } from "../../presentation/index.ts";
 import type { SubmissionPort } from "../composer/submission.ts";
 import type { ConfirmationDecision, ConfirmationPrompt } from "../confirmation/index.ts";
 import type { ControlCatalog } from "../controls/index.ts";
+import type { QuestionPresenterPort } from "../questions/index.ts";
 import type { SessionNavigationController } from "../session-nav/index.ts";
 import {
   prefersConservativeSymbols,
@@ -137,6 +138,8 @@ export type ShellRunRequest = {
   readonly submission?: SubmissionPort;
   /** Provider/model choices projected from the selected connection catalog. */
   readonly controls?: ControlCatalog;
+  /** The host's local structured-question presenter; interactive product launches only. */
+  readonly questions?: QuestionPresenterPort;
   /** Resolves `@path` mentions. Optional because tests and no-workspace runs have none. */
   readonly fileProbe?: FileAttachmentProbe | null;
   /** Git changes dashboard. Optional when no workspace or git executable is available. */
@@ -359,6 +362,7 @@ async function frameFor(session: RendererSession, request: ShellRunRequest, onEx
       {...(request.transcriptFeed === undefined ? {} : { transcriptFeed: request.transcriptFeed })}
       {...(request.submission === undefined ? {} : { submission: request.submission })}
       {...(request.controls === undefined ? {} : { controls: request.controls })}
+      {...(request.questions === undefined ? {} : { questions: request.questions })}
       {...(request.fileProbe === undefined ? {} : { fileProbe: request.fileProbe })}
       {...(request.gitDashboard === undefined ? {} : { gitDashboard: request.gitDashboard })}
       {...(request.taskCommitPlan === undefined ? {} : { taskCommitPlan: request.taskCommitPlan })}
@@ -396,6 +400,7 @@ function LiveShell(props: {
   readonly transcriptFeed?: TranscriptFeed;
   readonly submission?: SubmissionPort;
   readonly controls?: ControlCatalog;
+  readonly questions?: QuestionPresenterPort;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
   readonly taskCommitPlan?: TaskCommitPlanRunner;
@@ -417,6 +422,7 @@ function LiveShell(props: {
         {...(props.transcriptFeed === undefined ? {} : { transcriptFeed: props.transcriptFeed })}
         {...(props.submission === undefined ? {} : { submission: props.submission })}
         {...(props.controls === undefined ? {} : { controls: props.controls })}
+        {...(props.questions === undefined ? {} : { questions: props.questions })}
         {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
         {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
         {...(props.taskCommitPlan === undefined ? {} : { taskCommitPlan: props.taskCommitPlan })}
@@ -444,6 +450,7 @@ function ProjectedShell(props: {
   readonly transcriptFeed?: TranscriptFeed;
   readonly submission?: SubmissionPort;
   readonly controls?: ControlCatalog;
+  readonly questions?: QuestionPresenterPort;
   readonly fileProbe?: FileAttachmentProbe | null;
   readonly gitDashboard?: GitDashboard;
   readonly taskCommitPlan?: TaskCommitPlanRunner;
@@ -468,6 +475,7 @@ function ProjectedShell(props: {
       {...(runtime.shutdown === null ? {} : { shutdown: runtime.shutdown })}
       {...(props.submission === undefined ? {} : { submission: props.submission })}
       {...(props.controls === undefined ? {} : { controls: props.controls })}
+      {...(props.questions === undefined ? {} : { questions: props.questions })}
       {...(props.fileProbe === undefined ? {} : { fileProbe: props.fileProbe })}
       {...(props.gitDashboard === undefined ? {} : { gitDashboard: props.gitDashboard })}
       {...(props.taskCommitPlan === undefined ? {} : { taskCommitPlan: props.taskCommitPlan })}

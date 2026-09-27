@@ -174,6 +174,13 @@ export type OverlayRoute =
    */
   | { readonly kind: "confirm"; readonly id: string }
   /**
+   * The structured question the local presenter is showing (#1163).
+   *
+   * The key is the presented question's identity. Closing this route leaves the
+   * question waiting; it never answers or refuses on the user's behalf.
+   */
+  | { readonly kind: "question"; readonly key: string }
+  /**
    * Session, model, execution-profile, context, or resource controls.
    *
    * The panel is which catalog is showing. Closing replaces the route, so a

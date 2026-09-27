@@ -52,6 +52,9 @@ const RENDERER_OWNERS = [
   // no password echo, so the sheet subscribes to keys and pastes itself rather
   // than routing every character through the registry.
   "overlays/confirmation.tsx",
+  // Structured question keys and bounded text capture (#1163), for the same
+  // reason: its keys belong to one question, not to a reusable registry binding.
+  "overlays/question.tsx",
   // Select navigation is a renderer-owned hook shared by the palette and the
   // application pickers. Its inputs remain local renderable behaviour.
   "overlays/select-navigation.ts",
@@ -955,6 +958,7 @@ describe("the rendered test harness", () => {
         "composer/live-composer-mid-turn.test.tsx",
         "overlays/palette.test.tsx",
         "overlays/profile-result.test.tsx",
+        "overlays/question.test.tsx",
         "visual/render-gate.test.tsx",
         "overlays/session-activation.test.tsx",
         "overlays/session-nav-sheet.test.tsx",

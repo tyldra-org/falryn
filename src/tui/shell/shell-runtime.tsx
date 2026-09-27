@@ -83,6 +83,7 @@ import type { SessionCreationPort } from "./session-creation.ts";
 import { runAvailableCommand } from "./shell-command-runner.ts";
 import type { ShellRuntime, ShellRuntimeOptions } from "./shell-runtime/contracts.ts";
 import { useShellControls } from "./shell-runtime/controls.ts";
+import { useShellQuestions } from "./shell-runtime/questions.ts";
 import {
   COMPOSER_REGION,
   commandStateFor,
@@ -271,6 +272,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const gate = useRenderGate();
   const stateRef = useRef(state);
   stateRef.current = state;
+  const questions = useShellQuestions({ dispatch, presenter: options.questions ?? null });
+  const { leave: leaveQuestion, reopen: reopenQuestion } = questions;
   const blocksRef = useRef(blocks);
   blocksRef.current = blocks;
   const heldPaste = useRef<{
@@ -930,8 +933,16 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           if (stateRef.current.overlay.kind === "confirm") {
             return confirm("deny");
           }
+          if (stateRef.current.overlay.kind === "question") {
+            leaveQuestion();
+            return true;
+          }
           dispatch({ kind: "close-overlay" });
           return true;
+        case "questions.reopen":
+          // Close the palette or help that ran it so the reopened question can take the sheet.
+          dispatch({ kind: "close-overlay" });
+          return reopenQuestion();
         case "composer.submit":
           submitComposer();
           return true;
@@ -1082,6 +1093,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       submitComposer,
       submitMidTurn,
       confirm,
+      leaveQuestion,
+      reopenQuestion,
     ],
   );
 
@@ -1270,6 +1283,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     paletteQuery,
     confirm,
     editSecret,
+    questions,
     compression,
     modelSettings:
       options.submission !== undefined && "modelSettings" in options.submission

@@ -38,7 +38,15 @@ import {
   createProcessTaskSupervisor,
   type ProcessTaskSupervisor,
 } from "../../application/orchestration/process-task-supervisor.ts";
-import type { ProductTaskResources } from "../../application/orchestration/product-resources.ts";
+import {
+  type ProductTaskResources,
+  processProductResources,
+} from "../../application/orchestration/product-resources.ts";
+import {
+  createLocalQuestionPresenter,
+  type LocalQuestionPresenter,
+  type QuestionPresenterPrincipal,
+} from "../../application/orchestration/question-presenter.ts";
 import {
   createStructuredQuestions,
   type StructuredQuestions,
@@ -118,6 +126,8 @@ export type ProductArtifactSession = {
   readonly records: ReturnType<typeof createRecordRepositories>;
   readonly workflows: WorkflowStore;
   readonly workflowQuestions: WorkflowQuestions | null;
+  /** The interactive host's local question presenter; null for headless hosts. */
+  readonly questionPresenter: LocalQuestionPresenter | null;
   readonly workQueues: WorkQueueLocations;
   readonly peers: ProductPeerMailboxes;
   readonly artifacts: DurableArtifactStore;
@@ -168,6 +178,10 @@ export async function openProductArtifactSession(
   services: Services,
   signal?: AbortSignal,
   ownedProcesses?: OwnedProcessRegistry,
+  options: {
+    /** An interactive terminal presents local-user questions; headless hosts leave them waiting. */
+    readonly localPresenter?: boolean;
+  } = {},
 ): Promise<ProductArtifactSession | null> {
   const roots = ["state", "artifacts", "temporaryIngest"] as const;
   const prepared = await services.localData.prepareRoots([...roots], signal);
@@ -303,6 +317,26 @@ export async function openProductArtifactSession(
     questions.close();
     questions = null;
   }
+  // One principal per host: an interactive terminal presents workflow questions locally.
+  const workflowPrincipal: QuestionPresenterPrincipal = {
+    actorId: "local-user",
+    channel: options.localPresenter ? "local-user" : "headless-user",
+    bindingId: "workflow",
+  };
+  const workflowQuestions = questions
+    ? createWorkflowQuestions(questions, workflowPrincipal)
+    : null;
+  const questionPresenter =
+    questions && options.localPresenter
+      ? createLocalQuestionPresenter({
+          questions,
+          openResources: () => processProductResources.openTask("question-presenter"),
+        })
+      : null;
+  if (workflowQuestions && questionPresenter)
+    workflowQuestions.subscribe((created) =>
+      questionPresenter.offer(created, workflowPrincipal, "Workflow question").then(() => {}),
+    );
   const listed = taskStore.list();
   if (listed.ok)
     for (const task of listed.value)
@@ -330,6 +364,7 @@ export async function openProductArtifactSession(
   async function closeStores(): Promise<boolean> {
     closed = true;
     let clean = true;
+    questionPresenter?.close();
     if (questions !== null && !questions.close()) clean = false;
     const attempt = async (close: () => void | Promise<void>) => {
       try {
@@ -488,13 +523,8 @@ export async function openProductArtifactSession(
       },
     },
     workflows: createWorkflowStore(store),
-    workflowQuestions: questions
-      ? createWorkflowQuestions(questions, {
-          actorId: "local-user",
-          channel: "headless-user",
-          bindingId: "workflow",
-        })
-      : null,
+    workflowQuestions,
+    questionPresenter,
     workQueues,
     async publishNativePackages(generation, signal, session) {
       if (closed) throw new Error("catalog-host-closed");

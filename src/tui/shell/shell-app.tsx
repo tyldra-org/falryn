@@ -66,6 +66,7 @@ import {
   confirmationView,
 } from "../confirmation/index.ts";
 import { type ControlCatalog, EMPTY_CONTROL_CATALOG, projectHeader } from "../controls/index.ts";
+import type { QuestionPresenterPort } from "../questions/index.ts";
 import type { CopyTextPort } from "../runtime/clipboard.ts";
 import type { SessionNavigationController } from "../session-nav/index.ts";
 import type { ThemeRequest } from "../theme/index.ts";
@@ -138,6 +139,8 @@ export type ShellAppProps = {
   readonly confirmation?: ConfirmationPrompt | null;
   readonly onConfirmation?: (decision: ConfirmationDecision) => void;
   readonly onSecretSubmit?: (secret: string) => void;
+  /** The host's local structured-question presenter (#1163). Absent in static frames. */
+  readonly questions?: QuestionPresenterPort;
   /** Plain-print fallback when clipboard copy is unavailable (#623). */
   readonly copyPlainPrint?: (text: string) => boolean;
   /**
@@ -210,6 +213,7 @@ export function ShellApp(props: ShellAppProps): ReactNode {
     ...(props.confirmation === undefined ? {} : { confirmation: props.confirmation }),
     ...(props.onConfirmation === undefined ? {} : { onConfirmation: props.onConfirmation }),
     ...(props.onSecretSubmit === undefined ? {} : { onSecretSubmit: props.onSecretSubmit }),
+    ...(props.questions === undefined ? {} : { questions: props.questions }),
     ...(props.workspace === undefined ? {} : { workspace: props.workspace }),
     ...(props.workspaceController === undefined
       ? {}
@@ -258,6 +262,8 @@ export function ShellApp(props: ShellAppProps): ReactNode {
             (runtime.state.overlay.panel === "add" || runtime.state.overlay.panel === "save")) ||
           (runtime.state.overlay.kind === "session-nav" &&
             runtime.state.overlay.panel === "rewind") ||
+          // The question sheet takes text and bare keys; overlay letter commands must not fire.
+          runtime.state.overlay.kind === "question" ||
           (runtime.state.overlay.kind === "confirm" &&
             runtime.state.boundConfirmation?.secret !== null)
         }
@@ -399,6 +405,7 @@ function ResolvedShell(
         props.runtime.confirm(id);
       }}
       onSecretEdit={props.runtime.editSecret}
+      questions={props.runtime.questions}
       controls={catalog}
       selectedSessionId={props.runtime.state.selectedSessionId}
       selectedModelKey={props.runtime.state.selectedModelKey}

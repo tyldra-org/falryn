@@ -65,6 +65,8 @@ export function overlayRegions(route: OverlayRoute): readonly FocusRegion[] {
       return [{ id: "overlay.inspect", label: "inspector" }];
     case "confirm":
       return [{ id: "overlay.confirm", label: "confirmation" }];
+    case "question":
+      return [{ id: "overlay.question", label: "question" }];
     case "controls":
       return [{ id: "overlay.controls", label: "controls" }];
     case "profile-result":
@@ -114,6 +116,10 @@ export type ShellState = {
   readonly secretGraphemes: number;
   /** Last decided identity, so the same prompt is not re-offered. */
   readonly resolvedConfirmationKey: string | null;
+  /** The question the local presenter is showing, when one is; its sheet yields to confirmations. */
+  readonly offeredQuestion: string | null;
+  /** Questions the user left unanswered that can be shown again. */
+  readonly leftQuestions: number;
   readonly selectedSessionId: string | null;
   /** Provider-qualified model control key, never a bare model ID. */
   readonly selectedModelKey: string | null;
@@ -145,6 +151,7 @@ export type ShellAction =
   | { readonly kind: "withdraw-confirmation" }
   | { readonly kind: "resolve-confirmation"; readonly decision: "accepted" | "refused" }
   | { readonly kind: "secret-mask"; readonly graphemes: number }
+  | { readonly kind: "question-view"; readonly key: string | null; readonly left: number }
   | { readonly kind: "select-control"; readonly field: "session" | "model"; readonly id: string }
   | { readonly kind: "artifact-toggle-layout" }
   | { readonly kind: "artifact-next-hunk" }
@@ -167,6 +174,8 @@ export const INITIAL_SHELL_STATE: ShellState = {
   boundConfirmation: null,
   secretGraphemes: 0,
   resolvedConfirmationKey: null,
+  offeredQuestion: null,
+  leftQuestions: 0,
   selectedSessionId: null,
   selectedModelKey: null,
   workspace: EMPTY_WORKSPACE_SET,
@@ -175,6 +184,26 @@ export const INITIAL_SHELL_STATE: ShellState = {
 
 function confirmRoute(prompt: ConfirmationPrompt): OverlayRoute {
   return { kind: "confirm", id: prompt.id };
+}
+
+/** Where the shell rests when no overlay was asked for: an offered question, or nothing. */
+function restingRoute(state: ShellState): OverlayRoute {
+  return state.offeredQuestion === null
+    ? { kind: "none" }
+    : { kind: "question", key: state.offeredQuestion };
+}
+
+function rest(state: ShellState, notice: string | null): ShellState {
+  const route = restingRoute(state);
+  return {
+    ...state,
+    overlay: route,
+    focus:
+      route.kind === "none"
+        ? releaseFocus(state.focus, FRAME_REGIONS)
+        : containFocus(state.focus, overlayRegions(route)),
+    notice,
+  };
 }
 
 function noticeFor(decision: "accepted" | "refused"): string {
@@ -195,16 +224,16 @@ function clearConfirmation(state: ShellState, notice: string | null): ShellState
     state.boundConfirmation === null
       ? state.resolvedConfirmationKey
       : resolvedConfirmationKey(state.boundConfirmation);
-  return {
-    ...state,
-    overlay: { kind: "none" },
-    focus: releaseFocus(state.focus, FRAME_REGIONS),
+  return rest(
+    {
+      ...state,
+      pendingConfirmation: null,
+      boundConfirmation: null,
+      secretGraphemes: 0,
+      resolvedConfirmationKey: resolved,
+    },
     notice,
-    pendingConfirmation: null,
-    boundConfirmation: null,
-    secretGraphemes: 0,
-    resolvedConfirmationKey: resolved,
-  };
+  );
 }
 
 /** Pure owner of shell, focus, transcript-reader, and composer transitions. */
@@ -220,6 +249,10 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
     case "close-overlay":
       if (state.overlay.kind === "none") {
         return state;
+      }
+      if (state.overlay.kind === "question") {
+        // The runtime leaves the question through the presenter; this only stops showing it.
+        return rest({ ...state, offeredQuestion: null }, null);
       }
       if (state.overlay.kind !== "confirm" && state.boundConfirmation !== null) {
         const route = confirmRoute(state.boundConfirmation);
@@ -346,6 +379,19 @@ export function shellReducer(state: ShellState, action: ShellAction): ShellState
       return state.secretGraphemes === action.graphemes
         ? state
         : { ...state, secretGraphemes: action.graphemes };
+    case "question-view": {
+      if (state.offeredQuestion === action.key && state.leftQuestions === action.left) {
+        return state;
+      }
+      const next = { ...state, offeredQuestion: action.key, leftQuestions: action.left };
+      // A question never covers another overlay; it waits and appears when that one closes.
+      if (state.overlay.kind === "question" || state.overlay.kind === "none") {
+        return state.overlay.kind === "none" && action.key === null
+          ? next
+          : rest(next, state.notice);
+      }
+      return next;
+    }
     case "select-control": {
       const selected =
         action.field === "session"
@@ -463,6 +509,7 @@ export function commandStateFor(
     confirmationStale: stale,
     confirmationNeedsSecret:
       bound !== null && !stale && bound.secret !== null && state.secretGraphemes === 0,
+    hasWaitingQuestions: state.leftQuestions > 0,
     hasOpenableArtifact: openableArtifact(selected),
     hasDiffArtifactOverlay:
       state.overlay.kind === "artifact" && state.overlay.presentation === "diff",

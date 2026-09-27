@@ -48,6 +48,8 @@ export type CommandState = {
   readonly hasConfirmation: boolean;
   readonly confirmationStale: boolean;
   readonly confirmationNeedsSecret: boolean;
+  /** A structured question was left unanswered and can be shown again. */
+  readonly hasWaitingQuestions: boolean;
   readonly hasRunningWork: boolean;
   readonly hasInFlightSubmission: boolean;
   readonly hasOpenableArtifact: boolean;
@@ -77,6 +79,7 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   hasConfirmation: false,
   confirmationStale: false,
   confirmationNeedsSecret: false,
+  hasWaitingQuestions: false,
   hasRunningWork: false,
   hasInFlightSubmission: false,
   hasOpenableArtifact: false,
