@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import {
   type McpConfiguration,
@@ -439,4 +439,206 @@ test("stale, changed and revoked tool selections fail before any call", async ()
     kind: "stale",
   });
   expect(calls()).toBe(1);
+});
+
+describe("tool calls that need user input", () => {
+  const FORM = {
+    method: "elicitation/create",
+    params: {
+      mode: "form",
+      message: "Which branch?",
+      requestedSchema: {
+        type: "object",
+        properties: { branch: { type: "string", enum: ["main", "next"] } },
+        required: ["branch"],
+      },
+    },
+  };
+  const echo = "mcp:s/tool/echo";
+  /** A server that asks once, then echoes what it was sent. */
+  async function asking(ask?: (params: Readonly<Record<string, unknown>>) => unknown) {
+    const h = harness();
+    const sent: Readonly<Record<string, unknown>>[] = [];
+    h.replies["tools/call"] = (params) => {
+      sent.push(params);
+      if (ask) return ask(params);
+      return params.inputResponses === undefined
+        ? {
+            resultType: "input_required",
+            inputRequests: { confirm: FORM },
+            requestState: "opaque-1",
+          }
+        : { content: [{ type: "text", text: "done" }] };
+    };
+    await h.connect();
+    const generation = (await h.discover()).catalogGeneration ?? 0;
+    return { h, sent, generation };
+  }
+
+  test("an accepted answer is retried with the verbatim state and leaves only a receipt", async () => {
+    const { h, sent, generation } = await asking();
+    const events: unknown[] = [];
+    const asked: unknown[] = [];
+    const called = await h.catalog.callTool(echo, generation, { value: "hi" }, h.call(), {
+      ask: async (request) => {
+        asked.push(request.form.fields.map((field) => field.name));
+        return {
+          response: { action: "accept", content: { branch: "next" } },
+          disposition: "accept",
+        };
+      },
+      observe: (event) => events.push(event),
+    });
+    expect(asked).toEqual([["branch"]]);
+    expect(sent).toHaveLength(2);
+    expect(sent[1]).toEqual({
+      name: "echo",
+      arguments: { value: "hi" },
+      inputResponses: { confirm: { action: "accept", content: { branch: "next" } } },
+      requestState: "opaque-1",
+    });
+    expect(called).toMatchObject({
+      kind: "completed",
+      value: {
+        content: [{ type: "text", text: "done" }],
+        inputRounds: [{ round: 1, key: "confirm", disposition: "accept" }],
+      },
+    });
+    const digest = called.kind === "completed" ? called.value.inputRounds[0]?.schemaDigest : "";
+    expect(digest).toMatch(/^sha256:/u);
+    expect(events).toMatchObject([
+      { point: "mcp.elicitation", payload: { serverId: "s", schemaDigest: digest } },
+      { point: "mcp.elicitation.result", payload: { serverId: "s", disposition: "accept" } },
+    ]);
+    // Neither the receipts nor the hook payloads carry the answer.
+    expect(JSON.stringify([called, events])).not.toContain("next");
+  });
+
+  test("without a way to ask, each request is cancelled, never answered", async () => {
+    const { h, sent, generation } = await asking();
+    const called = await h.catalog.callTool(echo, generation, { value: "hi" }, h.call());
+    expect(sent[1]?.inputResponses).toEqual({ confirm: { action: "cancel" } });
+    expect(called).toMatchObject({
+      kind: "completed",
+      value: { inputRounds: [{ disposition: "cancel" }] },
+    });
+  });
+
+  test("a refusal declines", async () => {
+    const { h, sent, generation } = await asking();
+    await h.catalog.callTool(echo, generation, { value: "hi" }, h.call(), {
+      ask: async () => ({ response: { action: "decline" }, disposition: "decline" }),
+    });
+    expect(sent[1]?.inputResponses).toEqual({ confirm: { action: "decline" } });
+  });
+
+  test("an unsupported request ends the call uncertain without asking or retrying", async () => {
+    const { h, sent, generation } = await asking(() => ({
+      resultType: "input_required",
+      inputRequests: {
+        visit: {
+          method: "elicitation/create",
+          params: { mode: "url", message: "Go", url: "https://x.test", elicitationId: "v" },
+        },
+      },
+    }));
+    let asked = 0;
+    const called = await h.catalog.callTool(echo, generation, { value: "hi" }, h.call(), {
+      ask: async () => {
+        asked++;
+        return { response: { action: "cancel" }, disposition: "cancel" };
+      },
+    });
+    expect(called).toEqual({
+      kind: "failed",
+      code: "mcp-input-request-unsupported",
+      effect: "uncertain",
+    });
+    expect([asked, sent.length]).toEqual([0, 1]);
+  });
+
+  test("a server that keeps asking is stopped after four answered rounds", async () => {
+    let round = 0;
+    const { h, sent, generation } = await asking(() => ({
+      resultType: "input_required",
+      inputRequests: { confirm: FORM },
+      requestState: `round-${++round}`,
+    }));
+    let asked = 0;
+    const called = await h.catalog.callTool(echo, generation, { value: "hi" }, h.call(), {
+      ask: async () => {
+        asked++;
+        return {
+          response: { action: "accept", content: { branch: "main" } },
+          disposition: "accept",
+        };
+      },
+    });
+    expect(called).toEqual({
+      kind: "failed",
+      code: "mcp-input-rounds-exceeded",
+      effect: "uncertain",
+    });
+    expect([asked, sent.length]).toEqual([4, 5]);
+    expect(sent.map((params) => params.requestState ?? null)).toEqual([
+      null,
+      "round-1",
+      "round-2",
+      "round-3",
+      "round-4",
+    ]);
+  });
+
+  test("a catalog change while the question is open withdraws it and sends nothing stale", async () => {
+    const { h, sent, generation } = await asking();
+    const called = await h.catalog.callTool(echo, generation, { value: "hi" }, h.call(), {
+      ask: (request) =>
+        new Promise((resolve) => {
+          h.change();
+          // The open question is withdrawn as soon as the catalog stops being current.
+          request.signal.addEventListener("abort", () =>
+            resolve({ response: { action: "cancel" }, disposition: "cancel" }),
+          );
+        }),
+    });
+    expect(called).toEqual({ kind: "stale", code: "mcp-catalog-entry-stale", effect: "uncertain" });
+    expect(sent).toHaveLength(1);
+  });
+
+  test("a disconnect while the question is open withdraws it and sends nothing", async () => {
+    const { h, sent, generation } = await asking();
+    const called = await h.catalog.callTool(echo, generation, { value: "hi" }, h.call(), {
+      ask: (request) =>
+        new Promise((resolve) => {
+          void h.lifecycle.stop("s");
+          request.signal.addEventListener("abort", () =>
+            resolve({ response: { action: "cancel" }, disposition: "cancel" }),
+          );
+        }),
+    });
+    expect(called).toEqual({ kind: "stale", code: "mcp-catalog-entry-stale", effect: "uncertain" });
+    expect(sent).toHaveLength(1);
+  });
+
+  test("an abandoned call sends no answer", async () => {
+    const { h, sent, generation } = await asking();
+    const abort = new AbortController();
+    const called = await h.catalog.callTool(
+      echo,
+      generation,
+      { value: "hi" },
+      { ...h.call(), signal: abort.signal },
+      {
+        ask: async () => {
+          abort.abort();
+          return {
+            response: { action: "accept", content: { branch: "main" } },
+            disposition: "accept",
+          };
+        },
+      },
+    );
+    expect(called).toEqual({ kind: "cancelled", code: "mcp-call-cancelled", effect: "uncertain" });
+    expect(sent).toHaveLength(1);
+  });
 });

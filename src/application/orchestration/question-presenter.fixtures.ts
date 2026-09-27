@@ -85,6 +85,9 @@ export async function questionPresenterFixture() {
   }
   return {
     ...f,
+    questions,
+    owner,
+    budget,
     presenter,
     ask,
     get scopes() {

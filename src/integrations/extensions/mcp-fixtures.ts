@@ -100,6 +100,14 @@ const fixtureTools = [
   },
   { name: "fail", description: "Always reports a tool error.", inputSchema: { type: "object" } },
   { name: "ask", description: "Asks the user first.", inputSchema: { type: "object" } },
+  { name: "ask-url", description: "Asks for a browser visit.", inputSchema: { type: "object" } },
+  {
+    name: "ask-sampling",
+    description: "Asks for a model sample.",
+    inputSchema: { type: "object" },
+  },
+  { name: "ask-forever", description: "Never stops asking.", inputSchema: { type: "object" } },
+  { name: "ask-wide", description: "Asks too many fields.", inputSchema: { type: "object" } },
   {
     name: "union",
     inputSchema: {
@@ -108,8 +116,78 @@ const fixtureTools = [
     },
   },
 ];
+/** The form the `ask` tools request; answers are echoed so tests can see exactly what was sent. */
+export const MCP_FIXTURE_FORM = {
+  mode: "form",
+  message: "Which branch should the release use?",
+  requestedSchema: {
+    type: "object",
+    properties: {
+      branch: { type: "string", title: "Branch", enum: ["main", "next"] },
+      notify: { type: "boolean", title: "Notify the team" },
+    },
+    required: ["branch"],
+  },
+} as const;
+const inputRequired = (inputRequests: Record<string, unknown>, requestState?: string) => ({
+  resultType: "input_required",
+  inputRequests,
+  ...(requestState === undefined ? {} : { requestState }),
+});
+function askCall(name: string, params: Record<string, unknown>) {
+  const responses = params.inputResponses as Record<string, unknown> | undefined;
+  const state = typeof params.requestState === "string" ? params.requestState : undefined;
+  const form = { method: "elicitation/create", params: MCP_FIXTURE_FORM };
+  if (name === "ask-url")
+    return inputRequired({
+      visit: {
+        method: "elicitation/create",
+        params: {
+          mode: "url",
+          message: "Sign in to continue.",
+          url: "https://example.test/sign-in",
+          elicitationId: "sign-in",
+        },
+      },
+    });
+  if (name === "ask-sampling")
+    return inputRequired({
+      sample: {
+        method: "sampling/createMessage",
+        params: {
+          messages: [{ role: "user", content: { type: "text", text: "hi" } }],
+          maxTokens: 8,
+        },
+      },
+    });
+  if (name === "ask-wide")
+    return inputRequired({
+      wide: {
+        method: "elicitation/create",
+        params: {
+          mode: "form",
+          message: "Too many fields.",
+          requestedSchema: {
+            type: "object",
+            properties: Object.fromEntries(
+              Array.from({ length: 9 }, (_, index) => [`field${index}`, { type: "string" }]),
+            ),
+          },
+        },
+      },
+    });
+  if (name === "ask-forever")
+    return inputRequired({ confirm: form }, `round-${Number(state?.slice(6) ?? 0) + 1}`);
+  if (responses === undefined) return inputRequired({ confirm: form }, "ask-1");
+  return {
+    resultType: "complete",
+    content: [{ type: "text", text: JSON.stringify({ requestState: state ?? null, responses }) }],
+  };
+}
 function toolCall(params: Record<string, unknown>) {
   const values = (params.arguments ?? {}) as Record<string, unknown>;
+  if (typeof params.name === "string" && params.name.startsWith("ask"))
+    return askCall(params.name, params);
   if (params.name === "sum") {
     const sum = Number(values.a) + Number(values.b);
     return {
@@ -123,20 +201,6 @@ function toolCall(params: Record<string, unknown>) {
       resultType: "complete",
       isError: true,
       content: [{ type: "text", text: "bad input" }],
-    };
-  if (params.name === "ask")
-    return {
-      resultType: "input_required",
-      inputRequests: {
-        confirm: {
-          method: "elicitation/create",
-          params: {
-            mode: "form",
-            message: "Continue?",
-            requestedSchema: { type: "object", properties: {} },
-          },
-        },
-      },
     };
   return {
     resultType: "complete",

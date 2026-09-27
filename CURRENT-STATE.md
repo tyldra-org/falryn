@@ -1294,11 +1294,46 @@ schema.
 The result records the entry, catalog generation and schema digest with `isError`,
 `content` and `structuredContent`. `isError` is the tool's own reported error: the
 invocation completes so the model can correct it. A malformed result is
-`mcp-tool-result-malformed`, an input request is
-`mcp-input-required-unavailable`, and oversized results are
+`mcp-tool-result-malformed` and oversized results are
 `mcp-result-too-large`; these and disconnects after dispatch report an uncertain
-effect and are never retried. A result is untrusted content: payloads that resemble
+effect and are never retried. An uncertain effect describes the server: the call has
+settled locally, so its resource reservation is released rather than held for a
+termination that cannot come. A result is untrusted content: payloads that resemble
 task progress or Todo state carry no authority.
+
+A current-protocol server may ask for form input during `mcp_call_tool`.
+Current-protocol connections declare form elicitation only; legacy connections
+declare none, and `prompts/get` and `resources/read` still return
+`mcp-input-required-unavailable`. A round may carry four form requests, each
+with a message of at most 8 KiB and at most eight fields of the supported
+string, number, integer, boolean, enum and enum-array schemas. The message and the
+first field's label must fit one 8,192-character question prompt; a choice may
+have 32 options, one fewer when optional. Anything else, including URL, sampling
+and roots requests, ends the call as `mcp-input-request-unsupported` with an
+uncertain effect and no retry.
+
+Each form request becomes one structured question for the local user, showing
+the server, tool and message. Choices, yes/no fields and optional fields (with a
+skip option) are selections; text and numbers are free text validated after
+entry against length, format and bounds. Server defaults are shown as suggestions
+and never applied. An answer that fails validation is asked again with the
+reason, at most three times, and is never sent. Answered becomes `accept` with
+the validated content, refused becomes `decline`, and expiry, cancellation, a
+missing presenter or exhausted attempts become `cancel`. Headless runs have no
+presenter, so every request is cancelled; nothing is answered for the user.
+
+Before each retry the selection is revalidated; the retry repeats the tool name
+and arguments with `inputResponses` and the server's verbatim `requestState` on
+a new request. A disconnect, reload or catalog change while a question is open
+withdraws the question and ends the call as stale with an uncertain effect,
+sending nothing. An abandoned call sends nothing more. After four answered rounds
+a further request ends the call as `mcp-input-rounds-exceeded`. Each MCP request
+keeps its 30-second deadline, `mcp_call_tool` may run for 16 minutes, and each
+question waits at most 15 minutes, narrowed so the retry still fits. The result
+adds `inputRounds` receipts (round, request key, schema digest and `accept`,
+`decline`, `cancel` or `timeout`) without answer contents. The
+`mcp.elicitation` and `mcp.elicitation.result` hook payloads are produced with
+the same facts; no hook dispatcher consumes them yet.
 
 The integration pins `@modelcontextprotocol/client` 2.0.0. The default protocol is
 2026-07-28: HTTP uses protocol/routing metadata without initialize or a protocol
@@ -2561,7 +2596,8 @@ model answer tool, and goal adapter remain separate.
 
 An interactive terminal session binds one local presenter principal
 (`local-user` channel); headless and non-interactive hosts keep the
-`headless-user` principal and bind no presenter. The local presenter connects to
+`headless-user` principal and bind no presenter. Workflow question nodes and MCP
+form input requests both publish to that principal. The local presenter connects to
 each question published for that principal in the session, holds at most 64 in
 publication order, and shows one at a time in an OpenTUI question sheet. The
 sheet shows the source, prompt, time left and how many more are waiting, and

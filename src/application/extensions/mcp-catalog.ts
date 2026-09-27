@@ -9,6 +9,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { contentDigest } from "../../domain/artifacts/index.ts";
 import type { VirtualResourcePortError } from "../../domain/documents/index.ts";
+import { HOOK_POINTS } from "../../domain/extensions/hook-points.ts";
 import {
   MCP_DEADLINE_MS,
   type McpAdmission,
@@ -31,9 +32,16 @@ import {
   parseUriTemplate,
   validateMcpArguments,
 } from "../../domain/extensions/mcp-catalog.ts";
+import {
+  admitMcpInputRound,
+  MCP_INPUT_LIMITS,
+  type McpInputDisposition,
+  type McpInputResponse,
+} from "../../domain/extensions/mcp-input.ts";
 import { err, ok } from "../../domain/foundation/index.ts";
 import type { ResourceResolverOptions } from "../documents/resource-resolver.ts";
 import { resourceDigest } from "../documents/resource-retention.ts";
+import type { McpInputAnswer, McpInputAsk } from "./mcp-input.ts";
 import type { McpLifecycle } from "./mcp-lifecycle.ts";
 
 export const MCP_CATALOG_PAGE_ENTRIES = 100;
@@ -41,6 +49,8 @@ export const MCP_TEMPLATE_RESOLUTIONS = 256;
 export const MCP_PROMPT_MESSAGES = 256;
 export const MCP_TOOL_VALIDATORS = 256;
 export const MCP_TOOL_CONTENT_ITEMS = 1024;
+/** How often an open input question checks that its server and catalog are still current. */
+export const MCP_INPUT_WATCH_MS = 250;
 const PENDING_READS = 8;
 
 export type McpCatalogState = "unknown" | "current" | "stale";
@@ -97,7 +107,31 @@ export type McpToolResult = {
   readonly isError: boolean;
   readonly content: readonly unknown[];
   readonly structuredContent: unknown;
+  /** One receipt per answered input request, in order; never the answer itself. */
+  readonly inputRounds: readonly McpInputReceipt[];
 };
+export type McpInputReceipt = {
+  readonly round: number;
+  readonly key: string;
+  readonly schemaDigest: string;
+  readonly disposition: McpInputDisposition;
+};
+type HookPayload<P extends "mcp.elicitation" | "mcp.elicitation.result"> = z.infer<
+  (typeof HOOK_POINTS)[P]["payload"]
+>;
+/** Declared hook-point payloads, produced for hook dispatch; they never carry answers. */
+export type McpInputHookEvent =
+  | { readonly point: "mcp.elicitation"; readonly payload: HookPayload<"mcp.elicitation"> }
+  | {
+      readonly point: "mcp.elicitation.result";
+      readonly payload: HookPayload<"mcp.elicitation.result">;
+    };
+/** How one tool call answers input requests. Without `ask`, every request is cancelled. */
+export type McpToolInput = {
+  readonly ask?: McpInputAsk;
+  readonly observe?: (event: McpInputHookEvent) => void;
+};
+const UNANSWERED: McpInputAnswer = { response: { action: "cancel" }, disposition: "cancel" };
 /** Per-call identity supplied by the invoking tool; the catalog adds server generations. */
 export type McpCatalogCall = Pick<McpAdmission, "origin" | "requestId" | "deadline" | "signal">;
 
@@ -270,6 +304,28 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
     serverId: record.serverId,
     configurationGeneration: record.configurationGeneration,
   });
+  /**
+   * Run one input question while its server, transport and catalog stay current. A
+   * disconnect, reload or catalog change aborts the question and reports the call stale.
+   */
+  const watched = async (
+    serverId: string,
+    catalogGeneration: number,
+    signal: AbortSignal,
+    run: (signal: AbortSignal) => Promise<McpInputAnswer>,
+  ): Promise<McpInputAnswer | "stale"> => {
+    const stop = new AbortController();
+    const timer = setInterval(() => {
+      if (!currentRecord(serverId, catalogGeneration)) stop.abort();
+    }, MCP_INPUT_WATCH_MS);
+    timer.unref?.();
+    try {
+      const answered = await run(AbortSignal.any([signal, stop.signal]));
+      return currentRecord(serverId, catalogGeneration) ? answered : "stale";
+    } finally {
+      clearInterval(timer);
+    }
+  };
   const describeFailure = (outcome: McpCatalogFailure): VirtualResourcePortError => ({
     code:
       outcome.kind === "stale" || outcome.kind === "cancelled"
@@ -562,13 +618,16 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
     },
     /**
      * Invoke one tool selected from an exact catalog generation. Arguments must satisfy its
-     * normalized schema; the selection is revalidated immediately before the single dispatch.
+     * normalized schema; the selection is revalidated immediately before every dispatch. A
+     * server may ask for form input up to four times; each round is answered through `input`
+     * and retried with the verbatim request state on a new request.
      */
     async callTool(
       entryId: string,
       catalogGeneration: number,
       values: Readonly<Record<string, unknown>>,
       context: McpCatalogCall,
+      input: McpToolInput = {},
     ): Promise<McpCatalogResult<McpToolResult>> {
       const found = selected(entryId, catalogGeneration, "tool");
       if ("kind" in found) return found;
@@ -584,29 +643,101 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
       }
       if (!validator.safeParse(values).success)
         return failure("malformed", "mcp-tool-arguments-invalid");
-      if (!currentRecord(record.serverId, catalogGeneration))
-        return failure("stale", "mcp-catalog-entry-stale");
-      const outcome = await ports.lifecycle.request(
-        call(record, context),
-        record.transportGeneration,
-        "tools/call",
-        { name: entry.name, arguments: values },
-      );
-      if (outcome.kind !== "completed") return fromOutcome(outcome);
-      // The call ran; a later catalog change cannot undo it, so the result is kept as returned.
-      const parsed = toolResultSchema.safeParse(outcome.value);
-      if (!parsed.success) return failure("failed", "mcp-tool-result-malformed", "uncertain");
-      return {
-        kind: "completed",
-        value: {
-          entryId,
-          catalogGeneration,
-          schemaDigest: entry.schemaDigest,
-          isError: parsed.data.isError === true,
-          content: parsed.data.content,
-          structuredContent: parsed.data.structuredContent ?? null,
-        },
-      };
+      const receipts: McpInputReceipt[] = [];
+      let params: Record<string, unknown> = { name: entry.name, arguments: values };
+      for (let round = 0; ; round++) {
+        // After the first round the server has already seen the call, so any failure is uncertain.
+        const effect = round === 0 ? "none" : "uncertain";
+        if (!currentRecord(record.serverId, catalogGeneration))
+          return failure("stale", "mcp-catalog-entry-stale", effect);
+        const outcome = await ports.lifecycle.request(
+          call(record, {
+            ...context,
+            deadline: Math.min(context.deadline, Date.now() + MCP_DEADLINE_MS),
+          }),
+          record.transportGeneration,
+          "tools/call",
+          params,
+        );
+        if (outcome.kind !== "completed")
+          return round === 0 ? fromOutcome(outcome) : { ...fromOutcome(outcome), effect };
+        const admitted = admitMcpInputRound(outcome.value);
+        if (admitted.kind === "unsupported") return failure("failed", admitted.code, "uncertain");
+        if (admitted.kind === "complete") {
+          // The call ran; a later catalog change cannot undo it, so the result is kept as returned.
+          const parsed = toolResultSchema.safeParse(outcome.value);
+          if (!parsed.success) return failure("failed", "mcp-tool-result-malformed", "uncertain");
+          return {
+            kind: "completed",
+            value: {
+              entryId,
+              catalogGeneration,
+              schemaDigest: entry.schemaDigest,
+              isError: parsed.data.isError === true,
+              content: parsed.data.content,
+              structuredContent: parsed.data.structuredContent ?? null,
+              inputRounds: receipts,
+            },
+          };
+        }
+        if (round === MCP_INPUT_LIMITS.rounds)
+          return failure("failed", "mcp-input-rounds-exceeded", "uncertain");
+        const responses: Record<string, McpInputResponse> = {};
+        const settled: HookPayload<"mcp.elicitation.result">[] = [];
+        for (const form of admitted.requests) {
+          const hook = {
+            serverId: record.serverId,
+            requestId: `${context.requestId}/${round + 1}/${form.key}`,
+            transportGeneration: record.transportGeneration,
+            schemaDigest: form.schemaDigest,
+          };
+          input.observe?.({
+            point: "mcp.elicitation",
+            payload: HOOK_POINTS["mcp.elicitation"].payload.parse(hook),
+          });
+          const ask = input.ask;
+          const answered = await watched(
+            record.serverId,
+            catalogGeneration,
+            context.signal,
+            (signal) =>
+              ask
+                ? ask({
+                    form,
+                    serverId: record.serverId,
+                    toolName: entry.name,
+                    deadline: context.deadline,
+                    signal,
+                  })
+                : Promise.resolve(UNANSWERED),
+          );
+          if (answered === "stale") return failure("stale", "mcp-catalog-entry-stale", "uncertain");
+          // An abandoned call sends nothing more, not even the answers already collected.
+          if (context.signal.aborted)
+            return failure("cancelled", "mcp-call-cancelled", "uncertain");
+          responses[form.key] = answered.response;
+          receipts.push({
+            round: round + 1,
+            key: form.key,
+            schemaDigest: form.schemaDigest,
+            disposition: answered.disposition,
+          });
+          settled.push(
+            HOOK_POINTS["mcp.elicitation.result"].payload.parse({
+              ...hook,
+              disposition: answered.disposition,
+            }),
+          );
+        }
+        for (const payload of settled)
+          input.observe?.({ point: "mcp.elicitation.result", payload });
+        params = {
+          name: entry.name,
+          arguments: values,
+          inputResponses: responses,
+          ...(admitted.requestState === null ? {} : { requestState: admitted.requestState }),
+        };
+      }
     },
   };
 }

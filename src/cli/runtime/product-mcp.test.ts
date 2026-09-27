@@ -3,6 +3,8 @@ import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { processProductResources } from "../../application/orchestration/product-resources.ts";
+import type { LocalQuestionPresenter } from "../../application/orchestration/question-presenter.ts";
 import { createTurnEventJournal } from "../../application/runtime/turn-event-journal.ts";
 import { createStaticEnvironment, invocationId } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
@@ -205,7 +207,7 @@ posix("CLI inspect stays inert and probe discovers the catalog before closing", 
   expect(probed.payload?.catalogs[0]).toMatchObject({
     state: "current",
     listChanges: "observed",
-    entries: { tool: 5, resource: 2, "resource-template": 1, prompt: 1 },
+    entries: { tool: 9, resource: 2, "resource-template": 1, prompt: 1 },
   });
   expect(
     probed.payload?.entries.map((entry) => [entry.id, entry.kind, entry.availability]),
@@ -214,6 +216,10 @@ posix("CLI inspect stays inert and probe discovers the catalog before closing", 
     ["mcp:fixture/tool/sum", "tool", "available"],
     ["mcp:fixture/tool/fail", "tool", "available"],
     ["mcp:fixture/tool/ask", "tool", "available"],
+    ["mcp:fixture/tool/ask-url", "tool", "available"],
+    ["mcp:fixture/tool/ask-sampling", "tool", "available"],
+    ["mcp:fixture/tool/ask-forever", "tool", "available"],
+    ["mcp:fixture/tool/ask-wide", "tool", "available"],
     ["mcp:fixture/tool/union", "tool", "unsupported"],
     ["mcp:fixture/resource/fixture%3A%2F%2Fnotes%2Fa", "resource", "available"],
     ["mcp:fixture/resource/fixture%3A%2F%2Fnotes%2Fb", "resource", "available"],
@@ -233,6 +239,10 @@ async function terminalTurn(
   f: Awaited<ReturnType<typeof fixture>>,
   steps: (replies: readonly ToolReply[], generation: number) => ToolStep | null,
   prompt = "Use the configured MCP fixture",
+  options: {
+    /** Present questions locally, and answer them the way the question sheet does. */
+    readonly answer?: (presenter: LocalQuestionPresenter) => void;
+  } = {},
 ) {
   const services = f.services();
   const environment = await standaloneEnvironment(services, f.globals);
@@ -242,7 +252,12 @@ async function terminalTurn(
   const workspace = await services.ensureWorkspaceSet();
   if (!workspace.ok) throw new Error("workspace missing");
   const clock = services.clock;
-  const history = await openProductArtifactSession(services);
+  const history = await openProductArtifactSession(
+    services,
+    undefined,
+    undefined,
+    options.answer ? { localPresenter: true } : {},
+  );
   if (!history) throw new Error("history unavailable");
   cleanups.push(history.close);
   const replies: ToolReply[] = [];
@@ -271,6 +286,7 @@ async function terminalTurn(
   const model = adapter.supportedModels[0];
   if (!model) throw new Error("model missing");
   const attached = await composeProductShellAttachments({
+    ...(history.localUserQuestions ? { localUserQuestions: history.localUserQuestions } : {}),
     configurationValues: () => record.values,
     authorizeMcp: async () => true,
     eventStore: history.eventStore,
@@ -350,6 +366,7 @@ async function terminalTurn(
   cleanups.push(attached.close);
   let sequence = 0;
   const submit = (text: string) => attached.submission.submit(snapshotOf(text, ++sequence));
+  if (options.answer && history.questionPresenter) options.answer(history.questionPresenter);
   const result = await submit(prompt);
   return { attached, history, replies, result, submit, confirmations };
 }
@@ -642,6 +659,104 @@ posix(
     expect(
       turn.confirmations.filter((request) => request.includes("mcp_call_tool")).length,
     ).toBeGreaterThanOrEqual(2);
+  },
+);
+
+/** Connect, then call one fixture tool; the model stops after the call. */
+function callAfterConnect(tool: string) {
+  let generation = 0;
+  return (done: readonly ToolReply[], configurationGeneration: number): ToolStep | null => {
+    if (done.length === 0)
+      return { name: "mcp_connect", input: { serverId: "fixture", configurationGeneration } };
+    if (done.length === 1) {
+      generation = Number((resultOf(done[0]).catalog as Record<string, unknown>).catalogGeneration);
+      return {
+        name: "mcp_call_tool",
+        input: {
+          entryId: `mcp:fixture/tool/${tool}`,
+          catalogGeneration: generation,
+          argumentsJson: "{}",
+        },
+      };
+    }
+    return null;
+  };
+}
+
+posix("a server's form question is answered by the local user and the call completes", async () => {
+  const f = await fixture("normal");
+  const presented: unknown[] = [];
+  const turn = await terminalTurn(f, callAfterConnect("ask"), "Call the MCP fixture's ask tool", {
+    answer: (presenter) =>
+      presenter.subscribe(() => {
+        const current = presenter.view().current;
+        if (!current || presented.length > 0) return;
+        presented.push({ source: current.source, prompt: current.items[0]?.prompt });
+        void presenter.answer(current.key, [
+          { itemId: "f0", kind: "selection", optionIds: ["o1"] },
+          { itemId: "f1", kind: "selection", optionIds: ["skip"] },
+        ]);
+      }),
+  });
+  expect(presented).toEqual([
+    { source: "fixture · ask", prompt: "Which branch should the release use?\n\nBranch" },
+  ]);
+  expect(turn.replies.map((reply) => reply.status)).toEqual(["completed", "completed"]);
+  const result = resultOf(turn.replies[1]);
+  expect(result).toMatchObject({
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          requestState: "ask-1",
+          responses: { confirm: { action: "accept", content: { branch: "next" } } },
+        }),
+      },
+    ],
+    inputRounds: [{ round: 1, key: "confirm", disposition: "accept" }],
+  });
+});
+
+posix("without a local presenter a form question is cancelled, never answered", async () => {
+  const f = await fixture("normal");
+  const turn = await terminalTurn(f, callAfterConnect("ask"));
+  expect(resultOf(turn.replies[1])).toMatchObject({
+    content: [
+      {
+        type: "text",
+        text: JSON.stringify({
+          requestState: "ask-1",
+          responses: { confirm: { action: "cancel" } },
+        }),
+      },
+    ],
+    inputRounds: [{ disposition: "cancel" }],
+  });
+});
+
+posix(
+  "a URL input request ends the call as unsupported and uncertain, releasing its task",
+  async () => {
+    const f = await fixture("normal");
+    const held = () => {
+      const { reservations, uncertain } = processProductResources.report();
+      return { reservations, uncertain };
+    };
+    const before = held();
+    const turn = await terminalTurn(
+      f,
+      callAfterConnect("ask-url"),
+      "Call the MCP fixture's ask-url tool",
+      {
+        answer: () => {},
+      },
+    );
+    expect(await recordedResults(turn, "mcp_call_tool")).toEqual([
+      { status: "failed", effect: "uncertain", reason: "mcp-input-request-unsupported" },
+    ]);
+    // The server's effect is uncertain, but nothing of the call still runs locally, so its
+    // reservation is released instead of being held for a termination that never comes.
+    expect(held()).toEqual(before);
   },
 );
 

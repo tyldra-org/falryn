@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { MCP_DEADLINE_MS, type McpOutcome } from "../../domain/extensions/mcp.ts";
 import { MCP_CATALOG_ARGUMENTS, MCP_CATALOG_KINDS } from "../../domain/extensions/mcp-catalog.ts";
+import { MCP_INPUT_LIMITS } from "../../domain/extensions/mcp-input.ts";
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import {
   createToolRegistry,
@@ -10,7 +11,13 @@ import {
   defaultToolLimits,
 } from "../../domain/tools/index.ts";
 import type { ToolInvocationOutcome } from "../../domain/tools/tool-pipeline.ts";
-import type { McpCatalog, McpCatalogCall, McpCatalogFailure } from "../extensions/mcp-catalog.ts";
+import type {
+  McpCatalog,
+  McpCatalogCall,
+  McpCatalogFailure,
+  McpToolInput,
+} from "../extensions/mcp-catalog.ts";
+import type { McpUserInput } from "../extensions/mcp-input.ts";
 import type { McpLifecycle } from "../extensions/mcp-lifecycle.ts";
 import type { ToolRunnerRequest } from "../runtime/tool-call-loop.ts";
 import { boundedProtocolObjectSchema } from "./product-language-tools/contracts.ts";
@@ -95,6 +102,9 @@ const definitions = {
 } as const;
 type McpToolName = keyof typeof definitions;
 const names = Object.keys(definitions) as McpToolName[];
+/** A tool call may wait for the user's input, so it may run until its ceiling; others keep one request. */
+const timeoutOf = (name: McpToolName) =>
+  name === "mcp_call_tool" ? MCP_INPUT_LIMITS.callCeilingMs : MCP_DEADLINE_MS;
 
 function completed(result: unknown): ToolInvocationOutcome {
   return { status: "completed", output: { result }, effect: "completed" };
@@ -117,6 +127,8 @@ export function composeProductMcpTools(
   generation: ConfigurationGeneration,
   lifecycle: McpLifecycle,
   catalog: McpCatalog,
+  /** The interactive host's way to ask the user; absent hosts cancel every input request. */
+  userInput?: McpUserInput,
 ): ProductToolSourceBundle {
   const entries = names.map((name) => {
     const definition = definitions[name];
@@ -132,7 +144,7 @@ export function composeProductMcpTools(
         capabilityKind: "mcp",
         platforms: [],
         limits: defaultToolLimits({
-          defaultTimeoutMs: MCP_DEADLINE_MS,
+          defaultTimeoutMs: timeoutOf(name),
           maxOutputBytes: 1024 * 1024,
         }),
         concurrency: defaultConcurrencyContract({ maxPerWorkspace: 16 }),
@@ -177,14 +189,28 @@ export function composeProductMcpTools(
           origin: "model",
           requestId: String(request.invocationId),
           deadline: Math.min(
-            Date.now() + MCP_DEADLINE_MS,
+            Date.now() + timeoutOf(name),
             request.processTask?.deadline ?? Infinity,
           ),
           signal: request.signal,
         };
-        const result = await run(name, parsed.data as Record<string, unknown>, context);
-        if (result.status !== "completed")
-          request.processTask?.reportTermination?.(result.effect === "none");
+        // Questions belong to this call's task: closing its resources cancels them.
+        const owner = request.processTask?.owner;
+        const resources = request.taskResources;
+        const answering: McpToolInput =
+          userInput && owner && resources
+            ? {
+                ask: userInput({
+                  owner: { ...owner, generation: resources.generation },
+                  resources,
+                }),
+              }
+            : {};
+        const result = await run(name, parsed.data as Record<string, unknown>, context, answering);
+        // The lifecycle returns only after the SDK request has settled, so nothing of this call is
+        // still running locally. An uncertain effect is about the server, and the outcome says so;
+        // holding the task's resources would only strand them.
+        request.processTask?.reportTermination?.(true);
         return result;
       },
     },
@@ -194,6 +220,7 @@ export function composeProductMcpTools(
     name: McpToolName,
     input: Record<string, unknown>,
     context: McpCatalogCall,
+    answering: McpToolInput,
   ): Promise<ToolInvocationOutcome> {
     const serverId = String(input.serverId ?? "");
     const admission = {
@@ -245,6 +272,7 @@ export function composeProductMcpTools(
           Number(input.catalogGeneration),
           boundedProtocolObjectSchema.parse(JSON.parse(String(input.argumentsJson))),
           context,
+          answering,
         );
         return called.kind === "completed" ? completed(called.value) : fromCatalog(called);
       }
