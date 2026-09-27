@@ -26,7 +26,12 @@ import { type PreparedPackage, preparePackage } from "./prepare-package.ts";
 const REVIEW =
   "---\ndescription: Review a file\nargument-hint: <file> [focus]\n---\n\nReview $1 focusing on ${@:2}.\nPRIVATE-BODY\n";
 
-async function prepared(name: string, files: Record<string, string>, explicit = false) {
+async function prepared(
+  name: string,
+  files: Record<string, string>,
+  explicit = false,
+  variables?: unknown,
+) {
   const result = await preparePackage(
     packageSource(
       pluginManifest(
@@ -41,6 +46,7 @@ async function prepared(name: string, files: Record<string, string>, explicit = 
                   path: "templates/summary.md",
                   description: "Summarize",
                   authority: declaredAuthority,
+                  ...(variables === undefined ? {} : { variables }),
                 },
               ]
             : [],
@@ -298,4 +304,75 @@ test("package preparation rejects more than 128 conventional templates", async (
   expect((await preparePackage(packageSource(pluginManifest(), files), inspectionHost)).ok).toBe(
     true,
   );
+});
+
+test("declared variables bind at registration and expand, ask or fail without values in facts", async () => {
+  const files = {
+    "templates/summary.md":
+      "Summarize ${file} to depth ${depth} with ${token}; notes: ${ARGUMENTS:-none}",
+  };
+  const pkg = await prepared("docs", files, true, {
+    version: 1,
+    entries: [
+      { name: "file", type: { kind: "string" }, required: true, description: "File to read" },
+      {
+        name: "depth",
+        type: { kind: "number", integer: true, minimum: 1, maximum: 3 },
+        default: 1,
+      },
+      { name: "token", type: { kind: "string" }, required: true, sensitive: true },
+    ],
+  });
+  const { publication } = await publish([{ pkg, files }]);
+  expect(publication.prompts.templates[0]?.variables?.entries.map((entry) => entry.name)).toEqual([
+    "file",
+    "depth",
+    "token",
+  ]);
+  const signal = new AbortController().signal;
+  expect(await publication.prompts.expand("/summarize depth=2", signal)).toEqual({
+    kind: "needs-input",
+    name: "summarize",
+    variables: [
+      { name: "file", expected: "text", description: "File to read", sensitive: false },
+      { name: "token", expected: "text", description: "", sensitive: true },
+    ],
+  });
+  const expanded = await publication.prompts.expand("/summarize file=a.ts extra", signal, {
+    token: "hunter2",
+  });
+  expect(expanded).toMatchObject({
+    kind: "expanded",
+    text: "Summarize a.ts to depth 1 with hunter2; notes: extra",
+    fact: {
+      argumentCount: 1,
+      variables: [
+        { name: "file", source: "argument", sensitive: false },
+        { name: "depth", source: "default", sensitive: false },
+        { name: "token", source: "entered", sensitive: true },
+      ],
+    },
+  });
+  if (expanded.kind !== "expanded") throw new Error("not expanded");
+  expect(JSON.stringify(expanded.fact)).not.toContain("hunter2");
+  const wrong = await publication.prompts.expand("/summarize file=a depth=many", signal);
+  expect(wrong).toMatchObject({ kind: "failed", code: "variable-malformed" });
+  if (wrong.kind === "failed") expect(wrong.message).not.toContain("many");
+  expect(await publication.prompts.expand("/summarize file=a bogus=1", signal)).toMatchObject({
+    kind: "failed",
+    code: "variable-unknown",
+  });
+});
+
+test("package preparation rejects unsupported or contradictory variable declarations", async () => {
+  const files = { "templates/summary.md": "x" };
+  for (const variables of [
+    { version: 2, entries: [{ name: "a", type: { kind: "string" } }] },
+    {
+      version: 1,
+      entries: [{ name: "a", type: { kind: "string" }, required: true, default: "x" }],
+    },
+    { version: 1, entries: [{ name: "a", type: { kind: "regex" } }] },
+  ])
+    await expect(prepared("docs", files, true, variables)).rejects.toThrow();
 });

@@ -16,6 +16,7 @@ import {
   packageConfigurationDeclarationSchema,
   packageStateDeclarationSchema,
 } from "./package-data.ts";
+import { promptVariablesSchema } from "./prompt-variables.ts";
 
 export const PORTABLE_PLUGIN_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json";
 export const PORTABLE_MCP_SCHEMA = "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json";
@@ -162,9 +163,12 @@ export const contributionDeclarationSchema = z
     hook: hookRegistrationSchema.optional(),
     schedule: scheduleDefinitionSchema.optional(),
     batching: batch.optional(),
+    /** Typed version-1 prompt-template variables (#1169); prompt entries only. */
+    variables: promptVariablesSchema.optional(),
   })
   .superRefine((value, ctx) => {
     const reject = (message: string) => ctx.addIssue({ code: "custom", message });
+    if (value.kind !== "prompt" && value.variables !== undefined) reject("cross-kind-variables");
     if (value.kind === "schedule" && value.execution !== undefined)
       reject("invalid-schedule-contract");
     if (value.kind !== "schedule" && value.schedule !== undefined) reject("cross-kind-schedule");

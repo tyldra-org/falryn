@@ -40,7 +40,6 @@ import {
   type AttachmentDescriptor,
   MAX_EVIDENCE_INLINE_BYTES,
   parseMentions,
-  parsePromptInvocation,
 } from "../../domain/context/index.ts";
 import { isExecutionProfileId } from "../../domain/sessions/index.ts";
 import type { TranscriptBlock } from "../../presentation/index.ts";
@@ -86,6 +85,7 @@ import type { SessionCreationPort } from "./session-creation.ts";
 import { runAvailableCommand } from "./shell-command-runner.ts";
 import type { ShellRuntime, ShellRuntimeOptions } from "./shell-runtime/contracts.ts";
 import { useShellControls } from "./shell-runtime/controls.ts";
+import { useShellPromptTemplates } from "./shell-runtime/prompt-templates.ts";
 import { useShellQuestions } from "./shell-runtime/questions.ts";
 import {
   COMPOSER_REGION,
@@ -133,9 +133,9 @@ function resolveCommandState(
 
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const peerAction = useRef<AbortController | null>(null);
-  const templateExpansion = useRef<AbortController | null>(null);
   const localControlKind = useRef<"peer" | "schedule">("peer");
   const [peerPending, setPeerPending] = useState(false);
+  const [templatePending, setTemplatePending] = useState(false);
   const modelSelection =
     options.submission !== undefined && "modelSelection" in options.submission
       ? (
@@ -252,6 +252,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         sessionCreation: options.sessionCreation ?? null,
         peerPending:
           peerPending ||
+          templatePending ||
           sessionExport.pending ||
           compact.pending ||
           profile.pending ||
@@ -264,6 +265,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       options.sessionNavigationController,
       options.sessionCreation,
       peerPending,
+      templatePending,
       sessionExport.pending,
       compact.pending,
       profile.pending,
@@ -291,6 +293,26 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
    * the model `setText("")` effect has had a chance to run.
    */
   const absorbDraftEcho = useRef(false);
+  const replaceDraft = useCallback((text: string): void => {
+    absorbDraftEcho.current = true;
+    dispatch({ kind: "composer", action: { kind: "draft", text } });
+    // Cleared after paint, so a stale textarea echo cannot restore the old draft.
+    setTimeout(() => {
+      absorbDraftEcho.current = false;
+    }, 0);
+  }, []);
+  const readDraft = useCallback(() => stateRef.current.composer.text, []);
+  const {
+    answer: answerTemplate,
+    expand: expandTemplate,
+    cancel: cancelTemplate,
+  } = useShellPromptTemplates({
+    dispatch,
+    expand: options.submission?.expandTemplate,
+    draft: readDraft,
+    replaceDraft,
+    onPending: setTemplatePending,
+  });
   const payloads = useRef(createMemoryAttachmentPayloads());
   const transcriptBody = useRef<TextareaRenderable | null>(null);
   const fileProbe = options.fileProbe ?? null;
@@ -521,6 +543,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
 
   const submitComposer = useCallback((): void => {
     const current = stateRef.current.composer;
+    // A value being asked for by a prompt template is taken before any other reading.
+    if (answerTemplate(current.text)) return;
     if (SCHEDULE_SLASH.test(current.text.trim())) {
       const schedule = options.submission?.schedule;
       if (!schedule) {
@@ -850,66 +874,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     }
 
     // Package prompt templates expand into the draft for review; nothing is sent.
-    const expandTemplate = options.submission?.expandTemplate;
-    if (expandTemplate !== undefined && parsePromptInvocation(current.text) !== null) {
-      if (templateExpansion.current !== null) {
-        dispatch({ kind: "notice", message: "A prompt template is already expanding." });
-        return;
-      }
-      const controller = new AbortController();
-      templateExpansion.current = controller;
-      const requested = current.text;
-      void expandTemplate(requested, controller.signal)
-        .then(
-          (expansion) => {
-            if (controller.signal.aborted) return;
-            if (expansion.kind !== "expanded") {
-              dispatch({
-                kind: "notice",
-                message:
-                  expansion.kind === "failed"
-                    ? "Not expanded: " + expansion.message + ". Your draft is unchanged."
-                    : "Not a prompt template. Your draft is unchanged.",
-              });
-              return;
-            }
-            if (stateRef.current.composer.text !== requested) {
-              dispatch({
-                kind: "notice",
-                message: "/" + expansion.name + " was not applied because the draft changed.",
-              });
-              return;
-            }
-            absorbDraftEcho.current = true;
-            dispatch({ kind: "composer", action: { kind: "draft", text: expansion.text } });
-            setTimeout(() => {
-              absorbDraftEcho.current = false;
-            }, 0);
-            dispatch({
-              kind: "notice",
-              message:
-                "Expanded /" +
-                expansion.name +
-                " from " +
-                expansion.fact.prompt +
-                " (" +
-                expansion.fact.contentDigest +
-                "). Review the draft, then send.",
-            });
-          },
-          () => {
-            if (!controller.signal.aborted)
-              dispatch({
-                kind: "notice",
-                message: "Prompt template expansion is unavailable. Your draft is unchanged.",
-              });
-          },
-        )
-        .finally(() => {
-          if (templateExpansion.current === controller) templateExpansion.current = null;
-        });
-      return;
-    }
+    if (expandTemplate(current.text)) return;
 
     const midTurn = options.midTurn ?? null;
     if (midTurn !== null && midTurn.view().active !== null) {
@@ -949,6 +914,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     runProcessing,
     options.workspaceController,
     submitMidTurn,
+    answerTemplate,
+    expandTemplate,
   ]);
 
   const run = useCallback(
@@ -1082,6 +1049,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           dispatch({ kind: "close-overlay" });
           return true;
         case "app.cancel": {
+          if (cancelTemplate()) return true;
           if (cancelProcessing()) return true;
           if (cancelSessionExport()) return true;
           if (cancelCompact()) return true;
@@ -1138,6 +1106,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     [
       runProcessing,
       cancelProcessing,
+      cancelTemplate,
       sessionExport.run,
       environment.run,
       compact.run,

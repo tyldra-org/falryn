@@ -5,11 +5,16 @@
  * admitted package bytes at invocation, after the host rechecks admission, and
  * rendered once by the domain template codec. Expansion produces text; it never
  * submits a turn, runs package code or dispatches hooks.
+ *
+ * A manifest entry may declare typed variables (#1169). Registration binds the
+ * checked declaration; expansion either renders or names the required variables
+ * still missing, so the caller can ask for them or fail without submitting.
  */
 import {
   expandPromptTemplate,
   isPromptAlias,
   type PromptTemplateErrorCode,
+  type PromptVariableUse,
   parsePromptInvocation,
   parsePromptTemplateSource,
 } from "../../domain/context/prompt-templates.ts";
@@ -18,6 +23,11 @@ import {
   canonicalDigest,
   ExtensionInputError,
 } from "../../domain/extensions/canonical.ts";
+import {
+  describePromptVariableType,
+  type PromptVariables,
+  promptVariablesSchema,
+} from "../../domain/extensions/prompt-variables.ts";
 import type { NativeRegistrationOwner } from "./native-registration.ts";
 
 export const PACKAGE_PROMPT_OWNER = "falryn-prompt-templates-v1";
@@ -45,6 +55,8 @@ export type RegisteredPromptTemplate = {
   readonly qualifiedName: string;
   readonly description: string;
   readonly argumentHint: string | null;
+  /** The manifest's checked variable declaration, or null for a compatibility template. */
+  readonly variables: PromptVariables | null;
   readonly source: PromptTemplateReadRequest;
   /** Read the exact admitted source; the host rechecks current admission first. */
   read(signal: AbortSignal): Promise<Uint8Array>;
@@ -62,6 +74,17 @@ export type PromptExpansionFact = {
   readonly argumentCount: number;
   readonly substitutions: number;
   readonly renderedBytes: number;
+  /** Each declared variable's name, value source and sensitivity; never a value. */
+  readonly variables: readonly PromptVariableUse[];
+};
+
+/** A required variable the user still has to supply, described without any value. */
+export type PromptVariableRequest = {
+  readonly name: string;
+  /** The declared type in plain words, such as "a whole number from 1 to 5". */
+  readonly expected: string;
+  readonly description: string;
+  readonly sensitive: boolean;
 };
 
 export type PromptExpansionFailureCode =
@@ -79,6 +102,12 @@ export type PromptExpansion =
       readonly text: string;
       readonly fact: PromptExpansionFact;
     }
+  /** Required variables have no value; nothing was rendered. */
+  | {
+      readonly kind: "needs-input";
+      readonly name: string;
+      readonly variables: readonly PromptVariableRequest[];
+    }
   | {
       readonly kind: "failed";
       readonly name: string;
@@ -90,9 +119,30 @@ export type PromptExpansion =
 
 export type PromptTemplateCatalog = {
   readonly templates: readonly RegisteredPromptTemplate[];
-  /** Expand slash text naming a template; other text is not-template. */
-  expand(text: string, signal: AbortSignal): Promise<PromptExpansion>;
+  /**
+   * Expand slash text naming a template; other text is not-template. Entered
+   * values are raw text for named variables the user was asked for.
+   */
+  expand(
+    text: string,
+    signal: AbortSignal,
+    entered?: Readonly<Record<string, string>>,
+  ): Promise<PromptExpansion>;
 };
+
+/** Why an invocation without a user to ask cannot expand, naming what to pass. */
+export function missingVariablesMessage(
+  name: string,
+  variables: readonly PromptVariableRequest[],
+): string {
+  return (
+    "/" +
+    name +
+    " needs " +
+    variables.map((variable) => variable.name + " (" + variable.expected + ")").join(", ") +
+    "; pass each as name=value"
+  );
+}
 
 export function createNativePromptOwner(options: {
   read: PromptTemplateRead;
@@ -112,6 +162,13 @@ export function createNativePromptOwner(options: {
         return { status: "unavailable", reason: "prompt-declaration-invalid" };
       const localId = contribution.identity.localId;
       if (!isPromptAlias(localId)) return { status: "unavailable", reason: "prompt-alias-invalid" };
+      const declared =
+        declaration.variables === undefined
+          ? null
+          : promptVariablesSchema.safeParse(declaration.variables);
+      if (declared !== null && !declared.success)
+        return { status: "unavailable", reason: "prompt-variables-unsupported" };
+      const variables = declared === null ? null : declared.data;
       const frontmatter = declaration.frontmatter;
       const hint =
         typeof frontmatter === "object" && frontmatter !== null && !Array.isArray(frontmatter)
@@ -140,7 +197,12 @@ export function createNativePromptOwner(options: {
           nativeRegistryGeneration: Number(generation),
           actionId,
           family: "capability",
-          schemaDigest: canonicalDigest({ version: 1, input: "prompt-template-arguments" }),
+          schemaDigest: canonicalDigest({
+            version: 1,
+            input: "prompt-template-arguments",
+            // Untyped templates keep the schema identity they had before declarations existed.
+            ...(variables === null ? {} : { variables }),
+          }),
           effectDigest: canonicalDigest([]),
           authorityDigest: canonicalDigest({ activation, authority: contribution.authority }),
           resultDigest: canonicalDigest({ kind: "prompt-expansion", version: 1 }),
@@ -155,6 +217,7 @@ export function createNativePromptOwner(options: {
           qualifiedName: packageId + ":" + localId,
           description: typeof declaration.description === "string" ? declaration.description : "",
           argumentHint: typeof hint === "string" && hint !== "" ? hint : null,
+          variables,
           source,
           read: (signal) => options.read(source, signal),
         },
@@ -169,7 +232,7 @@ export function createPromptTemplateCatalog(
 ): PromptTemplateCatalog {
   return {
     templates,
-    async expand(text, signal) {
+    async expand(text, signal, entered) {
       const invocation = parsePromptInvocation(text);
       if (invocation === null) return { kind: "not-template" };
       const name = invocation.name;
@@ -214,15 +277,31 @@ export function createPromptTemplateCatalog(
       }
       if (signal.aborted) return failed("cancelled", "expansion of /" + name + " was cancelled");
       const source = parsePromptTemplateSource(bytes);
-      const rendered = source.ok
-        ? expandPromptTemplate(source.value, invocation.argumentText)
+      const expansion = source.ok
+        ? expandPromptTemplate(source.value, {
+            argumentText: invocation.argumentText,
+            variables: template.variables,
+            ...(entered === undefined ? {} : { entered }),
+          })
         : source;
-      if (!rendered.ok)
-        return failed(rendered.error.code, "/" + name + ": " + rendered.error.message);
+      if (!expansion.ok)
+        return failed(expansion.error.code, "/" + name + ": " + expansion.error.message);
+      if (expansion.value.kind === "needs-input")
+        return {
+          kind: "needs-input",
+          name,
+          variables: expansion.value.missing.map((variable) => ({
+            name: variable.name,
+            expected: describePromptVariableType(variable.type),
+            description: variable.description,
+            sensitive: variable.sensitive,
+          })),
+        };
+      const { rendered, variables } = expansion.value;
       return {
         kind: "expanded",
         name,
-        text: rendered.value.text,
+        text: rendered.text,
         fact: {
           version: 1,
           actionId: template.actionId,
@@ -231,9 +310,10 @@ export function createPromptTemplateCatalog(
           contribution: template.source.contribution,
           prompt: template.qualifiedName,
           contentDigest: bytesDigest(bytes),
-          argumentCount: rendered.value.argumentCount,
-          substitutions: rendered.value.substitutions,
-          renderedBytes: rendered.value.renderedBytes,
+          argumentCount: rendered.argumentCount,
+          substitutions: rendered.substitutions,
+          renderedBytes: rendered.renderedBytes,
+          variables,
         },
       };
     },
