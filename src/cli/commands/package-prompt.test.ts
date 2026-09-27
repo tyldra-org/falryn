@@ -6,7 +6,11 @@ import { removeTemporaryRoots, temporaryRoot } from "../../data/fixtures.ts";
 import { bytesDigest } from "../../domain/extensions/canonical.ts";
 import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
 import { createHostSandbox } from "../../integrations/security/host-sandbox.ts";
-import { nativePromptJourney } from "../runtime/native-product-fixtures.ts";
+import { snapshotOf } from "../../tui/composer/index.ts";
+import {
+  nativePromptJourney,
+  nativePromptShellJourney,
+} from "../runtime/native-product-fixtures.ts";
 import { prepareNativeCliFixture } from "./package-native-fixtures.ts";
 
 afterEach(removeTemporaryRoots);
@@ -132,4 +136,156 @@ test.skipIf(createHostSandbox().probe().status !== "available")(
     expect(disabled.result.payload?.stage).toBe("template-failed");
   },
   60_000,
+);
+
+const COMBINED =
+  "---\ndescription: Combined contract\n---\n" +
+  "Task for ${target}: $1 then ${2:-tests}; next ${@:3:2}; all [$ARGUMENTS]; " +
+  "mode ${mode}; ${note:-no note}. Keep $HOME, $ and $x literal; $$1.\n";
+const INVOCATION = '/combined target="src/a b.ts" mode=deep fix "the parser" x y z';
+const PARTIAL = '/combined mode=deep fix "the parser" x y z';
+const RENDERED =
+  "Task for src/a b.ts: fix then the parser; next x y; all [fix the parser x y z]; " +
+  "mode deep; no note. Keep $HOME, $ and $x literal; $fix.";
+
+test.skipIf(createHostSandbox().probe().status !== "available")(
+  "the renderer, slash invocation and typed variables work together through both product paths",
+  async () => {
+    const root = await temporaryRoot("falryn-native-prompt-integrated-");
+    const fixture = await prepareNativeCliFixture(
+      [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname],
+      root,
+      {
+        declarations: [
+          {
+            kind: "prompt",
+            namespace: "fixture",
+            id: "combined",
+            path: "combined.md",
+            description: "Combined contract",
+            authority: declaredAuthority,
+            variables: {
+              version: 1,
+              entries: [
+                { name: "target", type: { kind: "string" }, required: true },
+                {
+                  name: "mode",
+                  type: { kind: "enum", values: ["quick", "deep"] },
+                  default: "quick",
+                },
+                { name: "note", type: { kind: "string" } },
+              ],
+            },
+          },
+        ] as never,
+        files: { "combined.md": COMBINED },
+      },
+    );
+    const run = (prompt: string, session?: string) =>
+      nativePromptJourney({
+        home: root,
+        environment: fixture.environment,
+        prompt,
+        ...(session === undefined ? {} : { session }),
+      });
+
+    // Headless: the exact rendered text is the provider input, with body-free provenance.
+    const first = await run(INVOCATION);
+    expect(first.result.payload).toMatchObject({
+      stage: "attempt-completed",
+      prompt: RENDERED,
+      promptTemplate: {
+        prompt: "fixture:combined",
+        contentDigest: bytesDigest(COMBINED),
+        argumentCount: 5,
+        variables: [
+          { name: "target", source: "argument", sensitive: false },
+          { name: "mode", source: "argument", sensitive: false },
+          { name: "note", source: "absent", sensitive: false },
+        ],
+      },
+    });
+    expect(first.requests).toHaveLength(1);
+    expect(first.requests[0]).toContain(RENDERED);
+    expect(first.requests[0]).not.toContain("/combined");
+    const session = first.result.payload?.sessionId;
+    if (session === undefined) throw new Error("no session");
+    expect(first.events.length).toBeGreaterThan(0);
+
+    // Every rejection continues the existing session without changing it.
+    for (const [prompt, code] of [
+      [PARTIAL, "template.variable-missing"],
+      ["/combined target=a mode=slow", "template.variable-constraint"],
+      ["/combined target=a extra=1", "template.variable-unknown"],
+      ['/combined target=a "open', "template.unterminated-quote"],
+    ] as const) {
+      const rejected = await run(prompt, session);
+      expect({ prompt, requests: rejected.requests }).toEqual({ prompt, requests: [] });
+      expect(rejected.result.payload).toMatchObject({ stage: "template-failed", turnId: null });
+      expect(rejected.result.errors[0]?.code).toBe(code);
+      expect(rejected.events).toEqual(first.events);
+    }
+    const continued = await run(INVOCATION, session);
+    expect(continued.requests).toHaveLength(1);
+    expect(continued.requests[0]).toContain(RENDERED);
+    expect(continued.events.length).toBeGreaterThan(first.events.length);
+
+    // Terminal host: production attachments, durable native publication, ordinary submission.
+    const shell = await nativePromptShellJourney({ home: root, environment: fixture.environment });
+    try {
+      const expand = shell.attached.submission.expandTemplate;
+      if (expand === undefined) throw new Error("no template expansion");
+      const signal = new AbortController().signal;
+      expect(await expand(PARTIAL, signal)).toEqual({
+        kind: "needs-input",
+        name: "combined",
+        variables: [{ name: "target", expected: "text", description: "", sensitive: false }],
+      });
+      const transcript = shell.attached.transcriptFeed.events().length;
+      expect(await expand("/combined target=a mode=slow", signal)).toMatchObject({
+        kind: "failed",
+        code: "variable-constraint",
+      });
+      const expanded = await expand(PARTIAL, signal, { target: "src/a b.ts" });
+      expect(expanded).toMatchObject({
+        kind: "expanded",
+        text: RENDERED,
+        fact: {
+          contentDigest: bytesDigest(COMBINED),
+          variables: [
+            { name: "target", source: "entered", sensitive: false },
+            { name: "mode", source: "argument", sensitive: false },
+            { name: "note", source: "absent", sensitive: false },
+          ],
+        },
+      });
+      // Expansion alone sends nothing and records nothing.
+      expect(shell.requests).toEqual([]);
+      expect(shell.attached.transcriptFeed.events()).toHaveLength(transcript);
+      const submitted = await shell.attached.submission.submit(snapshotOf(RENDERED, 1));
+      expect(submitted.kind).toBe("accepted");
+      expect(shell.requests).toHaveLength(1);
+      expect(JSON.stringify(shell.requests[0])).toContain(RENDERED);
+
+      // A package disabled after the preview fails the next expansion in both paths.
+      const disable = { packageId: "fixture", operationId: randomUUID(), expectedRevision: 1 };
+      const proposed = await fixture.invoke(["package", "disable"], disable, packageReceiptSchema);
+      await fixture.invoke(
+        ["package", "disable"],
+        { ...disable, confirmation: proposed.confirmation },
+        packageReceiptSchema,
+      );
+      expect(await expand(INVOCATION, signal)).toMatchObject({
+        kind: "failed",
+        code: "template-unavailable",
+      });
+      expect(shell.requests).toHaveLength(1);
+    } finally {
+      await shell.close();
+    }
+    const disabled = await run(INVOCATION, session);
+    expect(disabled.requests).toEqual([]);
+    expect(disabled.result.payload?.stage).toBe("template-failed");
+  },
+  90_000,
 );

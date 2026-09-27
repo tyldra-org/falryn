@@ -1060,7 +1060,10 @@ again. A disabled, revoked, updated or otherwise stale package fails expansion.
 In the terminal composer, `/<alias> <arguments>` replaces the draft with the
 expanded text and names the template and its content digest. Nothing is sent
 until the draft is submitted; if the draft changed during expansion, the result
-is not applied. In `falryn run`, a prompt starting with `/<alias>` is expanded
+is not applied. The composer's template catalog is refreshed when a session
+opens and when each turn starts, so a package enabled mid-session offers its
+templates after the next turn; a disabled, revoked or updated package fails at
+its next expansion. In `falryn run`, a prompt starting with `/<alias>` is expanded
 and the text is submitted as the ordinary turn. The payload `prompt` is the
 expanded text and `promptTemplate` reports the package, template, content
 digest, argument count, substitutions and rendered bytes without the body. A

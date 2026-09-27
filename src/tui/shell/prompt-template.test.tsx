@@ -45,6 +45,7 @@ function expanded(name: string, text: string): PromptExpansion {
 
 async function shellWith(
   expand: (text: string, entered?: Readonly<Record<string, string>>) => PromptExpansion,
+  settleMs = 20,
 ) {
   const submitted: string[] = [];
   const requested: string[] = [];
@@ -61,7 +62,7 @@ async function shellWith(
         async expandTemplate(text, _signal, entered) {
           requested.push(text);
           // Settle after a render, as package I/O does, so draft checks see painted state.
-          await new Promise((resolve) => setTimeout(resolve, 20));
+          await new Promise((resolve) => setTimeout(resolve, settleMs));
           return expand(text, entered);
         },
       }}
@@ -174,5 +175,41 @@ test("cancelling a variable prompt restores the invocation and sends nothing", a
   expect(frame).toContain("/review depth=2");
   expect(frame).not.toContain("half-typed");
   expect(calls).toBe(1);
+  expect(submitted).toEqual([]);
+});
+
+test("escape cancels an expansion still in flight, and its late result is never applied", async () => {
+  const { shell, submitted, requested } = await shellWith(
+    () => expanded("review", "Too late to apply."),
+    400,
+  );
+  using _ = shell;
+  await shell.type("/review a");
+  await shell.press("\r");
+  await shell.pressEscape();
+  let frame = await shell.frame();
+  expect(frame).toContain("Prompt template cancelled. Nothing was sent; your draft is restored.");
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  frame = await shell.frame();
+  expect(requested).toEqual(["/review a"]);
+  expect(frame).toContain("/review a");
+  expect(frame).not.toContain("Too late to apply.");
+  expect(submitted).toEqual([]);
+});
+
+test("a second invocation while one is expanding is refused and the first still applies", async () => {
+  const { shell, submitted, requested } = await shellWith(
+    () => expanded("review", "Applied once."),
+    300,
+  );
+  using _ = shell;
+  await shell.type("/review a");
+  await shell.press("\r");
+  await shell.press("\r");
+  expect(await shell.frame()).toContain("A prompt template is already expanding.");
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  const frame = await shell.frame();
+  expect(requested).toEqual(["/review a"]);
+  expect(frame).toContain("Applied once.");
   expect(submitted).toEqual([]);
 });
