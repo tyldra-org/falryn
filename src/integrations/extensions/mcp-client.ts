@@ -1,6 +1,8 @@
 import {
   Client,
   type FetchLike,
+  SdkError,
+  SdkErrorCode,
   SdkHttpError,
   StreamableHTTPClientTransport,
   type Transport,
@@ -10,8 +12,11 @@ import {
   MCP_MESSAGE_BYTES,
   MCP_STDERR_BYTES,
   type McpClientFactory,
+  McpLimitExceeded,
+  type McpListChanges,
   McpUnavailable,
 } from "../../domain/extensions/mcp.ts";
+import { MCP_SERVER_FEATURES } from "../../domain/extensions/mcp-catalog.ts";
 import type { EnvironmentPort } from "../../domain/foundation/index.ts";
 import { duration, managedServiceId } from "../../domain/foundation/index.ts";
 import {
@@ -86,7 +91,7 @@ function boundedFetch(
 }
 
 export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
-  return async ({ connection, generation, admission, authorize, onFailure }) => {
+  return async ({ connection, generation, admission, authorize, onFailure, onCatalogChanged }) => {
     if (connection.transport === "stdio" && process.platform === "win32")
       throw new McpUnavailable("mcp-stdio-platform-unavailable");
     const environmentGeneration =
@@ -138,6 +143,13 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
         },
       });
     }
+    let listChanges: McpListChanges = "unobserved";
+    // Notifications only mark the catalog stale; the catalog owner decides when to refresh.
+    const changed = {
+      autoRefresh: false,
+      debounceMs: 0,
+      onChanged: () => onCatalogChanged(listChanges),
+    };
     const client = new Client(
       { name: "falryn", version: "0.0.0" },
       {
@@ -148,9 +160,14 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
         inputRequired: { autoFulfill: false },
         enforceStrictCapabilities: true,
         listMaxPages: 16,
+        listChanged: { tools: changed, resources: changed, prompts: changed },
       },
     );
+    // During connect the SDK reports optional setup failures (such as a refused list-change
+    // subscription) through onerror while completing the connection; they are not fatal.
+    let connecting = false;
     client.onerror = (error) => {
+      if (connecting) return;
       if (error instanceof SdkHttpError && [502, 503, 504].includes(error.status)) return;
       onFailure("mcp-protocol-error");
     };
@@ -159,11 +176,38 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
       environmentGeneration,
       client: {
         current,
+        catalog() {
+          const capabilities = client.getServerCapabilities() ?? {};
+          return {
+            features: MCP_SERVER_FEATURES.filter((feature) => capabilities[feature] !== undefined),
+            listChanges,
+          };
+        },
         async connect(signal) {
           if (!(await allowed(signal))) throw new Error("mcp-admission-revoked");
-          await client.connect(transport, {
-            signal,
-            timeout: Math.max(1, Math.min(MCP_DEADLINE_MS, admission.deadline - Date.now())),
+          connecting = true;
+          try {
+            await client.connect(transport, {
+              signal,
+              timeout: Math.max(1, Math.min(MCP_DEADLINE_MS, admission.deadline - Date.now())),
+            });
+          } finally {
+            connecting = false;
+          }
+          const capabilities = client.getServerCapabilities() ?? {};
+          const advertised = MCP_SERVER_FEATURES.some(
+            (feature) => capabilities[feature]?.listChanged === true,
+          );
+          // Legacy notifications share the session; the current protocol needs a live subscription.
+          const subscription = client.autoOpenedSubscription;
+          listChanges =
+            advertised && (connection.protocol === "legacy" || subscription !== undefined)
+              ? "observed"
+              : "unobserved";
+          void subscription?.closed.then((reason) => {
+            if (reason === "local") return;
+            listChanges = "unobserved";
+            onCatalogChanged(listChanges);
           });
         },
         async request(method, params, signal) {
@@ -174,6 +218,8 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
           const execute = () => {
             if (method === "tools/list") return client.listTools(params, options);
             if (method === "resources/list") return client.listResources(params, options);
+            if (method === "resources/templates/list")
+              return client.listResourceTemplates(params, options);
             if (method === "prompts/list") return client.listPrompts(params, options);
             return client.request({ method, params }, options);
           };
@@ -181,6 +227,8 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
           try {
             result = await execute();
           } catch (error) {
+            if (error instanceof SdkError && error.code === SdkErrorCode.ListPaginationExceeded)
+              throw new McpLimitExceeded("mcp-list-pagination-exceeded");
             // Only a safe read receiving a transient HTTP failure gets one retry.
             if (
               method === "tools/call" ||
@@ -192,7 +240,7 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
             result = await execute();
           }
           if (new TextEncoder().encode(JSON.stringify(result)).length > MCP_MESSAGE_BYTES)
-            throw new Error("mcp-aggregate-too-large");
+            throw new McpLimitExceeded("mcp-result-too-large");
           const secrets = [credential, ...Object.values(values ?? {})].filter(
             (value): value is string => typeof value === "string" && value.length > 0,
           );

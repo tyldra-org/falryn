@@ -205,12 +205,15 @@ export function createResourceResolver(options: ResourceResolverOptions): Resour
         if (!policy.ok) return policy;
         if (policy.value.generation !== scope.generation) return failure("policy-changed");
         const described = await options.virtual.reader.describe(evidence.target.uri, signal);
-        if (!described.ok) return described;
-        const current = parseVirtualResourceSource(described.value);
-        if (!current.ok) return current;
-        if (current.value.uri !== evidence.sourceIdentity)
-          return failure("resource-identity-mismatch");
-        if (current.value.digest !== evidence.digest) currentness = "historical";
+        // A stale virtual source keeps its retained exact bytes as historical evidence.
+        if (!described.ok && described.error.code !== "stale") return described;
+        if (described.ok) {
+          const current = parseVirtualResourceSource(described.value);
+          if (!current.ok) return current;
+          if (current.value.uri !== evidence.sourceIdentity)
+            return failure("resource-identity-mismatch");
+          if (current.value.digest !== evidence.digest) currentness = "historical";
+        } else currentness = "historical";
       } else {
         const manifest = options.loom?.get(evidence.target.manifestId);
         if (

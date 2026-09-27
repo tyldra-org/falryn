@@ -160,6 +160,7 @@ export function parseVirtualResourceReadRequest(
 
 export const VIRTUAL_RESOURCE_PORT_ERROR_CODES = [
   "not-found",
+  "stale",
   "unavailable",
   "unsupported",
   "failed",

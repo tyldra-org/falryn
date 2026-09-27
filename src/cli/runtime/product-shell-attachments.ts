@@ -311,6 +311,26 @@ export async function composeProductShellAttachments(
         ? undefined
         : projectCatalogHistory(extensions.catalog, ports.workspaceSet);
     const traceId = traceIdCodec.from(`trace-shell-${randomUUID()}`);
+    const mcpServices = sessionManagedServices(managedServices);
+    let profileSession: WorkingProfileSession | undefined;
+    const mcp = composeProductMcp({
+      identity: String(sessionId),
+      generation,
+      context: environmentContext,
+      services: mcpServices.port,
+      environment: ports.environment ?? { get: () => null },
+      configuration: () => {
+        const record = profileSession?.configuration() ?? ports.sandboxConfiguration?.();
+        return {
+          values: record?.values ?? ports.configurationValues?.() ?? {},
+          generation: Number(
+            record?.generation ?? ports.modelConfigurationGeneration?.() ?? generation,
+          ),
+          ...(record === undefined ? {} : { record }),
+        };
+      },
+      authorize: ports.authorizeMcp ?? (async () => false),
+    });
     const workspaceTools =
       workspaceRoot === null
         ? null
@@ -326,6 +346,7 @@ export async function composeProductShellAttachments(
             workspaceId,
             sessionId,
             userReadOutputMode: output.getLoomMode,
+            virtualResources: mcp.resources,
           });
     const processTools =
       workspaceRoot === null
@@ -378,26 +399,6 @@ export async function composeProductShellAttachments(
             startPath: String(workspaceRoot),
           });
     const sessionServices = sessionManagedServices(environmentContext.services(managedServices));
-    const mcpServices = sessionManagedServices(managedServices);
-    let profileSession: WorkingProfileSession | undefined;
-    const mcp = composeProductMcp({
-      identity: String(sessionId),
-      generation,
-      context: environmentContext,
-      services: mcpServices.port,
-      environment: ports.environment ?? { get: () => null },
-      configuration: () => {
-        const record = profileSession?.configuration() ?? ports.sandboxConfiguration?.();
-        return {
-          values: record?.values ?? ports.configurationValues?.() ?? {},
-          generation: Number(
-            record?.generation ?? ports.modelConfigurationGeneration?.() ?? generation,
-          ),
-          ...(record === undefined ? {} : { record }),
-        };
-      },
-      authorize: ports.authorizeMcp ?? (async () => false),
-    });
     const languageTools =
       workspaceRoot === null
         ? null

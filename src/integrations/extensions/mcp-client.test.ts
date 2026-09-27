@@ -146,19 +146,25 @@ test("HTTP current protocol uses routing headers, rejects redirects and fences c
   const ready = await s.lifecycle.connect(admission());
   expect(ready.kind).toBe("completed");
   if (ready.kind !== "completed") return;
+  // The fixture closes the list-change subscription unacknowledged: usable, but unobserved.
+  expect(ready.snapshot.listChanges).toBe("unobserved");
   expect(
     (await s.lifecycle.request(admission(), ready.snapshot.transportGeneration, "tools/list", {}))
       .kind,
   ).toBe("completed");
-  expect(requests.map((request) => request.method)).toEqual(["server/discover", "tools/list"]);
-  expect(requests[1]?.headers.get("mcp-protocol-version")).toBe("2026-07-28");
-  expect(requests[1]?.headers.get("mcp-method")).toBe("tools/list");
-  expect(requests[1]?.headers.get("mcp-session-id")).toBeNull();
+  expect(requests.map((request) => request.method)).toEqual([
+    "server/discover",
+    "subscriptions/listen",
+    "tools/list",
+  ]);
+  expect(requests[2]?.headers.get("mcp-protocol-version")).toBe("2026-07-28");
+  expect(requests[2]?.headers.get("mcp-method")).toBe("tools/list");
+  expect(requests[2]?.headers.get("mcp-session-id")).toBeNull();
   s.replace({ ...config, enabled: false });
   expect(
     await s.lifecycle.request(admission(), ready.snapshot.transportGeneration, "tools/list", {}),
   ).toMatchObject({ kind: "stale" });
-  expect(requests).toHaveLength(2);
+  expect(requests).toHaveLength(3);
 });
 
 test("HTTP rejects redirects, malformed success, and oversized bodies before readiness", async () => {

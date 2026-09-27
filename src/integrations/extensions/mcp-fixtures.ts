@@ -1,11 +1,68 @@
 /** Deterministic protocol peer launched only by the adjacent transport tests. */
+const SUBSCRIPTION = "io.modelcontextprotocol/subscriptionId";
+const catalogResults: Readonly<Record<string, (params: Record<string, unknown>) => unknown>> = {
+  // Two pages prove the client walks continuation cursors to one complete list.
+  "resources/list": (params) =>
+    params.cursor === "page-2"
+      ? { resources: [{ uri: "fixture://notes/b", name: "b", mimeType: "text/plain" }] }
+      : {
+          resources: [{ uri: "fixture://notes/a", name: "a", mimeType: "text/plain" }],
+          nextCursor: "page-2",
+        },
+  "resources/templates/list": () => ({
+    resourceTemplates: [
+      { uriTemplate: "fixture://notes/{name}", name: "note", mimeType: "text/plain" },
+    ],
+  }),
+  "resources/read": (params) => ({
+    contents: [{ uri: params.uri, mimeType: "text/plain", text: `note ${String(params.uri)}\n` }],
+  }),
+  "prompts/list": () => ({
+    prompts: [
+      {
+        name: "review",
+        description: "Review a note",
+        arguments: [{ name: "topic", required: true }],
+      },
+    ],
+  }),
+  "prompts/get": (params) => ({
+    description: "Review a note",
+    messages: [
+      {
+        role: "user",
+        content: {
+          type: "text",
+          text: `Review ${String((params.arguments as Record<string, unknown>)?.topic)}`,
+        },
+      },
+      { role: "assistant", content: { type: "image", data: "AA==", mimeType: "image/png" } },
+    ],
+  }),
+};
 export function mcpFixtureReply(message: Record<string, unknown>) {
   const params = (message.params ?? {}) as Record<string, unknown>;
+  const catalog = typeof message.method === "string" ? catalogResults[message.method] : undefined;
+  if (catalog)
+    return {
+      jsonrpc: "2.0",
+      id: message.id,
+      result: {
+        resultType: "complete",
+        ttlMs: 0,
+        cacheScope: "private",
+        ...(catalog(params) as object),
+      },
+    };
   const result =
     message.method === "server/discover"
       ? {
           supportedVersions: ["2026-07-28"],
-          capabilities: { tools: {}, resources: {}, prompts: {} },
+          capabilities: {
+            tools: { listChanged: true },
+            resources: { listChanged: true },
+            prompts: { listChanged: true },
+          },
           serverInfo: { name: "fixture", version: "1" },
         }
       : message.method === "initialize"
@@ -50,6 +107,16 @@ if (import.meta.main) {
   if (mode === "oversized") process.stdout.write("x".repeat(1024 * 1024 + 1));
   let pending = "";
   let serverRequestDenied = "not-observed";
+  // A current-protocol subscription stays open; notifications carry its listen request id.
+  let listen: unknown = null;
+  const notify = (method: string) =>
+    process.stdout.write(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        method,
+        params: listen === null ? {} : { _meta: { [SUBSCRIPTION]: listen } },
+      })}\n`,
+    );
   for await (const chunk of Bun.stdin.stream()) {
     pending += new TextDecoder().decode(chunk);
     for (;;) {
@@ -63,6 +130,21 @@ if (import.meta.main) {
         continue;
       }
       if (!("id" in message) || mode === "silent") continue;
+      if (message.method === "subscriptions/listen") {
+        listen = message.id;
+        const params = (message.params ?? {}) as Record<string, unknown>;
+        process.stdout.write(
+          `${JSON.stringify({
+            jsonrpc: "2.0",
+            method: "notifications/subscriptions/acknowledged",
+            params: {
+              notifications: params.notifications ?? {},
+              _meta: { [SUBSCRIPTION]: listen },
+            },
+          })}\n`,
+        );
+        continue;
+      }
       if (mode === "disconnect" && message.method === "tools/call") process.exit(0);
       if (mode === "pending" && message.method === "tools/call") continue;
       const response = mcpFixtureReply(message);
@@ -87,10 +169,10 @@ if (import.meta.main) {
       if (mode === "delayed" && message.method === "tools/call")
         setTimeout(() => process.stdout.write(`${JSON.stringify(response)}\n`), 200);
       else process.stdout.write(`${JSON.stringify(response)}\n`);
+      if (mode === "catalog-change" && message.method === "tools/call")
+        notify("notifications/resources/list_changed");
       if (mode === "unsolicited" && message.method === "ping") {
-        process.stdout.write(
-          `${JSON.stringify({ jsonrpc: "2.0", method: "notifications/tools/list_changed" })}\n`,
-        );
+        notify("notifications/tools/list_changed");
         process.stdout.write(
           `${JSON.stringify({ jsonrpc: "2.0", id: "server-ask", method: "roots/list", params: {} })}\n`,
         );

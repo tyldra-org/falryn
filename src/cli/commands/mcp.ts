@@ -1,4 +1,8 @@
 import { z } from "zod";
+import type {
+  McpCatalogListing,
+  McpCatalogSummary,
+} from "../../application/extensions/mcp-catalog.ts";
 import { MCP_DEADLINE_MS, type McpOutcome, type McpSnapshot } from "../../domain/extensions/mcp.ts";
 import { NO_RETRY, workUnitId } from "../../domain/orchestration/work.ts";
 import type { OwnedProcessRegistry } from "../../integrations/process/host-owned-process-registry.ts";
@@ -19,6 +23,10 @@ export type McpArguments = z.infer<typeof mcpArgumentsSchema>;
 export type McpPayload = {
   readonly connections: readonly McpSnapshot[];
   readonly probe: McpOutcome | null;
+  /** Catalog state per server; a probe reports the probed server's catalog as discovered. */
+  readonly catalogs: readonly McpCatalogSummary[];
+  /** The probed server's first catalog page, with kind and availability per entry. */
+  readonly entries: readonly McpCatalogListing[];
 };
 export async function runMcp(
   services: ServiceProvider,
@@ -58,6 +66,8 @@ export async function runMcp(
   });
   try {
     let probe: McpOutcome | null = null;
+    let entries: readonly McpCatalogListing[] = [];
+    let catalogs: readonly McpCatalogSummary[] | null = null;
     if (args.action === "probe") {
       const connection = mcpConfiguration(
         record.values,
@@ -98,15 +108,27 @@ export async function runMcp(
               resourceTaskId: environment.resources.id,
               expiresAt: Date.now() + MCP_DEADLINE_MS,
             },
-            () =>
-              mcp.lifecycle.connect({
-                serverId: args.serverId,
-                configurationGeneration: Number(record.generation),
-                origin: "user",
+            async () => {
+              const call = {
+                origin: "user" as const,
                 requestId: identity,
                 deadline: Date.now() + MCP_DEADLINE_MS,
                 signal: admittedSignal,
-              }),
+              };
+              const connected = await mcp.lifecycle.connect({
+                ...call,
+                serverId: args.serverId,
+                configurationGeneration: Number(record.generation),
+              });
+              if (connected.kind === "completed") {
+                await mcp.catalog.discover(args.serverId, call);
+                // Report the catalog as discovered; closing the probe then makes it stale.
+                catalogs = mcp.catalog.summaries();
+                const page = mcp.catalog.page({ serverId: args.serverId });
+                if (page.kind === "completed") entries = page.value.entries;
+              }
+              return connected;
+            },
           );
           const stopped = await mcp.close();
           const terminated = stopped.every((item) => item.kind === "completed");
@@ -131,8 +153,14 @@ export async function runMcp(
               snapshot: null,
             };
     }
+    catalogs ??= mcp.catalog.summaries();
     const stopped = await mcp.close();
-    const payload: McpPayload = { connections: mcp.lifecycle.inspect(), probe };
+    const payload: McpPayload = {
+      connections: mcp.lifecycle.inspect(),
+      probe,
+      catalogs,
+      entries,
+    };
     const uncertain = stopped.some((result) => result.kind !== "completed");
     return resultFor(
       "mcp",

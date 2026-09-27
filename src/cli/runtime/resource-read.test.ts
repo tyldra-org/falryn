@@ -108,6 +108,7 @@ test("virtual adapters recheck authority and retained evidence never replays the
   const f = await fixture();
   let reads = 0;
   let allowed = true;
+  let stale = false;
   const bytes = new TextEncoder().encode("retained mcp evidence\n");
   const tools = composeProductWorkspaceTools({
     generation: f.generation,
@@ -126,6 +127,7 @@ test("virtual adapters recheck authority and retained evidence never replays the
       },
       reader: {
         async describe(uri) {
+          if (stale) return { ok: false, error: { code: "stale" } };
           return {
             ok: true,
             value: {
@@ -168,6 +170,15 @@ test("virtual adapters recheck authority and retained evidence never replays the
   ]);
   expect(JSON.stringify(repeat)).toContain("retained mcp evidence");
   expect(reads).toBe(1);
+  // A stale source keeps its retained exact bytes, reported as historical evidence.
+  stale = true;
+  const historical = JSON.stringify(await run([{ kind: "evidence", reference }]));
+  expect(historical).toContain("retained mcp evidence");
+  expect(historical).toContain("historical");
+  expect(reads).toBe(1);
+  expect(JSON.stringify(await run([{ kind: "virtual", uri: "mcp://server/resource" }]))).toContain(
+    "stale",
+  );
   allowed = false;
   const denied = await run([{ kind: "evidence", reference }]);
   expect(JSON.stringify(denied)).toContain("denied");
