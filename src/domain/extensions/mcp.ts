@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { forbiddenEnvironmentName } from "../process/environment.ts";
+import type { McpServerFeature } from "./mcp-catalog.ts";
 
 export const MCP_PROTOCOL_VERSION = "2026-07-28";
 export const MCP_MESSAGE_BYTES = 1024 * 1024;
@@ -92,7 +93,14 @@ export type McpSnapshot = {
   readonly environmentGeneration: string | null;
   readonly pending: number;
   readonly code: string | null;
+  /** Capability families the negotiated server advertises; empty before readiness. */
+  readonly features: readonly McpServerFeature[];
+  /** Count of list-change notifications received on this transport generation. */
+  readonly catalogRevision: number;
+  /** Whether list changes can reach Falryn; unobserved catalogs may change silently. */
+  readonly listChanges: McpListChanges;
 };
+export type McpListChanges = "observed" | "unobserved";
 export type McpOutcome =
   | { readonly kind: "completed"; readonly value: unknown; readonly snapshot: McpSnapshot }
   | {
@@ -105,6 +113,7 @@ export const mcpMethodSchema = z.enum([
   "tools/list",
   "tools/call",
   "resources/list",
+  "resources/templates/list",
   "resources/read",
   "prompts/list",
   "prompts/get",
@@ -123,6 +132,11 @@ export type McpAdmission = {
 export type McpClientPort = {
   current(): boolean;
   connect(signal: AbortSignal): Promise<void>;
+  /** Advertised capability families and list-change observation after a successful connect. */
+  catalog(): {
+    readonly features: readonly McpServerFeature[];
+    readonly listChanges: McpListChanges;
+  };
   request(
     method: McpMethod,
     params: Readonly<Record<string, unknown>>,
@@ -136,10 +150,22 @@ export type McpClientFactory = (input: {
   readonly admission: McpAdmission;
   readonly authorize: (signal: AbortSignal) => Promise<boolean>;
   readonly onFailure: (code: string) => void;
+  /**
+   * A list change or lost list-change subscription, with the observation now in effect.
+   * It never refreshes by itself.
+   */
+  readonly onCatalogChanged: (listChanges: McpListChanges) => void;
 }) => Promise<{ readonly client: McpClientPort; readonly environmentGeneration: string | null }>;
 
 export class McpUnavailable extends Error {
   constructor(readonly code: "mcp-stdio-platform-unavailable" | "mcp-credential-unavailable") {
+    super(code);
+  }
+}
+
+/** A server result exceeded a protocol limit; the request had no local effect. */
+export class McpLimitExceeded extends Error {
+  constructor(readonly code: "mcp-result-too-large" | "mcp-list-pagination-exceeded") {
     super(code);
   }
 }

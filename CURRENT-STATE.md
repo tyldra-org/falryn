@@ -1206,16 +1206,69 @@ by this common runtime path.
 `connections.mcp.servers` in the user configuration declares stable IDs for
 stdio or Streamable HTTP peers. `falryn mcp inspect` reads lifecycle facts without
 starting a peer. `falryn mcp probe <server-id>` explicitly opens one connection,
-validates protocol readiness, and closes it before returning. Its `probe` result
-records readiness; `connections` records the final stopped state. Human, quiet,
-JSON and JSONL output share those facts. Probe failures retain a named code.
+validates protocol readiness, discovers its catalog and closes it before returning.
+Its `probe` result records readiness, `catalogs` and `entries` record the catalog
+as discovered (kind and availability per entry), and `connections` records the
+final stopped state. Human, quiet, JSON and JSONL output share those facts. Probe
+failures retain a named code.
 
 Headless and terminal model runtimes publish `mcp_inspect`, `mcp_connect`,
-`mcp_request` and `mcp_stop` through the existing registry, confirmation, resource
-admission and tool runner. MCP-related tasks or explicit discovery disclose the
-controls. No peer starts until an admitted connect request. Requests require the
-captured configuration and transport generations and bounded JSON object text in `paramsJson`. Results use normal invocation history, projection and replay; replay
+`mcp_catalog`, `mcp_resource_template`, `mcp_get_prompt`, `mcp_request` and
+`mcp_stop` through the existing registry, confirmation, resource admission and tool
+runner. MCP-related tasks or explicit discovery disclose the controls. No peer
+starts until an admitted connect request. `mcp_request` sends only `tools/call`
+or `ping` (`ping` exists only on legacy connections) with the captured
+configuration and transport generations and bounded JSON object text in
+`paramsJson`. Results use normal invocation history, projection and replay; replay
 never reconnects or repeats a remote effect.
+
+### MCP catalog, resources and prompts
+
+Connecting (`mcp_connect` or `falryn mcp probe`) discovers the tools, resources,
+resource templates and prompts the server advertises, and connecting an available
+server again refreshes them. Entries are identified as
+`mcp:<server>/<kind>/<encoded name or URI>` and carry their catalog generation. A
+server never discovered is `unknown`, not empty. Each kind keeps at most 1,024
+entries per server; names are bounded to 256 characters, URIs to 2,048 and
+descriptions to 1,024 (flagged when shortened). Duplicate and malformed entries are
+skipped and counted. A refresh publishes one complete replacement; a failed refresh
+keeps the previous catalog, marked stale with its failure code.
+
+A catalog becomes stale when its server's transport or configuration generation
+changes, the server stops or degrades, a list-change notification arrives or a
+refresh fails. Notifications only mark the catalog stale; they never refresh, start
+a model turn or call a tool, and bursts collapse into one change. On the current
+protocol, notifications need the server's list-change subscription. A server that
+does not advertise one, or whose subscription closes, is reported as
+`listChanges: "unobserved"`: its catalog stays usable but may change without
+notice, and a subscription that ends marks the catalog stale once.
+
+`mcp_catalog` pages entries (at most 100 per page) with kind, availability and read
+handles and makes no server call. Its cursor is bound to the published catalog and
+filter; an old cursor is `mcp-catalog-cursor-stale`. `mcp_resource_template`
+validates name/value arguments against the template's variables (RFC 6570 levels
+1–3; path-forming variables are required, query-style ones optional; other syntax is
+listed as `unsupported`) and returns a read handle without a server call.
+`mcp_get_prompt` validates arguments against the prompt's declared arguments and
+returns its messages as context without starting a model turn. Text and embedded
+text resources are kept exactly; other content is reported as `unsupported` with its
+type. Entries, handles and cursors from an older catalog generation return a typed
+stale result and never select a same-named newer entry; a list change during a read
+or prompt request also fences its result.
+
+Read handles have the form `mcp:<server>/resource/<encoded URI>?catalog=<generation>`
+and are `virtual` targets for the unified `read` tool. A read is admitted only for a
+URI listed, or produced by a template, in that server's current catalog. One text or
+base64 blob item with the requested URI becomes exact bytes with a digest, retained
+as an artifact and evidence; multi-part results are `unsupported` and a different
+URI is `failed`. Configured secret values are redacted before bytes are retained.
+Server resources are readable evidence, not workspace mutation targets. Retained
+evidence stays readable, reported as historical, after its handle becomes stale, and
+is denied once the server is removed or disabled. Results larger than 1 MiB fail as
+`mcp-result-too-large` and non-converging pagination as
+`mcp-list-pagination-exceeded`. MCP tool descriptors are listed for inspection;
+invoking them through the unified tool pipeline, user-input requests, MCP Skills,
+MCP Apps and deferred catalog disclosure are separate capabilities.
 
 The integration pins `@modelcontextprotocol/client` 2.0.0. The default protocol is
 2026-07-28: HTTP uses protocol/routing metadata without initialize or a protocol
@@ -1244,8 +1297,8 @@ for a sent tool call.
 Stdio is available on POSIX hosts with owned process-group termination. Windows
 stdio returns `mcp-stdio-platform-unavailable` before launch; HTTP remains
 available. Unsupported protocols and missing credentials do not publish a ready
-binding. General MCP catalog publication, subscriptions, automatic peer discovery,
-OAuth enrollment and server-initiated sampling remain separate capabilities.
+binding. Automatic peer discovery, OAuth enrollment and server-initiated sampling
+remain separate capabilities.
 
 Example user configuration:
 
@@ -1868,8 +1921,9 @@ media and secret selections refuse admission without accepting the draft.
 Attachment admission and provider/tool work share the turn's resource budget.
 
 An injected virtual-resource host must reauthorize each use and provide
-digest-verifiable bytes. The default CLI/TUI composition has no live browser,
-notebook, or MCP resource host and reports those targets unavailable. Binary,
+digest-verifiable bytes. The default CLI/TUI composition uses the MCP catalog as its
+virtual-resource host (see MCP catalog, resources and prompts); it has no live
+browser or notebook host and reports those targets unavailable. Binary,
 extracted-document and sources above the source ceiling are unavailable in this
 text route. Native structured Search has no qualified Hush projection adapter
 and returns bounded structured facts with that reason. Heuristic outlines are

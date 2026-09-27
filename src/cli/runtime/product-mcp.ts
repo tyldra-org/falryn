@@ -1,3 +1,4 @@
+import { createMcpCatalog } from "../../application/extensions/mcp-catalog.ts";
 import { createMcpLifecycle } from "../../application/extensions/mcp-lifecycle.ts";
 import { composeProductMcpTools } from "../../application/tools/product-mcp-tools.ts";
 import type {
@@ -23,11 +24,12 @@ export function composeProductMcp(options: {
   readonly environment: EnvironmentPort;
   readonly authorize: (signal: AbortSignal) => Promise<boolean>;
 }) {
+  const configuration = () => {
+    const config = options.configuration();
+    return mcpConfiguration(config.values, config.generation, config.record);
+  };
   const lifecycle = createMcpLifecycle({
-    configuration() {
-      const config = options.configuration();
-      return mcpConfiguration(config.values, config.generation, config.record);
-    },
+    configuration,
     authorize: (admission) => options.authorize(admission.signal),
     clients: createHostMcpClient({
       identity: options.identity,
@@ -39,9 +41,13 @@ export function composeProductMcp(options: {
         options.context.services(options.services, (name) => names.includes(name)),
     }),
   });
+  const catalog = createMcpCatalog({ lifecycle, configuration });
   return {
     lifecycle,
-    tools: composeProductMcpTools(options.generation, lifecycle),
+    catalog,
+    tools: composeProductMcpTools(options.generation, lifecycle, catalog),
+    /** Host-owned unified Read port for catalog resources. */
+    resources: catalog.resources,
     close: lifecycle.close,
   };
 }

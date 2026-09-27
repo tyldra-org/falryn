@@ -134,8 +134,9 @@ const homes: string[] = [];
               expect(envelope.status, part.text).toBe("completed");
               const value = envelope.output.value.result;
               outputs.push(value);
-              if (index === 1) configurationGeneration = value[0].configurationGeneration;
-              if (index === 2) transportGeneration = value.snapshot.transportGeneration;
+              if (index === 1)
+                configurationGeneration = value.connections[0].configurationGeneration;
+              if (index === 2) transportGeneration = value.connection.transportGeneration;
             }
             const name = names[index];
             if (!name) return { kind: "text", text: "MCP transport completed." };

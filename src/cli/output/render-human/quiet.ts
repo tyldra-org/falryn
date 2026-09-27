@@ -158,12 +158,21 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
             ].join("\t"),
           );
     case "mcp":
-      return (
-        result.payload?.connections.map(
-          (connection) =>
-            `${safe(connection.serverId)}\t${connection.state}\t${connection.transportGeneration}`,
-        ) ?? []
-      );
+      return result.payload === null
+        ? []
+        : [
+            ...result.payload.connections.map(
+              (connection) =>
+                `${safe(connection.serverId)}\t${connection.state}\t${connection.transportGeneration}`,
+            ),
+            ...result.payload.catalogs.map(
+              (catalog) =>
+                `${safe(catalog.serverId)}\tcatalog\t${catalog.state}\t${catalog.catalogGeneration ?? "-"}`,
+            ),
+            ...result.payload.entries.map(
+              (entry) => `${safe(entry.id)}\t${entry.kind}\t${entry.availability}`,
+            ),
+          ];
     case "run":
       return result.payload === null
         ? []

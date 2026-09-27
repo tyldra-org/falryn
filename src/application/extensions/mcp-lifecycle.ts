@@ -7,6 +7,7 @@ import {
   type McpClientPort,
   type McpConfiguration,
   type McpConnection,
+  McpLimitExceeded,
   type McpMethod,
   type McpOutcome,
   type McpSnapshot,
@@ -112,6 +113,9 @@ export function createMcpLifecycle(ports: McpLifecyclePorts) {
         environmentGeneration: null,
         pending: 0,
         code: server.enabled ? null : "mcp-disabled",
+        features: [],
+        catalogRevision: 0,
+        listChanges: "unobserved",
       };
     });
   async function connectOwned(admission: McpAdmission): Promise<McpOutcome> {
@@ -127,6 +131,9 @@ export function createMcpLifecycle(ports: McpLifecyclePorts) {
           environmentGeneration: null,
           pending: 0,
           code: "mcp-admission-denied",
+          features: [],
+          catalogRevision: 0,
+          listChanges: "unobserved",
         });
       return failed(
         admission.signal.aborted ? "cancelled" : "denied",
@@ -179,6 +186,9 @@ export function createMcpLifecycle(ports: McpLifecyclePorts) {
         pending: 0,
         state: "connecting",
         code: null,
+        features: [],
+        catalogRevision: 0,
+        listChanges: "unobserved",
       },
     };
     connections.set(connection.id, live);
@@ -210,6 +220,11 @@ export function createMcpLifecycle(ports: McpLifecyclePorts) {
                 .catch(() => publish(live, { state: "failed", code: "mcp-shutdown-uncertain" }));
             }
           },
+          onCatalogChanged(listChanges) {
+            // Repeated notifications collapse into one observable revision change.
+            if (!live.stop.signal.aborted)
+              publish(live, { catalogRevision: live.snapshot.catalogRevision + 1, listChanges });
+          },
         });
         live.client = created.client;
         publish(live, { environmentGeneration: created.environmentGeneration });
@@ -217,7 +232,7 @@ export function createMcpLifecycle(ports: McpLifecyclePorts) {
         await created.client.connect(signal);
         if (signal.aborted || !(await allowed(admission, live)))
           throw new Error("mcp-startup-revoked");
-        publish(live, { state: "available", code: null });
+        publish(live, { state: "available", code: null, ...created.client.catalog() });
         return { kind: "completed", value: null, snapshot: { ...live.snapshot } };
       } catch (error) {
         try {
@@ -306,7 +321,9 @@ export function createMcpLifecycle(ports: McpLifecyclePorts) {
         value,
         snapshot: { ...live.snapshot, pending: live.requests.size - 1 },
       };
-    } catch {
+    } catch (error) {
+      if (error instanceof McpLimitExceeded && !admission.signal.aborted)
+        return failed("failed", error.code, live, effect);
       const kind = admission.signal.aborted
         ? "cancelled"
         : timeout.signal.aborted

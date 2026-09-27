@@ -708,6 +708,24 @@ export async function runCoding(
       ...ownedProcessOptions,
       ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
     };
+    const hostManagedServices = createHostManagedServicePort(ownedProcessOptions);
+    const managedServices = scopedProcesses.services(hostManagedServices);
+    mcp = composeProductMcp({
+      identity: String(sessionId),
+      generation,
+      context: scopedProcesses,
+      services: hostManagedServices,
+      environment: graph.environment,
+      configuration: () => ({
+        values: graph.loader.current()?.values ?? configuration.values,
+        generation: Number(graph.loader.current()?.generation ?? generation),
+        record: graph.loader.current(),
+      }),
+      async authorize(signal) {
+        const trust = await graph.workspaceTrust.resolve(undefined, signal);
+        return trust.status === "accepted" || trust.status === "empty";
+      },
+    });
     const workspaceTools = composeProductWorkspaceTools({
       scratch: productArtifactSession.scratch,
       generation,
@@ -720,6 +738,7 @@ export async function runCoding(
       workspaceId,
       sessionId,
       userReadOutputMode: outputControls.getLoomMode,
+      virtualResources: mcp.resources,
     });
     const processTools = composeProductProcessTools({
       generation,
@@ -749,24 +768,6 @@ export async function runCoding(
       gitExecutable: "/usr/bin/git",
       resolveExecutable: scopedProcesses.gitExecutable,
       startPath: String(workspaceRoot),
-    });
-    const hostManagedServices = createHostManagedServicePort(ownedProcessOptions);
-    const managedServices = scopedProcesses.services(hostManagedServices);
-    mcp = composeProductMcp({
-      identity: String(sessionId),
-      generation,
-      context: scopedProcesses,
-      services: hostManagedServices,
-      environment: graph.environment,
-      configuration: () => ({
-        values: graph.loader.current()?.values ?? configuration.values,
-        generation: Number(graph.loader.current()?.generation ?? generation),
-        record: graph.loader.current(),
-      }),
-      async authorize(signal) {
-        const trust = await graph.workspaceTrust.resolve(undefined, signal);
-        return trust.status === "accepted" || trust.status === "empty";
-      },
     });
     const languageTools = composeProductLanguageTools({
       configuration: () =>

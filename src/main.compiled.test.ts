@@ -830,12 +830,13 @@ test.skipIf(!built)(
     const root = await temporaryRoot();
     const config = join(root, "config");
     await mkdir(config);
-    let requests = 0;
+    const requests: string[] = [];
     const server = Bun.serve({
       port: 0,
       async fetch(request) {
-        requests += 1;
-        return Response.json(mcpFixtureReply((await request.json()) as Record<string, unknown>));
+        const message = (await request.json()) as Record<string, unknown>;
+        requests.push(String(message.method));
+        return Response.json(mcpFixtureReply(message));
       },
     });
     try {
@@ -873,13 +874,24 @@ test.skipIf(!built)(
         return stdout;
       };
       expect(await run(["inspect", "--format", "json"])).toContain("unqueried");
-      expect(requests).toBe(0);
+      expect(requests).toEqual([]);
       for (const format of ["human", "quiet", "json", "jsonl"]) {
         const output = await run(["probe", "compiled-fixture", "--format", format]);
         expect(output).toContain("compiled-fixture");
         expect(output).toContain("stopped");
+        expect(output).toContain("mcp:compiled-fixture/prompt/review");
       }
-      expect(requests).toBe(4);
+      // Each probe connects, tries the list-change subscription and discovers every list.
+      const probe = [
+        "server/discover",
+        "subscriptions/listen",
+        "tools/list",
+        "resources/list",
+        "resources/list",
+        "resources/templates/list",
+        "prompts/list",
+      ];
+      expect(requests).toEqual([...probe, ...probe, ...probe, ...probe]);
     } finally {
       server.stop(true);
     }
