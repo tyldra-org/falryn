@@ -52,8 +52,15 @@ export type RunToolHooksInput = {
   readonly onPlan?: (order: readonly string[]) => Promise<boolean>;
   readonly task?: ProductTaskResources;
   readonly resourceOwner?: object;
-  /** Hook-origin capability admission for one hook, supplied by the enclosing gateway. */
-  readonly invokeCapability?: (hookId: string) => HookCapabilityPort;
+  /**
+   * Hook-origin capability admission for one hook invocation, supplied by the enclosing
+   * gateway and accounted to the task that invocation runs on: an observer's own retained
+   * task, which outlives its subject's turn, or the subject's task for a gate.
+   */
+  readonly invokeCapability?: (
+    hookId: string,
+    task: ProductTaskResources | undefined,
+  ) => HookCapabilityPort;
 };
 
 export type PreHookRunResult =
@@ -198,6 +205,8 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
       const run = async (
         task = input.task,
         onStarted?: () => void,
+        /** An observer's session stop; a gate settles with its subject's signal alone. */
+        stop?: AbortSignal,
       ): Promise<RecordedHookDecision> => {
         if (!hook.health) throw new Error("unbound hook health");
         let health = inspectHookHealth(hook.health);
@@ -217,10 +226,12 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
               clock: options.clock,
               expiresAt: deadline,
               cleanupExpiresAt,
-              signal: input.signal,
+              signal: stop === undefined ? input.signal : AbortSignal.any([input.signal, stop]),
               ...(onStarted ? { onStarted } : {}),
               ...(task ? { task } : {}),
-              ...(input.invokeCapability ? { invokeCapability: input.invokeCapability(id) } : {}),
+              ...(input.invokeCapability
+                ? { invokeCapability: input.invokeCapability(id, task) }
+                : {}),
             });
         if (registration.mode !== "async") spent[budgetClass] += Math.max(0, Number(at()) - began);
         if (result.cleanup !== "not-started") {
@@ -278,8 +289,8 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
           task: input.task,
           session: envelope.catalog.correlation.sessionId ?? "unknown",
           payloadBytes: Buffer.byteLength(JSON.stringify(envelope)),
-          run: async (task, started) => {
-            await publish(await run(task, started), task);
+          run: async (task, started, stop) => {
+            await publish(await run(task, started, stop), task);
           },
           failed: () =>
             emit({

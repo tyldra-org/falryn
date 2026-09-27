@@ -15,6 +15,7 @@ import {
   type SessionActivationPort,
 } from "../../application/sessions/session-activation.ts";
 import { composeModelRouteTool } from "../../application/tools/model-route-tool.ts";
+import { settleHookObservers } from "../../application/tools/tool-hook-observers.ts";
 import type { ConfigurationValues } from "../../domain/configuration/index.ts";
 import type { SessionId } from "../../domain/foundation/index.ts";
 import { agentRegistryFrom } from "./agent-configuration.ts";
@@ -776,6 +777,8 @@ export async function composeProductShellAttachments(
         },
         profileSession,
         async close() {
+          // Closing a session is a stop: its observers are cancelled and leave receipts.
+          await settleHookObservers(publishedRuntime.resources, String(sessionId), "cancel");
           await publishedRuntime.schedules?.close();
           publishedRuntime.closeBindings();
           const stopped = await mcp.close();

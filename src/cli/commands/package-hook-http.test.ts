@@ -8,7 +8,7 @@ import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
 import { hookTestCertificate } from "../../integrations/extensions/hook-http-fixtures.ts";
 import type { HookEgressOptions } from "../../integrations/extensions/host-hook-http.ts";
 import { createHostSandbox } from "../../integrations/security/host-sandbox.ts";
-import { nativeProductJourney } from "../runtime/native-product-fixtures.ts";
+import { nativeProductJourney, observerNotices } from "../runtime/native-product-fixtures.ts";
 import { preparePackageCliFixture } from "./package-health-fixtures.ts";
 import { prepareNativeCliFixture } from "./package-native-fixtures.ts";
 
@@ -123,7 +123,7 @@ test.skipIf(unavailable)(
 );
 
 test.skipIf(unavailable)(
-  "an async HTTP observer is queued without delaying or changing the tool, and never outlives its run",
+  "an async HTTP observer completes after the tool settles and leaves one attributed notice",
   async () => {
     const service = decisionService(false);
     try {
@@ -143,12 +143,19 @@ test.skipIf(unavailable)(
       expect(
         journey.requests.filter((request) => request.includes('\\"answer\\":42')),
       ).toHaveLength(1);
-      // The observer entered the shared bounded queue; the tool settled without it.
-      const queued = gates(journey).filter((gate) => gate.decision === "queued");
-      expect(queued).toHaveLength(1);
-      // A headless run cancels its queued observers at shutdown: no request arrives later.
-      await new Promise((resolve) => setTimeout(resolve, 1_000));
-      expect(service.calls).toEqual([]);
+      // The tool settled without waiting; the run then drained its admitted observer.
+      expect(gates(journey).map((gate) => gate.decision)).toEqual([
+        "hook-chain-bound",
+        "queued",
+        "observe",
+      ]);
+      expect(service.calls).toEqual([null]);
+      // Reading the stored session back projects one notice and sends nothing again.
+      const notices = observerNotices(journey);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toContain("observe");
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      expect(service.calls).toHaveLength(1);
     } finally {
       service.stop();
     }

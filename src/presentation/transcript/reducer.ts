@@ -168,6 +168,18 @@ export function reduceTranscript(
       event.kind === "capability.invocation.completed" ? [String(event.invocationId)] : [],
     ),
   );
+  // An async hook observer is journaled twice: queued, then settled. The settlement is its
+  // completion, whether it lands in this run or is read back later.
+  const queuedObservers = new Set(
+    events.flatMap((event) =>
+      event.kind === "history.recorded" &&
+      event.payload.type === "gate" &&
+      event.payload.hook !== undefined &&
+      event.payload.decision === "queued"
+        ? [observerKey(event.payload)]
+        : [],
+    ),
+  );
   const fragments = new Map<string, Extract<RuntimeEvent, { kind: "history.recorded" }>[]>();
   for (const event of events)
     if (
@@ -215,6 +227,10 @@ export function reduceTranscript(
             event.kind === "capability.invocation.completed" && event.payload.historyId
               ? history.get(event.payload.historyId)
               : undefined,
+            event.kind === "history.recorded" &&
+              event.payload.type === "gate" &&
+              event.payload.decision !== "queued" &&
+              queuedObservers.has(observerKey(event.payload)),
           );
     if (parts && block?.kind === "model-text" && event.kind === "history.recorded") {
       const complete = parts.every((part) => part.payload.evidence.availability === "inline");
@@ -279,7 +295,12 @@ export function reduceTranscript(
  * Exhaustive. A new event kind does not compile until it has decided whether it
  * is something a user should see.
  */
-export function blockFor(event: RuntimeEvent, history?: HistoryPayload): TranscriptBlock | null {
+export function blockFor(
+  event: RuntimeEvent,
+  history?: HistoryPayload,
+  /** This gate record settles an async hook observer queued earlier in the same history. */
+  settlesObserver = false,
+): TranscriptBlock | null {
   const spine = {
     occurredAt: event.occurredAt,
     // Replaced by the fold. A producer cannot know where its block lands.
@@ -330,8 +351,12 @@ export function blockFor(event: RuntimeEvent, history?: HistoryPayload): Transcr
     case "history.recorded": {
       const history = event.payload;
       if (history.type === "gate") {
-        if (!history.hook?.failureEvidence || !history.decision.startsWith("failed:")) return null;
-        const facts = history.hook.failureEvidence;
+        const hook = history.hook;
+        if (hook === undefined) return null;
+        const facts = hook.failureEvidence;
+        const failed = history.decision.startsWith("failed:");
+        // One notice per hook failure, and one per completed observer, attributed to both.
+        if (!(failed && facts) && !settlesObserver) return null;
         return {
           ...spine,
           kind: "notice",
@@ -339,8 +364,16 @@ export function blockFor(event: RuntimeEvent, history?: HistoryPayload): Transcr
           status: "final",
           anchor: { of: "declared", key: String(event.eventId) },
           invocationId: null,
-          summary: complete(`Hook ${history.hook.hookId}: ${history.decision}`),
-          note: complete(`${facts.health.status}; ${facts.remediation}`),
+          summary: complete(
+            settlesObserver
+              ? `Hook ${hook.hookId} observed ${history.invocationId}: ${history.decision}`
+              : `Hook ${hook.hookId}: ${history.decision}`,
+          ),
+          note: complete(
+            facts === undefined
+              ? "Observation only; the settled work is unchanged."
+              : `${facts.health.status}; ${facts.remediation}`,
+          ),
         };
       }
       const evidence = history.evidence;
@@ -590,4 +623,9 @@ export function blockFor(event: RuntimeEvent, history?: HistoryPayload): Transcr
     default:
       return assertNever(event, "unhandled runtime event");
   }
+}
+
+/** An async hook observer: its subject, hook stage and hook. */
+function observerKey(gate: Extract<HistoryPayload, { type: "gate" }>): string {
+  return JSON.stringify([gate.invocationId, gate.stage, gate.hook?.hookId]);
 }

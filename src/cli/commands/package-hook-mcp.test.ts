@@ -8,7 +8,7 @@ import { mcpHookDeclaration } from "../../domain/extensions/hook-fixtures.ts";
 import { normalizeMcpToolSchema } from "../../domain/extensions/mcp-catalog.ts";
 import { MCP_HOOK_FIXTURE_INPUT } from "../../integrations/extensions/mcp-fixtures.ts";
 import { createHostSandbox } from "../../integrations/security/host-sandbox.ts";
-import { nativeProductJourney } from "../runtime/native-product-fixtures.ts";
+import { nativeProductJourney, observerNotices } from "../runtime/native-product-fixtures.ts";
 import { prepareNativeCliFixture } from "./package-native-fixtures.ts";
 
 afterEach(removeTemporaryRoots);
@@ -37,11 +37,23 @@ const answered = (journey: Journey) =>
 /** One headless run whose native tool is gated by an MCP hook on the configured server. */
 async function journey(
   toolId: string,
-  options: { readonly digest?: string; readonly mode?: string; readonly confirm?: boolean } = {},
+  options: {
+    readonly digest?: string;
+    readonly mode?: string;
+    readonly confirm?: boolean;
+    /** Declare an async after-invocation observer instead of a gate. */
+    readonly observe?: boolean;
+  } = {},
 ) {
   const root = await temporaryRoot("falryn-hook-mcp-");
   const fixture = await prepareNativeCliFixture(COMMAND, root, {
-    declarations: [mcpHookDeclaration(toolId, options.digest ?? DIGEST)],
+    declarations: [
+      mcpHookDeclaration(
+        toolId,
+        options.digest ?? DIGEST,
+        options.observe ? { point: "after-capability-invocation", mode: "async" } : {},
+      ),
+    ],
     files: {},
   });
   await writeFile(
@@ -103,6 +115,31 @@ test.skipIf(unavailable).each([
     expect(run.result.payload?.stage).toBe(veto ? "attempt-failed" : "attempt-completed");
     // The subject ran exactly once on allow, never on veto, and the model saw its result.
     expect(answered(run)).toHaveLength(veto ? 0 : 1);
+  },
+  90_000,
+);
++test.skipIf(unavailable)(
+  "an async MCP observer calls its tool through the gateway after the subject settles and leaves one notice",
+  async () => {
+    const { journey: run } = await journey("allow", { observe: true });
+    expect(run.result.payload?.stage).toBe("attempt-completed");
+    expect(answered(run)).toHaveLength(1);
+    // The observer's connect and call are ordinary hook-origin work, once each.
+    expect(proposals(run, "mcp_connect")).toHaveLength(1);
+    expect(proposals(run, "mcp_call_tool")).toHaveLength(1);
+    const observer = hookGates(run).filter((gate) => gate.stage === "post-hook");
+    expect(observer.map((gate) => gate.decision)).toEqual([
+      "hook-chain-bound",
+      "queued",
+      "observe",
+    ]);
+    // Its own work suppressed the point that asked rather than queueing it again.
+    expect(
+      recorded(run).filter(
+        (entry) => entry.stage === "post-hook" && entry.decision === "reentry-suppressed",
+      ),
+    ).toHaveLength(2);
+    expect(observerNotices(run)).toHaveLength(1);
   },
   90_000,
 );

@@ -922,6 +922,8 @@ export function createProductAttemptRunner(
         },
         clock: options.clock,
         taskResources,
+        // Hook observers are owned and settled by this runtime's resource owner.
+        ...(options.resources === undefined ? {} : { resources: options.resources }),
         registry: options.registry,
         runner: options.toolRunner,
         hooks: options.hooks,

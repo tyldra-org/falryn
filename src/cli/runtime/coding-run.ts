@@ -5,6 +5,7 @@ import {
   prepareSessionSelection,
 } from "../../application/sessions/session-activation.ts";
 import { composeModelRouteTool } from "../../application/tools/model-route-tool.ts";
+import { settleHookObservers } from "../../application/tools/tool-hook-observers.ts";
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
 import { createEnvironmentProcessContext } from "./environment-process-context.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
@@ -442,6 +443,8 @@ export async function runCoding(
   let environmentRuntime: Awaited<ReturnType<typeof standaloneEnvironment>> | null = null;
   let mcp: ReturnType<typeof composeProductMcp> | null = null;
   let mainPeer: import("../../application/orchestration/peer-mailbox.ts").PeerMailbox | null = null;
+  /** The session whose async hook observers must settle before its stores close. */
+  let observerSession: string | null = null;
 
   try {
     const ids = {
@@ -456,6 +459,7 @@ export async function runCoding(
       ids.workspaceId ?? primaryWorkspaceRoot(workspace.value.set).rootId,
     );
     const sessionId = sessionIdCodec.from(ids.sessionId);
+    observerSession = String(sessionId);
     const turnId = turnIdCodec.from(ids.turnId);
     const traceId = traceIdCodec.from(ids.traceId);
     const configRequest =
@@ -1105,6 +1109,13 @@ export async function runCoding(
           }),
     });
     peer?.state("idle");
+    // A run that ends on its own still owes its admitted observers their reserved time; a
+    // stopped run cancels them. Either way each leaves its receipt before anything closes.
+    await settleHookObservers(
+      processProductResources,
+      String(sessionId),
+      options.signal?.aborted ? "cancel" : "drain",
+    );
     const cleanupUncertain = (await mcp.close()).some((result) => result.kind !== "completed");
     const succeeded = attempted.kind === "completed" && !cleanupUncertain;
     const errors =
@@ -1190,6 +1201,8 @@ export async function runCoding(
       [...trustEvents, ...attempted.events],
     );
   } finally {
+    if (observerSession !== null)
+      await settleHookObservers(processProductResources, observerSession, "cancel");
     await mcp?.close();
     environmentRuntime?.close();
     await mainPeer?.close();

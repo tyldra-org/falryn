@@ -671,7 +671,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     /** A hook's own capability requests: this gateway again, one level deeper. */
     const hookOrigin =
       (point: ToolHookPoint) =>
-      (hookId: string): HookCapabilityPort => {
+      (hookId: string, hookTask: ProductTaskResources | undefined): HookCapabilityPort => {
         let sequence = 0;
         return async ({ toolName, input, signal }) => {
           const entry = options.registry.resolveByName(toolName);
@@ -696,9 +696,10 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
           const id = `${request.invocationId}:hook:${origin}:${++sequence}`;
           let output: Readonly<Record<string, unknown>> | null = null;
           // Model disclosure is not the selector here: the hook's declaration is. Every
-          // other gate still runs, and the work gets its own task like a model call.
+          // other gate still runs, and the work is accounted to the hook's own task.
           const outcome = await createProductToolGateway({
             ...options,
+            ...(hookTask === undefined ? {} : { taskResources: hookTask }),
             disclosedToolNames: new Set([toolName]),
             hookLineage: { point, depth: depth + 1 },
           }).execute({
