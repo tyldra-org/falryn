@@ -11,6 +11,7 @@ import {
 } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
 import type { HookEgressOptions } from "../../integrations/extensions/host-hook-http.ts";
+import { reduceTranscript } from "../../presentation/transcript/reducer.ts";
 import {
   catalogFromAdapterModels,
   createDeterministicProviderAdapter,
@@ -253,6 +254,18 @@ export async function nativeProductJourney(
     await session.close();
   }
 }
+
+/**
+ * The transcript notices a journey's stored history projects for completed async hook
+ * observers. Projection is passive: it reads the journal and runs nothing.
+ */
+export function observerNotices(journey: Awaited<ReturnType<typeof nativeProductJourney>>) {
+  if (!journey.events?.ok) return [];
+  return reduceTranscript(journey.events.value).blocks.flatMap((block) =>
+    block.kind === "notice" && / observed /u.test(block.summary.text) ? [block.summary.text] : [],
+  );
+}
+
 if (import.meta.main)
   console.log(
     JSON.stringify(

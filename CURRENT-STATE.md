@@ -3168,6 +3168,13 @@ observers and 1 MiB of pending payload. Admission reserves the remaining hook
 budget before returning a queued receipt. Overflow records a typed unavailable
 outcome. Retained child scopes own callbacks, cancellation cleanup and their final
 receipts through parent settlement; user cancellation and shutdown reach that work.
+Observers belong to their session, not their subject's turn. Before a session's
+stores close, its observers settle: a headless run that ends on its own waits for
+each admitted observer inside the deadline reserved when it was admitted, while a
+stopped run and a closed terminal session cancel them. Either way each observer
+leaves exactly one final receipt and nothing of the session runs afterwards. Work an
+observer asks for through the gateway, such as an MCP tool hook's call, is accounted
+to the observer's own retained task.
 
 The semantic journal records the resolved order and registration, catalog and
 configuration generations before invocation. It records each decision with digests,
@@ -3203,7 +3210,9 @@ excluded from diagnostics. Strict remote/model receipt variants use nullable
 usage and effect uncertainty; the HTTP and MCP tool adapters produce remote receipts,
 while model adapters remain unavailable. Queue and
 overflow receipts retain the captured binding. Failure receipts become transcript
-notices, including passive replay/export. Audit or health-store failure refuses
+notices, including passive replay/export, and so does each async observer's
+completion (`Hook <hook> observed <invocation>: <decision>`), once, after its
+queued receipt. Audit or health-store failure refuses
 required gates; after native settlement, persistence failure remains visible
 without re-executing the subject or changing its recorded observed effect.
 
@@ -3248,8 +3257,7 @@ same codec and native revalidation as command hooks; success is never consent.
 Receipts keep transport, status, HTTP status, response validity, omitted bytes and
 an unknown effect once sent, never headers, bodies or credentials. Cancellation,
 timeout and disconnect after sending are never retried. Async HTTP observers enter
-the same bounded queue; a headless run cancels queued observers when it ends, so
-they never outlive it. `src/domain/extensions/hook-fixtures.ts` has an example
+the same bounded queue and settle with their session. `src/domain/extensions/hook-fixtures.ts` has an example
 declaration.
 
 An `mcp-tool-v1` hook names a configured MCP `serverId`, the exact `toolId` (the

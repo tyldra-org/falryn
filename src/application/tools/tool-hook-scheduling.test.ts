@@ -16,26 +16,30 @@ import {
   type ToolHookEnvelope,
 } from "../../domain/tools/tool-hooks.ts";
 import { createProductResources } from "../orchestration/product-resources.ts";
+import { settleHookObservers } from "./tool-hook-observers.ts";
 import { createToolHookRunner } from "./tool-hook-runner.ts";
 
 const generation = configurationGeneration.from(0);
 const pre = "before-capability-invocation";
 const post = "after-capability-invocation";
-function envelope(point: ToolHookEnvelope["point"] = pre, id = "subject") {
-  return withHookCatalog({
-    point,
-    phase: point === pre ? "pre" : "post",
-    invocationId: invocationId.from(id),
-    capabilityId: capabilityId.from("builtin:workspace/read_file@1"),
-    catalogGeneration: generation,
-    registrationGeneration: generation,
-    deadline: null,
-    recursionDepth: 0,
-    reentryKey: id,
-    payload: { path: "src/main.ts" },
-    observedOutcome:
-      point === pre ? null : { status: "completed", output: {}, effect: "completed" },
-  });
+function envelope(point: ToolHookEnvelope["point"] = pre, id = "subject", sessionId?: string) {
+  return withHookCatalog(
+    {
+      point,
+      phase: point === pre ? "pre" : "post",
+      invocationId: invocationId.from(id),
+      capabilityId: capabilityId.from("builtin:workspace/read_file@1"),
+      catalogGeneration: generation,
+      registrationGeneration: generation,
+      deadline: null,
+      recursionDepth: 0,
+      reentryKey: id,
+      payload: { path: "src/main.ts" },
+      observedOutcome:
+        point === pre ? null : { status: "completed", output: {}, effect: "completed" },
+    },
+    sessionId === undefined ? {} : { sessionId },
+  );
 }
 function hook(id: string, overrides: Partial<RegisteredToolHook> = {}): RegisteredToolHook {
   return { id, point: pre, priority: 0, run: () => ({ kind: "allow" }), ...overrides };
@@ -309,4 +313,61 @@ test("implicit and explicit builtin identity cannot create an unresolved executi
   expect(
     createToolHookRegistry(generation, [hook("same"), hook("same", { owner: "builtin" })]),
   ).toMatchObject({ ok: false, error: { code: "duplicate-hook" } });
+});
+
+test("settling a session drains or cancels its observers, and each leaves one final receipt", async () => {
+  const clock = createManualClock(instant(0));
+  const resources = createProductResources(clock);
+  const records: { session: string; record: RecordedHookDecision }[] = [];
+  // The drained session's observer finishes at 500 ms; the other would take 900 ms.
+  const observer = (id: string) =>
+    hook(id, {
+      point: post,
+      registration: hookRegistrationSchema.parse({
+        version: 1,
+        point: post,
+        pointVersion: 1,
+        mode: "async",
+        timeoutMs: 1000,
+        handler: { kind: "builtin", id },
+      }),
+      run: async (subject, context) => {
+        const finishAt = subject.catalog.correlation.sessionId === "drained" ? 500 : 900;
+        await clock.waitUntil(instant(finishAt), context.signal);
+        return { kind: "observe", annotations: {} };
+      },
+    });
+  const runner = createToolHookRunner({
+    clock,
+    registry: registry([observer("observer")]),
+  });
+  const queue = async (session: string) => {
+    await runner.runPost({
+      envelope: envelope(post, session, session),
+      signal: new AbortController().signal,
+      task: resources.openTask("test"),
+      resourceOwner: resources,
+      onDecision: async (record) => {
+        records.push({ session, record });
+      },
+    });
+  };
+  const settled = (session: string) =>
+    records.filter(
+      (entry) => entry.session === session && entry.record.execution?.state !== "queued",
+    );
+  await queue("drained");
+  await queue("cancelled");
+  // Draining waits for the observer's own completion inside its reserved deadline.
+  const drain = settleHookObservers(resources, "drained", "drain");
+  await clock.advance(duration(500));
+  await drain;
+  expect(settled("drained").map((entry) => entry.record.decision.kind)).toEqual(["observe"]);
+  // Cancelling stops the other session's observer and still waits for its receipt.
+  expect(settled("cancelled")).toEqual([]);
+  await settleHookObservers(resources, "cancelled", "cancel");
+  expect(settled("cancelled").map((entry) => entry.record.failed?.reason)).toEqual(["cancelled"]);
+  // A settled session is empty; settling it again returns at once.
+  await settleHookObservers(resources, "cancelled", "cancel");
+  expect(settled("cancelled")).toHaveLength(1);
 });
