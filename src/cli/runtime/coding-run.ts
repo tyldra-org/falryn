@@ -131,7 +131,7 @@ import {
   loadProductConfiguration,
   productConfigurationLoadRequest,
 } from "./product-configuration.ts";
-import { composeProductCredentials } from "./product-credentials.ts";
+import { composeHostProductCredentials, composeProductCredentials } from "./product-credentials.ts";
 import { composeProductProviderConnections } from "./product-provider-connections.ts";
 import type { ServiceProvider } from "./services.ts";
 import { describeWorkspaceResolveError } from "./workspace-resolution.ts";
@@ -723,7 +723,11 @@ export async function runCoding(
       generation,
       context: scopedProcesses,
       services: hostManagedServices,
-      environment: graph.environment,
+      credentials: composeHostProductCredentials({
+        clock: graph.clock,
+        environment: graph.environment,
+        ...(options.ownedProcesses === undefined ? {} : { ownedProcesses: options.ownedProcesses }),
+      }).resolver,
       configuration: () => ({
         values: graph.loader.current()?.values ?? configuration.values,
         generation: Number(graph.loader.current()?.generation ?? generation),

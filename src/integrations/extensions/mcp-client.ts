@@ -6,28 +6,35 @@ import {
   SdkHttpError,
   StreamableHTTPClientTransport,
   type Transport,
+  UnauthorizedError,
 } from "@modelcontextprotocol/client";
 import {
   MCP_DEADLINE_MS,
   MCP_MESSAGE_BYTES,
   MCP_STDERR_BYTES,
+  McpAuthFailure,
   type McpClientFactory,
   type McpListChanges,
+  type McpMethod,
   McpRequestFailure,
   McpUnavailable,
+  mcpCredentialFailure,
+  mcpCredentialReference,
+  mcpRetryAfterMs,
 } from "../../domain/extensions/mcp.ts";
 import { MCP_SERVER_FEATURES } from "../../domain/extensions/mcp-catalog.ts";
-import type { EnvironmentPort } from "../../domain/foundation/index.ts";
 import { duration, managedServiceId } from "../../domain/foundation/index.ts";
 import {
   MAX_MANAGED_SERVICE_REPLAY_BYTES,
   type ManagedServicePort,
 } from "../../domain/process/index.ts";
+import type { SecretResolverPort } from "../../domain/security/credential.ts";
 import { ManagedMcpTransport } from "./mcp-stdio.ts";
 
 export type HostMcpPorts = {
   readonly services: (names: readonly string[]) => ManagedServicePort;
-  readonly environment: EnvironmentPort;
+  /** The shared resolver; an HTTP server's reference is scoped to that server. */
+  readonly credentials: SecretResolverPort;
   readonly environmentGeneration: () => string | null;
   readonly currentEnvironmentGeneration?: () => string | null;
   readonly environmentValues?: (
@@ -38,11 +45,15 @@ export type HostMcpPorts = {
   readonly identity: string;
 };
 
-/** Fetch remains bound to one admitted destination. Redirects and authentication never change it. */
+/**
+ * Fetch remains bound to one admitted destination. Redirects and authentication never
+ * change it. A rate-limit or gateway refusal reports its status and Retry-After hint.
+ */
 function boundedFetch(
   endpoint: string,
   authorize: (signal: AbortSignal) => Promise<boolean>,
   fetcher: FetchLike,
+  onRefused: (status: number, retryAfterMs: number | null) => void,
 ): FetchLike {
   return async (input, init) => {
     const url = String(input);
@@ -54,6 +65,8 @@ function boundedFetch(
       await response.body?.cancel();
       throw new Error("mcp-redirect-denied");
     }
+    if ([429, 502, 503, 504].includes(response.status))
+      onRefused(response.status, mcpRetryAfterMs(response.headers.get("retry-after"), Date.now()));
     if (Number(response.headers.get("content-length")) > MCP_MESSAGE_BYTES) {
       await response.body?.cancel();
       throw new Error("mcp-message-too-large");
@@ -90,6 +103,33 @@ function boundedFetch(
   };
 }
 
+const GATEWAY = [502, 503, 504];
+
+/**
+ * A server refusal before it accepted anything, or null when the failure may have
+ * followed acceptance. A gateway failure on a tool call is not a refusal: the gateway
+ * may already have forwarded it.
+ */
+function refusal(
+  error: unknown,
+  method: McpMethod | "connect",
+  retryAfterMs: number | null,
+): McpRequestFailure | null {
+  if (
+    error instanceof UnauthorizedError ||
+    (error instanceof SdkError && error.code === SdkErrorCode.ClientHttpAuthentication)
+  )
+    return new McpRequestFailure("mcp-auth-rejected", true);
+  if (!(error instanceof SdkHttpError)) return null;
+  if (error.code === SdkErrorCode.ClientHttpForbidden || error.status === 403)
+    return new McpRequestFailure("mcp-auth-forbidden", true);
+  if (error.status === 401) return new McpRequestFailure("mcp-auth-rejected", true);
+  if (error.status === 429) return new McpRequestFailure("mcp-rate-limited", true, retryAfterMs);
+  if (GATEWAY.includes(error.status) && method !== "tools/call")
+    return new McpRequestFailure("mcp-server-unavailable", true, retryAfterMs);
+  return null;
+}
+
 export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
   return async ({ connection, generation, admission, authorize, onFailure, onCatalogChanged }) => {
     if (connection.transport === "stdio" && process.platform === "win32")
@@ -100,21 +140,33 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
       connection.transport === "stdio"
         ? await ports.environmentValues?.(connection.environmentNames, admission.signal)
         : null;
-    const credential =
-      connection.transport === "http" && connection.credentialEnvironment
-        ? ports.environment.get(connection.credentialEnvironment)
-        : null;
-    if (connection.transport === "http" && connection.credentialEnvironment && !credential)
-      throw new McpUnavailable("mcp-credential-unavailable");
+    const reference = mcpCredentialReference(connection);
+    // Every secret this transport has sent, so a rotated one stays redacted too.
+    const sent = new Set<string>();
+    const resolve = async (signal: AbortSignal): Promise<string | null> => {
+      if (reference === null) return null;
+      const resolution = await ports.credentials.resolve(
+        { reference, consumer: reference.consumer },
+        (secret) => secret,
+        { signal },
+      );
+      if (resolution.kind === "resolved") {
+        sent.add(resolution.value);
+        return resolution.value;
+      }
+      const failure = mcpCredentialFailure(resolution.failure.status);
+      throw failure === "cancelled" ? new Error("mcp-credential-cancelled") : failure;
+    };
+    let token = await resolve(admission.signal);
     const current = () =>
-      (connection.transport !== "stdio" ||
-        !ports.currentEnvironmentGeneration ||
-        ports.currentEnvironmentGeneration() === environmentGeneration) &&
-      (connection.transport !== "http" ||
-        !connection.credentialEnvironment ||
-        ports.environment.get(connection.credentialEnvironment) === credential);
+      connection.transport !== "stdio" ||
+      !ports.currentEnvironmentGeneration ||
+      ports.currentEnvironmentGeneration() === environmentGeneration;
     const allowed = async (signal: AbortSignal) =>
       !signal.aborted && current() && (await authorize(signal));
+    let retryAfterMs: number | null = null;
+    // The SDK's version probe folds some refusals into its own fallback; the fetch saw them.
+    let refusedStatus: number | null = null;
     let transport: Transport;
     if (connection.transport === "stdio") {
       transport = new ManagedMcpTransport(ports.services(connection.environmentNames), {
@@ -133,8 +185,26 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
       });
     } else {
       transport = new StreamableHTTPClientTransport(new URL(connection.url), {
-        fetch: boundedFetch(connection.url, allowed, ports.fetch ?? fetch),
-        ...(credential === null ? {} : { authProvider: { token: async () => credential } }),
+        fetch: boundedFetch(connection.url, allowed, ports.fetch ?? fetch, (status, hint) => {
+          refusedStatus = status;
+          retryAfterMs = hint;
+        }),
+        ...(reference === null
+          ? {}
+          : {
+              authProvider: {
+                token: async () => token ?? undefined,
+                // A rejected credential may have rotated or expired: resolve it again once.
+                // The SDK then retries that request once; a second rejection is final.
+                async onUnauthorized() {
+                  try {
+                    token = await resolve(AbortSignal.timeout(MCP_DEADLINE_MS));
+                  } catch {
+                    // The unchanged credential meets the same rejection.
+                  }
+                },
+              },
+            }),
         reconnectionOptions: {
           maxRetries: 0,
           initialReconnectionDelay: 100,
@@ -172,8 +242,8 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
     // subscription) through onerror while completing the connection; they are not fatal.
     let connecting = false;
     client.onerror = (error) => {
-      if (connecting) return;
-      if (error instanceof SdkHttpError && [502, 503, 504].includes(error.status)) return;
+      // A server refusing one request is reported by that request, not a lost transport.
+      if (connecting || refusal(error, "tools/list", null) !== null) return;
       onFailure("mcp-protocol-error");
     };
     client.onclose = () => onFailure("mcp-disconnected");
@@ -192,10 +262,25 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
           if (!(await allowed(signal))) throw new Error("mcp-admission-revoked");
           connecting = true;
           try {
+            retryAfterMs = null;
+            refusedStatus = null;
             await client.connect(transport, {
               signal,
               timeout: Math.max(1, Math.min(MCP_DEADLINE_MS, admission.deadline - Date.now())),
             });
+          } catch (error) {
+            const observed: number | null = refusedStatus;
+            const refused =
+              refusal(error, "connect", retryAfterMs) ??
+              (observed === 429
+                ? new McpRequestFailure("mcp-rate-limited", true, retryAfterMs)
+                : observed !== null && GATEWAY.includes(observed)
+                  ? new McpRequestFailure("mcp-server-unavailable", true, retryAfterMs)
+                  : null);
+            if (refused === null) throw error;
+            if (refused.code === "mcp-auth-rejected" || refused.code === "mcp-auth-forbidden")
+              throw new McpAuthFailure(refused.code);
+            throw refused;
           } finally {
             connecting = false;
           }
@@ -236,6 +321,7 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
             return client.request({ method, params }, options);
           };
           let result: unknown;
+          retryAfterMs = null;
           try {
             result = await execute();
           } catch (error) {
@@ -247,19 +333,12 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
               (error.data as { resultType?: unknown } | undefined)?.resultType === "input_required"
             )
               throw new McpRequestFailure("mcp-input-required-unavailable");
-            // Only a safe read receiving a transient HTTP failure gets one retry.
-            if (
-              method === "tools/call" ||
-              !(error instanceof SdkHttpError) ||
-              ![502, 503, 504].includes(error.status) ||
-              !(await allowed(signal))
-            )
-              throw error;
-            result = await execute();
+            // Whether and when to try again belongs to the lifecycle's retry policy.
+            throw refusal(error, method, retryAfterMs) ?? error;
           }
           if (new TextEncoder().encode(JSON.stringify(result)).length > MCP_MESSAGE_BYTES)
             throw new McpRequestFailure("mcp-result-too-large");
-          const secrets = [credential, ...Object.values(values ?? {})].filter(
+          const secrets = [...sent, ...Object.values(values ?? {})].filter(
             (value): value is string => typeof value === "string" && value.length > 0,
           );
           for (const secret of [...secrets]) {

@@ -1,3 +1,4 @@
+import { createSecretResolver } from "../../application/authentication/credential-resolver.ts";
 import { checkpointControl } from "../../application/compression/checkpoint-request.ts";
 import { createMcpUserInput } from "../../application/extensions/mcp-input.ts";
 import { createPromptTemplateCatalog } from "../../application/extensions/native-prompt-owner.ts";
@@ -125,6 +126,11 @@ export type ProductShellAttachmentPorts = {
       | null,
   ) => import("../../application/context/instruction-source-owner.ts").InstructionSourceOwner;
   readonly authorizeMcp?: (signal: AbortSignal) => Promise<boolean>;
+  /**
+   * The shared resolver MCP credential references are scoped through. Hosts without
+   * credential stores leave it out, and referenced servers report the store unavailable.
+   */
+  readonly mcpCredentials?: import("../../domain/security/credential.ts").SecretResolverPort;
   readonly workingProfileSession?: WorkingProfileSessionFactory;
   readonly records?: Pick<
     import("./product-artifact-session.ts").ProductArtifactSession["records"],
@@ -324,7 +330,7 @@ export async function composeProductShellAttachments(
       generation,
       context: environmentContext,
       services: mcpServices.port,
-      environment: ports.environment ?? { get: () => null },
+      credentials: ports.mcpCredentials ?? createSecretResolver({ stores: [], clock: ports.clock }),
       configuration: () => {
         const record = profileSession?.configuration() ?? ports.sandboxConfiguration?.();
         return {

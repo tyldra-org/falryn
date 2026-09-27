@@ -641,4 +641,29 @@ describe("tool calls that need user input", () => {
     expect(called).toEqual({ kind: "cancelled", code: "mcp-call-cancelled", effect: "uncertain" });
     expect(sent).toHaveLength(1);
   });
+  test("a credential rejected while an answer waits ends the call uncertain and resends nothing", async () => {
+    const { h, sent, generation } = await asking((params) => {
+      if (params.inputResponses === undefined)
+        return { resultType: "input_required", inputRequests: { confirm: FORM } };
+      // The credential was revoked while the question was open.
+      throw new McpRequestFailure("mcp-auth-rejected", true);
+    });
+    const called = await h.catalog.callTool(echo, generation, { value: "hi" }, h.call(), {
+      ask: async () => ({
+        response: { action: "accept", content: { branch: "main" } },
+        disposition: "accept",
+      }),
+    });
+    // The server saw the call before it asked, so the call's effect stays uncertain.
+    expect(called).toEqual({ kind: "denied", code: "mcp-auth-rejected", effect: "uncertain" });
+    expect(sent).toHaveLength(2);
+    expect(h.lifecycle.inspect()[0]).toMatchObject({ state: "denied", code: "mcp-auth-rejected" });
+    // A valid reconnect starts a new generation; the answer is never sent again.
+    await h.connect();
+    expect(sent).toHaveLength(2);
+    expect(await h.catalog.callTool(echo, generation, { value: "hi" }, h.call())).toMatchObject({
+      kind: "stale",
+      effect: "none",
+    });
+  });
 });

@@ -9,6 +9,7 @@ import type { OwnedProcessRegistry } from "../../integrations/process/host-owned
 import { createHostManagedServicePort } from "../../integrations/process/host-process-sessions/managed-service.ts";
 import type { GlobalOptions } from "../options.ts";
 import { mcpConfiguration } from "../runtime/mcp-configuration.ts";
+import { composeHostProductCredentials } from "../runtime/product-credentials.ts";
 import { composeProductMcp } from "../runtime/product-mcp.ts";
 import { createProductSandbox } from "../runtime/sandbox-configuration.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
@@ -57,7 +58,11 @@ export async function runMcp(
       ...(ownedProcesses ? { ownedProcesses } : {}),
     }),
     context: environment.context,
-    environment: graph.environment,
+    credentials: composeHostProductCredentials({
+      clock: graph.clock,
+      environment: graph.environment,
+      ...(ownedProcesses ? { ownedProcesses } : {}),
+    }).resolver,
     configuration: () => ({ values: record.values, generation: Number(record.generation), record }),
     async authorize(requestSignal) {
       const trust = await graph.workspaceTrust.resolve(undefined, requestSignal);

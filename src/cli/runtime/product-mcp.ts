@@ -6,8 +6,9 @@ import type {
   ConfigurationGenerationRecord,
   ConfigurationValues,
 } from "../../domain/configuration/index.ts";
-import type { ConfigurationGeneration, EnvironmentPort } from "../../domain/foundation/index.ts";
+import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type { ManagedServicePort } from "../../domain/process/index.ts";
+import type { SecretResolverPort } from "../../domain/security/credential.ts";
 import { createHostMcpClient } from "../../integrations/extensions/mcp-client.ts";
 import type { EnvironmentProcessContext } from "./environment-process-context.ts";
 import { mcpConfiguration } from "./mcp-configuration.ts";
@@ -22,7 +23,8 @@ export function composeProductMcp(options: {
   };
   readonly services: ManagedServicePort;
   readonly context: EnvironmentProcessContext;
-  readonly environment: EnvironmentPort;
+  /** The shared resolver HTTP servers' credential references are scoped through. */
+  readonly credentials: SecretResolverPort;
   readonly authorize: (signal: AbortSignal) => Promise<boolean>;
   /** How tool calls ask the user for server-requested input; absent hosts cancel. */
   readonly userInput?: McpUserInput;
@@ -36,7 +38,7 @@ export function composeProductMcp(options: {
     authorize: (admission) => options.authorize(admission.signal),
     clients: createHostMcpClient({
       identity: options.identity,
-      environment: options.environment,
+      credentials: options.credentials,
       environmentGeneration: options.context.generation,
       currentEnvironmentGeneration: options.context.currentGeneration,
       environmentValues: options.context.values,

@@ -70,6 +70,7 @@ import {
 import { modelPreferencesFrom } from "./runtime/model-configuration.ts";
 import { openProductArtifactSession } from "./runtime/product-artifact-session.ts";
 import { configurationValuesFromLoadOutcome } from "./runtime/product-configuration.ts";
+import { composeHostProductCredentials } from "./runtime/product-credentials.ts";
 import { composeProductModelSettings } from "./runtime/product-model-settings.ts";
 import { composeProductProviderConnections } from "./runtime/product-provider-connections.ts";
 import { composeProductShellAttachments } from "./runtime/product-shell-attachments.ts";
@@ -536,6 +537,11 @@ async function launchShell(
                 const trust = await graph.workspaceTrust.resolve(undefined, signal);
                 return trust.status === "accepted" || trust.status === "empty";
               },
+              mcpCredentials: composeHostProductCredentials({
+                clock: graph.clock,
+                environment: graph.environment,
+                ...(governance.ownedProcesses ? { ownedProcesses: governance.ownedProcesses } : {}),
+              }).resolver,
               workingProfileSession: productWorkingProfileSessions(graph, globals, {
                 modelCatalogs: productArtifactSession.modelCatalogs,
                 providerContinuations: productArtifactSession.providerContinuations,

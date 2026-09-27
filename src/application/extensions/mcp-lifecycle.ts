@@ -2,7 +2,9 @@ import {
   MCP_DEADLINE_MS,
   MCP_MESSAGE_BYTES,
   MCP_PENDING_REQUESTS,
+  MCP_RETRY,
   type McpAdmission,
+  McpAuthFailure,
   type McpClientFactory,
   type McpClientPort,
   type McpConfiguration,
@@ -12,7 +14,11 @@ import {
   McpRequestFailure,
   type McpSnapshot,
   McpUnavailable,
+  mcpTransientRefusal,
 } from "../../domain/extensions/mcp.ts";
+import { type ClockPort, createSystemClock, duration } from "../../domain/foundation/clock.ts";
+import { backoffDelayMs } from "../../domain/sessions/retry.ts";
+import { awaitBackoff } from "../runtime/recovery.ts";
 
 type Live = {
   connection: McpConnection;
@@ -27,7 +33,13 @@ export type McpLifecyclePorts = {
   readonly authorize: (admission: McpAdmission) => Promise<boolean>;
   readonly clients: McpClientFactory;
   readonly observe?: (snapshot: McpSnapshot) => void;
+  /** Waits between retries; injected so tests observe them. Defaults to the system clock. */
+  readonly clock?: ClockPort;
+  /** A fraction in [0, 1) spreading each backoff; defaults to Math.random. */
+  readonly jitter?: () => number;
 };
+
+type Wait = "elapsed" | "cancelled" | "deadline";
 
 /** One session owns each transport generation; observations cannot launch a server. */
 export function createMcpLifecycle(ports: McpLifecyclePorts) {
@@ -35,8 +47,33 @@ export function createMcpLifecycle(ports: McpLifecyclePorts) {
   const starts = new Map<string, number[]>();
   const denied = new Map<string, McpSnapshot>();
   const openingServers = new Map<string, { abort: AbortController; settled: Promise<void> }>();
+  /** The latest refused start's Retry-After hint per server, consumed by the next wait. */
+  const startHints = new Map<string, number | null>();
+  const clock = ports.clock ?? createSystemClock();
+  const jitter = ports.jitter ?? Math.random;
   let nextGeneration = 0;
   let closed = false;
+  /**
+   * Wait before attempt number attempt + 1. The server's hint wins over backoff, and a
+   * wait that would end past the deadline is not started.
+   */
+  const wait = async (
+    attempt: number,
+    hint: number | null,
+    deadline: number,
+    signal: AbortSignal,
+  ): Promise<Wait> => {
+    const delayMs =
+      hint === null
+        ? backoffDelayMs(attempt, MCP_RETRY.backoff, jitter())
+        : Math.min(hint, MCP_RETRY.retryAfterCapMs);
+    if (Date.now() + delayMs >= deadline) return "deadline";
+    return awaitBackoff(
+      clock,
+      { kind: "retry", attempt: attempt + 1, delayMs: duration(delayMs) },
+      signal,
+    );
+  };
   const publish = (live: Live, change: Partial<McpSnapshot>) => {
     live.snapshot = { ...live.snapshot, ...change };
     ports.observe?.({ ...live.snapshot });
@@ -245,6 +282,17 @@ export function createMcpLifecycle(ports: McpLifecyclePorts) {
           publish(live, { state: "failed", code: error.code });
           return failed("unavailable", error.code, live);
         }
+        // Authentication failed before the server accepted anything; retrying cannot help.
+        if (error instanceof McpAuthFailure) {
+          publish(live, { state: "denied", code: error.code });
+          return failed("denied", error.code, live);
+        }
+        // A rate limit or gateway refusal: the caller may wait and start again.
+        if (error instanceof McpRequestFailure && error.refused && !admission.signal.aborted) {
+          startHints.set(live.connection.id, error.retryAfterMs);
+          publish(live, { state: "failed", code: error.code });
+          return failed("unavailable", error.code, live);
+        }
         const kind = admission.signal.aborted
           ? "cancelled"
           : timeout.signal.aborted
@@ -307,8 +355,39 @@ export function createMcpLifecycle(ports: McpLifecyclePorts) {
     );
     const signal = AbortSignal.any([admission.signal, timeout.signal, live.stop.signal]);
     const effect = method === "tools/call" ? "uncertain" : "none";
+    // Retries share this request's deadline; waiting never extends it.
+    const until = Math.min(admission.deadline, Date.now() + MCP_DEADLINE_MS);
     try {
-      const value = await live.client.request(method, params, signal);
+      let value: unknown;
+      for (let attempt = 1; ; attempt += 1) {
+        try {
+          value = await live.client.request(method, params, signal);
+          break;
+        } catch (error) {
+          if (!(error instanceof McpRequestFailure) || !error.refused || admission.signal.aborted)
+            throw error;
+          // A refusal means the server accepted nothing, so no effect is uncertain.
+          if (!mcpTransientRefusal(error.code)) {
+            // The credential no longer works: the connection is denied until it changes.
+            publish(live, { state: "denied", code: error.code });
+            live.stop.abort();
+            void live.client
+              ?.close()
+              .catch(() => publish(live, { state: "failed", code: "mcp-shutdown-uncertain" }));
+            return failed("denied", error.code, live);
+          }
+          if (method === "tools/call" || attempt >= MCP_RETRY.attempts)
+            return failed("unavailable", error.code, live);
+          const waited = await wait(attempt, error.retryAfterMs, until, signal);
+          if (waited === "deadline") return failed("unavailable", error.code, live);
+          if (waited === "cancelled")
+            return admission.signal.aborted
+              ? failed("cancelled", "mcp-request-cancelled", live)
+              : failed("stale", "mcp-generation-stale", live);
+          if (generation !== live.snapshot.transportGeneration || !(await allowed(admission, live)))
+            return failed("stale", "mcp-generation-stale", live);
+        }
+      }
       if (!(await allowed(admission, live)) || signal.aborted)
         return failed(
           admission.signal.aborted ? "cancelled" : timeout.signal.aborted ? "timed-out" : "stale",
@@ -368,10 +447,30 @@ export function createMcpLifecycle(ports: McpLifecyclePorts) {
       });
       openingServers.set(admission.serverId, { abort, settled });
       try {
-        return await connectOwned({
-          ...admission,
-          signal: AbortSignal.any([admission.signal, abort.signal]),
-        });
+        const signal = AbortSignal.any([admission.signal, abort.signal]);
+        // Only a refused start is retried, and each attempt spends the start budget.
+        for (let attempt = 1; ; attempt += 1) {
+          startHints.delete(admission.serverId);
+          const outcome = await connectOwned({ ...admission, signal });
+          if (
+            outcome.kind !== "unavailable" ||
+            !mcpTransientRefusal(outcome.code) ||
+            attempt >= MCP_RETRY.attempts
+          )
+            return outcome;
+          const live = connections.get(admission.serverId);
+          if (live) publish(live, { state: "connecting", code: "mcp-retry-wait" });
+          const waited = await wait(
+            attempt,
+            startHints.get(admission.serverId) ?? null,
+            admission.deadline,
+            signal,
+          );
+          if (waited === "elapsed") continue;
+          const code = waited === "deadline" ? outcome.code : "mcp-startup-cancelled";
+          if (live) publish(live, { state: "failed", code });
+          return failed(waited === "deadline" ? "unavailable" : "cancelled", code, live);
+        }
       } catch {
         return failed(
           "unavailable",
