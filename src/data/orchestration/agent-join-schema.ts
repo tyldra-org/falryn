@@ -11,6 +11,17 @@ export const AGENT_JOIN_TABLES = [
   "agent_join_revisions",
   "process_task_seals",
 ] as const;
+export const AGENT_EDIT_SCOPE_TABLES = ["agent_edit_scopes"] as const;
+/** Durable child edit-scope reservations (#1122); a null scope is an unscoped writer. */
+export const MIGRATION_0033: Migration = {
+  version: 33,
+  name: "agent-edit-scopes",
+  destructive: false,
+  statements: [
+    "CREATE TABLE agent_edit_scopes (task_id TEXT PRIMARY KEY, generation INTEGER NOT NULL CHECK(generation BETWEEN 1 AND 64), workspace_id TEXT NOT NULL, scope TEXT CHECK(scope IS NULL OR length(CAST(scope AS BLOB))<=131072), task TEXT CHECK(task IS NULL OR length(CAST(task AS BLOB))<=4096), reserved_at INTEGER NOT NULL, released INTEGER NOT NULL DEFAULT 0 CHECK(released IN (0,1))) STRICT",
+    "CREATE INDEX agent_edit_scopes_active ON agent_edit_scopes(workspace_id,released)",
+  ],
+};
 export const MIGRATION_0016: Migration = {
   version: 16,
   name: "parent-owned-agent-joins",

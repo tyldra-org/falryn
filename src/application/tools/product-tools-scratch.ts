@@ -129,6 +129,7 @@ export function composeProductScratchTools(ports: ProductScratchToolPorts): Prod
         {
           inputSchema: scratchWriteInput,
           outputSchema: scratchMetadata,
+          workspaceWrites: "none",
           conflictKeysFor: (input) =>
             typeof input.name === "string"
               ? [conflictKey("scratch", `${ports.sessionId}/${input.name}`)]
@@ -169,6 +170,7 @@ export function composeProductScratchTools(ports: ProductScratchToolPorts): Prod
         {
           inputSchema: scratchDiscardInput,
           outputSchema: scratchMetadata,
+          workspaceWrites: "none",
           conflictKeysFor: (input) =>
             typeof input.handle === "string" ? [conflictKey("scratch", input.handle)] : [],
         },

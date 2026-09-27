@@ -1,3 +1,4 @@
+import { MIGRATION_0033 } from "../orchestration/agent-join-schema.ts";
 import { MIGRATION_0032 } from "../orchestration/mailbox-schema.ts";
 import { MIGRATION_0030 } from "../orchestration/schedule-store.ts";
 import { MIGRATION_0031 } from "../orchestration/work-queue-schema.ts";
@@ -120,6 +121,7 @@ describe("a fresh database", () => {
       MIGRATION_0030.version,
       MIGRATION_0031.version,
       MIGRATION_0032.version,
+      MIGRATION_0033.version,
     ]);
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
@@ -153,6 +155,7 @@ describe("a fresh database", () => {
     // `sql IS NOT NULL`; what is listed here is what was declared on purpose.
     expect(indexes.ok && indexes.value.map((row) => row.name)).toEqual([
       "agent_children_owner",
+      "agent_edit_scopes_active",
       "agent_joins_owner",
       "artifact_transformations_by_parent",
       "artifacts_by_digest",
@@ -258,6 +261,7 @@ describe("a fresh database", () => {
       MIGRATION_0030.version,
       MIGRATION_0031.version,
       MIGRATION_0032.version,
+      MIGRATION_0033.version,
     ]);
     expect(
       upgraded.read(

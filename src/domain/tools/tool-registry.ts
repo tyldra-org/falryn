@@ -19,6 +19,7 @@ import type { CapabilityId, ConfigurationGeneration } from "../foundation/identi
 import { capabilityId } from "../foundation/identity.ts";
 import { MAX_IDENTIFIER_LENGTH } from "../foundation/limits.ts";
 import { err, ok, type Result } from "../foundation/result.ts";
+import type { WorkspaceWriteClass, WorkspaceWriteTargets } from "../orchestration/edit-scope.ts";
 import {
   type ResourceAmounts,
   resourceAmountsSchema,
@@ -170,6 +171,12 @@ export type ToolManifest = ToolManifestDocument & {
   readonly conflictKeysFor?: (input: Readonly<Record<string, unknown>>) => readonly ConflictKey[];
   /** Trusted effect derivation after the model input has passed its Zod schema. */
   readonly effectFor?: (input: Readonly<Record<string, unknown>>) => EffectClass;
+  /** How this tool can write workspace files; see {@link workspaceWritesOf}. */
+  readonly workspaceWrites?: WorkspaceWriteClass;
+  /** Exact workspace targets a `paths` tool writes for validated input; null when unknown. */
+  readonly writeTargetsFor?: (
+    input: Readonly<Record<string, unknown>>,
+  ) => WorkspaceWriteTargets | null;
 };
 
 export type ToolRegistryEntry = {
@@ -373,6 +380,10 @@ export type RegisterToolSchemas = {
    * runner consume.
    */
   readonly effectFor?: (input: Readonly<Record<string, unknown>>) => EffectClass;
+  readonly workspaceWrites?: WorkspaceWriteClass;
+  readonly writeTargetsFor?: (
+    input: Readonly<Record<string, unknown>>,
+  ) => WorkspaceWriteTargets | null;
 };
 
 /**
@@ -411,6 +422,8 @@ export function createToolRegistryEntry(
     outputSchema: schemas.outputSchema,
     ...(schemas.conflictKeysFor === undefined ? {} : { conflictKeysFor: schemas.conflictKeysFor }),
     ...(schemas.effectFor === undefined ? {} : { effectFor: schemas.effectFor }),
+    ...(schemas.workspaceWrites === undefined ? {} : { workspaceWrites: schemas.workspaceWrites }),
+    ...(schemas.writeTargetsFor === undefined ? {} : { writeTargetsFor: schemas.writeTargetsFor }),
   };
 
   const descriptor: ToolDescriptor = {
@@ -535,4 +548,15 @@ export function defaultProjectionContract(
     modelMaxBytes: overrides.modelMaxBytes ?? 8 * 1024,
     redactSensitive: overrides.redactSensitive ?? true,
   };
+}
+
+/**
+ * A tool's workspace write footprint. Undeclared tools that can only observe write
+ * nothing; any other undeclared tool is assumed able to write anywhere.
+ */
+export function workspaceWritesOf(manifest: ToolManifest): WorkspaceWriteClass {
+  return (
+    manifest.workspaceWrites ??
+    (manifest.effect === "observation" && manifest.effectFor === undefined ? "none" : "unbounded")
+  );
 }

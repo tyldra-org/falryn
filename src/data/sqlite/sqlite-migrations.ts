@@ -64,7 +64,12 @@ import {
 import { MIGRATION_0019, SCOPE_CONTROL_TABLES } from "../extensions/scope-control-repository.ts";
 import { MEMORY_RECORDS_TABLE, MIGRATION_0005 } from "../memory/memory-schema.ts";
 import { MIGRATION_0025, REFLECTION_REQUESTS_TABLE } from "../memory/reflection-schema.ts";
-import { AGENT_JOIN_TABLES, MIGRATION_0016 } from "../orchestration/agent-join-schema.ts";
+import {
+  AGENT_EDIT_SCOPE_TABLES,
+  AGENT_JOIN_TABLES,
+  MIGRATION_0016,
+  MIGRATION_0033,
+} from "../orchestration/agent-join-schema.ts";
 import {
   MAILBOX_TABLES,
   MIGRATION_0018,
@@ -143,6 +148,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0030,
   MIGRATION_0031,
   MIGRATION_0032,
+  MIGRATION_0033,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -182,6 +188,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   ...SCHEDULE_TABLES,
   ...WORK_HIERARCHY_TABLES,
   ...PEER_ROUTE_TABLES,
+  ...AGENT_EDIT_SCOPE_TABLES,
 ];
 
 function issue(

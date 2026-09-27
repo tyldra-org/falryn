@@ -7,6 +7,10 @@ import {
   narrowChildAuthority,
   sameChildProvider,
 } from "../../domain/orchestration/child-admission.ts";
+import {
+  checkEditScopeWrites,
+  editScopeDirectories,
+} from "../../domain/orchestration/edit-scope.ts";
 import type { EffectCertainty } from "../../domain/orchestration/outcome.ts";
 import {
   type ResourceAmounts,
@@ -63,8 +67,11 @@ export function createChildAdmission(options: {
   readonly tree: ScopeTree;
   readonly scope: ScopeHandle;
   readonly authority: ChildAuthority;
+  /** Absolute workspace root; binds absolute targets and sandbox write roots to edit scopes. */
+  readonly workspaceRoot?: string | null;
 }) {
   const { resources: rootResources, tree } = options;
+  const workspaceRoot = options.workspaceRoot ?? null;
   const rootScope = Object.freeze({ ...options.scope });
   const parsed = childAuthoritySchema.parse(options.authority);
   if (parsed.configurationGeneration !== rootResources.generation)
@@ -118,7 +125,7 @@ export function createChildAdmission(options: {
       )
         tree.acknowledge(scope.scopeId);
     };
-    const resources = guardResources(allocation, boundary, scope.signal, {
+    const resources = guardResources(allocation, boundary, workspaceRoot, scope.signal, {
       started() {
         running++;
       },
@@ -174,6 +181,7 @@ function freezeAuthority(value: ChildAuthority): ChildAuthority {
 function guardResources(
   task: ProductTaskResources,
   authority: ChildAuthority,
+  workspaceRoot: string | null,
   signal: AbortSignal,
   observe: { started(): void; settled(effect: EffectCertainty, terminated: boolean): void },
 ): ProductTaskResources {
@@ -192,8 +200,36 @@ function guardResources(
             authority.effects.includes(effect);
     return permitted ? task.checkAuthority(target, effect) : task.refusal("authority-denied");
   };
+  const scope = authority.editScope;
+  // Directory scopes become the only sandbox write roots; without a root nothing is writable.
+  const directories = editScopeDirectories(scope) ?? [];
+  const writes =
+    scope === null
+      ? {}
+      : {
+          checkWrites: (
+            kind: Parameters<NonNullable<ProductTaskResources["checkWrites"]>>[0],
+            targets: Parameters<NonNullable<ProductTaskResources["checkWrites"]>>[1],
+          ) =>
+            checkEditScopeWrites({
+              scope,
+              root: workspaceRoot,
+              writes: kind,
+              targets,
+              confined: true,
+            }),
+          writeRoots: () =>
+            workspaceRoot === null
+              ? []
+              : directories.map((directory) =>
+                  directory === ""
+                    ? workspaceRoot
+                    : `${workspaceRoot.replace(/\/+$/u, "")}/${directory}`,
+                ),
+        };
   return {
     ...task,
+    ...writes,
     checkAuthority: allowed,
     execute(work) {
       return task.execute({
@@ -220,7 +256,7 @@ function guardResources(
     // Resource-only subdivision also preserves every ancestor ceiling.
     subdivide(limits: ResourceAmounts, identity) {
       const child = task.subdivide(limits, identity);
-      return child ? guardResources(child, authority, signal, observe) : null;
+      return child ? guardResources(child, authority, workspaceRoot, signal, observe) : null;
     },
   };
 }

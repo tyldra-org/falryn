@@ -507,6 +507,10 @@ export async function composeProductShellAttachments(
               ...(ports.schedules ? { schedules: ports.schedules } : {}),
               ...(ports.workflowQuestions ? { workflowQuestions: ports.workflowQuestions } : {}),
               ...(ports.workQueues ? { workQueues: ports.workQueues } : {}),
+              ...(ports.workspaceSet === null
+                ? {}
+                : { workspaceRoot: String(primaryWorkspaceRoot(ports.workspaceSet).path) }),
+              commandWritesConfined: () => sandbox.confinesWrites(),
               ...(ports.joins ? { joins: ports.joins } : {}),
               ...(ports.peers ? { peers: ports.peers } : {}),
               ...(profile

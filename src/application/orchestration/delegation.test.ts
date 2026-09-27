@@ -8,6 +8,7 @@ import { bytesDigest } from "../../domain/extensions/canonical.ts";
 import { capabilityInvocationStarted } from "../../domain/fixtures.ts";
 import { invocationId, runId } from "../../domain/foundation/index.ts";
 import { joinRecordSchema } from "../../domain/orchestration/agent-join.ts";
+import type { EffectClass } from "../../domain/orchestration/work.ts";
 import type { ToolInvocationOutcome } from "../../domain/tools/index.ts";
 import { createSha256Hasher } from "../../integrations/filesystem/content-digest.ts";
 import {
@@ -700,6 +701,11 @@ async function fixture(
     ready: false,
     reason: "missing-native-host",
   }),
+  scoped: {
+    readonly effects?: EffectClass[];
+    readonly capabilities?: readonly string[];
+    readonly confined?: boolean;
+  } = {},
 ) {
   const f = await createProcessTaskFixture(false);
   const resources = createProductResources(f.clock);
@@ -743,6 +749,7 @@ async function fixture(
     preferences: () => EMPTY_MODEL_PREFERENCES,
     configurationGeneration: () => generation,
     capability,
+    commandWritesConfined: () => scoped.confined ?? false,
     bindModel: () => binding,
     execute,
   });
@@ -772,7 +779,12 @@ async function fixture(
         },
         publishReceipt: () => true,
       },
-      delegation: { route, binding, effects: ["observation"], capabilities: [] },
+      delegation: {
+        route,
+        binding,
+        effects: scoped.effects ?? ["observation"],
+        capabilities: [...(scoped.capabilities ?? [])],
+      },
     };
   }
   return {
@@ -1126,6 +1138,371 @@ test("oversized child output preserves observed partial effects as a bounded fai
       claims: null,
     });
   } finally {
+    await f.close();
+  }
+});
+
+const writer = (scope?: string[], objective = "Edit source"): AgentLaunch => ({
+  ...launch,
+  definitionId: "builtin/falryn/agents:implementer",
+  inputJson: JSON.stringify({ objective }),
+  effects: ["observation", "mutation"],
+  execution: { ...launch.execution, foregroundWaitMs: 1 },
+  ...(scope ? { editScope: scope } : {}),
+});
+const writing = { effects: ["observation", "mutation"] as EffectClass[] };
+function held() {
+  const gates: (() => void)[] = [];
+  return {
+    execute: (run: AgentRun) =>
+      new Promise<AgentExecution>((resolve) => {
+        gates.push(() => resolve({ ...facts, effect: "completed" }));
+        run.signal.addEventListener("abort", () =>
+          resolve({ ...facts, outcome: "cancelled", effect: "none" }),
+        );
+      }),
+    releaseAll() {
+      for (const gate of gates.splice(0)) gate();
+    },
+  };
+}
+
+test("disjoint writers run together; an overlapping launch names the running writer until it settles", async () => {
+  const gate = held();
+  const f = await fixture(gate.execute, undefined, writing);
+  try {
+    const a = output(await f.service.execute(writer(["src/a"], "Edit a"), await f.request())) as {
+      handle: { taskId: string };
+    };
+    expect(a).toMatchObject({
+      kind: "agent-running",
+      preparation: { execution: { editScope: ["src/a"] } },
+    });
+    const b = output(
+      await f.service.execute(writer(["./src/b/"], "Edit b"), await f.request()),
+    ) as {
+      handle: { taskId: string };
+    };
+    expect(b).toMatchObject({
+      kind: "agent-running",
+      preparation: { execution: { editScope: ["src/b"] } },
+    });
+    const overlap = writer(["src"], "Edit everything");
+    const refused = output(await f.service.execute(overlap, await f.request()));
+    expect(refused).toMatchObject({
+      kind: "agent-launch-refused",
+      reason: "edit-scope-overlap",
+      executionStarted: false,
+      conflict: { handle: { generation: 1, task: expect.any(Object) } },
+    });
+    // Either running writer is a truthful conflict; both overlap `src`.
+    expect([a.handle.taskId, b.handle.taskId]).toContain(
+      (refused as { conflict: { handle: { taskId: string } } }).conflict.handle.taskId,
+    );
+    gate.releaseAll();
+    for (const handle of [a.handle, b.handle])
+      await f.service.execute({ operation: "wait", handle, waitMs: 5000 }, await f.request());
+    expect(output(await f.service.execute(overlap, await f.request()))).toMatchObject({
+      kind: "agent-running",
+    });
+    gate.releaseAll();
+  } finally {
+    gate.releaseAll();
+    await f.close();
+  }
+});
+
+test("unscoped writers are exclusive, readers never reserve, and read-only definitions reject a scope", async () => {
+  const gate = held();
+  const f = await fixture(gate.execute, undefined, writing);
+  try {
+    output(await f.service.execute(writer(undefined, "Edit anything"), await f.request()));
+    expect(
+      output(await f.service.execute(writer(undefined, "Edit more"), await f.request())),
+    ).toMatchObject({ reason: "edit-scope-overlap" });
+    expect(
+      output(await f.service.execute(writer(["docs"], "Edit docs"), await f.request())),
+    ).toMatchObject({ reason: "edit-scope-overlap" });
+    expect(
+      output(
+        await f.service.execute(
+          { ...launch, execution: { ...launch.execution, foregroundWaitMs: 1 } },
+          await f.request(),
+        ),
+      ),
+    ).toMatchObject({ kind: "agent-running" });
+    expect(
+      await f.service.execute({ ...launch, editScope: ["src"] }, await f.request()),
+    ).toMatchObject({ status: "unavailable", reason: "edit-scope-invalid" });
+    expect(await f.service.execute(writer(["../outside"]), await f.request())).toMatchObject({
+      status: "unavailable",
+      reason: "edit-scope-invalid",
+    });
+  } finally {
+    gate.releaseAll();
+    await f.close();
+  }
+});
+
+test("two overlapping launches racing for one scope admit exactly one", async () => {
+  const gate = held();
+  const f = await fixture(gate.execute, undefined, writing);
+  try {
+    const [left, right] = await Promise.all([
+      f.request().then((request) => f.service.execute(writer(["src"], "Left"), request)),
+      f.request().then((request) => f.service.execute(writer(["src/x"], "Right"), request)),
+    ]);
+    const kinds = [left, right].map((value) => output(value).kind).sort();
+    expect(kinds).toEqual(["agent-launch-refused", "agent-running"]);
+  } finally {
+    gate.releaseAll();
+    await f.close();
+  }
+});
+
+test("command capabilities need a confining sandbox and directory scopes", async () => {
+  const capability: DelegationOptions["capability"] = (id) => ({
+    ready: true,
+    reason: "",
+    writes: id === "run_shell" ? "sandbox" : id === "git_commit" ? "unbounded" : "paths",
+  });
+  const request = { ...writing, capabilities: ["run_shell", "git_commit", "write_files"] };
+  const withShell = (scope: string[]) => ({
+    ...writer(scope),
+    capabilities: ["run_shell", "write_files"],
+  });
+  const off = await fixture(async () => facts, capability, request);
+  try {
+    expect(output(await off.service.execute(withShell(["src"]), await off.request()))).toEqual({
+      kind: "agent-launch-refused",
+      reason: "edit-scope-unenforceable",
+      capabilities: ["run_shell"],
+      executionStarted: false,
+    });
+    expect(
+      output(
+        await off.service.execute(
+          { ...writer(["src"]), capabilities: ["git_commit"] },
+          await off.request(),
+        ),
+      ),
+    ).toMatchObject({ reason: "edit-scope-unenforceable", capabilities: ["git_commit"] });
+  } finally {
+    await off.close();
+  }
+  const strict = await fixture(async () => facts, capability, { ...request, confined: true });
+  try {
+    expect(
+      output(await strict.service.execute(withShell(["src"]), await strict.request())),
+    ).toMatchObject({ outcome: expect.any(String) });
+    expect(
+      output(await strict.service.execute(withShell(["src/*.ts"]), await strict.request())),
+    ).toMatchObject({ reason: "edit-scope-unenforceable", capabilities: ["run_shell"] });
+  } finally {
+    await strict.close();
+  }
+});
+
+test("uncertain effects keep the scope reserved until cleanup; continuation reserves again", async () => {
+  let uncertain = true;
+  const f = await fixture(
+    async () =>
+      uncertain
+        ? {
+            ...facts,
+            outcome: "uncertain",
+            effect: "uncertain",
+            reason: "agent-execution-interrupted",
+          }
+        : facts,
+    undefined,
+    writing,
+  );
+  try {
+    // A background child can be cleaned up without the parent integrating it.
+    const launched = writer(["src"], "Uncertain");
+    const running = output(
+      await f.service.execute(
+        { ...launched, execution: { ...launched.execution, attachment: "background" } },
+        await f.request(),
+      ),
+    ) as { handle: { taskId: string; generation: number } };
+    await f.service.execute(
+      { operation: "wait", handle: running.handle, waitMs: 5000 },
+      await f.request(),
+    );
+    expect(running).toMatchObject({ preparation: { execution: { editScope: ["src"] } } });
+    const settled = output(
+      await f.service.execute({ operation: "result", handle: running.handle }, await f.request()),
+    ) as { task: { handle: { version: 1; taskId: string; generation: string }; state: string } };
+    expect(settled.task.state).toBe("terminal");
+    const blocked = writer(["src/a"], "Later");
+    expect(output(await f.service.execute(blocked, await f.request()))).toMatchObject({
+      reason: "edit-scope-overlap",
+      conflict: { handle: { taskId: running.handle.taskId } },
+    });
+    const revision = taskValue(f.store.get(settled.task.handle)).revision;
+    expect(
+      await f.service.execute(
+        {
+          operation: "cleanup",
+          handle: { ...running.handle, task: settled.task.handle },
+          expectedRevision: revision,
+        },
+        await f.request(),
+      ),
+    ).toMatchObject({ status: "completed" });
+    uncertain = false;
+    const next = sealedAgentResultSchema.parse(
+      output(
+        await f.service.execute(
+          { ...blocked, execution: { ...blocked.execution, foregroundWaitMs: 30000 } },
+          await f.request(),
+        ),
+      ),
+    );
+    expect(next.preparation.execution.editScope).toEqual(["src/a"]);
+  } finally {
+    await f.close();
+  }
+});
+
+test("a restarted store restores active reservations, expires unlinked ones and relaunches nothing", async () => {
+  const gate = held();
+  let executions = 0;
+  const f = await fixture(
+    async (run) => {
+      executions++;
+      return gate.execute(run);
+    },
+    undefined,
+    writing,
+  );
+  try {
+    const running = output(await f.service.execute(writer(["src"], "Hold"), await f.request())) as {
+      handle: { taskId: string };
+    };
+    // A second store over the same database is what a restarted process reads.
+    const restarted = createAgentJoinStore(f.database);
+    const now = Number(f.clock.now());
+    expect(
+      restarted.reserveEditScope({
+        taskId: "agent-after-restart",
+        generation: 1,
+        workspaceId: f.snapshot.owner.workspaceId,
+        scope: ["src/deep"],
+        now,
+      }),
+    ).toMatchObject({ ok: true, value: { conflict: { taskId: running.handle.taskId } } });
+    expect(executions).toBe(1);
+    // An admission that never linked its task within the bound never started, so it expires.
+    expect(
+      restarted.reserveEditScope({
+        taskId: "agent-crashed-before-link",
+        generation: 1,
+        workspaceId: "workspace-other",
+        scope: null,
+        now,
+      }),
+    ).toMatchObject({ ok: true, value: { conflict: null } });
+    expect(
+      restarted.reserveEditScope({
+        taskId: "agent-later",
+        generation: 1,
+        workspaceId: "workspace-other",
+        scope: ["docs"],
+        now: now + 60_001,
+      }),
+    ).toMatchObject({ ok: true, value: { conflict: null } });
+    gate.releaseAll();
+    await f.service.execute(
+      { operation: "wait", handle: running.handle, waitMs: 5000 },
+      await f.request(),
+    );
+    expect(
+      restarted.reserveEditScope({
+        taskId: "agent-after-settle",
+        generation: 1,
+        workspaceId: f.snapshot.owner.workspaceId,
+        scope: ["src"],
+        now: Number(f.clock.now()),
+      }),
+    ).toMatchObject({ ok: true, value: { conflict: null } });
+  } finally {
+    gate.releaseAll();
+    await f.close();
+  }
+});
+
+test("inspect reports a running child's admitted edit scope", async () => {
+  const gate = held();
+  const f = await fixture(gate.execute, undefined, writing);
+  try {
+    const running = output(
+      await f.service.execute(writer(["src/a"], "Inspect me"), await f.request()),
+    ) as {
+      handle: { taskId: string; generation: number };
+    };
+    expect(
+      output(
+        await f.service.execute(
+          { operation: "inspect", handle: running.handle },
+          await f.request(),
+        ),
+      ),
+    ).toMatchObject({ editScope: ["src/a"] });
+  } finally {
+    gate.releaseAll();
+    await f.close();
+  }
+});
+
+test("a continuation refused for overlap can be retried unchanged after the sibling settles", async () => {
+  let release = () => {};
+  const blocking = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const f = await fixture(
+    async (run) => {
+      if (JSON.stringify(run.input).includes("Hold")) await blocking;
+      return facts;
+    },
+    undefined,
+    writing,
+  );
+  try {
+    const first = sealedAgentResultSchema.parse(
+      output(
+        await f.service.execute(
+          { ...writer(["src/a"], "Edit a"), execution: { ...launch.execution } },
+          await f.request(),
+        ),
+      ),
+    );
+    const sibling = output(await f.service.execute(writer(["src"], "Hold"), await f.request())) as {
+      handle: { taskId: string; generation: number };
+    };
+    const command = {
+      operation: "continue",
+      handle: first.handle,
+      inputJson: JSON.stringify({ objective: "Edit a again" }),
+      context: [],
+    };
+    expect(output(await f.service.execute(command, await f.request()))).toMatchObject({
+      reason: "edit-scope-overlap",
+      conflict: { handle: { taskId: sibling.handle.taskId } },
+    });
+    release();
+    await f.service.execute(
+      { operation: "wait", handle: sibling.handle, waitMs: 5000 },
+      await f.request(),
+    );
+    expect(output(await f.service.execute(command, await f.request()))).toMatchObject({
+      kind: "agent-result",
+      handle: { generation: 2 },
+    });
+  } finally {
+    release();
     await f.close();
   }
 });

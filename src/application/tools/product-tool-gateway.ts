@@ -8,6 +8,7 @@ import {
   sandboxExpansionSchema,
 } from "../../domain/security/sandbox.ts";
 import { withHookCatalog } from "../../domain/tools/tool-hook-envelope.ts";
+import { type ToolManifest, workspaceWritesOf } from "../../domain/tools/tool-registry.ts";
 import { createSessionHistory, historyDigest } from "../sessions/session-history.ts";
 import { createToolHookJournal, type HookToolEffect } from "./product-tool-hook-journal.ts";
 /**
@@ -59,6 +60,31 @@ import {
   type ProductTaskResources,
   processProductResources,
 } from "../orchestration/product-resources.ts";
+
+/**
+ * A scoped child's refusal for one workspace mutation, or null. Every admitted
+ * input is checked, including a hook's transformed input (#1122).
+ */
+function editScopeRefusal(
+  resources: ProductTaskResources | undefined,
+  sandboxed: boolean,
+  invocation: {
+    readonly entry: { readonly manifest: ToolManifest };
+    readonly input: Readonly<Record<string, unknown>>;
+    readonly effect: string;
+  },
+): string | null {
+  if (invocation.effect !== "mutation" || !resources?.checkWrites) return null;
+  const manifest = invocation.entry.manifest;
+  const writes = workspaceWritesOf(manifest);
+  // Command writes are confined only inside the sandbox that receives the scope's roots.
+  if (writes === "sandbox" && !sandboxed) return "edit-scope-unenforceable";
+  return resources.checkWrites(
+    writes,
+    writes === "paths" ? (manifest.writeTargetsFor?.(invocation.input) ?? null) : null,
+  );
+}
+
 import type { ToolRunnerPort, ToolRunnerRequest } from "../runtime/tool-call-loop.ts";
 import type { TurnEventJournalPort } from "../runtime/turn-event-journal.ts";
 import { PROCESS_TASK_CONTROL_CAPABILITY } from "./process-task-tool.ts";
@@ -360,6 +386,12 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     const invocation = checked.ok ? checked.value[0] : undefined;
     if (!invocation || invocation.entry.manifest.capabilityId !== request.capabilityId)
       return { status: "unavailable", reason: "replay-binding-unavailable", effect: "none" };
+    const replayScope = editScopeRefusal(
+      options.taskResources,
+      options.sandbox !== undefined,
+      invocation,
+    );
+    if (replayScope) return { status: "denied", reason: replayScope, effect: "none" };
     const child = options.taskResources?.checkAuthority(
       {
         kind: "tool",
@@ -550,6 +582,12 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         effect: "none",
         admission: childRefusal,
       };
+    const scopeRefusal = editScopeRefusal(
+      options.taskResources,
+      options.sandbox !== undefined,
+      ready,
+    );
+    if (scopeRefusal) return { status: "denied", reason: scopeRefusal, effect: "none" };
 
     if (
       requiresEcosystemTrust(ready.entry.manifest.source) &&
@@ -662,6 +700,12 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
         return { status: "malformed", reason: "hook-transform-invalid-input", effect: "none" };
       ready = revised.value[0];
       transformed = true;
+      const revisedScope = editScopeRefusal(
+        options.taskResources,
+        options.sandbox !== undefined,
+        ready,
+      );
+      if (revisedScope) return { status: "denied", reason: revisedScope, effect: "none" };
       if (!(await observe("validation", "transformed")))
         return { status: "unavailable", reason: "transform-history-unavailable", effect: "none" };
       // No confirmation from the original intent is carried into this admission.
@@ -851,6 +895,9 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
             : null,
           resourceTaskId: task.id,
           expiresAt: task.expiresAt,
+          ...(options.taskResources?.writeRoots
+            ? { writeScope: options.taskResources.writeRoots() }
+            : {}),
         };
         if (ready.input.sandboxExpansion !== undefined) {
           const expansion = sandboxExpansionSchema.safeParse(ready.input.sandboxExpansion);

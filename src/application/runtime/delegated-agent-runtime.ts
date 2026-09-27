@@ -6,6 +6,7 @@ import { capabilityId, sessionId, streamId, turnId } from "../../domain/foundati
 import type { WorkQueueStore } from "../../domain/orchestration/work-queue.ts";
 import type { WorkflowStore } from "../../domain/orchestration/workflow-state.ts";
 import { createToolRegistry } from "../../domain/tools/index.ts";
+import { workspaceWritesOf } from "../../domain/tools/tool-registry.ts";
 import {
   EMPTY_MODEL_PREFERENCES,
   type ModelPreferences,
@@ -66,6 +67,10 @@ export type DelegatedRuntimeOptions = {
   readonly workflowQuestions?: WorkflowRuntimeOptions["questions"];
   /** The host's registered work-queue locations; with workflows, task lists reach live runs. */
   readonly workQueues?: { at(locator: string): Promise<WorkQueueStore | null> };
+  /** Absolute primary workspace root that child edit scopes are relative to (#1122). */
+  readonly workspaceRoot?: string;
+  /** Whether the host sandbox confines command launches to supplied write roots. */
+  readonly commandWritesConfined?: () => boolean;
   readonly peers?: PeerMailboxFactory;
   readonly joins?: import("../orchestration/agent-joins.ts").AgentJoins;
   readonly tasks: ProcessTaskSupervisor;
@@ -170,7 +175,7 @@ export function composeDelegatedAgentRuntime(
     validateContext: (context, request) =>
       validateAgentArtifacts(options.artifacts, context, request.signal),
     capability(id) {
-      if (id === DELEGATE_CAPABILITY) return { ready: true, reason: "" };
+      if (id === DELEGATE_CAPABILITY) return { ready: true, reason: "", writes: "none" };
       if (!capabilityAllowed(id)) return { ready: false, reason: "agent-capability-unavailable" };
       const entry = base.registry.resolveByCapabilityId(capabilityId.from(id));
       if (entry && !isClosedProductToolSchema(z.toJSONSchema(entry.manifest.inputSchema)))
@@ -195,8 +200,13 @@ export function composeDelegatedAgentRuntime(
       return {
         ready: entry !== null && base.runner.hasBinding?.(entry.manifest.capabilityId) === true,
         reason: "agent-required-capability-unavailable",
+        ...(entry ? { writes: workspaceWritesOf(entry.manifest) } : {}),
       };
     },
+    ...(options.workspaceRoot ? { workspaceRoot: options.workspaceRoot } : {}),
+    ...(options.commandWritesConfined
+      ? { commandWritesConfined: options.commandWritesConfined }
+      : {}),
     async bindModel(selection, parent, capabilities) {
       const route = selection.route;
       let selected = providers.get(route.providerProfileId);

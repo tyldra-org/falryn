@@ -23,6 +23,7 @@ import { languageStartupFixture } from "./language-startup.test-support.ts";
  */
 
 import { afterEach, describe, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import {
   chmod,
   mkdir,
@@ -2266,6 +2267,196 @@ describe("runCoding", () => {
     expect(JSON.stringify(requests[5]?.messages)).toContain("join:sha256:");
   });
 
+  test("scoped Implementers edit disjoint scopes concurrently; overlap and out-of-scope writes are refused", async () => {
+    const seeded = await seededHome();
+    await mkdir(join(seeded.primary, "src", "a"), { recursive: true });
+    await mkdir(join(seeded.primary, "src", "b"), { recursive: true });
+    const requests: ModelRequest[] = [];
+    const children: Record<string, number> = {};
+    let parentStep = 0;
+    const execution = {
+      version: 1,
+      attachment: "foreground",
+      foregroundWaitMs: 1,
+      onSettle: "notify",
+      shutdown: "drain",
+    };
+    const launchScoped = (
+      area: string,
+      scope: string[],
+      capabilities = ["builtin:workspace/write_files@1"],
+      required = true,
+    ) => ({
+      kind: "tool" as const,
+      toolCallId: `launch-${area}`,
+      name: "delegate",
+      argumentFragments: [
+        JSON.stringify({
+          operation: "launch",
+          definitionId: "builtin/falryn/agents:implementer",
+          inputJson: JSON.stringify({ objective: `Edit area ${area}` }),
+          context: [],
+          capabilities,
+          effects: ["observation", "mutation"],
+          limits: {},
+          execution: required ? execution : { ...execution, foregroundWaitMs: 30000 },
+          required,
+          editScope: scope,
+        }),
+      ],
+    });
+    const write = (id: string, ...paths: string[]) => ({
+      kind: "tool" as const,
+      toolCallId: id,
+      name: "write_files",
+      argumentFragments: [
+        JSON.stringify({
+          targets: paths.map((path) => ({ kind: "create", path, text: `// ${id}\n` })),
+        }),
+      ],
+    });
+    const delegate = (id: string, command: object) => ({
+      kind: "tool" as const,
+      toolCallId: id,
+      name: "delegate",
+      argumentFragments: [JSON.stringify(command)],
+    });
+    const done = {
+      kind: "text" as const,
+      text: JSON.stringify({ changes: ["edited"], checks: [], failures: [], limitations: [] }),
+    };
+    const toolResults = (request: ModelRequest) =>
+      request.messages.flatMap((message) =>
+        message.role === "tool"
+          ? message.parts.flatMap((part) =>
+              part.kind === "text" ? [JSON.parse(part.text).output?.value] : [],
+            )
+          : [],
+      );
+    // A child's first user message is its objective; the parent's is the prompt.
+    const areaOf = (request: ModelRequest) =>
+      JSON.stringify(request.messages.find((message) => message.role === "user")).match(
+        /Edit area ([A-E])/u,
+      )?.[1] ?? null;
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (request) => {
+        const area = areaOf(request);
+        if (area !== null) {
+          children[area] = (children[area] ?? 0) + 1;
+          if (children[area] > 1) return done;
+          if (area === "A") return write("a-inside", "src/a/one.ts");
+          if (area === "B") return write("b-inside", "src/b/two.ts");
+          // One outside path refuses the whole batch, including its in-scope half.
+          if (area === "D") return write("d-mixed", "src/d/ok.ts", "src/a/bad.ts");
+          return {
+            kind: "tool",
+            toolCallId: "e-cross",
+            name: "mutate_paths",
+            argumentFragments: [
+              JSON.stringify({ kind: "move", source: "src/a/one.ts", destination: "src/e/one.ts" }),
+            ],
+          };
+        }
+        parentStep++;
+        if (parentStep === 1) return launchScoped("A", ["src/a"]);
+        if (parentStep === 2) return launchScoped("B", ["src/b"]);
+        if (parentStep === 3) return launchScoped("C", ["src"]);
+        const running = toolResults(request).filter((value) => value?.kind === "agent-running");
+        const join = { joinId: "writers", joinGeneration: 1 };
+        if (parentStep === 4)
+          return delegate("join-writers", {
+            operation: "join",
+            join: {
+              id: "writers",
+              generation: 1,
+              children: running.map((value) => value.handle),
+              policy: {
+                mode: "all",
+                quorum: null,
+                partialOnFailure: false,
+                cancelRemaining: false,
+              },
+            },
+          });
+        if (parentStep === 5)
+          return delegate("inspect-writers", { operation: "join-inspect", ...join, waitMs: 30000 });
+        if (parentStep === 6)
+          return delegate("integrate-writers", {
+            operation: "join-integrate",
+            ...join,
+            integration: "accepted",
+          });
+        if (parentStep === 7) return launchScoped("D", ["src/d"], undefined, false);
+        if (parentStep === 8)
+          return launchScoped("E", ["src/e"], ["builtin:workspace/mutate_paths@1"], false);
+        return { kind: "text", text: "Both scoped edits are integrated." };
+      },
+    });
+    const result = await runCoding(
+      providerFor(seeded)(globalsFor(seeded)),
+      { promptParts: ["Split the edit across two scoped Implementers"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        toolConfirmation: {
+          resolve: async (request) => ({
+            kind: "confirmed",
+            confirmationId: request.confirmationId,
+          }),
+        },
+      },
+    );
+    const parent = requests.filter((request) => areaOf(request) === null);
+    const last = parent.at(-1);
+    const parentResults = last ? toolResults(last) : [];
+    expect(result.outcome.kind, JSON.stringify(parentResults).slice(-4000)).toBe("completed");
+    const launched = parentResults.filter((value) => value?.kind === "agent-running");
+    expect(launched.map((value) => value.preparation.execution.editScope)).toEqual([
+      ["src/a"],
+      ["src/b"],
+    ]);
+    const refused = parentResults.find((value) => value?.kind === "agent-launch-refused");
+    expect(refused).toMatchObject({ reason: "edit-scope-overlap", executionStarted: false });
+    expect(launched.map((value) => value.handle.taskId)).toContain(refused.conflict.handle.taskId);
+    expect(JSON.stringify(parentResults)).toContain("join:sha256:");
+    expect(await readFile(join(seeded.primary, "src", "a", "one.ts"), "utf8")).toContain(
+      "a-inside",
+    );
+    expect(await readFile(join(seeded.primary, "src", "b", "two.ts"), "utf8")).toContain(
+      "b-inside",
+    );
+    const sealed = parentResults.filter((value) => value?.kind === "agent-result");
+    expect(sealed.map((value) => [value.preparation.execution.editScope, value.outcome])).toEqual([
+      [["src/d"], "failed"],
+      [["src/e"], "failed"],
+    ]);
+    // Refused mutations have no effect: nothing from D's batch, and E's move never ran.
+    expect(existsSync(join(seeded.primary, "src", "d", "ok.ts"))).toBe(false);
+    expect(existsSync(join(seeded.primary, "src", "a", "bad.ts"))).toBe(false);
+    expect(existsSync(join(seeded.primary, "src", "e", "one.ts"))).toBe(false);
+    expect(existsSync(join(seeded.primary, "src", "a", "one.ts"))).toBe(true);
+    // The durable journal records each child's refusal with its scope reason.
+    const session = await openProductArtifactSession(providerFor(seeded)(globalsFor(seeded))());
+    if (!session) throw new Error("missing session");
+    try {
+      const heads = session.eventStore.streamHeads(100);
+      if (!heads.ok) throw new Error("missing streams");
+      const journal: string[] = [];
+      for (const head of heads.value) {
+        const events = await session.eventStore.readFrom(
+          { streamId: head.streamId, afterSequence: null },
+          1000,
+        );
+        if (events.ok) journal.push(JSON.stringify(events.value));
+      }
+      expect(journal.join("\n")).toContain("edit-scope-violation");
+      expect(journal.join("\n")).toContain("edit-scope-boundary");
+    } finally {
+      await session.close();
+    }
+  });
   test("continues prompt to tool result to final text through the product gateway", async () => {
     const seeded = await seededHome();
     await writeFile(join(seeded.primary, "hello.ts"), "export const answer = 42;\n", "utf8");

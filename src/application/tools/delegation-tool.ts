@@ -3,6 +3,7 @@ import { z } from "zod";
 import { identityText } from "../../domain/extensions/identity.ts";
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import { joinInputSchema, joinIntegrationSchema } from "../../domain/orchestration/agent-join.ts";
+import { editScopeInputSchema } from "../../domain/orchestration/edit-scope.ts";
 import { processTaskExecutionSchema } from "../../domain/orchestration/process-task.ts";
 import { resourceAmountsSchema } from "../../domain/orchestration/resource-admission.ts";
 import { conflictKey, EFFECT_CLASSES } from "../../domain/orchestration/work.ts";
@@ -71,6 +72,7 @@ const inputSchema = z
     model: z.fromJSONSchema(z.toJSONSchema(roleRouteBaseSchema, { io: "input" })).optional(),
     name: identityText.optional(),
     required: z.boolean().optional(),
+    editScope: editScopeInputSchema.optional(),
     join: joinInputSchema.optional(),
     joinId: identityText.optional(),
     joinGeneration: z.int().min(1).max(64).optional(),
@@ -99,7 +101,7 @@ export function composeDelegationTool(
       source: "builtin",
       title: "Delegate bounded work or control a child",
       description:
-        "List or inspect exact agent definitions. Launch bounded children with selected evidence, capabilities, effects, limits and foreground/background policy. Attached children are required unless required=false. Create a join with exact child handles and an all, first-success or quorum policy. Use join-inspect until settled, then join-integrate to record accepted, rejected, partial or follow-up-required evidence. Required unaccepted children prevent parent completion. Use child handles for inspect, result, wait, steer, continue, detach, reattach, cancel or cleanup. Missing definitions never fall back to General. inputJson must match the definition schema.",
+        "List or inspect exact agent definitions. Launch bounded children with selected evidence, capabilities, effects, limits and foreground/background policy. Attached children are required unless required=false. Give each write-capable child an editScope of workspace-relative directory prefixes or single-segment globs (* and ?); it may mutate only paths inside it, and command tools need a strict sandbox and directory-only scopes. A launch overlapping a running writer returns agent-launch-refused with reason edit-scope-overlap and that child's handle: wait or join it, narrow the scope, or do the work yourself. A child without editScope overlaps every other writer. edit-scope-unenforceable names capabilities to drop. Create a join with exact child handles and an all, first-success or quorum policy. Use join-inspect until settled, then join-integrate to record accepted, rejected, partial or follow-up-required evidence. Required unaccepted children prevent parent completion. Use child handles for inspect, result, wait, steer, continue, detach, reattach, cancel or cleanup; cleanup releases a scope kept after uncertain effects. Missing definitions never fall back to General. inputJson must match the definition schema.",
       effect: "observation",
       capabilityKind: "other",
       platforms: [],
@@ -114,6 +116,7 @@ export function composeDelegationTool(
     {
       inputSchema,
       outputSchema: z.record(z.string(), z.unknown()),
+      workspaceWrites: "none",
       effectFor(input) {
         if (
           [

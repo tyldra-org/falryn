@@ -114,6 +114,7 @@ export function createProcessTaskToolEntry() {
     {
       inputSchema,
       outputSchema: processTaskControlOutputSchema,
+      workspaceWrites: "none",
       effectFor: (input) =>
         ["inspect", "logs", "result", "wait"].includes(String(input.operation))
           ? "observation"

@@ -426,6 +426,7 @@ test.each([true, false])(
       ],
       capabilities: allowTool ? [String(list.capabilityId)] : [],
       effects: ["observation" as const],
+      editScope: null,
     };
     const admission = product.runtime.childAdmission({
       resources: root,
@@ -512,6 +513,7 @@ test("shared live-turn entry keeps child allowance across turns and refuses seri
     ],
     capabilities: [],
     effects: ["observation" as const],
+    editScope: null,
   };
   const opened = product.runtime
     .childAdmission({ resources: root, tree, scope: tree.root(), authority })

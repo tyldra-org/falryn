@@ -7,6 +7,7 @@ import {
   joinIntegrationSchema,
 } from "../../domain/orchestration/agent-join.ts";
 import { childAuthoritySchema } from "../../domain/orchestration/child-admission.ts";
+import { editScopeInputSchema } from "../../domain/orchestration/edit-scope.ts";
 import {
   processTaskExecutionSchema,
   processTaskHandleSchema,
@@ -38,6 +39,8 @@ const launch = {
   model: roleRouteBaseSchema.optional(),
   name: identityText.optional(),
   required: z.boolean().default(true),
+  /** Workspace-relative prefixes or single-segment globs bounding this child's writes. */
+  editScope: editScopeInputSchema.optional(),
 };
 export const delegationCommandSchema = z.discriminatedUnion("operation", [
   z.strictObject({

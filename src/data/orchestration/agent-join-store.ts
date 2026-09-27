@@ -4,6 +4,7 @@ import { err, ok } from "../../domain/foundation/result.ts";
 import {
   type AgentLink,
   agentLinkSchema,
+  type EditScopeConflict,
   evaluateJoin,
   JOIN_LIMITS,
   type JoinCompletion,
@@ -17,6 +18,8 @@ import {
   joinOwnerSchema,
   joinRecordSchema,
 } from "../../domain/orchestration/agent-join.ts";
+import { editScopeSchema, editScopesOverlap } from "../../domain/orchestration/edit-scope.ts";
+import { processTaskHandleSchema } from "../../domain/orchestration/process-task.ts";
 import { worstEffect } from "../../domain/orchestration/scope.ts";
 import type { SqliteStatements, SqliteStorePort } from "../../domain/storage/index.ts";
 import { loadTask } from "./process-task-records.ts";
@@ -24,6 +27,8 @@ import { loadTask } from "./process-task-records.ts";
 const ownerKey = (owner: JoinOwner) => canonicalDigest(owner);
 const joinKey = (owner: JoinOwner, input: { id: string; generation: number }) =>
   canonicalDigest([owner, input.id, input.generation]);
+/** A launch links its process task within one call; an unlinked older reservation never started. */
+const UNLINKED_RESERVATION_MS = 60_000;
 
 export function createAgentJoinStore(store: SqliteStorePort): JoinStore {
   function write<T>(work: (sql: SqliteStatements) => JoinResult<T>): JoinResult<T> {
@@ -602,6 +607,73 @@ export function createAgentJoinStore(store: SqliteStorePort): JoinStore {
         : typeof sequence === "number"
           ? ok(sequence)
           : err({ code: "corrupt" });
+    },
+    reserveEditScope(input) {
+      return write((sql): JoinResult<{ readonly conflict: EditScopeConflict | null }> => {
+        let conflict: EditScopeConflict | null = null;
+        const rows = sql.all(
+          "SELECT task_id,generation,scope,task,reserved_at FROM agent_edit_scopes WHERE workspace_id=$workspace AND released=0 AND task_id<>$taskId ORDER BY reserved_at,task_id",
+          { workspace: input.workspaceId, taskId: input.taskId },
+        );
+        for (const row of rows) {
+          const scope = editScopeSchema.safeParse(
+            row.scope === null ? null : JSON.parse(String(row.scope)),
+          );
+          const task =
+            row.task === null
+              ? null
+              : processTaskHandleSchema.safeParse(JSON.parse(String(row.task)));
+          if (!scope.success || (task !== null && !task.success)) return err({ code: "corrupt" });
+          const held = task?.data ?? null;
+          const state = held === null ? null : loadTask(sql, held);
+          // Unlinked reservations are admissions in flight; a task that ended with a known
+          // effect has released its writes. Uncertain effects hold the scope until cleanup.
+          const active =
+            held === null
+              ? input.now - Number(row.reserved_at) < UNLINKED_RESERVATION_MS
+              : state?.ok === true &&
+                (state.value.state !== "terminal" || state.value.terminal.effect === "uncertain");
+          if (!active) {
+            sql.run("UPDATE agent_edit_scopes SET released=1 WHERE task_id=$taskId", {
+              taskId: String(row.task_id),
+            });
+            continue;
+          }
+          if (conflict === null && editScopesOverlap(scope.data, input.scope))
+            conflict = {
+              taskId: String(row.task_id),
+              generation: Number(row.generation),
+              task: held,
+            };
+        }
+        if (conflict !== null) return ok({ conflict });
+        sql.run(
+          "INSERT INTO agent_edit_scopes(task_id,generation,workspace_id,scope,task,reserved_at,released) VALUES($taskId,$generation,$workspace,$scope,NULL,$now,0) ON CONFLICT(task_id) DO UPDATE SET generation=excluded.generation,scope=excluded.scope,task=NULL,reserved_at=excluded.reserved_at,released=0 WHERE agent_edit_scopes.workspace_id=excluded.workspace_id",
+          {
+            taskId: input.taskId,
+            generation: input.generation,
+            workspace: input.workspaceId,
+            scope: input.scope === null ? null : JSON.stringify(input.scope),
+            now: input.now,
+          },
+        );
+        return ok({ conflict: null });
+      });
+    },
+    linkEditScope(taskId, task) {
+      return write((sql) => {
+        sql.run("UPDATE agent_edit_scopes SET task=$task WHERE task_id=$taskId AND released=0", {
+          taskId,
+          task: JSON.stringify(task),
+        });
+        return ok(null);
+      });
+    },
+    releaseEditScope(taskId) {
+      return write((sql) => {
+        sql.run("UPDATE agent_edit_scopes SET released=1 WHERE task_id=$taskId", { taskId });
+        return ok(null);
+      });
     },
   };
 }

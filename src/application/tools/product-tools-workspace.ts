@@ -19,6 +19,7 @@ import type {
   SessionId,
   WorkspaceId,
 } from "../../domain/foundation/index.ts";
+import type { WorkspaceWriteTargets } from "../../domain/orchestration/edit-scope.ts";
 import { conflictKey } from "../../domain/orchestration/index.ts";
 import type { CommandRunnerPort } from "../../domain/process/index.ts";
 import type {
@@ -252,6 +253,29 @@ function pathConflictKeys(
 ): readonly ReturnType<typeof conflictKey>[] {
   const path = input.path;
   return typeof path === "string" && path.length > 0 ? [conflictKey("file", path)] : [];
+}
+
+/** Every path a target list writes; schema-validated input always carries its paths. */
+function targetPaths(input: Readonly<Record<string, unknown>>): WorkspaceWriteTargets | null {
+  const targets = input.targets;
+  if (!Array.isArray(targets)) return null;
+  const paths = targets.map((target) => (target as { path?: unknown }).path);
+  return paths.every((path): path is string => typeof path === "string")
+    ? { paths, moves: [] }
+    : null;
+}
+
+/** A move changes both ends; copy writes its destination; trash and remove write the source. */
+function mutationTargets(input: Readonly<Record<string, unknown>>): WorkspaceWriteTargets | null {
+  const { kind, source, destination } = input;
+  if (typeof source !== "string") return null;
+  if (kind === "move")
+    return typeof destination === "string"
+      ? { paths: [], moves: [{ from: source, to: destination }] }
+      : null;
+  if (kind === "copy")
+    return typeof destination === "string" ? { paths: [destination], moves: [] } : null;
+  return kind === "trash" || kind === "remove" ? { paths: [source], moves: [] } : null;
 }
 
 function errorCode(error: { readonly code: string }): string {
@@ -490,6 +514,8 @@ export function composeProductWorkspaceTools(
         {
           inputSchema: writeFilesInput,
           outputSchema: openObject,
+          workspaceWrites: "paths",
+          writeTargetsFor: targetPaths,
         },
       ),
     ),
@@ -505,6 +531,8 @@ export function composeProductWorkspaceTools(
         {
           inputSchema: mutatePathsInput,
           outputSchema: openObject,
+          workspaceWrites: "paths",
+          writeTargetsFor: mutationTargets,
         },
       ),
     ),
@@ -565,6 +593,8 @@ export function composeProductWorkspaceTools(
         {
           inputSchema: patchPlanInput,
           outputSchema: openObject,
+          workspaceWrites: "paths",
+          writeTargetsFor: targetPaths,
         },
       ),
     ),

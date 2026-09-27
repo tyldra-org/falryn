@@ -30,6 +30,7 @@ const authority: ChildAuthority = {
   providers: [provider],
   capabilities: ["read", "write"],
   effects: ["observation", "mutation"],
+  editScope: null,
 };
 const request = (id: string, requested = authority) => ({
   id,

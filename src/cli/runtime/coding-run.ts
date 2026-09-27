@@ -899,6 +899,8 @@ export async function runCoding(
           : {}),
         joins: productArtifactSession.joins,
         peers: productArtifactSession.peers,
+        workspaceRoot: String(workspaceRoot),
+        commandWritesConfined: () => sandbox.confinesWrites(),
         artifacts: options.artifacts ?? productArtifactSession.artifacts,
         providerCatalog,
         registry: agentRegistryFrom(configuration.values),
