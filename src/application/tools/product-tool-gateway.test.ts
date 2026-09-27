@@ -1447,3 +1447,61 @@ test.each(["before-capability-invocation", "after-capability-invocation"] as con
     } else expect(outcome.status).not.toBe("completed");
   },
 );
+
+test("hook-origin work runs through the gateway once, suppresses its own point and cannot nest", async () => {
+  const origins: { depth: number; origin: string; status: string }[] = [];
+  let before = 0;
+  const f = hookGateway([
+    preHook(async (envelope, context) => {
+      before++;
+      const nested = await context.invokeCapability?.({
+        toolName: "read_file",
+        input: { path: "a.ts" },
+        signal: context.signal,
+      });
+      origins.push({
+        depth: envelope.recursionDepth,
+        origin: envelope.catalog.origin,
+        status: nested?.outcome.status ?? "absent",
+      });
+      return { kind: "allow" };
+    }, "asks"),
+    {
+      id: "observes",
+      point: "after-capability-invocation",
+      priority: 0,
+      run: async (envelope, context) => {
+        // Hook-origin work is one level deep; asking again from inside it is refused.
+        if (envelope.recursionDepth === 1) {
+          const again = await context.invokeCapability?.({
+            toolName: "read_file",
+            input: { path: "a.ts" },
+            signal: context.signal,
+          });
+          origins.push({
+            depth: 1,
+            origin: envelope.catalog.origin,
+            status: again?.outcome.status === "denied" ? again.outcome.reason : "ran",
+          });
+        }
+        return { kind: "annotate", annotations: {} };
+      },
+    },
+  ]);
+  const result = await f.gateway.execute(f.request());
+  expect(result.status).toBe("completed");
+  // The subject's pre-hook ran once; the hook-origin read suppressed that point.
+  expect(before).toBe(1);
+  expect(f.dispatched).toHaveLength(2);
+  expect(f.dispatched[0]).toContain(":hook:");
+  expect(f.dispatched[1]).toBe("hook-subject");
+  expect(origins).toEqual([
+    { depth: 1, origin: "hook", status: "hook-recursion-denied" },
+    { depth: 0, origin: "system", status: "completed" },
+  ]);
+  expect(
+    (await f.gates()).filter(
+      (gate) => gate.stage === "pre-hook" && gate.decision === "reentry-suppressed",
+    ),
+  ).toHaveLength(1);
+});

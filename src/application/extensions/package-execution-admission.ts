@@ -5,6 +5,7 @@ import {
   hookCommandContract,
 } from "../../domain/extensions/hook-command-profile.ts";
 import { httpHookContract } from "../../domain/extensions/hook-http.ts";
+import { mcpHookContract } from "../../domain/extensions/hook-mcp.ts";
 import type {
   InstalledPackage,
   PackageBytes,
@@ -35,9 +36,10 @@ export type PackageAdmissionOptions = {
   /**
    * Data-only admission: schedule registration and prompt-template reads admit
    * declarations and bytes only. Schedule targets execute through their own gateway,
-   * and an HTTP hook's request goes through the host's governed egress owner.
+   * and a remote hook's request goes through the host's governed egress owner (HTTP)
+   * or the session's MCP gateway (MCP tool).
    */
-  declarationKind?: "schedule" | "prompt" | "http-hook";
+  declarationKind?: "schedule" | "prompt" | "remote-hook";
   authority(
     installed: InstalledPackage,
     contribution: string | null,
@@ -221,10 +223,11 @@ export function createPackageExecutionAdmission(options: PackageAdmissionOptions
           declaration.execution
         )
           throw new ExtensionInputError("prompt-declaration-invalid");
-      } else if (options.declarationKind === "http-hook") {
+      } else if (options.declarationKind === "remote-hook") {
         if (selected.identity.nativeKind !== "hook" || selected.mode !== "declarative")
-          throw new ExtensionInputError("hook-http-declaration-invalid");
-        httpHookContract(declaration);
+          throw new ExtensionInputError("hook-remote-declaration-invalid");
+        if (declaration.hook?.handler.kind === "mcp-tool-v1") mcpHookContract(declaration);
+        else httpHookContract(declaration);
       } else {
         if (selected.mode !== "governed" || !declaration.execution)
           throw new ExtensionInputError("governed-execution-required");

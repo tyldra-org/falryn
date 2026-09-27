@@ -1,5 +1,6 @@
 import { createSecretResolver } from "../../application/authentication/credential-resolver.ts";
 import { checkpointControl } from "../../application/compression/checkpoint-request.ts";
+import type { HookMcpSession } from "../../application/extensions/hook-mcp.ts";
 import { createMcpUserInput } from "../../application/extensions/mcp-input.ts";
 import { createPromptTemplateCatalog } from "../../application/extensions/native-prompt-owner.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
@@ -148,6 +149,7 @@ export type ProductShellAttachmentPorts = {
     generation: ConfigurationGeneration,
     signal: AbortSignal,
     session?: string,
+    mcp?: HookMcpSession,
   ) => Promise<NativePublication>;
   readonly rehydrateExtensions?: (
     signal: AbortSignal,
@@ -306,22 +308,6 @@ export async function composeProductShellAttachments(
     const generation = ports.modelConfigurationGeneration?.() ?? ports.configurationGeneration;
     const sessionId =
       selection?.record.sessionId ?? sessionIdCodec.from(`session-shell-${randomUUID()}`);
-    const native = await ports.publishNativePackages?.(
-      generation,
-      signal,
-      selection ? String(sessionId) : undefined,
-    );
-    // Templates resolve against the latest publication; stale bindings fail closed.
-    let prompts = native?.prompts ?? createPromptTemplateCatalog([]);
-    const extensions =
-      native === undefined
-        ? await ports.rehydrateExtensions?.(signal, selection ? String(sessionId) : undefined)
-        : { status: "ready" as const, catalog: native.catalog };
-    if (extensions?.status === "failed") return null;
-    const extensionCatalog =
-      extensions === undefined
-        ? undefined
-        : projectCatalogHistory(extensions.catalog, ports.workspaceSet);
     const traceId = traceIdCodec.from(`trace-shell-${randomUUID()}`);
     const mcpServices = sessionManagedServices(managedServices);
     let profileSession: WorkingProfileSession | undefined;
@@ -346,6 +332,37 @@ export async function composeProductShellAttachments(
         ? { userInput: createMcpUserInput(ports.localUserQuestions) }
         : {}),
     });
+    const closeMcp = async () => {
+      await mcp.close();
+      await mcpServices.close();
+    };
+    // Package MCP tool hooks bind to this session's MCP runtime, so it exists first.
+    let native: NativePublication | undefined;
+    try {
+      native = await ports.publishNativePackages?.(
+        generation,
+        signal,
+        selection ? String(sessionId) : undefined,
+        mcp,
+      );
+    } catch (error) {
+      await closeMcp();
+      throw error;
+    }
+    // Templates resolve against the latest publication; stale bindings fail closed.
+    let prompts = native?.prompts ?? createPromptTemplateCatalog([]);
+    const extensions =
+      native === undefined
+        ? await ports.rehydrateExtensions?.(signal, selection ? String(sessionId) : undefined)
+        : { status: "ready" as const, catalog: native.catalog };
+    if (extensions?.status === "failed") {
+      await closeMcp();
+      return null;
+    }
+    const extensionCatalog =
+      extensions === undefined
+        ? undefined
+        : projectCatalogHistory(extensions.catalog, ports.workspaceSet);
     const workspaceTools =
       workspaceRoot === null
         ? null
@@ -720,6 +737,7 @@ export async function composeProductShellAttachments(
                   generation,
                   signal,
                   String(sessionId),
+                  mcp,
                 );
                 if (!publication) throw new Error("native-publication-unavailable");
                 prompts = publication.prompts;

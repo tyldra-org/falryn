@@ -5,7 +5,8 @@ import {
   HOOK_LIMITS,
   HOOK_POINTS,
   type HookPoint,
-  hookGeneration,
+  hookArgumentSources,
+  hookDigest,
   hookIdentity,
   hookPointSchema,
 } from "./hook-points.ts";
@@ -37,9 +38,17 @@ export const hookHandlerSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("mcp-tool-v1"),
     serverId: hookIdentity,
+    /** The exact tool name on that server, never a display title. */
     toolId: hookIdentity,
-    schemaGeneration: hookGeneration,
+    /** Digest of the normalized input schema the mapping was written against. */
+    schemaDigest: hookDigest,
+    /** The structured result field that holds the decision. */
     outputField: hookIdentity,
+    /** Each tool argument and the envelope field it is read from; nothing else is sent. */
+    arguments: z
+      .array(z.strictObject({ name: z.string().min(1).max(256), from: hookIdentity }))
+      .max(HOOK_LIMITS.argumentMappings)
+      .default([]),
   }),
   z.strictObject({
     kind: z.literal("prompt-evaluator-v1"),
@@ -104,6 +113,13 @@ export const hookRegistrationSchema = z
       reject("hook-completion-cannot-wait");
     if (budget === "evaluator" && value.mode === "sync" && !descriptor.evaluatorGate)
       reject("hook-evaluator-point-unavailable");
+    if (value.handler.kind === "mcp-tool-v1") {
+      const sources = hookArgumentSources(value.point);
+      const names = value.handler.arguments.map((mapping) => mapping.name);
+      if (new Set(names).size !== names.length) reject("hook-mcp-argument-duplicate");
+      if (value.handler.arguments.some((mapping) => !sources.includes(mapping.from)))
+        reject("hook-mcp-argument-unavailable");
+    }
     for (const filter of value.filters) {
       if (!descriptor.filters.includes(filter.field)) reject("hook-filter-field-unavailable");
       if (

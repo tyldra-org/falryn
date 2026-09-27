@@ -15,6 +15,7 @@ export const HOOK_LIMITS = Object.freeze({
   evidenceBytes: 8_192,
   filterCount: 32,
   filterValueLength: 256,
+  argumentMappings: 16,
 });
 export const HOOK_BUDGETS = Object.freeze({
   local: Object.freeze({ defaultMs: 50, maximumMs: 1_000, chainMs: 2_000 }),
@@ -373,6 +374,28 @@ export const HOOK_POINTS = Object.freeze({
 export type HookPoint = keyof typeof HOOK_POINTS;
 export type HookPayload<P extends HookPoint> = z.infer<(typeof HOOK_POINTS)[P]["payload"]>;
 export const hookPointSchema = z.enum(Object.keys(HOOK_POINTS) as [HookPoint, ...HookPoint[]]);
+
+/** Envelope header fields a handler's explicit argument mapping may read. */
+const ARGUMENT_HEADER_FIELDS = [
+  "point",
+  "factId",
+  "subjectId",
+  "origin",
+  "reason",
+  "recursionDepth",
+  "ownerGeneration",
+  "configurationGeneration",
+  "registrationGeneration",
+] as const;
+/**
+ * Every source an argument mapping may name at a point: the decision binding a veto or
+ * transform must echo, a header field, or a point payload field as `payload.<name>`.
+ */
+export function hookArgumentSources(point: HookPoint): readonly string[] {
+  const payload = HOOK_POINTS[point].payload;
+  const fields = payload instanceof z.ZodObject ? Object.keys(payload.shape) : [];
+  return ["binding", ...ARGUMENT_HEADER_FIELDS, ...fields.map((field) => "payload." + field)];
+}
 export const LIVE_TOOL_HOOK_POINTS = [
   "before-capability-invocation",
   "after-capability-invocation",

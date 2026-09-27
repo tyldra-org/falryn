@@ -210,6 +210,75 @@ function toolCall(params: Record<string, unknown>) {
   };
 }
 
+const hookBinding = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "factId",
+    "subjectId",
+    "ownerGeneration",
+    "configurationGeneration",
+    "registrationGeneration",
+    "payloadDigest",
+  ],
+  properties: {
+    factId: { type: "string" },
+    subjectId: { type: "string" },
+    ownerGeneration: { type: "integer" },
+    configurationGeneration: { type: "integer" },
+    registrationGeneration: { type: "integer" },
+    payloadDigest: { type: "string" },
+  },
+};
+/** The closed input every hook decision tool takes: the binding and the subject capability. */
+export const MCP_HOOK_FIXTURE_INPUT = {
+  type: "object",
+  additionalProperties: false,
+  required: ["binding", "capability"],
+  properties: { binding: hookBinding, capability: { type: "string" } },
+} as const;
+/**
+ * Decision tools for package MCP tool hooks (#1174), served only in the hook modes:
+ * allow observes, veto echoes its binding, text answers only in prose and refuse is a
+ * tool error whose structured result would otherwise allow.
+ */
+const hookTools = ["allow", "veto", "text", "refuse"].map((name) => ({
+  name,
+  inputSchema: MCP_HOOK_FIXTURE_INPUT,
+}));
+function hookToolCall(params: Record<string, unknown>) {
+  const values = (params.arguments ?? {}) as Record<string, unknown>;
+  const observe = { decision: { kind: "observe", annotations: { mcp: "ok" } } };
+  const text = { type: "text", text: JSON.stringify(observe) };
+  if (params.name === "veto")
+    return {
+      resultType: "complete",
+      content: [text],
+      structuredContent: {
+        decision: { kind: "veto", binding: values.binding, reason: "mcp-veto" },
+      },
+    };
+  if (params.name === "text") return { resultType: "complete", content: [text] };
+  return {
+    resultType: "complete",
+    ...(params.name === "refuse" ? { isError: true } : {}),
+    content: [text],
+    structuredContent: observe,
+  };
+}
+function hookFixtureReply(message: Record<string, unknown>) {
+  const params = (message.params ?? {}) as Record<string, unknown>;
+  if (message.method === "tools/list")
+    return {
+      jsonrpc: "2.0",
+      id: message.id,
+      result: { resultType: "complete", ttlMs: 0, cacheScope: "private", tools: hookTools },
+    };
+  if (message.method === "tools/call")
+    return { jsonrpc: "2.0", id: message.id, result: hookToolCall(params) };
+  return mcpFixtureReply(message);
+}
+
 if (import.meta.main) {
   const mode = process.argv[2];
   if (mode === "stderr") process.stderr.write("s".repeat(300 * 1024));
@@ -256,8 +325,11 @@ if (import.meta.main) {
         continue;
       }
       if (mode === "disconnect" && message.method === "tools/call") process.exit(0);
+      if (mode === "hooks-disconnect" && message.method === "tools/call") process.exit(0);
       if (mode === "pending" && message.method === "tools/call") continue;
-      const response = mcpFixtureReply(message);
+      const response = mode?.startsWith("hooks")
+        ? hookFixtureReply(message)
+        : mcpFixtureReply(message);
       if (mode === "unsolicited" && message.method === "tools/call")
         response.result = {
           resultType: "complete",

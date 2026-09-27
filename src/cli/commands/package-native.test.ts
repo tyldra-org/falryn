@@ -39,22 +39,24 @@ test.skipIf(createHostSandbox().probe().status !== "available")(
     expect(toolText).toContain('"answer":42');
     const stale = await nativeProductJourney(
       { home: root, environment: fixture.environment, name },
-      async () => {
-        const disable = { packageId: "fixture", operationId: randomUUID(), expectedRevision: 1 };
-        const proposed = await fixture.invoke(
-          ["package", "disable"],
-          disable,
-          packageReceiptSchema,
-        );
-        expect(
-          (
-            await fixture.invoke(
-              ["package", "disable"],
-              { ...disable, confirmation: proposed.confirmation },
-              packageReceiptSchema,
-            )
-          ).status,
-        ).toBe("completed");
+      {
+        beforeFirstRequest: async () => {
+          const disable = { packageId: "fixture", operationId: randomUUID(), expectedRevision: 1 };
+          const proposed = await fixture.invoke(
+            ["package", "disable"],
+            disable,
+            packageReceiptSchema,
+          );
+          expect(
+            (
+              await fixture.invoke(
+                ["package", "disable"],
+                { ...disable, confirmation: proposed.confirmation },
+                packageReceiptSchema,
+              )
+            ).status,
+          ).toBe("completed");
+        },
       },
     );
     const staleContinuation = z

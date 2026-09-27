@@ -1,4 +1,5 @@
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
+import { HOOK_LIMITS } from "../../domain/extensions/hook-points.ts";
 import {
   createSandboxExpansionGrant,
   MAX_SANDBOX_RECEIPT_BYTES,
@@ -8,6 +9,7 @@ import {
   sandboxExpansionSchema,
 } from "../../domain/security/sandbox.ts";
 import { withHookCatalog } from "../../domain/tools/tool-hook-envelope.ts";
+import type { HookCapabilityPort, ToolHookPoint } from "../../domain/tools/tool-hooks.ts";
 import { type ToolManifest, workspaceWritesOf } from "../../domain/tools/tool-registry.ts";
 import { createSessionHistory, historyDigest } from "../sessions/session-history.ts";
 import { createToolHookJournal, type HookToolEffect } from "./product-tool-hook-journal.ts";
@@ -134,6 +136,12 @@ export type ProductToolGatewayOptions = {
   readonly confirmation?: ProductToolConfirmationPort;
   readonly effectLedger: ProductToolEffectLedger;
   readonly opportunityPlan?: ModelCapabilityBrief;
+  /**
+   * Set only for hook-origin work (#1174): the hook point that asked for it and its
+   * recursion depth. That point's hooks are suppressed rather than re-entered; policy,
+   * confirmation, resources and receipts apply as to any other invocation.
+   */
+  readonly hookLineage?: { readonly point: ToolHookPoint; readonly depth: number };
 };
 
 function terminalOutcome(outcome: ToolInvocationOutcome): TerminalOutcome {
@@ -188,6 +196,7 @@ function hookEnvelope(
       ...(deadline === undefined
         ? {}
         : { remainingMs: Math.max(0, Math.min(1000, deadline - Number(options.clock.now()))) }),
+      origin: recursionDepth > 0 ? "hook" : "system",
     },
   );
 }
@@ -322,7 +331,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     ...(options.historyArtifacts === undefined ? {} : { artifacts: options.historyArtifacts }),
   });
 
-  return { execute: (request) => admit(request) };
+  return { execute: (request) => admit(request, undefined, options.hookLineage?.depth ?? 0) };
 
   async function admit(
     request: ToolRunnerRequest,
@@ -659,16 +668,76 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       startedAt: Number(options.clock.now()),
       spent: { local: 0, remote: 0, evaluator: 0 },
     };
-    const pre = await hookRunner.runPre({
-      budget: hookBudget,
-      envelope: preEnvelope,
-      task: historyTask,
-      resourceOwner: resources,
-      onPlan: hookJournal.plan(preEnvelope),
-      onDecision: hookJournal.record(preEnvelope),
-      signal: request.signal,
-    });
-    if (!(await observe("pre-hook", pre.kind)) || !hookJournal.committed)
+    /** A hook's own capability requests: this gateway again, one level deeper. */
+    const hookOrigin =
+      (point: ToolHookPoint) =>
+      (hookId: string): HookCapabilityPort => {
+        let sequence = 0;
+        return async ({ toolName, input, signal }) => {
+          const entry = options.registry.resolveByName(toolName);
+          if (depth + 1 > HOOK_LIMITS.recursionDepth)
+            return {
+              outcome: { status: "denied", reason: "hook-recursion-denied", effect: "none" },
+              output: null,
+            };
+          if (!entry)
+            return {
+              outcome: {
+                status: "unavailable",
+                reason: "hook-capability-unavailable",
+                effect: "none",
+              },
+              output: null,
+            };
+          const origin = createHash("sha256")
+            .update(JSON.stringify([point, hookId]))
+            .digest("hex")
+            .slice(0, 16);
+          const id = `${request.invocationId}:hook:${origin}:${++sequence}`;
+          let output: Readonly<Record<string, unknown>> | null = null;
+          // Model disclosure is not the selector here: the hook's declaration is. Every
+          // other gate still runs, and the work gets its own task like a model call.
+          const outcome = await createProductToolGateway({
+            ...options,
+            disclosedToolNames: new Set([toolName]),
+            hookLineage: { point, depth: depth + 1 },
+          }).execute({
+            invocationId: invocationId.from(id),
+            toolCallId: id,
+            toolName,
+            capabilityId: entry.manifest.capabilityId,
+            version: entry.manifest.version,
+            effect: entry.manifest.effect,
+            input,
+            signal,
+            captureExactOutput(value) {
+              output = value;
+            },
+          });
+          return { outcome, output };
+        };
+      };
+    const reentered = options.hookLineage?.point;
+    const pre =
+      reentered === "before-capability-invocation"
+        ? ({ kind: "allowed", annotations: [] } as const)
+        : await hookRunner.runPre({
+            budget: hookBudget,
+            envelope: preEnvelope,
+            task: historyTask,
+            resourceOwner: resources,
+            onPlan: hookJournal.plan(preEnvelope),
+            onDecision: hookJournal.record(preEnvelope),
+            signal: request.signal,
+            invokeCapability: hookOrigin("before-capability-invocation"),
+          });
+    if (
+      !(await observe(
+        "pre-hook",
+        reentered === "before-capability-invocation" ? "reentry-suppressed" : pre.kind,
+      )) ||
+      !hookJournal.committed
+    )
       return { status: "unavailable", reason: "hook-history-unavailable", effect: "none" };
     if (pre.kind !== "allowed" && pre.kind !== "confirmation-required") {
       return {
@@ -1184,17 +1253,31 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       outcome,
       depth,
     );
-    const post = await hookRunner.runPost({
-      budget: hookBudget,
-      envelope: postEnvelope,
-      task: historyTask,
-      resourceOwner: resources,
-      onPlan: hookJournal.plan(postEnvelope),
-      onDecision: hookJournal.record(postEnvelope),
-      signal: request.signal,
-    });
+    const post =
+      reentered === "after-capability-invocation"
+        ? ({
+            kind: "recorded",
+            annotations: [],
+            diagnostics: [],
+            followUps: [],
+            failures: [],
+          } as const)
+        : await hookRunner.runPost({
+            budget: hookBudget,
+            envelope: postEnvelope,
+            task: historyTask,
+            resourceOwner: resources,
+            onPlan: hookJournal.plan(postEnvelope),
+            onDecision: hookJournal.record(postEnvelope),
+            signal: request.signal,
+            invokeCapability: hookOrigin("after-capability-invocation"),
+          });
 
-    const postRecorded = (await observe("post-hook", post.kind)) && hookJournal.committed;
+    const postRecorded =
+      (await observe(
+        "post-hook",
+        reentered === "after-capability-invocation" ? "reentry-suppressed" : post.kind,
+      )) && hookJournal.committed;
     const sandboxReceipts = outcome.sandbox?.map((receipt) => ({
       ...receipt,
       readRoots: receipt.readRoots.map((root) => redactor.redactText(root, 1_024)),

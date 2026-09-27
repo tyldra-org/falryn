@@ -1,6 +1,10 @@
 import { join } from "node:path";
 import type { HookHttpPort } from "../../application/extensions/hook-http-port.ts";
-import { createNativeHookOwner } from "../../application/extensions/native-hook-owner.ts";
+import { createHookMcp, type HookMcpSession } from "../../application/extensions/hook-mcp.ts";
+import {
+  createNativeHookOwner,
+  type PackageHookHandlerKind,
+} from "../../application/extensions/native-hook-owner.ts";
 import {
   createPackageExecutionAdmission,
   PackageAdmissionError,
@@ -14,6 +18,7 @@ import {
   hookCommandContract,
 } from "../../domain/extensions/hook-command-profile.ts";
 import { httpHookContract } from "../../domain/extensions/hook-http.ts";
+import { mcpHookContract } from "../../domain/extensions/hook-mcp.ts";
 import {
   type NativeActivationStore,
   nativeActivationKey,
@@ -38,7 +43,7 @@ export function composeNativeHooks(
     {
       controller: AbortController;
       users: number;
-      handler: "external-command-v1" | "http-v1";
+      handler: PackageHookHandlerKind;
       packageId: string;
       scope: string;
       namespace: string;
@@ -51,7 +56,12 @@ export function composeNativeHooks(
       stopped.abort();
       await Promise.allSettled([...running]);
     },
-    owner(captured: Awaited<ReturnType<Context["registered"]>>) {
+    /**
+     * One publication's hook owner. MCP tool hooks run only in a session that composes MCP,
+     * through that session's runtime; elsewhere they stay unavailable.
+     */
+    owner(captured: Awaited<ReturnType<Context["registered"]>>, session?: HookMcpSession) {
+      const mcp = session === undefined ? undefined : createHookMcp(session);
       const activeActivations = new Set(
         captured.catalog.entries
           .filter((entry) => entry.enabled)
@@ -81,7 +91,9 @@ export function composeNativeHooks(
           generation.controller.abort();
       }
       return createNativeHookOwner({
-        qualified: (handler) => handler === "http-v1" || host.available(),
+        qualified: (handler) =>
+          handler === "http-v1" ||
+          (handler === "mcp-tool-v1" ? mcp !== undefined : host.available()),
         health: records.hookHealth,
         async execute(input) {
           const key = `${input.activation}:${input.contribution}`;
@@ -120,8 +132,8 @@ export function composeNativeHooks(
               packages: records.packages,
               bytes: context.bytes,
               host: context.host,
-              ...(input.handler === "http-v1"
-                ? { declarationKind: "http-hook" as const }
+              ...(input.handler !== "external-command-v1"
+                ? { declarationKind: "remote-hook" as const }
                 : { protocol: HOOK_COMMAND_PROTOCOL }),
               async authority(installed, contribution, signal) {
                 const authority = await context.admission(control, installed, contribution, signal);
@@ -173,6 +185,15 @@ export function composeNativeHooks(
               return http.run({
                 registration: httpHookContract(admitted.declaration),
                 grant,
+                wire,
+                context: { ...input.context, signal },
+                current,
+              });
+            }
+            if (input.handler === "mcp-tool-v1") {
+              if (mcp === undefined) throw new HookExecutionError("hook-mcp-gateway-unavailable");
+              return mcp.run({
+                registration: mcpHookContract(admitted.declaration),
                 wire,
                 context: { ...input.context, signal },
                 current,

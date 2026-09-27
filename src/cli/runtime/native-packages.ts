@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import type { HookMcpSession } from "../../application/extensions/hook-mcp.ts";
 import { createNativeActivation } from "../../application/extensions/native-activation.ts";
 import { createNativePromptOwner } from "../../application/extensions/native-prompt-owner.ts";
 import {
@@ -210,7 +211,8 @@ export function composeNativePackages(options: {
     },
     activate,
     recover: createPackageToolRecovery(options.processes, execution),
-    async publish(generation: ConfigurationGeneration, signal: AbortSignal) {
+    /** Publish the current catalog; MCP tool hooks bind to the session's MCP runtime, if any. */
+    async publish(generation: ConfigurationGeneration, signal: AbortSignal, mcp?: HookMcpSession) {
       if (stopped.signal.aborted) throw new ExtensionInputError("native-host-closed");
       const captured = await context.registered(signal);
       /** Recheck the catalog and exact stored activation before any package bytes are used. */
@@ -317,7 +319,7 @@ export function composeNativePackages(options: {
       const trustById = new Map<string, NonNullable<ReturnType<typeof captured.trust.get>>>();
       const publication = createNativeRegistrationPublisher([
         owner,
-        hookOwner.owner(captured),
+        hookOwner.owner(captured, mcp),
         createNativeScheduleOwner(options.schedules),
         prompts,
       ]).publish({

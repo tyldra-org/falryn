@@ -234,7 +234,7 @@ test.each([
       kind: "mcp-tool-v1",
       serverId: "server",
       toolId: "tool",
-      schemaGeneration: 2,
+      schemaDigest: "a".repeat(64),
       outputField: "decision",
     },
     {

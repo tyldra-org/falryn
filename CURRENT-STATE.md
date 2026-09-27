@@ -3200,8 +3200,8 @@ cleanup facts, health and remediation. External process transport, exit/signal,
 response decoding and omitted stream-byte counts remain separate; unknown effects
 stay unknown. Raw stdout/stderr, input, headers, prompts and nested exceptions are
 excluded from diagnostics. Strict remote/model receipt variants use nullable
-usage and effect uncertainty; the HTTP adapter produces remote receipts, while MCP
-tool and model adapters remain unavailable. Queue and
+usage and effect uncertainty; the HTTP and MCP tool adapters produce remote receipts,
+while model adapters remain unavailable. Queue and
 overflow receipts retain the captured binding. Failure receipts become transcript
 notices, including passive replay/export. Audit or health-store failure refuses
 required gates; after native settlement, persistence failure remains visible
@@ -3213,9 +3213,9 @@ handler/mode combinations. External entrypoints require inventory digest locks.
 handler and availability; human output reports the same unavailable reason.
 Inspection neither activates handlers nor exposes arguments or credentials.
 The handler union includes built-in, command, HTTP, MCP and evaluator declarations.
-Built-ins and explicitly installed/trusted/native-activated Python and HTTP package
-hooks execute at the two gateway points. Other publishers, MCP tool hooks and
-evaluator adapters remain unavailable. One scheduler applies the declared class budgets: local
+Built-ins and explicitly installed/trusted/native-activated Python, HTTP and MCP tool
+package hooks execute at the two gateway points. Other publishers and evaluator
+adapters remain unavailable. One scheduler applies the declared class budgets: local
 50 ms default/1,000 ms maximum/2,000 ms cumulative; remote 5/10/20 seconds;
 evaluator 10/30 seconds; mixed chains 60 seconds. The enclosing deadline always
 narrows them. Inspection displays resolved timeout, chain ceiling, blocking mode
@@ -3251,6 +3251,34 @@ timeout and disconnect after sending are never retried. Async HTTP observers ent
 the same bounded queue; a headless run cancels queued observers when it ends, so
 they never outlive it. `src/domain/extensions/hook-fixtures.ts` has an example
 declaration.
+
+An `mcp-tool-v1` hook names a configured MCP `serverId`, the exact `toolId` (the
+tool name, never its title), the `schemaDigest` of the normalized input schema its
+mapping was written against (the `schemaDigest` that `mcp_catalog` reports for one
+entry), the structured `outputField` holding the decision, and up to 16 `arguments`
+mappings of `{ name, from }`. `from` is `binding` (the decision binding a veto or
+transform must echo), an envelope header field such as `subjectId`, or
+`payload.<field>` of the hook's point; anything else, or a repeated name, is refused
+at preparation. Its authority is `external` (optionally `observation`) with no
+secret references, since the configured server owns authentication; like HTTP it runs
+no package code. It binds only in a session that composes MCP (headless runs and the
+terminal), so `falryn extension catalog` lists it as `hook-mcp-session-required`.
+Each invocation goes through the enclosing gateway as hook-origin work: an
+unconnected server is connected with `mcp_connect`, then the tool is called once with
+`mcp_call_tool`, each with ordinary policy, focused confirmation, resources and
+history receipts. Hook-origin work is recorded one recursion level deep with origin
+`hook`; the point that asked is recorded as `reentry-suppressed` rather than run
+again, and hook-origin work cannot itself start more (`hook-recursion-denied`).
+Only the declared field of an object structured result is decoded, by the same
+codec and revalidation as the other handlers. Prose and every other field are
+ignored; a missing field fails as `hook-mcp-output-missing`, `isError` as
+`hook-mcp-tool-error`, a different schema digest or a catalog generation that
+changed during the call as `hook-mcp-schema-changed`, a refused call or
+confirmation as `hook-mcp-call-refused`, and an uncertain result such as a disconnect
+after sending as `hook-mcp-effect-uncertain`. Nothing is retried. Receipts carry
+transport `mcp`, the catalog generation called, response validity, result size and
+the effect certainty, never result content; the call's own ordinary history keeps its
+exact result.
 Missing or different runtimes remain unavailable; built-in hooks need no Python.
 There is no PATH search, interpreter installation, shell sourcing or fallback.
 

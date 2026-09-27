@@ -57,11 +57,13 @@ test.skipIf(!qualifiedHookPython())(
     changed[changed.length - 1] = 0;
     const journey = await nativeProductJourney(
       { home: root, environment: fixture.environment, name: fixture.name },
-      async () => {
-        await writeFile(file, changed);
-      },
-      async () => {
-        await writeFile(file, original);
+      {
+        beforeFirstRequest: async () => {
+          await writeFile(file, changed);
+        },
+        afterRun: async () => {
+          await writeFile(file, original);
+        },
       },
     );
     expect(journey.result.payload?.stage).toBe("attempt-failed");

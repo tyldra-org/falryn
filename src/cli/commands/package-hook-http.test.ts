@@ -78,9 +78,7 @@ test.skipIf(unavailable).each([
           environment: { ...fixture.environment, HOOK_TOKEN: "hook-secret" },
           name: fixture.name,
         },
-        undefined,
-        undefined,
-        egress(["127.0.0.1"]),
+        { hookEgress: egress(["127.0.0.1"]) },
       );
       // One approved POST, carrying only the user's credential for this hook.
       expect(service.calls).toEqual(["Bearer hook-secret"]);
@@ -112,9 +110,7 @@ test.skipIf(unavailable)(
       });
       const journey = await nativeProductJourney(
         { home: root, environment: fixture.environment, name: fixture.name },
-        undefined,
-        undefined,
-        egress([]),
+        { hookEgress: egress([]) },
       );
       expect(service.calls).toEqual([]);
       expect(journey.result.payload?.stage).toBe("attempt-failed");
@@ -141,9 +137,7 @@ test.skipIf(unavailable)(
       });
       const journey = await nativeProductJourney(
         { home: root, environment: fixture.environment, name: fixture.name },
-        undefined,
-        undefined,
-        egress(["127.0.0.1"]),
+        { hookEgress: egress(["127.0.0.1"]) },
       );
       expect(journey.result.payload?.stage).toBe("attempt-completed");
       expect(
