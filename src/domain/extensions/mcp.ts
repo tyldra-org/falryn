@@ -163,9 +163,17 @@ export class McpUnavailable extends Error {
   }
 }
 
-/** A server result exceeded a protocol limit; the request had no local effect. */
-export class McpLimitExceeded extends Error {
-  constructor(readonly code: "mcp-result-too-large" | "mcp-list-pagination-exceeded") {
+/**
+ * A request reached the server but its result cannot be accepted: it exceeded a protocol
+ * limit or asked for user input this client does not answer yet.
+ */
+export class McpRequestFailure extends Error {
+  constructor(
+    readonly code:
+      | "mcp-result-too-large"
+      | "mcp-list-pagination-exceeded"
+      | "mcp-input-required-unavailable",
+  ) {
     super(code);
   }
 }

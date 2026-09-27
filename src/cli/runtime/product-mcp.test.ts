@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createTurnEventJournal } from "../../application/runtime/turn-event-journal.ts";
-import { createStaticEnvironment } from "../../domain/foundation/index.ts";
+import { createStaticEnvironment, invocationId } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
 import { createHostManagedServicePort } from "../../integrations/process/host-process-sessions.ts";
 import { createDeterministicProviderAdapter } from "../../providers/index.ts";
@@ -205,12 +205,16 @@ posix("CLI inspect stays inert and probe discovers the catalog before closing", 
   expect(probed.payload?.catalogs[0]).toMatchObject({
     state: "current",
     listChanges: "observed",
-    entries: { tool: 1, resource: 2, "resource-template": 1, prompt: 1 },
+    entries: { tool: 5, resource: 2, "resource-template": 1, prompt: 1 },
   });
   expect(
     probed.payload?.entries.map((entry) => [entry.id, entry.kind, entry.availability]),
   ).toEqual([
     ["mcp:fixture/tool/echo", "tool", "available"],
+    ["mcp:fixture/tool/sum", "tool", "available"],
+    ["mcp:fixture/tool/fail", "tool", "available"],
+    ["mcp:fixture/tool/ask", "tool", "available"],
+    ["mcp:fixture/tool/union", "tool", "unsupported"],
     ["mcp:fixture/resource/fixture%3A%2F%2Fnotes%2Fa", "resource", "available"],
     ["mcp:fixture/resource/fixture%3A%2F%2Fnotes%2Fb", "resource", "available"],
     [
@@ -242,6 +246,7 @@ async function terminalTurn(
   if (!history) throw new Error("history unavailable");
   cleanups.push(history.close);
   const replies: ToolReply[] = [];
+  const confirmations: string[] = [];
   const seen = new Set<string>();
   const adapter = createDeterministicProviderAdapter({
     script(request, index) {
@@ -275,7 +280,10 @@ async function terminalTurn(
     workspaceSet: workspace.value.set,
     configurationGeneration: record.generation,
     toolConfirmation: {
-      resolve: async (request) => ({ kind: "confirmed", confirmationId: request.confirmationId }),
+      resolve: async (request) => {
+        confirmations.push(JSON.stringify(request));
+        return { kind: "confirmed", confirmationId: request.confirmationId };
+      },
     },
     provider: {
       kind: "ready",
@@ -343,8 +351,37 @@ async function terminalTurn(
   let sequence = 0;
   const submit = (text: string) => attached.submission.submit(snapshotOf(text, ++sequence));
   const result = await submit(prompt);
-  return { attached, history, replies, result, submit };
+  return { attached, history, replies, result, submit, confirmations };
 }
+/** Tool results as persisted in session history, including outcomes that ended a turn. */
+async function recordedResults(turn: Awaited<ReturnType<typeof terminalTurn>>, tool: string) {
+  const first = turn.attached.transcriptFeed.events()[0];
+  if (!first) throw new Error("missing transcript");
+  type Page = Awaited<ReturnType<typeof turn.history.eventStore.readFrom>>;
+  const events: Extract<Page, { ok: true }>["value"][number][] = [];
+  let afterSequence: (typeof events)[number]["sequence"] | null = null;
+  for (;;) {
+    const page = await turn.history.eventStore.readFrom(
+      { streamId: first.streamId, afterSequence },
+      256,
+    );
+    if (!page.ok) throw new Error("history unreadable");
+    events.push(...page.value);
+    if (page.value.length < 256) break;
+    afterSequence = page.value.at(-1)?.sequence ?? null;
+  }
+  return events.flatMap((event) => {
+    const payload = (event as { payload?: Record<string, unknown> }).payload;
+    // Each invocation records an exact result and one settlement; keep the settlement.
+    return event.kind === "history.recorded" &&
+      payload?.type === "result" &&
+      String(payload.id).endsWith(":settlement") &&
+      String(payload.capabilityId).includes(tool)
+      ? [{ status: payload.status, effect: payload.effect, reason: payload.reason }]
+      : [];
+  });
+}
+
 /** The tool result value inside the model-visible JSON projection. */
 function resultOf(reply: ToolReply | undefined): Record<string, unknown> {
   const parsed = JSON.parse(reply?.text ?? "{}") as {
@@ -416,7 +453,6 @@ posix(
     const prompt = "mcp:fixture/prompt/review";
     let first = 0;
     let refreshTurn = false;
-    let transportGeneration = 0;
     const turn = await terminalTurn(
       f,
       (done, generation) => {
@@ -429,9 +465,6 @@ posix(
             };
           case 1:
             first = Number((last.catalog as Record<string, unknown>).catalogGeneration);
-            transportGeneration = Number(
-              (last.connection as Record<string, unknown>).transportGeneration,
-            );
             return { name: "mcp_catalog", input: { kind: "resource-template" } };
           case 2:
             return {
@@ -450,13 +483,11 @@ posix(
           case 4:
             // The fixture announces a resource list change after this tool call.
             return {
-              name: "mcp_request",
+              name: "mcp_call_tool",
               input: {
-                serverId: "fixture",
-                configurationGeneration: generation,
-                transportGeneration,
-                method: "tools/call",
-                paramsJson: JSON.stringify({ name: "echo", arguments: { value: "x" } }),
+                entryId: "mcp:fixture/tool/echo",
+                catalogGeneration: first,
+                argumentsJson: JSON.stringify({ value: "x" }),
               },
             };
           case 5:
@@ -490,7 +521,7 @@ posix(
             return null;
         }
       },
-      "Connect the MCP fixture, read the note named x y, call its echo tool with an MCP request and get its review prompt",
+      "Connect the MCP fixture, read the note named x y, call its echo tool and get its review prompt",
     );
     const { replies } = turn;
     // The model receives the stale result and answers; it does not act on the old generation.
@@ -538,3 +569,128 @@ posix(
     ]);
   },
 );
+
+posix(
+  "a model selects and calls MCP tools through the gateway with approval and typed results",
+  async () => {
+    const f = await fixture("normal");
+    let generation = 0;
+    const sum = "mcp:fixture/tool/sum";
+    const turn = await terminalTurn(
+      f,
+      (done, configurationGeneration) => {
+        const last = resultOf(done.at(-1));
+        const call = (entryId: string, values: unknown) => ({
+          name: "mcp_call_tool",
+          input: { entryId, catalogGeneration: generation, argumentsJson: JSON.stringify(values) },
+        });
+        switch (done.length) {
+          case 0:
+            return { name: "mcp_connect", input: { serverId: "fixture", configurationGeneration } };
+          case 1:
+            generation = Number((last.catalog as Record<string, unknown>).catalogGeneration);
+            return { name: "mcp_catalog", input: { entryId: sum } };
+          case 2:
+            return call(sum, { a: 2, b: 3 });
+          case 3:
+            return call("mcp:fixture/tool/fail", {});
+          case 4:
+            return call(sum, { a: "two" });
+          default:
+            return null;
+        }
+      },
+      "Connect the MCP fixture, call its sum tool with 2 and 3, then call its fail tool",
+    );
+    const { replies } = turn;
+    expect(replies.map((reply) => reply.status)).toEqual([
+      "completed",
+      "completed",
+      "completed",
+      "completed",
+    ]);
+    const [selected] = resultOf(replies[1]).entries as Record<string, unknown>[];
+    expect(selected).toMatchObject({
+      id: sum,
+      detail: "complete",
+      annotations: { readOnlyHint: true, openWorldHint: false },
+      inputSchema: {
+        type: "object",
+        properties: { a: { type: "number" }, b: { type: "number" } },
+        required: ["a", "b"],
+        additionalProperties: false,
+      },
+    });
+    expect(resultOf(replies[2])).toMatchObject({
+      entryId: sum,
+      catalogGeneration: generation,
+      isError: false,
+      content: [{ type: "text", text: "5" }],
+      structuredContent: { sum: 5 },
+    });
+    expect(resultOf(replies[3])).toMatchObject({
+      isError: true,
+      content: [{ type: "text", text: "bad input" }],
+    });
+    // Invalid arguments end the turn before any server call; history keeps the refusal.
+    expect(await recordedResults(turn, "mcp_call_tool")).toEqual([
+      { status: "completed", effect: "completed", reason: "completed" },
+      { status: "completed", effect: "completed", reason: "completed" },
+      { status: "malformed", effect: "none", reason: "mcp-tool-arguments-invalid" },
+    ]);
+    // A server read-only hint never skips Falryn's external-effect approval.
+    expect(
+      turn.confirmations.filter((request) => request.includes("mcp_call_tool")).length,
+    ).toBeGreaterThanOrEqual(2);
+  },
+);
+
+posix("a call lost to a disconnect is uncertain and never retried", async () => {
+  const f = await fixture("disconnect");
+  const runtime = await open(f);
+  await runtime.environment.control.execute("reload");
+  const { runner, registry } = runtime.mcp.tools;
+  let calls = 0;
+  const run = (toolName: string, input: Record<string, unknown>) => {
+    const entry = registry.resolveByName(toolName);
+    if (!entry) throw new Error("missing " + toolName);
+    return runner.execute({
+      invocationId: invocationId.from("disconnect-" + ++calls),
+      toolCallId: "disconnect-" + calls,
+      toolName,
+      capabilityId: entry.manifest.capabilityId,
+      version: entry.manifest.version,
+      effect: entry.manifest.effect,
+      input,
+      signal: new AbortController().signal,
+    });
+  };
+  const connected = await run("mcp_connect", {
+    serverId: "fixture",
+    configurationGeneration: runtime.admission().configurationGeneration,
+  });
+  if (connected.status !== "completed") throw new Error(connected.status);
+  const generation = Number(
+    (connected.output.result as { catalog: { catalogGeneration: number } }).catalog
+      .catalogGeneration,
+  );
+  const call = () =>
+    run("mcp_call_tool", {
+      entryId: "mcp:fixture/tool/echo",
+      catalogGeneration: generation,
+      argumentsJson: JSON.stringify({ value: "once" }),
+    });
+  // The server exits while handling the call: the effect is unknown and not retried.
+  expect(await call()).toEqual({
+    status: "failed",
+    reason: "mcp-request-failed",
+    effect: "uncertain",
+  });
+  // The lost transport makes the selection stale; nothing reconnects to repeat the call.
+  expect(await call()).toEqual({
+    status: "unavailable",
+    reason: "mcp-catalog-entry-stale",
+    effect: "none",
+  });
+  expect(runtime.mcp.lifecycle.inspect()[0]?.transportGeneration).toBe(1);
+});

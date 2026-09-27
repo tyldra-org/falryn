@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { randomUUID } from "node:crypto";
 import {
   type McpConfiguration,
-  McpLimitExceeded,
   type McpListChanges,
   type McpMethod,
+  McpRequestFailure,
   mcpConnectionSchema,
 } from "../../domain/extensions/mcp.ts";
 import { createMcpCatalog, mcpReadHandle } from "./mcp-catalog.ts";
@@ -23,7 +23,28 @@ function harness() {
   const calls: McpMethod[] = [];
   let changed: (listChanges: McpListChanges) => void = () => {};
   const replies: Partial<Record<McpMethod, Reply>> = {
-    "tools/list": () => ({ tools: [{ name: "echo" }] }),
+    "tools/list": () => ({
+      tools: [
+        {
+          name: "echo",
+          annotations: { readOnlyHint: true },
+          inputSchema: {
+            $schema: "https://json-schema.org/draft/2020-12/schema",
+            type: "object",
+            properties: { value: { type: "string", title: "Value" } },
+            required: ["value"],
+          },
+        },
+        {
+          name: "union",
+          inputSchema: { type: "object", properties: { v: { anyOf: [{ type: "string" }] } } },
+        },
+      ],
+    }),
+    "tools/call": (params) => ({
+      content: [{ type: "text", text: JSON.stringify(params.arguments) }],
+      structuredContent: { echoed: (params.arguments as Record<string, unknown>).value },
+    }),
     "resources/list": () => ({
       resources: [
         { uri: "docs://a", name: "a", mimeType: "text/markdown" },
@@ -119,7 +140,7 @@ test("discovery publishes one generation and binds page cursors to it", async ()
   expect(first).toMatchObject({
     state: "current",
     listChanges: "observed",
-    entries: { tool: 1, resource: 2, "resource-template": 1, prompt: 1 },
+    entries: { tool: 2, resource: 2, "resource-template": 1, prompt: 1 },
   });
   expect(h.calls).toEqual([
     "tools/list",
@@ -127,20 +148,24 @@ test("discovery publishes one generation and binds page cursors to it", async ()
     "resources/templates/list",
     "prompts/list",
   ]);
-  const page = h.catalog.page({ limit: 2 });
+  const page = h.catalog.page({ limit: 3 });
   if (page.kind !== "completed") throw new Error(page.code);
   expect(page.value.entries.map((entry) => [entry.kind, entry.availability])).toEqual([
     ["tool", "available"],
+    ["tool", "unsupported"],
     ["resource", "available"],
   ]);
-  expect(page.value.entries[1]?.readHandle).toBe(
+  expect(page.value.entries[2]?.readHandle).toBe(
     mcpReadHandle("s", "docs://a", first.catalogGeneration ?? 0),
   );
+  // Pages are compact: tool schemas are omitted until one entry is selected.
+  expect(page.value.entries[0]).toMatchObject({ detail: "compact", inputSchema: null });
   const cursor = page.value.nextCursor ?? "";
-  const next = h.catalog.page({ limit: 2, cursor });
+  const next = h.catalog.page({ limit: 3, cursor });
   expect(next.kind === "completed" && next.value.entries.map((entry) => entry.name)).toEqual([
     "b",
     "doc",
+    "review",
   ]);
   expect(h.catalog.page({ limit: 3, cursor, kind: "prompt" })).toMatchObject({ kind: "malformed" });
   const second = await h.discover();
@@ -280,7 +305,7 @@ test("reads require one exact item and removal revokes the server", async () => 
     byteLength: 3,
   });
   h.replies["prompts/get"] = () => {
-    throw new McpLimitExceeded("mcp-result-too-large");
+    throw new McpRequestFailure("mcp-result-too-large");
   };
   expect(
     await h.catalog.getPrompt("mcp:s/prompt/review", generation, { topic: "x" }, h.call()),
@@ -327,4 +352,91 @@ test("a list change during a read or prompt fences its result", async () => {
     listChanges: "unobserved",
   });
   expect(await h.discover()).toMatchObject({ state: "current", listChanges: "unobserved" });
+});
+
+test("tool selection returns the normalized schema and calls validate before one dispatch", async () => {
+  const h = harness();
+  await h.connect();
+  const generation = (await h.discover()).catalogGeneration ?? 0;
+  const echo = "mcp:s/tool/echo";
+  const selected = h.catalog.page({ entryId: echo });
+  if (selected.kind !== "completed") throw new Error(selected.code);
+  expect(selected.value.entries).toHaveLength(1);
+  expect(selected.value.entries[0]).toMatchObject({
+    detail: "complete",
+    availability: "available",
+    annotations: { readOnlyHint: true },
+    inputSchema: {
+      type: "object",
+      properties: { value: { type: "string" } },
+      required: ["value"],
+      additionalProperties: false,
+    },
+  });
+  expect(h.catalog.page({ entryId: "mcp:s/tool/missing" })).toMatchObject({
+    kind: "unavailable",
+    code: "mcp-catalog-entry-unknown",
+  });
+
+  const before = h.calls.length;
+  for (const values of [{}, { value: 1 }, { value: "x", extra: true }])
+    expect(await h.catalog.callTool(echo, generation, values, h.call())).toMatchObject({
+      kind: "malformed",
+      code: "mcp-tool-arguments-invalid",
+    });
+  expect(await h.catalog.callTool("mcp:s/tool/union", generation, {}, h.call())).toMatchObject({
+    kind: "unsupported",
+    code: "mcp-tool-schema-unsupported",
+  });
+  expect(h.calls.length).toBe(before);
+
+  const called = await h.catalog.callTool(echo, generation, { value: "hi" }, h.call());
+  if (called.kind !== "completed") throw new Error(called.code);
+  expect(called.value).toMatchObject({
+    entryId: echo,
+    catalogGeneration: generation,
+    isError: false,
+    structuredContent: { echoed: "hi" },
+  });
+  expect(called.value.schemaDigest).toMatch(/^sha256:/u);
+  expect(h.calls.filter((method) => method === "tools/call")).toHaveLength(1);
+
+  h.replies["tools/call"] = () => ({ isError: true, content: [{ type: "text", text: "bad" }] });
+  const reported = await h.catalog.callTool(echo, generation, { value: "hi" }, h.call());
+  expect(reported.kind === "completed" && reported.value.isError).toBe(true);
+  h.replies["tools/call"] = () => ({ content: "not a list" });
+  expect(await h.catalog.callTool(echo, generation, { value: "hi" }, h.call())).toMatchObject({
+    kind: "failed",
+    code: "mcp-tool-result-malformed",
+    effect: "uncertain",
+  });
+  h.replies["tools/call"] = () => {
+    throw new McpRequestFailure("mcp-input-required-unavailable");
+  };
+  expect(await h.catalog.callTool(echo, generation, { value: "hi" }, h.call())).toMatchObject({
+    kind: "failed",
+    code: "mcp-input-required-unavailable",
+    effect: "uncertain",
+  });
+});
+
+test("stale, changed and revoked tool selections fail before any call", async () => {
+  const h = harness();
+  await h.connect();
+  const generation = (await h.discover()).catalogGeneration ?? 0;
+  const echo = "mcp:s/tool/echo";
+  const calls = () => h.calls.filter((method) => method === "tools/call").length;
+  h.change();
+  expect(await h.catalog.callTool(echo, generation, { value: "x" }, h.call())).toMatchObject({
+    kind: "stale",
+    code: "mcp-catalog-entry-stale",
+  });
+  const next = (await h.discover()).catalogGeneration ?? 0;
+  expect((await h.catalog.callTool(echo, next, { value: "x" }, h.call())).kind).toBe("completed");
+  expect(calls()).toBe(1);
+  h.configure({ generation: 2, servers: [] });
+  expect(await h.catalog.callTool(echo, next, { value: "x" }, h.call())).toMatchObject({
+    kind: "stale",
+  });
+  expect(calls()).toBe(1);
 });

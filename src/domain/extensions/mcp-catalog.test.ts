@@ -5,6 +5,7 @@ import {
   MCP_CATALOG_ENTRIES_PER_KIND,
   mcpEntryId,
   normalizeMcpCatalog,
+  normalizeMcpToolSchema,
   parseUriTemplate,
   validateMcpArguments,
 } from "./mcp-catalog.ts";
@@ -112,4 +113,60 @@ test("URI templates expand RFC 6570 level 1-3 and refuse other syntax", () => {
   ]);
   for (const template of ["x://{a:3}", "x://{a*}", "x://{a", "x://a}", "x://{}", "x://{=a}"])
     expect(parseUriTemplate(template).ok).toBe(false);
+});
+
+test("tool schemas normalize into the strict subset or become unsupported", () => {
+  const normalized = normalizeMcpToolSchema({
+    $schema: "https://json-schema.org/draft/2020-12/schema",
+    title: "Search",
+    type: "object",
+    properties: {
+      title: { type: "string", title: "Title", default: "x", format: "uri" },
+      tags: { type: "array", items: { type: "object", properties: { name: { type: "string" } } } },
+    },
+    required: ["title"],
+  });
+  expect(normalized?.schema).toEqual({
+    type: "object",
+    properties: {
+      title: { type: "string" },
+      tags: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: { name: { type: "string" } },
+          additionalProperties: false,
+        },
+      },
+    },
+    required: ["title"],
+    additionalProperties: false,
+  });
+  expect(normalized?.digest).toMatch(/^sha256:/u);
+  expect(normalizeMcpToolSchema({ type: "object" })?.schema).toEqual({
+    type: "object",
+    properties: {},
+    additionalProperties: false,
+  });
+  for (const unsupported of [
+    undefined,
+    { type: "string" },
+    { type: "object", additionalProperties: true },
+    { type: "object", properties: { v: { anyOf: [{ type: "string" }] } } },
+    { type: "object", properties: { v: { $ref: "#/defs/v" } } },
+  ])
+    expect(normalizeMcpToolSchema(unsupported)).toBeNull();
+  const { entries } = normalizeMcpCatalog("s", {
+    tools: {
+      tools: [
+        { name: "a", annotations: { readOnlyHint: true, title: "ignored", destructiveHint: "no" } },
+      ],
+    },
+  });
+  expect(entries[0]).toMatchObject({
+    kind: "tool",
+    inputSchema: null,
+    schemaDigest: null,
+    annotations: { readOnlyHint: true },
+  });
 });

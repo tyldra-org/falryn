@@ -6,6 +6,8 @@
  * validated, bounded and counted here, never executed or trusted.
  */
 import { z } from "zod";
+import { definitionValueSchema } from "../orchestration/definition-values.ts";
+import { canonicalDigest } from "./canonical.ts";
 
 export const MCP_CATALOG_KINDS = ["tool", "resource", "resource-template", "prompt"] as const;
 export type McpCatalogKind = (typeof MCP_CATALOG_KINDS)[number];
@@ -35,7 +37,14 @@ type McpEntryBase = {
   readonly descriptionTruncated: boolean;
 };
 export type McpCatalogEntry =
-  | (McpEntryBase & { readonly kind: "tool" })
+  | (McpEntryBase & {
+      readonly kind: "tool";
+      /** The strict normalized input schema; null when the server schema is unsupported. */
+      readonly inputSchema: Readonly<Record<string, unknown>> | null;
+      readonly schemaDigest: string | null;
+      /** Untrusted server hints; they never lower Falryn's effect or confirmation. */
+      readonly annotations: Readonly<Record<string, boolean>> | null;
+    })
   | (McpEntryBase & {
       readonly kind: "resource";
       readonly uri: string;
@@ -88,7 +97,11 @@ const mimeType = z
   .catch(null);
 const common = { name, title: optionalText, description: optionalText };
 const itemSchemas = {
-  tool: z.looseObject(common),
+  tool: z.looseObject({
+    ...common,
+    inputSchema: z.unknown().optional(),
+    annotations: z.unknown().optional(),
+  }),
   resource: z.looseObject({ ...common, uri, mimeType }),
   "resource-template": z.looseObject({ ...common, uriTemplate: uri, mimeType }),
   prompt: z.looseObject({
@@ -101,6 +114,8 @@ const itemSchemas = {
 } as const;
 type RawItem = {
   readonly name: string;
+  readonly inputSchema?: unknown;
+  readonly annotations?: unknown;
   readonly title?: string | null | undefined;
   readonly description?: string | null | undefined;
   readonly uri?: string;
@@ -142,7 +157,16 @@ function entryFor(serverId: string, kind: McpCatalogKind, item: RawItem): McpCat
     description: description.text,
     descriptionTruncated: description.truncated,
   };
-  if (kind === "tool") return { ...base, kind };
+  if (kind === "tool") {
+    const schema = normalizeMcpToolSchema(item.inputSchema);
+    return {
+      ...base,
+      kind,
+      inputSchema: schema?.schema ?? null,
+      schemaDigest: schema?.digest ?? null,
+      annotations: toolHints(item.annotations),
+    };
+  }
   if (kind === "resource")
     return { ...base, kind, uri: item.uri ?? "", mimeType: item.mimeType ?? null };
   if (kind === "resource-template") {
@@ -203,6 +227,73 @@ export function normalizeMcpCatalog(
     }
   }
   return { entries, counts };
+}
+
+/** Keys that describe a schema without constraining values; dropped before validation. */
+const SCHEMA_ANNOTATIONS = new Set([
+  "$schema",
+  "$id",
+  "$comment",
+  "title",
+  "default",
+  "examples",
+  "format",
+  "readOnly",
+  "writeOnly",
+  "deprecated",
+]);
+const TOOL_HINTS = ["readOnlyHint", "destructiveHint", "idempotentHint", "openWorldHint"] as const;
+
+function withoutAnnotations(value: unknown, depth: number): unknown {
+  if (depth > 16 || value === null || typeof value !== "object" || Array.isArray(value))
+    return value;
+  const result: Record<string, unknown> = {};
+  for (const [key, child] of Object.entries(value)) {
+    if (SCHEMA_ANNOTATIONS.has(key)) continue;
+    if (
+      key === "properties" &&
+      child !== null &&
+      typeof child === "object" &&
+      !Array.isArray(child)
+    )
+      result[key] = Object.fromEntries(
+        Object.entries(child).map(([name, schema]) => [
+          name,
+          withoutAnnotations(schema, depth + 1),
+        ]),
+      );
+    else if (key === "items") result[key] = withoutAnnotations(child, depth + 1);
+    else result[key] = child;
+  }
+  // An object that does not declare extra properties is closed for the model boundary.
+  if (result.type === "object") {
+    result.properties ??= {};
+    result.additionalProperties ??= false;
+  }
+  return result;
+}
+
+/**
+ * Normalize an untrusted tool input schema into the bounded definition subset. Anything
+ * still outside it (unions, references, open objects) is unsupported rather than guessed.
+ */
+export function normalizeMcpToolSchema(
+  schema: unknown,
+): { readonly schema: Readonly<Record<string, unknown>>; readonly digest: string } | null {
+  const parsed = definitionValueSchema.safeParse(withoutAnnotations(schema, 0));
+  if (!parsed.success || parsed.data.type !== "object") return null;
+  return { schema: parsed.data, digest: canonicalDigest(parsed.data) };
+}
+
+function toolHints(value: unknown): Readonly<Record<string, boolean>> | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const hints = Object.fromEntries(
+    TOOL_HINTS.flatMap((key) => {
+      const hint = (value as Record<string, unknown>)[key];
+      return typeof hint === "boolean" ? [[key, hint]] : [];
+    }),
+  );
+  return Object.keys(hints).length > 0 ? hints : null;
 }
 
 export type McpArgumentError = {
