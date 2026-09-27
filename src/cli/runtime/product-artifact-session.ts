@@ -26,6 +26,10 @@ import { createDurableMemoryRecords, type MemoryRecords } from "../../applicatio
 import { createReflectionActions } from "../../application/memory/reflection-actions.ts";
 import { type AgentJoins, createAgentJoins } from "../../application/orchestration/agent-joins.ts";
 import {
+  createLocalUserQuestions,
+  type LocalUserQuestions,
+} from "../../application/orchestration/local-user-questions.ts";
+import {
   createProcessTaskNotices,
   type ProcessTaskNotices,
 } from "../../application/orchestration/process-task-notices.ts";
@@ -128,6 +132,8 @@ export type ProductArtifactSession = {
   readonly workflowQuestions: WorkflowQuestions | null;
   /** The interactive host's local question presenter; null for headless hosts. */
   readonly questionPresenter: LocalQuestionPresenter | null;
+  /** Asks the local user through that presenter; null for headless hosts. */
+  readonly localUserQuestions: LocalUserQuestions | null;
   readonly workQueues: WorkQueueLocations;
   readonly peers: ProductPeerMailboxes;
   readonly artifacts: DurableArtifactStore;
@@ -337,6 +343,14 @@ export async function openProductArtifactSession(
     workflowQuestions.subscribe((created) =>
       questionPresenter.offer(created, workflowPrincipal, "Workflow question").then(() => {}),
     );
+  const localUserQuestions =
+    questions && questionPresenter
+      ? createLocalUserQuestions({
+          questions,
+          presenter: questionPresenter,
+          principal: workflowPrincipal,
+        })
+      : null;
   const listed = taskStore.list();
   if (listed.ok)
     for (const task of listed.value)
@@ -525,6 +539,7 @@ export async function openProductArtifactSession(
     workflows: createWorkflowStore(store),
     workflowQuestions,
     questionPresenter,
+    localUserQuestions,
     workQueues,
     async publishNativePackages(generation, signal, session) {
       if (closed) throw new Error("catalog-host-closed");

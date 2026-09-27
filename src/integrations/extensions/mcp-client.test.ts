@@ -442,3 +442,87 @@ posix(
     });
   },
 );
+
+test("current connections offer form input and hand input rounds back; legacy offers none", async () => {
+  const messages: Record<string, unknown>[] = [];
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const message = (await request.json()) as Record<string, unknown>;
+      messages.push(message);
+      if (message.method === "prompts/get")
+        return Response.json({
+          jsonrpc: "2.0",
+          id: message.id,
+          result: { resultType: "input_required", inputRequests: {}, requestState: "prompt-1" },
+        });
+      return Response.json(mcpFixtureReply(message));
+    },
+  });
+  cleanup.push(() => server.stop(true));
+  const url = `http://127.0.0.1:${server.port}/mcp`;
+  const s = setup(mcpConnectionSchema.parse({ id: "fixture", transport: "http", url }));
+  const ready = await s.lifecycle.connect(admission());
+  expect(ready.kind).toBe("completed");
+  if (ready.kind !== "completed") return;
+  const capabilities = (message: Record<string, unknown> | undefined) =>
+    (message?.params as { _meta?: Record<string, unknown> } | undefined)?._meta?.[
+      "io.modelcontextprotocol/clientCapabilities"
+    ];
+  expect(capabilities(messages.find((m) => m.method === "server/discover"))).toEqual({
+    elicitation: { form: {} },
+  });
+  const asked = await s.lifecycle.request(
+    admission(),
+    ready.snapshot.transportGeneration,
+    "tools/call",
+    {
+      name: "ask",
+      arguments: {},
+    },
+  );
+  expect(asked).toMatchObject({
+    kind: "completed",
+    value: { resultType: "input_required", requestState: "ask-1", inputRequests: { confirm: {} } },
+  });
+  const inputResponses = { confirm: { action: "accept", content: { branch: "next" } } };
+  const answered = await s.lifecycle.request(
+    admission(),
+    ready.snapshot.transportGeneration,
+    "tools/call",
+    { name: "ask", arguments: {}, inputResponses, requestState: "ask-1" },
+  );
+  expect(answered).toMatchObject({
+    kind: "completed",
+    value: {
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify({ requestState: "ask-1", responses: inputResponses }),
+        },
+      ],
+    },
+  });
+  const calls = messages.filter((m) => m.method === "tools/call");
+  expect(calls).toHaveLength(2);
+  expect(calls[0]?.id).not.toBe(calls[1]?.id);
+  expect(calls[1]?.params).toMatchObject({ inputResponses, requestState: "ask-1" });
+  // Only tool calls take input rounds; prompts and reads still refuse them.
+  expect(
+    await s.lifecycle.request(admission(), ready.snapshot.transportGeneration, "prompts/get", {
+      name: "review",
+      arguments: { topic: "x" },
+    }),
+  ).toMatchObject({ kind: "failed", code: "mcp-input-required-unavailable" });
+
+  messages.length = 0;
+  const legacy = setup(
+    mcpConnectionSchema.parse({ id: "fixture", transport: "http", url, protocol: "legacy" }),
+  );
+  expect((await legacy.lifecycle.connect(admission())).kind).toBe("completed");
+  const initialize = messages.find((m) => m.method === "initialize")?.params as
+    | { capabilities?: unknown }
+    | undefined;
+  // Exact: a legacy client offers no elicitation at all.
+  expect(initialize?.capabilities).toEqual({});
+});

@@ -158,6 +158,11 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
           probe: { maxRetries: 0 },
         },
         inputRequired: { autoFulfill: false },
+        // Current-protocol servers may ask for form input inside tools/call; the catalog owner
+        // answers each round. Legacy servers are offered nothing, so they never ask.
+        ...(connection.protocol === "legacy"
+          ? {}
+          : { capabilities: { elicitation: { form: {} } } }),
         enforceStrictCapabilities: true,
         listMaxPages: 16,
         listChanged: { tools: changed, resources: changed, prompts: changed },
@@ -221,9 +226,13 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
             if (method === "resources/templates/list")
               return client.listResourceTemplates(params, options);
             if (method === "prompts/list") return client.listPrompts(params, options);
-            // callTool also validates structured output against the listed output schema.
+            // callTool also validates structured output against the listed output schema. An
+            // input_required round is returned to the catalog owner, which answers and retries.
             if (method === "tools/call")
-              return client.callTool(params as Parameters<Client["callTool"]>[0], options);
+              return client.callTool(params as Parameters<Client["callTool"]>[0], {
+                ...options,
+                allowInputRequired: connection.protocol !== "legacy",
+              });
             return client.request({ method, params }, options);
           };
           let result: unknown;

@@ -558,6 +558,9 @@ async function launchShell(
               ...(productArtifactSession.workflowQuestions
                 ? { workflowQuestions: productArtifactSession.workflowQuestions }
                 : {}),
+              ...(productArtifactSession.localUserQuestions
+                ? { localUserQuestions: productArtifactSession.localUserQuestions }
+                : {}),
               modelConfigurationGeneration: () =>
                 graph.loader.current()?.generation ?? configurationGeneration,
               modelPreferences: () =>

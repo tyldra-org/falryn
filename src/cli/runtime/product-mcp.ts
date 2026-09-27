@@ -1,4 +1,5 @@
 import { createMcpCatalog } from "../../application/extensions/mcp-catalog.ts";
+import type { McpUserInput } from "../../application/extensions/mcp-input.ts";
 import { createMcpLifecycle } from "../../application/extensions/mcp-lifecycle.ts";
 import { composeProductMcpTools } from "../../application/tools/product-mcp-tools.ts";
 import type {
@@ -23,6 +24,8 @@ export function composeProductMcp(options: {
   readonly context: EnvironmentProcessContext;
   readonly environment: EnvironmentPort;
   readonly authorize: (signal: AbortSignal) => Promise<boolean>;
+  /** How tool calls ask the user for server-requested input; absent hosts cancel. */
+  readonly userInput?: McpUserInput;
 }) {
   const configuration = () => {
     const config = options.configuration();
@@ -45,7 +48,7 @@ export function composeProductMcp(options: {
   return {
     lifecycle,
     catalog,
-    tools: composeProductMcpTools(options.generation, lifecycle, catalog),
+    tools: composeProductMcpTools(options.generation, lifecycle, catalog, options.userInput),
     /** Host-owned unified Read port for catalog resources. */
     resources: catalog.resources,
     close: lifecycle.close,

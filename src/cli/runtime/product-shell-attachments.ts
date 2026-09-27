@@ -1,4 +1,5 @@
 import { checkpointControl } from "../../application/compression/checkpoint-request.ts";
+import { createMcpUserInput } from "../../application/extensions/mcp-input.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
 import { withProcessingSession } from "../../application/providers/model-settings.ts";
 import { productAgentHost } from "../../application/runtime/product-agent-runtime.ts";
@@ -172,6 +173,8 @@ export type ProductShellAttachmentPorts = {
   readonly tasks?: ProcessTaskSupervisor;
   readonly workflows?: import("../../domain/orchestration/workflow-state.ts").WorkflowStore;
   readonly workflowQuestions?: import("../../application/orchestration/workflow-questions.ts").WorkflowQuestions;
+  /** The interactive host's local-user asker; MCP input requests go through it. */
+  readonly localUserQuestions?: import("../../application/orchestration/local-user-questions.ts").LocalUserQuestions;
   readonly workQueues?: import("../../application/runtime/delegated-agent-runtime.ts").DelegatedRuntimeOptions["workQueues"];
   readonly joins?: import("../../application/orchestration/agent-joins.ts").AgentJoins;
   readonly taskNotices?: ProcessTaskNotices;
@@ -330,6 +333,9 @@ export async function composeProductShellAttachments(
         };
       },
       authorize: ports.authorizeMcp ?? (async () => false),
+      ...(ports.localUserQuestions
+        ? { userInput: createMcpUserInput(ports.localUserQuestions) }
+        : {}),
     });
     const workspaceTools =
       workspaceRoot === null
