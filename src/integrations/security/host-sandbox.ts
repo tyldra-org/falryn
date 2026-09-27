@@ -31,7 +31,11 @@ function receipts(scope: Scope): SandboxReceipt[] {
     ...(scope.refusal ? [scope.refusal] : []),
   ];
 }
-export type HostSandbox = SandboxPort & SandboxInvocationPort;
+export type HostSandbox = SandboxPort &
+  SandboxInvocationPort & {
+    /** Strict policy on a qualified adapter: command launches write only admitted roots. */
+    confinesWrites(): boolean;
+  };
 
 /** Trusted installation default for first-party host operations, never extension admission. */
 export function installationSandboxPolicy(generation = 0): SandboxPolicy {
@@ -96,6 +100,13 @@ export function createHostSandbox(
   };
   return {
     probe,
+    confinesWrites() {
+      try {
+        return policy().mode === "strict" && probe().status === "available";
+      } catch {
+        return false;
+      }
+    },
     resolveExpansion(expansion) {
       try {
         return {
@@ -226,6 +237,9 @@ export function createHostSandbox(
         return refuse("sandbox-stale-authority");
       if (invocation?.source === "extension" && current.mode !== "strict")
         return refuse("sandbox-extension-isolation-required");
+      // An edit scope is enforceable for commands only by strict write roots.
+      if (invocation?.writeScope !== undefined && current.mode !== "strict")
+        return refuse("edit-scope-unenforceable");
       if (current.mode === "degraded") return refuse("sandbox-degraded-boundary-unqualified");
       if (current.mode === "off") {
         if (invocation?.expansion !== undefined) return refuse("sandbox-expansion-requires-strict");
@@ -271,15 +285,31 @@ export function createHostSandbox(
             [...boundary.readRoots, ...(expansion?.readRoots ?? [])].map(canonicalSandboxRoot),
           ),
         ];
-        const writeRoots = [
-          ...new Set(
-            [
-              ...boundary.writeRoots,
-              ...(expansion?.writeRoots ?? []),
-              ...boundary.lifecyclePaths.map((entry) => entry.path),
-            ].map(canonicalSandboxRoot),
-          ),
-        ];
+        const permitted = [...boundary.writeRoots, ...(expansion?.writeRoots ?? [])].map(
+          canonicalSandboxRoot,
+        );
+        const lifecycle = boundary.lifecyclePaths.map((entry) => canonicalSandboxRoot(entry.path));
+        const scope = invocation?.writeScope;
+        let writable = permitted;
+        if (scope !== undefined) {
+          const inside = (path: string, root: string) =>
+            path === root || path.startsWith(`${root.replace(/\/+$/u, "")}/`);
+          // Missing scope directories cannot be write roots; nothing is written there.
+          const directories = scope.flatMap((path) => {
+            try {
+              return [canonicalSandboxRoot(path)];
+            } catch {
+              return [];
+            }
+          });
+          const expanded = (expansion?.writeRoots ?? []).map(canonicalSandboxRoot);
+          if (expanded.some((root) => !directories.some((directory) => inside(root, directory))))
+            return refuse("edit-scope-expansion-outside");
+          writable = directories.filter((directory) =>
+            permitted.some((root) => inside(directory, root)),
+          );
+        }
+        const writeRoots = [...new Set([...writable, ...lifecycle])];
         if (readRoots.length > MAX_SANDBOX_ROOTS || writeRoots.length > MAX_SANDBOX_ROOTS)
           return refuse("sandbox-root-limit");
         const prepared = seatbeltLaunch(request, { ...boundary, readRoots, writeRoots }, [

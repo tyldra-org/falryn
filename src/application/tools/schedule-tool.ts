@@ -44,6 +44,7 @@ export function composeScheduleTool(
         commandJson: z.string().max(1_114_112),
       }),
       outputSchema: z.record(z.string(), z.unknown()),
+      workspaceWrites: "none",
       effectFor: (input) =>
         ["validate", "preview", "inspect", "list", "history", "delete-preview"].includes(
           String(input.operation),

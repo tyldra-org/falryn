@@ -449,7 +449,11 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
           "Run an argv process, optionally supplying one exact scratch revision through stdin. outputMode hush is the default; raw bypasses only reduction while capture, safety, redaction, bounds, and targeted Read recovery remain active",
           "mutation",
         ),
-        { inputSchema: runProcessInput, outputSchema: processOrTaskOutput },
+        {
+          inputSchema: runProcessInput,
+          outputSchema: processOrTaskOutput,
+          workspaceWrites: "sandbox",
+        },
       ),
     ),
     mustEntry(
@@ -460,7 +464,11 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
           "Run a Bash command. outputMode hush is the default; raw bypasses only reduction while capture, safety, redaction, bounds, and targeted Read recovery remain active",
           "mutation",
         ),
-        { inputSchema: runShellInput, outputSchema: processOrTaskOutput },
+        {
+          inputSchema: runShellInput,
+          outputSchema: processOrTaskOutput,
+          workspaceWrites: "sandbox",
+        },
       ),
     ),
     mustEntry(

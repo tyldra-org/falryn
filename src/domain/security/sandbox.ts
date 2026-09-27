@@ -78,6 +78,11 @@ export type SandboxInvocation = {
   readonly expiresAt: number;
   /** Granted by the trusted confirmation owner, never decoded from model input. */
   readonly expansion?: SandboxExpansionGrant;
+  /**
+   * A scoped child's absolute write directories (#1122). When present, launches
+   * require strict mode and may write only inside them.
+   */
+  readonly writeScope?: readonly string[];
 };
 
 export type SandboxExpansionGrant = {

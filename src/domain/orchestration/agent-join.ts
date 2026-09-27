@@ -2,6 +2,7 @@
 import { z } from "zod";
 import { digestSchema, identityText } from "../extensions/identity.ts";
 import type { Result } from "../foundation/result.ts";
+import type { EditScope } from "./edit-scope.ts";
 import { processTaskHandleSchema } from "./process-task.ts";
 
 export const JOIN_LIMITS = { children: 16, perParent: 64, retained: 256, bytes: 65536 } as const;
@@ -122,6 +123,12 @@ export type JoinFailure = {
     | "uncertain";
 };
 export type JoinResult<T> = Result<T, JoinFailure>;
+/** The handle of a write-capable child holding an overlapping edit scope. */
+export type EditScopeConflict = {
+  readonly taskId: string;
+  readonly generation: number;
+  readonly task: z.infer<typeof processTaskHandleSchema> | null;
+};
 export type JoinStore = {
   register(link: AgentLink): JoinResult<AgentLink>;
   link(handle: z.infer<typeof agentGenerationSchema>): JoinResult<AgentLink>;
@@ -146,6 +153,21 @@ export type JoinStore = {
   notificationBoundary(handle: z.infer<typeof processTaskHandleSchema>): JoinResult<boolean>;
   cleanup(owner: JoinOwner, input: Pick<JoinInput, "id" | "generation">): JoinResult<null>;
   sealSequence(handle: z.infer<typeof processTaskHandleSchema>): JoinResult<number | null>;
+  /**
+   * Atomically reserve a write-capable child's edit scope in its workspace, or
+   * report the active overlapping reservation. A null scope overlaps every
+   * writer. Reservations persist until the child's task ends with a known
+   * effect, or until cleanup when its effect is uncertain.
+   */
+  reserveEditScope(input: {
+    readonly taskId: string;
+    readonly generation: number;
+    readonly workspaceId: string;
+    readonly scope: EditScope;
+    readonly now: number;
+  }): JoinResult<{ readonly conflict: EditScopeConflict | null }>;
+  linkEditScope(taskId: string, task: z.infer<typeof processTaskHandleSchema>): JoinResult<null>;
+  releaseEditScope(taskId: string): JoinResult<null>;
 };
 
 /** Called over one writer snapshot; ordering never depends on Promise delivery order. */

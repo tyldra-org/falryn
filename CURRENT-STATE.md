@@ -2626,6 +2626,34 @@ narrow the parent's effects and explicitly admit nested delegation. Consequentia
 operations still require the normal confirmation host; the existing lack of a
 production confirmation presenter remains a limitation.
 
+A write-capable launch may supply `editScope`: up to 64 workspace-relative path
+prefixes or single-segment globs (`*`, `?`), each at most 1 KiB. Patterns are
+normalized; `..`, absolute and other glob syntax are refused as
+`edit-scope-invalid`, including any scope on an observation-only definition.
+Without a scope a writer may write its whole inherited workspace, and a nested
+child stays inside its parent's scope (`edit-scope-outside-parent`). Writers
+reserve their scope durably (migration 0033) in one transaction before any
+resource is admitted. A scope that overlaps a running writer in the workspace, where
+two globs that might intersect count as overlapping and an unscoped writer overlaps
+every writer, returns `agent-launch-refused` with reason `edit-scope-overlap`
+and that child's handle. The launch is not queued. A reservation ends when the
+child's task ends with a known effect. An uncertain effect keeps it until
+`cleanup`, including across restart. An admission that never linked its task
+expires after 60 seconds. Continuation reserves the same scope again, and
+`inspect` of a retained child reports it.
+
+A scoped child's workspace mutations are checked before resource admission, on
+every admitted input including a hook's rewrite. `write_files`, `mutate_paths`
+and `apply_patch` must name only paths inside the scope. One outside path refuses
+the whole call (`edit-scope-violation`), and a move across the boundary is
+`edit-scope-boundary`; neither has any effect. `run_process` and `run_shell`
+are available to a scoped child only under a strict sandbox with directory-only
+scopes. Existing scope directories become the only command write roots, and a
+`sandboxExpansion` outside them is refused. Any other capability that can write
+anywhere, such as PTY, Git mutation or language edits, makes the launch return
+`agent-launch-refused` with reason `edit-scope-unenforceable` naming those
+capabilities. Reads are not restricted.
+
 Definitions and selected context are bounded to 64 KiB each. Context text carries
 a digest and source generation. Selected artifact references also require matching
 metadata, verified bytes and a permitted sensitivity. Children receive selected

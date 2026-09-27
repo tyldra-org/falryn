@@ -107,6 +107,68 @@ describe("host sandbox", () => {
     const unsupported = sandbox.prepare({ ...request(""), channel: "capture" });
     expect(unsupported.kind).toBe("refused");
   });
+  test("an edit-scoped command is refused unless strict mode confines it", async () => {
+    const sandbox = createHostSandbox({ policy: () => installationSandboxPolicy(1) });
+    expect(sandbox.confinesWrites()).toBe(false);
+    const command = createHostCommandRunner({ sandbox });
+    const refused = await sandbox.run({ ...invocation, writeScope: [tmpdir()] }, () =>
+      command.run(request('throw new Error("must not run")')),
+    );
+    expect(refused.receipts[0]).toMatchObject({
+      state: "refused",
+      pid: null,
+      reason: "edit-scope-unenforceable",
+    });
+  });
+  hostTest(
+    "strict edit scopes become the only write roots and refuse outside expansion",
+    async () => {
+      const directory = await mkdtemp(join(tmpdir(), "falryn-scope-"));
+      try {
+        await mkdir(join(directory, "scoped"));
+        await mkdir(join(directory, "other"));
+        const sandbox = createHostSandbox({ policy: () => strictPolicy(directory) });
+        expect(sandbox.confinesWrites()).toBe(true);
+        const command = createHostCommandRunner({ sandbox });
+        const scoped = {
+          ...invocation,
+          writeScope: [join(directory, "scoped"), join(directory, "missing")],
+        };
+        const write = (path: string) =>
+          `try { require("node:fs").writeFileSync(${JSON.stringify(path)}, "x"); console.log("written") } catch { console.log("denied") }`;
+        const inside = await sandbox.run(scoped, () =>
+          command.run(request(write(join(directory, "scoped", "ok.txt")))),
+        );
+        expect(JSON.stringify(inside.value)).toContain("written");
+        expect(inside.receipts[0]?.writeRoots).toEqual([
+          await import("node:fs").then((fs) => fs.realpathSync(join(directory, "scoped"))),
+        ]);
+        const outside = await sandbox.run(scoped, () =>
+          command.run(request(write(join(directory, "other", "bad.txt")))),
+        );
+        expect(JSON.stringify(outside.value)).toContain("denied");
+        await expect(readFile(join(directory, "other", "bad.txt"))).rejects.toThrow();
+        const widened = await sandbox.run(
+          {
+            ...scoped,
+            confirmationId: "confirmed",
+            expansion: createSandboxExpansionGrant({
+              invocation: { ...scoped, confirmationId: "confirmed" },
+              expansion: { readRoots: [], writeRoots: [join(directory, "other")] },
+              expiresAt: Date.now() + 60_000,
+            }),
+          },
+          () => command.run(request(write(join(directory, "other", "bad.txt")))),
+        );
+        expect(widened.receipts[0]).toMatchObject({
+          state: "refused",
+          reason: "edit-scope-expansion-outside",
+        });
+      } finally {
+        await rm(directory, { recursive: true, force: true });
+      }
+    },
+  );
   test("an unsupported host returns a named strict refusal", () => {
     const sandbox = createHostSandbox({ policy: () => strictPolicy(tmpdir()) });
     if (sandbox.probe().status === "available") return;

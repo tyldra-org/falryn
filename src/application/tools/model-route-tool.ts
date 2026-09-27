@@ -40,6 +40,7 @@ export function composeModelRouteTool(
     {
       inputSchema: z.strictObject({ commandJson: z.string().max(1_114_112) }),
       outputSchema: z.record(z.string(), z.unknown()),
+      workspaceWrites: "none",
       effectFor: (input) => {
         try {
           const value: unknown = JSON.parse(String(input.commandJson));

@@ -209,7 +209,7 @@ export function composeProductMemoryTools(ports: ProductMemoryToolPorts): Produc
     mustEntry(
       createToolRegistryEntry(
         document("memory_admit", "Admit memory", "Admit a memory record under policy", "mutation"),
-        { inputSchema: memoryAdmitInput, outputSchema: openObject },
+        { inputSchema: memoryAdmitInput, outputSchema: openObject, workspaceWrites: "none" },
       ),
     ),
     mustEntry(

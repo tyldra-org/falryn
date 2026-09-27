@@ -1,5 +1,6 @@
 /** A frozen execution ceiling. It narrows native policy and never grants an effect. */
 import { z } from "zod";
+import { type EditScope, editScopeSchema, editScopeWithin } from "./edit-scope.ts";
 import { EFFECT_CLASSES } from "./work.ts";
 
 const identity = z.string().min(1).max(1024);
@@ -23,6 +24,8 @@ export const childAuthoritySchema = z
     providers: z.array(childProviderBindingSchema),
     capabilities: z.array(identity),
     effects: z.array(z.enum(EFFECT_CLASSES)),
+    /** Where mutation effects may write; null is the full inherited scope (#1122). */
+    editScope: editScopeSchema.default(null),
   })
   .strict();
 export type ChildAuthority = Readonly<z.infer<typeof childAuthoritySchema>>;
@@ -63,7 +66,10 @@ export function sameChildProvider(
   );
 }
 
-/** Reject a generation/workspace change; intersect all selectable authority. */
+/**
+ * Reject a generation/workspace change or a widened edit scope; intersect all
+ * other selectable authority. A child without its own scope inherits the parent's.
+ */
 export function narrowChildAuthority(
   parent: ChildAuthority,
   requested: ChildAuthority,
@@ -74,6 +80,8 @@ export function narrowChildAuthority(
     parent.capabilityGeneration !== requested.capabilityGeneration
   )
     return null;
+  const editScope: EditScope = requested.editScope ?? parent.editScope;
+  if (!editScopeWithin(editScope, parent.editScope)) return null;
   return {
     ...requested,
     providers: requested.providers.filter((value) =>
@@ -81,5 +89,6 @@ export function narrowChildAuthority(
     ),
     capabilities: requested.capabilities.filter((value) => parent.capabilities.includes(value)),
     effects: requested.effects.filter((value) => parent.effects.includes(value)),
+    editScope: editScope === null ? null : [...editScope],
   };
 }

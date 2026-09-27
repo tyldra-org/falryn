@@ -7,6 +7,11 @@ import {
   instant,
 } from "../../domain/foundation/index.ts";
 import type { ChildWorkTarget } from "../../domain/orchestration/child-admission.ts";
+import type {
+  EditScopeRefusal,
+  WorkspaceWriteClass,
+  WorkspaceWriteTargets,
+} from "../../domain/orchestration/edit-scope.ts";
 import type { EffectCertainty } from "../../domain/orchestration/outcome.ts";
 import type {
   ResourceAdmissionReceipt,
@@ -84,6 +89,16 @@ export type ResourceWork<Value> = {
 export type ProductTaskResources = {
   childIdentity(id: string, workDigest: string): "available" | "duplicate-child" | "no-progress";
   checkAuthority(target: ChildWorkTarget, effect: EffectClass): ResourceAdmissionReceipt | null;
+  /**
+   * The edit-scope refusal for one workspace mutation, or null when permitted.
+   * Absent on unscoped resources, which may write their whole workspace (#1122).
+   */
+  checkWrites?(
+    writes: WorkspaceWriteClass,
+    targets: WorkspaceWriteTargets | null,
+  ): EditScopeRefusal | null;
+  /** Absolute directories command launches may write; absent when unscoped. */
+  writeRoots?(): readonly string[];
   readonly id: string;
   readonly generation: string;
   readonly expiresAt: number;

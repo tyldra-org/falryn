@@ -82,6 +82,7 @@ export async function executeWorkflowModel(options: {
     providers: [binding],
     capabilities: [],
     effects: ["observation" as const],
+    editScope: null,
   };
   const admission = createChildAdmission({ resources, tree, scope: tree.root(), authority }).admit({
     id: identity,

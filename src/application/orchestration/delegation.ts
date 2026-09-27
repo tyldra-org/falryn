@@ -13,6 +13,13 @@ import type {
   ChildAuthority,
   ChildProviderBinding,
 } from "../../domain/orchestration/child-admission.ts";
+import {
+  checkEditScopeWrites,
+  type EditScope,
+  editScopeWithin,
+  normalizeEditScope,
+  type WorkspaceWriteClass,
+} from "../../domain/orchestration/edit-scope.ts";
 import type { EffectCertainty } from "../../domain/orchestration/outcome.ts";
 import {
   MAX_RETAINED_PROCESS_TASKS,
@@ -90,7 +97,13 @@ export type DelegationOptions = {
     readonly ready: boolean;
     readonly reason: string;
     readonly instruction?: AgentContextItem;
+    /** How the capability can write workspace files; absent means it may write anywhere. */
+    readonly writes?: WorkspaceWriteClass;
   };
+  /** Whether the host sandbox currently confines command launches to supplied write roots. */
+  commandWritesConfined?(): boolean;
+  /** Absolute primary workspace root that edit scopes are relative to. */
+  readonly workspaceRoot?: string | null;
   validateContext?(
     context: readonly AgentContextItem[],
     request: ToolRunnerRequest,
@@ -141,11 +154,51 @@ export function createDelegation(options: DelegationOptions) {
   const retained = new Map<string, Retained>();
   const roots = new WeakMap<object, ReturnType<typeof createScopeTree>>();
 
+  /** A launch refusal naming what the parent can act on; nothing was admitted or started. */
+  function launchRefused(reason: string, detail: Readonly<Record<string, unknown>>) {
+    return completed({ kind: "agent-launch-refused", reason, ...detail, executionStarted: false });
+  }
+
+  /**
+   * Reserve a writer's edit scope for one generation. A scope overlapping a running
+   * sibling refuses the launch with that sibling's handle; it is never queued.
+   */
+  function reserve(
+    taskId: string,
+    generation: number,
+    workspaceId: string,
+    authority: ChildAuthority,
+  ): ToolInvocationOutcome | null {
+    if (!authority.effects.includes("mutation")) return null;
+    if (!options.joins) return refused("agent-joins-unavailable");
+    const reserved = options.joins.store.reserveEditScope({
+      taskId,
+      generation,
+      workspaceId,
+      scope: authority.editScope,
+      now: Number(options.clock.now()),
+    });
+    if (!reserved.ok) return refused(`edit-scope-${reserved.error.code}`);
+    const conflict = reserved.value.conflict;
+    return conflict === null
+      ? null
+      : launchRefused("edit-scope-overlap", {
+          editScope: authority.editScope,
+          conflict: {
+            handle: {
+              taskId: conflict.taskId,
+              generation: conflict.generation,
+              ...(conflict.task ? { task: conflict.task } : {}),
+            },
+          },
+        });
+  }
+
   async function prepare(
     launch: AgentLaunch,
     request: ToolRunnerRequest,
     parent?: AgentRun,
-  ): Promise<PreparedAgent | { reason: string }> {
+  ): Promise<PreparedAgent | { reason: string; capabilities?: readonly string[] }> {
     const definition = options.registry.resolve(launch.definitionId);
     if (definition === null) return { reason: "agent-definition-not-found" };
     if (definition.availability !== "available")
@@ -197,6 +250,18 @@ export function createDelegation(options: DelegationOptions) {
       (!options.validateContext || !(await options.validateContext(context, request)))
     )
       return { reason: "agent-artifact-unavailable-or-corrupt" };
+    let editScope: EditScope = null;
+    if (launch.editScope !== undefined) {
+      const normalized = normalizeEditScope(launch.editScope);
+      // Observation-only definitions cannot write, so a scope is invalid input for them.
+      if (!normalized.ok || !definition.definition.effects.includes("mutation"))
+        return { reason: "edit-scope-invalid" };
+      editScope = normalized.value;
+    }
+    const parentScope = parent?.prepared.authority.editScope ?? null;
+    if (!editScopeWithin(editScope ?? parentScope, parentScope))
+      return { reason: "edit-scope-outside-parent" };
+    editScope ??= parentScope;
     const authority: ChildAuthority = {
       version: 1,
       workspaceId: request.processTask.owner.workspaceId,
@@ -209,7 +274,23 @@ export function createDelegation(options: DelegationOptions) {
           request.delegation?.effects.includes(effect) &&
           definition.definition.effects.includes(effect),
       ),
+      editScope: editScope === null ? null : [...editScope],
     };
+    if (editScope !== null && authority.effects.includes("mutation")) {
+      const confined = options.commandWritesConfined?.() ?? false;
+      const unenforceable = selected.filter(
+        (id) =>
+          checkEditScopeWrites({
+            scope: editScope,
+            root: null,
+            writes: options.capability(id).writes ?? "unbounded",
+            targets: { paths: [], moves: [] },
+            confined,
+          }) === "edit-scope-unenforceable",
+      );
+      if (unenforceable.length > 0)
+        return { reason: "edit-scope-unenforceable", capabilities: unenforceable };
+    }
     const prepared = { definition, selection, authority, context, omitted };
     if (
       Buffer.byteLength(
@@ -285,6 +366,8 @@ export function createDelegation(options: DelegationOptions) {
       outputMode: "raw",
       onAdmitted(task: ProcessTaskHandle) {
         entry.handle = { ...entry.handle, task };
+        if (entry.prepared.authority.effects.includes("mutation"))
+          options.joins?.store.linkEditScope(entry.handle.taskId, task);
       },
       async run(_ownership, signal) {
         if (!entry.handle.task || !options.joins)
@@ -447,6 +530,8 @@ export function createDelegation(options: DelegationOptions) {
     void running.then(
       (value) => {
         entry.running = false;
+        // A launch that never admitted its task had no effect; release its reservation now.
+        if (!entry.handle.task) options.joins?.store.releaseEditScope(entry.handle.taskId);
         const sealed =
           value.status === "completed" ? sealedAgentResultSchema.safeParse(value.output) : null;
         if (sealed?.success) {
@@ -603,7 +688,10 @@ export function createDelegation(options: DelegationOptions) {
       if (!options.joins) return refused("agent-joins-unavailable");
       if (retained.size >= MAX_RETAINED_PROCESS_TASKS) return refused("agent-retention-capacity");
       const prepared = await prepare(command, request, parent);
-      if ("reason" in prepared) return refused(prepared.reason);
+      if ("reason" in prepared)
+        return prepared.capabilities
+          ? launchRefused(prepared.reason, { capabilities: prepared.capabilities })
+          : refused(prepared.reason);
       if (retained.size >= MAX_RETAINED_PROCESS_TASKS) return refused("agent-retention-capacity");
       let input: unknown;
       try {
@@ -622,6 +710,10 @@ export function createDelegation(options: DelegationOptions) {
       const resources = request.taskResources;
       const owner = request.processTask?.owner;
       if (!resources || !owner) return refused("agent-parent-unavailable");
+      const id = `agent-${randomUUID()}`;
+      // Writers reserve their scope before any resource is admitted; the refusal is not queued.
+      const reserved = reserve(id, 1, owner.workspaceId, prepared.authority);
+      if (reserved) return reserved;
       let tree = roots.get(resources);
       if (!tree && !parent) {
         tree = createScopeTree({
@@ -639,10 +731,12 @@ export function createDelegation(options: DelegationOptions) {
               ...prepared.authority,
               capabilities: [...(request.delegation?.capabilities ?? [])],
               effects: [...(request.delegation?.effects ?? [])],
+              // The main agent writes its whole workspace; children narrow from it.
+              editScope: null,
             },
+            workspaceRoot: options.workspaceRoot ?? null,
           })
         : undefined;
-      const id = `agent-${randomUUID()}`;
       const workDigest = canonicalDigest({ input, context: prepared.context }).slice(7);
       const limits = { ...command.limits };
       for (const [key, ceiling] of Object.entries(prepared.definition.definition.limits)) {
@@ -656,11 +750,14 @@ export function createDelegation(options: DelegationOptions) {
         authority: prepared.authority,
         limits,
       });
-      if (!admitted || admitted.kind === "refused")
+      if (!admitted || admitted.kind === "refused") {
+        options.joins.store.releaseEditScope(id);
         return refused(`agent-${admitted?.reason ?? "parent-unavailable"}`);
+      }
       const release = admitted.child.resources.retain();
       if (!release) {
         admitted.child.close();
+        options.joins.store.releaseEditScope(id);
         return refused("agent-parent-closed");
       }
       const entry: Retained = {
@@ -726,13 +823,16 @@ export function createDelegation(options: DelegationOptions) {
             };
           }
         }
-        return options.tasks.controlAgent(
+        const controlled = await options.tasks.controlAgent(
           controlRequest,
           processTaskControlSchema.parse({
             ...control,
             ...command.handle.task,
           }),
         );
+        if (command.operation === "cleanup" && controlled.status === "completed")
+          options.joins?.store.releaseEditScope(command.handle.taskId);
+        return controlled;
       }
       return refused("agent-retained-context-unavailable");
     }
@@ -828,8 +928,16 @@ export function createDelegation(options: DelegationOptions) {
         return refused("agent-input-invalid");
       const workDigest = canonicalDigest({ input, context: checked.context }).slice(7);
       if (entry.workDigests.has(workDigest)) return refused("agent-no-progress");
-      entry.workDigests.add(workDigest);
       if (!joinOwner) return refused("agent-parent-unavailable");
+      // Reserve before recording the work, so a refused continuation can be retried unchanged.
+      const reserved = reserve(
+        entry.handle.taskId,
+        entry.handle.generation + 1,
+        entry.workspaceId,
+        entry.prepared.authority,
+      );
+      if (reserved) return reserved;
+      entry.workDigests.add(workDigest);
       entry.parentTaskId = joinOwner.taskId;
       entry.parentSessionId = joinOwner.sessionId;
       entry.parentTurnId = joinOwner.turnId;
@@ -857,6 +965,9 @@ export function createDelegation(options: DelegationOptions) {
         ...entry.handle.task,
       }),
     );
+    // Inspection reports the admitted edit scope beside the task receipt (#1122).
+    if (command.operation === "inspect" && result.status === "completed")
+      return completed({ ...result.output, editScope: entry.prepared.authority.editScope });
     if (
       (command.operation === "detach" || command.operation === "reattach") &&
       result.status === "completed" &&
@@ -870,7 +981,10 @@ export function createDelegation(options: DelegationOptions) {
         return refused("agent-detachment-unavailable");
       entry.detached = detached;
     }
-    if (command.operation === "cleanup" && result.status === "completed") close(entry);
+    if (command.operation === "cleanup" && result.status === "completed") {
+      close(entry);
+      options.joins?.store.releaseEditScope(entry.handle.taskId);
+    }
     return result;
   }
   const unsubscribe = options.tasks.onInterrupt(() => {
