@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { commandById } from "../commands/commands.ts";
 import {
+  isBuiltinComposerSlash,
   parseComposerSlash,
   WORKSPACE_SLASH_ALIASES,
   workspacePanelForSlashCommand,
@@ -136,5 +137,21 @@ describe("parseComposerSlash", () => {
       kind: "unresolved",
       reason: "/agent takes no argument",
     });
+  });
+});
+
+describe("isBuiltinComposerSlash", () => {
+  test("built-in commands own their names ahead of package prompt templates", () => {
+    for (const text of [
+      "/mode",
+      " /mode plan",
+      "/workspace nope",
+      "/schedule {}",
+      "/peer",
+      "/fast",
+    ])
+      expect(isBuiltinComposerSlash(text)).toBe(true);
+    for (const text of ["/review a.ts", "/scheduled", "/peers", "hello", "/kit:mode"])
+      expect(isBuiltinComposerSlash(text)).toBe(false);
   });
 });

@@ -1,5 +1,6 @@
 import { checkpointControl } from "../../application/compression/checkpoint-request.ts";
 import { createMcpUserInput } from "../../application/extensions/mcp-input.ts";
+import { createPromptTemplateCatalog } from "../../application/extensions/native-prompt-owner.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
 import { withProcessingSession } from "../../application/providers/model-settings.ts";
 import { productAgentHost } from "../../application/runtime/product-agent-runtime.ts";
@@ -304,6 +305,8 @@ export async function composeProductShellAttachments(
       signal,
       selection ? String(sessionId) : undefined,
     );
+    // Templates resolve against the latest publication; stale bindings fail closed.
+    let prompts = native?.prompts ?? createPromptTemplateCatalog([]);
     const extensions =
       native === undefined
         ? await ports.rehydrateExtensions?.(signal, selection ? String(sessionId) : undefined)
@@ -713,6 +716,7 @@ export async function composeProductShellAttachments(
                   String(sessionId),
                 );
                 if (!publication) throw new Error("native-publication-unavailable");
+                prompts = publication.prompts;
                 const tools = mergeProductToolBundles(generation, [
                   productTools,
                   publication.tools,
@@ -742,6 +746,9 @@ export async function composeProductShellAttachments(
       return {
         get schedules() {
           return publishedRuntime.schedules;
+        },
+        get prompts() {
+          return prompts;
         },
         profileSession,
         async close() {
@@ -892,6 +899,8 @@ export async function composeProductShellAttachments(
     schedule: (input: unknown, signal: AbortSignal) =>
       active.schedules?.actions.execute(input, "user", signal) ??
       Promise.resolve({ ok: false, error: { code: "schedule-unavailable" } }),
+    expandTemplate: (text: string, signal: AbortSignal) =>
+      active.prompts.expand(text, AbortSignal.any([hostSignal, signal])),
     peer: (input: unknown, signal: AbortSignal) => {
       const parsed = peerActionSchema.safeParse(input);
       const selected =

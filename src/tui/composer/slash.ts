@@ -108,6 +108,21 @@ export type ParsedComposerSlash =
       readonly reason: string;
     };
 
+/** Slash commands the composer handles before its alias table. */
+export const SCHEDULE_SLASH = /^\/schedule(?:\s|$)/u;
+export const PEER_SLASH = /^\/peer(?:\s|$)/u;
+
+/**
+ * Whether a built-in composer action owns this slash text. Built-ins always win
+ * over package prompt templates in every interface.
+ */
+export function isBuiltinComposerSlash(text: string): boolean {
+  const trimmed = text.trim();
+  return (
+    SCHEDULE_SLASH.test(trimmed) || PEER_SLASH.test(trimmed) || parseComposerSlash(trimmed) !== null
+  );
+}
+
 /**
  * Parse composer draft text as an optional slash alias.
  *

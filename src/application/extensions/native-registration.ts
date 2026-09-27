@@ -25,6 +25,11 @@ import {
 import type { ToolRunnerPort } from "../runtime/tool-call-loop.ts";
 import type { ProductToolSourceBundle } from "../tools/product-tools-merge.ts";
 import type { CapabilityTrustPort } from "./capability-trust.ts";
+import {
+  createPromptTemplateCatalog,
+  type PromptTemplateCatalog,
+  type RegisteredPromptTemplate,
+} from "./native-prompt-owner.ts";
 import type { PreparedContribution, PreparedPackage } from "./prepare-package.ts";
 
 export type NativeRegistrationContext = {
@@ -41,6 +46,7 @@ export type NativeRegistration =
       binding: CapabilityBindingV1;
       hook?: RegisteredToolHook;
       tool?: { entry: ToolRegistryEntry; runner: ToolRunnerPort };
+      prompt?: RegisteredPromptTemplate;
     };
 /** Native owners validate their own codec and runner. Registration must start no package code. */
 export interface NativeRegistrationOwner {
@@ -48,7 +54,11 @@ export interface NativeRegistrationOwner {
   kind: ContributionIdentityV1["nativeKind"];
   register(input: NativeRegistrationContext): NativeRegistration;
 }
-export type NativePublication = { catalog: ExtensionCatalog; tools: ProductToolSourceBundle };
+export type NativePublication = {
+  catalog: ExtensionCatalog;
+  tools: ProductToolSourceBundle;
+  prompts: PromptTemplateCatalog;
+};
 
 /** All owners stage into one candidate. A failed candidate never replaces the prior publication. */
 export function createNativeRegistrationPublisher(owners: readonly NativeRegistrationOwner[]) {
@@ -149,6 +159,9 @@ export function createNativeRegistrationPublisher(owners: readonly NativeRegistr
           (entry.contribution.nativeKind === "tool" && registered.tool === undefined) ||
           (entry.contribution.nativeKind === "hook" && registered.hook === undefined) ||
           (registered.hook !== undefined && entry.contribution.nativeKind !== "hook") ||
+          (entry.contribution.nativeKind === "prompt") !== (registered.prompt !== undefined) ||
+          (registered.prompt !== undefined &&
+            registered.prompt.actionId !== registered.binding.actionId) ||
           (registered.tool !== undefined &&
             registered.tool.runner.hasBinding?.(registered.tool.entry.manifest.capabilityId) !==
               true) ||
@@ -253,6 +266,9 @@ export function createNativeRegistrationPublisher(owners: readonly NativeRegistr
       if (!hooks.ok) throw new ExtensionInputError(hooks.error.code);
       const candidate: NativePublication = {
         catalog,
+        prompts: createPromptTemplateCatalog(
+          [...registrations.values()].flatMap((value) => (value.prompt ? [value.prompt] : [])),
+        ),
         tools: {
           hooks: hooks.value,
           registry: registry.value,

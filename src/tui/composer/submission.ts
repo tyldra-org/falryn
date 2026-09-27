@@ -104,6 +104,14 @@ export type SubmissionPort = {
   readonly subscribePeer?: (
     listener: (notice: import("../../domain/orchestration/peer-mailbox.ts").PeerNotice) => void,
   ) => () => void;
+  /**
+   * Expand slash text naming an admitted package prompt template. Expansion
+   * returns draft text for review and never submits.
+   */
+  readonly expandTemplate?: (
+    text: string,
+    signal: AbortSignal,
+  ) => Promise<import("../../application/extensions/native-prompt-owner.ts").PromptExpansion>;
   submit(
     snapshot: ComposerSnapshot,
     context?: {

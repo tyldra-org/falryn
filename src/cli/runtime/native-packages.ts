@@ -1,11 +1,13 @@
 import { join } from "node:path";
 import { createNativeActivation } from "../../application/extensions/native-activation.ts";
+import { createNativePromptOwner } from "../../application/extensions/native-prompt-owner.ts";
 import {
   createNativeRegistrationPublisher,
   type NativePublication,
 } from "../../application/extensions/native-registration.ts";
 import { createNativeScheduleOwner } from "../../application/extensions/native-schedule-owner.ts";
 import { createNativeToolOwner } from "../../application/extensions/native-tool-owner.ts";
+import { createPackageExecutionAdmission } from "../../application/extensions/package-execution-admission.ts";
 import { createPackageToolExecution } from "../../application/extensions/package-tool-execution.ts";
 import { createPackageToolRecovery } from "../../application/extensions/package-tool-recovery.ts";
 import type { CatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
@@ -166,6 +168,47 @@ export function composeNativePackages(options: {
     async publish(generation: ConfigurationGeneration, signal: AbortSignal) {
       if (stopped.signal.aborted) throw new ExtensionInputError("native-host-closed");
       const captured = await context.registered(signal);
+      /** Recheck the catalog and exact stored activation before any package bytes are used. */
+      async function admittedActivation(activationDigest: string, signal: AbortSignal) {
+        if (current !== publication) throw new ExtensionInputError("stale-native-catalog");
+        const fresh = await context.capture(signal);
+        if (fresh.catalog.identity !== captured.catalog.identity)
+          throw new ExtensionInputError("stale-native-catalog");
+        const control = captured.controls.get(activationDigest);
+        const expected = [...captured.activations.values()].find(
+          (activation) => canonicalDigest(activation) === activationDigest,
+        );
+        if (!control || !expected) throw new ExtensionInputError("native-activation-unavailable");
+        return {
+          async authority(
+            installed: Parameters<typeof context.admission>[1],
+            packageId: string,
+            contribution: string | null,
+            signal: AbortSignal,
+          ) {
+            const authority = await context.admission(control, installed, contribution, signal);
+            const storedActivation = options.activations.get(nativeActivationKey(expected));
+            const same =
+              storedActivation.ok &&
+              storedActivation.value !== null &&
+              canonicalDigest(storedActivation.value) === activationDigest;
+            return {
+              ...authority,
+              enabled:
+                authority.enabled &&
+                current === publication &&
+                same &&
+                (installed.packageId !== packageId ||
+                  contribution === null ||
+                  expected.contributions.includes(contribution)),
+              inputs: canonicalDigest({
+                authority: authority.inputs,
+                activation: storedActivation.ok ? storedActivation.value : null,
+              }),
+            };
+          },
+        };
+      }
       const owner = createNativeToolOwner({
         qualified: context.qualified,
         async execute(input) {
@@ -179,52 +222,51 @@ export function composeNativePackages(options: {
             },
           };
           return track(async () => {
-            if (current !== publication)
-              return { status: "unavailable", reason: "stale-native-catalog", effect: "none" };
-            const fresh = await context.capture(input.request.signal);
-            if (fresh.catalog.identity !== captured.catalog.identity)
-              return { status: "unavailable", reason: "stale-native-catalog", effect: "none" };
-            const control = captured.controls.get(input.activation);
-            const expected = [...captured.activations.values()].find(
-              (activation) => canonicalDigest(activation) === input.activation,
-            );
-            if (!control || !expected)
-              return {
-                status: "unavailable",
-                reason: "native-activation-unavailable",
-                effect: "none",
-              };
+            let admitted: Awaited<ReturnType<typeof admittedActivation>>;
+            try {
+              admitted = await admittedActivation(input.activation, input.request.signal);
+            } catch (error) {
+              if (!(error instanceof ExtensionInputError)) throw error;
+              return { status: "unavailable", reason: error.code, effect: "none" };
+            }
             const run = createPackageToolExecution({
               packages: options.records.packages,
               bytes: context.bytes,
               host: context.host,
               store: options.processes,
               execution,
-              async authority(installed, contribution, signal) {
-                const authority = await context.admission(control, installed, contribution, signal);
-                const storedActivation = options.activations.get(nativeActivationKey(expected));
-                const same =
-                  storedActivation.ok &&
-                  storedActivation.value !== null &&
-                  canonicalDigest(storedActivation.value) === input.activation;
-                return {
-                  ...authority,
-                  enabled:
-                    authority.enabled &&
-                    current === publication &&
-                    same &&
-                    (installed.packageId !== input.packageId ||
-                      contribution === null ||
-                      expected.contributions.includes(contribution)),
-                  inputs: canonicalDigest({
-                    authority: authority.inputs,
-                    activation: storedActivation.ok ? storedActivation.value : null,
-                  }),
-                };
-              },
+              authority: (installed, contribution, signal) =>
+                admitted.authority(installed, input.packageId, contribution, signal),
             });
             return run(input);
           });
+        },
+      });
+      const prompts = createNativePromptOwner({
+        async read(request, signal) {
+          if (stopped.signal.aborted) throw new ExtensionInputError("native-host-closed");
+          const readSignal = AbortSignal.any([signal, stopped.signal]);
+          const admitted = await admittedActivation(request.activation, readSignal);
+          const source = await createPackageExecutionAdmission({
+            packages: options.records.packages,
+            bytes: context.bytes,
+            host: context.host,
+            declarationKind: "prompt",
+            authority: (installed, contribution, signal) =>
+              admitted.authority(installed, request.packageId, contribution, signal),
+          })(
+            {
+              packageId: request.packageId,
+              expectedRevision: request.expectedRevision,
+              contribution: request.contribution,
+              requiredControls: [],
+            },
+            readSignal,
+          );
+          const file = source.snapshot.files.find((entry) => entry.path === request.path);
+          if (!file) throw new ExtensionInputError("prompt-source-missing");
+          if (current !== publication) throw new ExtensionInputError("stale-native-catalog");
+          return file.bytes;
         },
       });
       const trustById = new Map<string, NonNullable<ReturnType<typeof captured.trust.get>>>();
@@ -232,6 +274,7 @@ export function composeNativePackages(options: {
         owner,
         hookOwner.owner(captured),
         createNativeScheduleOwner(options.schedules),
+        prompts,
       ]).publish({
         catalog: createExtensionCatalog({
           generation: Math.max(captured.catalog.generation, (current?.catalog.generation ?? 0) + 1),

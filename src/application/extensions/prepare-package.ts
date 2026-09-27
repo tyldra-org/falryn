@@ -1,4 +1,5 @@
 import { satisfies } from "semver";
+import { parsePromptTemplateSource } from "../../domain/context/prompt-templates.ts";
 import {
   bytesDigest,
   canonicalDigest,
@@ -34,7 +35,7 @@ import type {
   PackageSource,
 } from "../../domain/extensions/package-source.ts";
 import { trustSubjectSchema } from "../../domain/security/ecosystem-trust.ts";
-import { markdownMetadata, portableComponents } from "./portable-components.ts";
+import { portableComponents } from "./portable-components.ts";
 
 export type PreparedContribution = {
   readonly identity: ContributionIdentityV1;
@@ -74,6 +75,16 @@ export type InspectionHost = {
   readonly os: string;
   readonly arch: string;
 };
+
+/**
+ * The native declaration of a prepared contribution. Prompt preparation keeps
+ * its parsed frontmatter beside the declaration as inert metadata; it is not
+ * part of the declaration contract.
+ */
+export function nativeDeclaration(contribution: PreparedContribution): ContributionDeclaration {
+  const { frontmatter: _frontmatter, ...declaration } = contribution.declaration;
+  return contributionDeclarationSchema.parse(declaration);
+}
 
 /** Prepare descriptors only. No activation, registry publication, or process port is accepted. */
 export async function preparePackage(
@@ -250,7 +261,9 @@ export async function preparePackage(
       if (declaration.kind === "prompt" && declaration.path !== undefined) {
         const bytes = files.get(declaration.path);
         if (bytes === undefined) throw new ExtensionInputError("missing-contribution-file");
-        metadata = { ...declaration, frontmatter: markdownMetadata(bytes, false) };
+        const template = parsePromptTemplateSource(bytes);
+        if (!template.ok) throw new ExtensionInputError("invalid-prompt");
+        metadata = { ...declaration, frontmatter: template.value.frontmatter };
       }
       add(
         declaration.kind,
@@ -270,7 +283,7 @@ export async function preparePackage(
           namespace: manifest.name,
           id: component.id,
           path: component.path,
-          description: component.metadata.description ?? "",
+          description: component.description ?? "",
           authority: {
             effects: [],
             permissions: [],
