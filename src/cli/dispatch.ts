@@ -496,6 +496,8 @@ async function launchShell(
           graph,
           stopped.signal,
           governance.ownedProcesses,
+          // The terminal is the local user's presenter for structured questions.
+          { localPresenter: true },
         );
         if (productArtifactSession !== null && trust.status !== "empty") {
           const recorded = await productArtifactSession.eventStore.append(
@@ -657,6 +659,9 @@ async function launchShell(
           ...(options.createRenderer === undefined
             ? {}
             : { createRenderer: options.createRenderer }),
+          ...(productArtifactSession?.questionPresenter
+            ? { questions: productArtifactSession.questionPresenter }
+            : {}),
           ...(productAttachments === null
             ? {}
             : {

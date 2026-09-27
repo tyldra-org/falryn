@@ -46,6 +46,7 @@ import { ControlSheet } from "../overlays/controls.tsx";
 import { ModelSettingsSheet } from "../overlays/model-settings-sheet.tsx";
 import { OverlayHost } from "../overlays/overlay.tsx";
 import { CommandPalette, HelpOverlay } from "../overlays/overlay-routes.tsx";
+import { QuestionSheet } from "../overlays/question.tsx";
 import { WorkspaceSheet, workspacePanelTitle } from "../overlays/workspace-sheet.tsx";
 import type { SessionNavigationController } from "../session-nav/index.ts";
 import { SessionNavSheet, sessionNavPanelTitle } from "../session-nav/sheet.tsx";
@@ -71,6 +72,7 @@ import {
   selectLayout,
   type Viewport,
 } from "./layout.ts";
+import type { ShellQuestions } from "./shell-runtime/questions.ts";
 import { StatusLine } from "./status-line.tsx";
 import type { CommandEntry, OverlayRoute, ShellModel } from "./view-model.ts";
 import { WorkspaceHeader } from "./workspace-header.tsx";
@@ -121,6 +123,8 @@ export type AppShellProps = {
   readonly confirmation?: ConfirmationView | null;
   readonly onConfirmationChoice?: (id: ConfirmationChoiceId) => void;
   readonly onSecretEdit?: (edit: SecretEdit) => void;
+  /** The structured question binding; absent when no presenter is attached. */
+  readonly questions?: ShellQuestions;
   readonly controls?: ControlCatalog;
   readonly selectedSessionId?: string | null;
   readonly selectedModelKey?: string | null;
@@ -223,6 +227,7 @@ export function AppShell(props: AppShellProps): ReactNode {
             ? {}
             : { onConfirmationChoice: props.onConfirmationChoice })}
           {...(props.onSecretEdit === undefined ? {} : { onSecretEdit: props.onSecretEdit })}
+          {...(props.questions === undefined ? {} : { questions: props.questions })}
           {...(props.controls === undefined ? {} : { controls: props.controls })}
           {...(props.selectedSessionId === undefined
             ? {}
@@ -308,6 +313,7 @@ function ShellFrame(props: {
   readonly confirmation?: ConfirmationView | null;
   readonly onConfirmationChoice?: (id: ConfirmationChoiceId) => void;
   readonly onSecretEdit?: (edit: SecretEdit) => void;
+  readonly questions?: ShellQuestions;
   readonly controls?: ControlCatalog;
   readonly selectedSessionId?: string | null;
   readonly selectedModelKey?: string | null;
@@ -363,7 +369,11 @@ function ShellFrame(props: {
               route={model.overlay}
               title={overlayTitle(model.overlay, model, props.confirmation ?? null)}
               dismissHint={
-                model.overlay.kind === "confirm" ? "Esc declines this" : "Esc closes this"
+                model.overlay.kind === "confirm"
+                  ? "Esc declines this"
+                  : model.overlay.kind === "question"
+                    ? "Esc leaves this waiting"
+                    : "Esc closes this"
               }
             >
               {(rows) => overlayBody(model, props, rows)}
@@ -440,6 +450,8 @@ function overlayTitle(
       return inspectionFor(model.transcript.projection.blocks, route.key)?.title ?? "Inspect";
     case "confirm":
       return confirmation?.prompt.title ?? "Confirm";
+    case "question":
+      return "Question";
     case "controls":
       return CONTROL_PANEL_TITLES[route.panel];
     case "compression":
@@ -489,6 +501,8 @@ function overlayBody(
     readonly confirmation?: ConfirmationView | null;
     readonly onConfirmationChoice?: (id: ConfirmationChoiceId) => void;
     readonly onSecretEdit?: (edit: SecretEdit) => void;
+    readonly questions?: ShellQuestions;
+    readonly now?: () => Instant;
     readonly controls?: ControlCatalog;
     readonly selectedSessionId?: string | null;
     readonly selectedModelKey?: string | null;
@@ -554,6 +568,20 @@ function overlayBody(
           {...(props.onSecretEdit === undefined ? {} : { onSecretEdit: props.onSecretEdit })}
         />
       );
+    case "question": {
+      const questions = props.questions;
+      const now = props.now;
+      return (
+        <QuestionSheet
+          sheet={questions?.sheet?.question.key === overlay.key ? questions.sheet : null}
+          rows={rows}
+          now={() => (now === undefined ? Date.now() : Number(now()))}
+          {...(questions === undefined
+            ? {}
+            : { onEdit: questions.edit, onRefuse: questions.refuse })}
+        />
+      );
+    }
     case "controls":
       return (
         <ControlSheet

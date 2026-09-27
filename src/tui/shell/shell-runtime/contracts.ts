@@ -13,6 +13,7 @@ import type {
   ConfirmationPrompt,
   SecretEdit,
 } from "../../confirmation/index.ts";
+import type { QuestionPresenterPort } from "../../questions/index.ts";
 import type { CopyTextPort } from "../../runtime/clipboard.ts";
 import type { SessionNavigationController } from "../../session-nav/index.ts";
 import type { TranscriptGeometry } from "../../transcript/transcript-model.ts";
@@ -21,6 +22,7 @@ import type { CompressionControlAction, CompressionControlState } from "../compr
 import type { FocusRegion } from "../focus.ts";
 import type { SessionCreationPort } from "../session-creation.ts";
 import type { ShellState } from "../shell-state.ts";
+import type { ShellQuestions } from "./questions.ts";
 
 export type ShellRuntime = {
   readonly modelSettings:
@@ -37,6 +39,8 @@ export type ShellRuntime = {
   paletteQuery(query: string): void;
   confirm(choice: "accept" | "deny"): boolean;
   editSecret(edit: SecretEdit): void;
+  /** The structured question being shown, and what the sheet may do with it. */
+  readonly questions: ShellQuestions;
   readonly compression: CompressionControlState;
   selectCompression(action: CompressionControlAction): void;
   selectControl(field: "session" | "model", id: string): void;
@@ -62,6 +66,8 @@ export type ShellRuntimeOptions = {
   readonly confirmation?: ConfirmationPrompt | null;
   readonly onConfirmation?: (decision: ConfirmationDecision) => void;
   readonly onSecretSubmit?: (secret: string) => void;
+  /** The host's local structured-question presenter; absent for hosts that present none. */
+  readonly questions?: QuestionPresenterPort | null;
   readonly copyPort?: CopyTextPort;
   /** Bound workspace set when the launch path attached one. */
   readonly workspace?: WorkspaceSetView;

@@ -2496,8 +2496,10 @@ results stay in the existing sensitive artifact store. Each native operation
 re-enters the shared gateway; normal input validation, confirmation, hooks,
 conflicts and preimages still apply. Workflow question nodes use the existing
 question owner without treating an answer as permission for a later effect.
-Headless missing-presenter requests return durable waiting receipts. Restart
-requires the original host question capability to reconnect and answer.
+In an interactive terminal session their questions are presented locally, as
+described under Structured questions. Headless missing-presenter requests
+return durable waiting receipts. Restart requires the original host question
+capability to reconnect and answer.
 
 Mapped nodes expand only from sealed source items with unique stable keys.
 Each item's pipeline can advance independently; explicit joins wait for their
@@ -2555,7 +2557,26 @@ items share one generation-bound contract. Presenter and owner capabilities are
 separate opaque tokens; only their hashes enter storage. The caller must retain
 these capabilities to reconnect after restart. Workflow question nodes use this
 service and retain only request/settlement references. A standalone question CLI,
-model answer tool, general presenter, and goal adapter remain separate.
+model answer tool, and goal adapter remain separate.
+
+An interactive terminal session binds one local presenter principal
+(`local-user` channel); headless and non-interactive hosts keep the
+`headless-user` principal and bind no presenter. The local presenter connects to
+each question published for that principal in the session, holds at most 64 in
+publication order, and shows one at a time in an OpenTUI question sheet. The
+sheet shows the source, prompt, time left and how many more are waiting, and
+renders single-select, multi-select with its bounds, free text with a live UTF-8
+byte count, and review items. Over-limit text is refused whole. Return commits an
+item, Ctrl+B goes back, Ctrl+R refuses, and Esc leaves the question waiting by
+disconnecting the presenter; the palette's Show waiting questions reconnects the
+oldest one. The sheet never covers another overlay, yields to confirmations, and
+returns when they close. Answers, refusals, expiry, owner cancellation and
+conflicting submissions settle only through the service; the presenter drops a
+question once the service reports it settled and never supplies a default answer.
+Protected questions are shown as unavailable and can only be refused or left.
+Question text and answers are not written to logs or events by the presenter.
+Presenter capabilities live only in the running process, so a question still
+waiting after a restart is not shown again.
 
 Migration 0015 journals bounded question revisions alongside the existing task
 owner. Publication requires a committed owner; terminal question state, its task

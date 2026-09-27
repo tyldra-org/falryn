@@ -393,3 +393,54 @@ describe("workspace set", () => {
     expect(commandStateFor(INITIAL_SHELL_STATE).hasWorkspaceSet).toBe(false);
   });
 });
+
+describe("a presented question", () => {
+  test("opens the question sheet when nothing else is showing", () => {
+    const state = run([{ kind: "question-view", key: "q/1", left: 0 }]);
+    expect(state.overlay).toEqual({ kind: "question", key: "q/1" });
+    expect(state.focus.order.map((region) => region.id)).toEqual(["overlay.question"]);
+    expect(activeContexts(state)).toEqual(["global", "overlay"]);
+  });
+
+  test("waits behind another overlay and appears when it closes", () => {
+    const behind = run([
+      { kind: "open-overlay", route: { kind: "palette", query: "" } },
+      { kind: "question-view", key: "q/1", left: 0 },
+    ]);
+    expect(behind.overlay.kind).toBe("palette");
+    expect(run([{ kind: "close-overlay" }], behind).overlay).toEqual({
+      kind: "question",
+      key: "q/1",
+    });
+  });
+
+  test("yields to a confirmation and returns after it is decided", () => {
+    const confirming = run([
+      { kind: "question-view", key: "q/1", left: 0 },
+      { kind: "offer-confirmation", prompt: WRITE },
+    ]);
+    expect(confirming.overlay).toEqual({ kind: "confirm", id: "conf-write" });
+    const decided = run([{ kind: "resolve-confirmation", decision: "refused" }], confirming);
+    expect(decided.overlay).toEqual({ kind: "question", key: "q/1" });
+    expect(decided.notice).toBe("Declined.");
+  });
+
+  test("closes when the presenter has nothing left to show, and offers the left ones", () => {
+    const state = run([
+      { kind: "question-view", key: "q/1", left: 0 },
+      { kind: "question-view", key: null, left: 1 },
+    ]);
+    expect(state.overlay).toEqual({ kind: "none" });
+    expect(isContained(state.focus)).toBe(false);
+    expect(commandStateFor(state).hasWaitingQuestions).toBe(true);
+    expect(commandStateFor(INITIAL_SHELL_STATE).hasWaitingQuestions).toBe(false);
+  });
+
+  test("moves to the next question without closing the sheet", () => {
+    const state = run([
+      { kind: "question-view", key: "q/1", left: 0 },
+      { kind: "question-view", key: "q/2", left: 0 },
+    ]);
+    expect(state.overlay).toEqual({ kind: "question", key: "q/2" });
+  });
+});
