@@ -632,31 +632,35 @@ export function createDelegation(options: DelegationOptions) {
         request.signal,
         command.operation === "join-cancel",
       );
-      if (
-        settled.ok &&
-        settled.value.state === "waiting" &&
-        command.operation === "join-inspect" &&
-        command.waitMs !== undefined
-      ) {
-        const stop = new AbortController();
-        const pending = settled.value.input.children.filter((child) => {
-          const task = options.joins?.task(child.task);
-          return task?.ok && task.value.state !== "terminal";
-        });
-        try {
-          if (pending.length > 0)
+      if (command.operation === "join-inspect" && command.waitMs !== undefined) {
+        // Wait until the join is decided or the wait expires, not merely until the first
+        // child changes: with more than one child pending, one settlement rarely decides it.
+        const deadline = Date.now() + command.waitMs;
+        let previous = Number.POSITIVE_INFINITY;
+        while (settled.ok && settled.value.state === "waiting" && !request.signal.aborted) {
+          const remaining = deadline - Date.now();
+          const pending = settled.value.input.children.filter((child) => {
+            const task = options.joins?.task(child.task);
+            return task?.ok && task.value.state !== "terminal";
+          });
+          // Stop when time is up, nothing is pending, or the last wait settled no child.
+          if (remaining <= 0 || pending.length === 0 || pending.length >= previous) break;
+          previous = pending.length;
+          const stop = new AbortController();
+          try {
             await Promise.race(
               pending.map((child) =>
                 options.tasks.controlAgent(
                   { ...request, signal: AbortSignal.any([request.signal, stop.signal]) },
-                  { operation: "wait", ...child.task, waitMs: command.waitMs ?? 1 },
+                  { operation: "wait", ...child.task, waitMs: remaining },
                 ),
               ),
             );
-        } finally {
-          stop.abort();
+          } finally {
+            stop.abort();
+          }
+          settled = await options.joins.refresh(settled.value, request.signal);
         }
-        settled = await options.joins.refresh(settled.value, request.signal);
       }
       if (!settled.ok) return refused(`agent-join-${settled.error.code}`);
       if (

@@ -279,9 +279,12 @@ bound to the local actor, canonical workspace roots, exact inventory generation,
 trust policy, and relevant configuration. Restart reuses only a matching record.
 Changed files, permissions, user/profile configuration, or workspace identity
 invalidate approval. Project configuration uses the reviewed bytes and rechecks
-the generation on reload. Automatic skill and instruction discovery remains
-unavailable; workspace approval does not grant tool permissions or a sandbox.
-Explicit registered instruction paths use the source admission described below.
+the generation on reload. Automatic skill discovery remains unavailable;
+workspace approval does not grant tool permissions or a sandbox. The review covers
+each root's `AGENTS.md`, `CLAUDE.md` and `FALRYN.md`, the files instruction
+discovery can load at a root. A fixed loader name must match an entry exactly, so a
+differently cased lookalike on a case-insensitive file system is treated as absent.
+Discovered and registered instruction paths use the source admission described below.
 
 Headless `falryn run` requires a matching decision when project loaders exist.
 Otherwise it returns `workspace.trust-required` without prompting. There is no
@@ -300,9 +303,32 @@ After correcting a failure or change, reopen interactively to review again.
 
 The main terminal session, headless `falryn run`, child agents and model workflow
 steps share an instruction-source owner. User or working-profile configuration
-can explicitly register files in `instructions.sources`. Automatic ancestor-file
-discovery, skill invocation and prompt-template expansion remain separate loader
-work. Merely installing a package does not activate its instruction body.
+can explicitly register files in `instructions.sources`; conventional files are
+also discovered without registration. Skill invocation and prompt-template
+expansion remain separate loader work. Merely installing a package does not
+activate its instruction body.
+
+Discovery reads the user-wide `AGENTS.md` in the effective configuration home
+(`~/.falryn/AGENTS.md` by default); other global files, such as a home
+`CLAUDE.md`, are used only when registered. In each admitted workspace root it
+finds `FALRYN.md`, `AGENTS.md` and `CLAUDE.md` in the root and in every directory
+on the path from the root to each directory a turn is scoped to: the root for main
+turns, and a child agent's or workflow step's `instructionDirectory`. It never
+looks above a root or recursively through the tree, and a symlinked or missing
+directory ends that path. Up to 64 scoped directories per root are remembered for
+the session, so alternating main and subtree turns keep one generation. Each file
+applies to its own directory's subtree; a root's files never apply in another root.
+
+Names match exactly and case-sensitively. A lookalike such as `agents.md`, a
+symlinked file, a directory with a supported name, a file over 1 MiB and one that
+is not valid UTF-8 are listed with that reason (`unsupported-casing`, `symlink`,
+`not-a-file`, `oversized`, `malformed-utf8`, `unreadable`) and never loaded,
+while the turn continues with the other sources. Project files in a workspace
+without current trust are listed as `untrusted` and not read. A registration of
+the same file takes precedence over its discovered form. Discovered files are
+rescanned on every admission, so creation, edits and deletion apply to the next
+provider request; the root files and the home `AGENTS.md` are also watched for
+live reload notices.
 
 For example, author this in the version-2 user `settings.jsonc` document. It
 registers one file relative to the effective configuration home:
@@ -2837,6 +2863,9 @@ count for the third. Required children must succeed under every mode.
 `first-success` selects the earliest durably sealed successful child by journal
 sequence. A faster failure cannot win. `join-inspect` optionally waits up to
 30 seconds through the existing task wait owner without holding a runnable slot.
+The wait continues through child settlements until the join is decided, the
+time expires, or a wait settles no child, so one settled child of several does
+not end it early.
 
 Only schema-valid sealed artifacts from the exact immediate parent and current
 child generation can satisfy a join. Integration is explicit: `accepted`,

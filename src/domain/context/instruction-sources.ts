@@ -13,6 +13,30 @@ export const INSTRUCTION_SOURCE_LIMITS = Object.freeze({
   references: 64,
 });
 
+/**
+ * Conventional instruction files discovered without registration (#135).
+ *
+ * Exact, case-sensitive names only. The configuration home contributes its one
+ * user-wide AGENTS.md; other global files must be registered explicitly. Workspace
+ * directories contribute all three along the ancestor chain of each directory a turn
+ * is scoped to, never beyond the admitted root.
+ */
+export const INSTRUCTION_DISCOVERY = Object.freeze({
+  projectFiles: Object.freeze(["FALRYN.md", "AGENTS.md", "CLAUDE.md"] as const),
+  userFiles: Object.freeze(["AGENTS.md"] as const),
+  /** Scoped directories remembered per session so the discovered set stays stable. */
+  directories: 64,
+});
+/** Why a discovered file is present but not admitted; its body never enters the prompt. */
+export const DISCOVERY_PROBLEMS = [
+  "unsupported-casing",
+  "symlink",
+  "not-a-file",
+  "oversized",
+  "unreadable",
+  "malformed-utf8",
+] as const;
+
 const name = z
   .string()
   .min(1)
@@ -78,6 +102,8 @@ export const instructionSourceSchema = z.strictObject({
   trusted: z.boolean(),
   compatible: z.boolean(),
   available: z.boolean(),
+  /** Why an unavailable discovered source was not admitted. */
+  problem: z.enum(DISCOVERY_PROBLEMS).optional(),
   /** Restriction absence is unknown, never an implicit permission. */
   eligibility: z.strictObject({ user: z.boolean(), automatic: z.boolean() }).nullable(),
   references: z.array(digestSchema).max(INSTRUCTION_SOURCE_LIMITS.references),
@@ -230,7 +256,7 @@ export function resolveInstructionSources(input: {
             : !source.compatible
               ? "incompatible"
               : !source.available
-                ? "unavailable"
+                ? (source.problem ?? "unavailable")
                 : null;
     if (reason) decide(source, "excluded", reason);
     else {

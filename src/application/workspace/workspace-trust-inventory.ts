@@ -10,6 +10,7 @@ import {
   isInside,
   joinPath,
   type LocalPath,
+  parentPath,
 } from "../../domain/workspace/index.ts";
 import { redactProjectionText } from "../diagnostics/redaction.ts";
 import {
@@ -139,6 +140,14 @@ export function createWorkspaceInventory(options: {
             if (stat.value.kind === "symlink" || stat.value.kind === "other")
               throw new Error("inventory-path-escape");
           }
+          if (depth === 0) {
+            // A case-insensitive file system resolves a fixed name to a differently cased
+            // entry. Only the exact name is this loader, so a lookalike is simply absent.
+            const parent = parentPath(path.value);
+            const siblings = parent === null ? null : await fs.list(parent, stop);
+            if (!siblings?.ok) throw new Error("inventory-unreadable");
+            if (!siblings.value.some((entry) => entry.path === path.value)) return;
+          }
           const before = await fs.stat(path.value, stop);
           const real = await fs.realPath(path.value, stop);
           if (
@@ -215,6 +224,8 @@ export function createWorkspaceInventory(options: {
         await visit(".falryn/local/falryn.local.jsonc", "settings", 0, "file");
         await visit(".falryn/env.zsh", "environment", 0, "file");
         await visit("AGENTS.md", "instructions", 0, "file");
+        await visit("CLAUDE.md", "instructions", 0, "file");
+        await visit("FALRYN.md", "instructions", 0, "file");
         await visit(".falryn/instructions", "instructions", 0, "directory");
         await visit("mcp.json", "mcp", 0, "file");
         await visit(".falryn/mcp.json", "mcp", 0, "file");

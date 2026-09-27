@@ -254,6 +254,63 @@ for (const checkpoint of ["child-sealed", "join-settled"] as const)
     }
   });
 
+test("an inspection that waits returns once the join is decided, not at the first child change", async () => {
+  const holds = Array.from({ length: 2 }, () => Promise.withResolvers<AgentExecution>());
+  const runs: AgentRun[] = [];
+  const started = Promise.withResolvers<void>();
+  const f = await fixture(async (run) => {
+    const index = runs.push(run) - 1;
+    if (runs.length === 2) started.resolve();
+    return holds[index]?.promise ?? facts;
+  });
+  try {
+    const pending: Promise<ToolInvocationOutcome>[] = [];
+    for (let i = 0; i < 2; i++)
+      pending.push(
+        f.service.execute(
+          { ...launch, required: false, inputJson: JSON.stringify({ objective: `Writer ${i}` }) },
+          await f.request(),
+        ),
+      );
+    await started.promise;
+    const join = async (id: string) =>
+      f.service.execute(
+        {
+          operation: "join",
+          join: {
+            id,
+            generation: 1,
+            children: runs.map((run) => run.handle),
+            policy: { mode: "all", quorum: null, partialOnFailure: false, cancelRemaining: false },
+          },
+        },
+        await f.request(),
+      );
+    await join("all-writers");
+    const inspect = (waitMs: number) =>
+      f
+        .request()
+        .then((request) =>
+          f.service.execute(
+            { operation: "join-inspect", joinId: "all-writers", joinGeneration: 1, waitMs },
+            request,
+          ),
+        );
+    // A child that never finishes still ends the wait at its limit, undecided.
+    expect(joinRecordSchema.parse(output(await inspect(50))).state).toBe("waiting");
+    const inspecting = inspect(5_000);
+    holds[0]?.resolve(facts);
+    await pending[0];
+    await Bun.sleep(50);
+    holds[1]?.resolve(facts);
+    await pending[1];
+    expect(joinRecordSchema.parse(output(await inspecting)).state).toBe("satisfied");
+  } finally {
+    for (const hold of holds) hold.resolve(facts);
+    await f.close();
+  }
+});
+
 test("first-success ignores a faster failure and uses durable sibling settlement order", async () => {
   const holds = Array.from({ length: 3 }, () => Promise.withResolvers<AgentExecution>());
   const runs: AgentRun[] = [];

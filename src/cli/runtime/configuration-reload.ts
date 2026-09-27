@@ -14,6 +14,7 @@ import {
   type FileChangeSubscriber,
 } from "../../config/index.ts";
 import type { ConfigurationLoadOutcome } from "../../domain/configuration/index.ts";
+import { INSTRUCTION_DISCOVERY } from "../../domain/context/instruction-sources.ts";
 import { joinPath, parentPath } from "../../domain/workspace/index.ts";
 import { createHostFileChangeSubscriber } from "../../integrations/index.ts";
 import type { GlobalOptions } from "../options.ts";
@@ -57,8 +58,18 @@ export function startConfigurationReloadWatcher(
         return file?.ok ? [file.value] : [];
       })
     : [];
+  // Conventional files need no registration; watching them (and their directories, below)
+  // reports edits, creation and deletion as they happen. Nested files are rediscovered on
+  // every admission.
+  const conventionalFiles = [
+    ...INSTRUCTION_DISCOVERY.userFiles.map((name) => joinPath(graph.configurationRoot, name)),
+    ...(graph.workspaceSet?.roots ?? []).flatMap((root) =>
+      INSTRUCTION_DISCOVERY.projectFiles.map((name) => joinPath(root.path, name)),
+    ),
+  ].flatMap((file) => (file.ok ? [file.value] : []));
   const files = [
     ...instructionFiles,
+    ...conventionalFiles,
     ...(graph.loader
       .current()
       ?.sources.flatMap((entry) => (entry.source.file === null ? [] : [entry.source.file])) ?? []),

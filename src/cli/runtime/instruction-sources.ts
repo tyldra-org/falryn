@@ -4,15 +4,20 @@ import {
   InstructionSourceFailure,
 } from "../../application/context/instruction-source-owner.ts";
 import {
+  type DISCOVERY_PROBLEMS,
   EMPTY_SOURCE_PREFERENCES,
+  INSTRUCTION_DISCOVERY,
   INSTRUCTION_SOURCE_LIMITS,
+  type InstructionScope,
   type InstructionSource,
   instructionSourceKey,
+  sourcePathSchema,
   sourcePreferencesSchema,
 } from "../../domain/context/instruction-sources.ts";
 import { bytesDigest, canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { isInside, joinPath, type LocalPath, parentPath } from "../../domain/workspace/index.ts";
 import { configuredInstructionSourcesSchema } from "./instruction-configuration.ts";
+import { type DiscoveredInstruction, discoverInstructionFiles } from "./instruction-discovery.ts";
 import type { Services } from "./services.ts";
 
 export function composeInstructionSources(
@@ -22,8 +27,23 @@ export function composeInstructionSources(
   const roots = new Map<string, LocalPath>();
   const files = new Map<string, LocalPath>();
   let authorized = new Set<string>();
+  /** Discovered (conventional) sources from the last scan, and whether each is user-wide. */
+  let discovered = new Map<string, { readonly user: boolean }>();
+  /**
+   * Directories turns have been scoped to, per root. Discovery walks each one's ancestor
+   * chain, so the discovered set stays stable as main and child turns alternate.
+   */
+  const tracked = new Map<string, string[]>();
+  const remember = (scope: InstructionScope) => {
+    const directories = tracked.get(scope.root) ?? [];
+    if (scope.directory === "" || directories.includes(scope.directory)) return;
+    directories.push(scope.directory);
+    if (directories.length > INSTRUCTION_DISCOVERY.directories) directories.shift();
+    tracked.set(scope.root, directories);
+  };
   const owner = createInstructionSourceOwner({
-    async scan(signal) {
+    async scan(signal, scope) {
+      remember(scope);
       const workspace = await graph.ensureWorkspaceSet(signal);
       if (!workspace.ok) throw new Error("source-workspace-unavailable");
       const home = await graph.configurationHomeForRead(signal);
@@ -124,11 +144,107 @@ export function composeInstructionSources(
           conflicts: entry.conflicts.map(relatedIdentity),
         });
       }
+      // Conventional files need no registration. Explicit registrations of the same
+      // identity take precedence in the owner.
+      const nextDiscovered = new Map<string, { readonly user: boolean }>();
+      const trust = graph.workspaceTrust.current().status;
+      const admit = async (root: LocalPath, found: DiscoveredInstruction, user: boolean) => {
+        const path = found.directory === "" ? found.name : `${found.directory}/${found.name}`;
+        // A name the source contract cannot represent is not a source.
+        if (!sourcePathSchema.safeParse(path).success) return;
+        const identity = {
+          version: 1 as const,
+          kind: "instruction" as const,
+          root: canonicalDigest({ root }),
+          path,
+          namespace: "instructions",
+          localId: found.name,
+        };
+        const key = instructionSourceKey(identity);
+        const trusted = user || trust === "accepted" || trust === "empty";
+        let problem: (typeof DISCOVERY_PROBLEMS)[number] | null = found.problem;
+        let bytes: Uint8Array | null = null;
+        // Untrusted project files are listed but never read.
+        if (problem === null && trusted) {
+          try {
+            bytes = await read(root, found.path, signal);
+          } catch (error) {
+            if (signal.aborted) throw error;
+            const code = error instanceof Error ? error.message : "";
+            problem =
+              code === "instruction-source-byte-limit"
+                ? "oversized"
+                : code === "source-path-escape"
+                  ? "symlink"
+                  : "unreadable";
+          }
+          if (bytes !== null) {
+            try {
+              new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+            } catch {
+              problem = "malformed-utf8";
+              bytes = null;
+            }
+          }
+        }
+        totalBytes += bytes?.byteLength ?? 0;
+        if (totalBytes > INSTRUCTION_SOURCE_LIMITS.cacheBytes)
+          throw new Error("source-scan-byte-limit");
+        nextRoots.set(identity.root, root);
+        nextFiles.set(key, found.path);
+        nextDiscovered.set(key, { user });
+        if (bytes !== null) nextAuthorized.add(key);
+        const family =
+          found.matches === "FALRYN.md"
+            ? "falryn"
+            : found.matches === "CLAUDE.md"
+              ? "claude"
+              : "agents";
+        sources.push({
+          identity,
+          digest: bytes === null ? null : bytesDigest(bytes),
+          origin: `${user ? "user" : "project"}-${family}`,
+          scope: user ? "" : found.directory,
+          declaration: "conventional",
+          enabled: true,
+          trusted,
+          compatible: true,
+          available: bytes !== null,
+          ...(problem === null ? {} : { problem }),
+          eligibility: { user: true, automatic: true },
+          references: [],
+          conflicts: [],
+        });
+      };
+      const canonicalHome = await graph.fileSystem.realPath(home.root, signal);
+      if (canonicalHome.ok)
+        for (const found of await discoverInstructionFiles(
+          graph.fileSystem,
+          canonicalHome.value,
+          [""],
+          INSTRUCTION_DISCOVERY.userFiles,
+          signal,
+        ))
+          await admit(canonicalHome.value, found, true);
+      for (const workspaceRoot of workspace.value.set.roots) {
+        const canonical = await graph.fileSystem.realPath(workspaceRoot.path, signal);
+        // A root that no longer exists contributes nothing.
+        if (!canonical.ok) continue;
+        for (const found of await discoverInstructionFiles(
+          graph.fileSystem,
+          canonical.value,
+          tracked.get(canonicalDigest({ root: canonical.value })) ?? [],
+          INSTRUCTION_DISCOVERY.projectFiles,
+          signal,
+        ))
+          await admit(canonical.value, found, false);
+      }
       roots.clear();
       files.clear();
       for (const [key, value] of nextRoots) roots.set(key, value);
       for (const [key, value] of nextFiles) files.set(key, value);
       authorized = nextAuthorized;
+      discovered = nextDiscovered;
       return {
         configuration: String(captured?.generation ?? "0"),
         workspace: canonicalDigest(workspace.value.set),
@@ -170,6 +286,40 @@ export function composeInstructionSources(
             !scope.directory.startsWith(`${source.scope}/`)))
       )
         return false;
+      if (source.declaration === "conventional") {
+        const found = discovered.get(key);
+        if (!found) return false;
+        if (found.user) {
+          const home = await graph.configurationHomeForRead(signal);
+          if (home.kind !== "current" && home.kind !== "legacy" && home.kind !== "empty")
+            return false;
+          const canonicalHome = await graph.fileSystem.realPath(home.root, signal);
+          if (!canonicalHome.ok || canonicalHome.value !== root) return false;
+        } else {
+          const workspace = await graph.ensureWorkspaceSet(signal);
+          if (
+            !workspace.ok ||
+            !workspace.value.set.roots.some(
+              (candidate) => canonicalDigest({ root: candidate.path }) === source.identity.root,
+            )
+          )
+            return false;
+        }
+        // The exact name must still be a regular file in its directory.
+        const parent = parentPath(path);
+        const listed = parent === null ? null : await graph.fileSystem.list(parent, signal);
+        if (
+          !listed?.ok ||
+          !listed.value.some((entry) => entry.path === path && entry.kind === "file")
+        )
+          return false;
+        try {
+          await probe(root, path, signal);
+          return true;
+        } catch {
+          return false;
+        }
+      }
       const values = configuration()?.values ?? {};
       const declarations = configuredInstructionSourcesSchema.safeParse(
         values["instructions.sources"] ?? { version: 1, entries: [] },
