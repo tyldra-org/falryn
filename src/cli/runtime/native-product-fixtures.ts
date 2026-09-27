@@ -20,11 +20,7 @@ const inputSchema = z.object({
   name: z.string(),
   environment: z.record(z.string(), z.string()),
 });
-export async function nativeProductJourney(
-  input: z.infer<typeof inputSchema>,
-  beforeFirstRequest?: () => Promise<void>,
-  afterRun?: () => Promise<void>,
-) {
+async function productHost(input: { home: string; environment: Record<string, string> }) {
   const workspace = join(input.home, "workspace");
   await mkdir(workspace, { recursive: true });
   const globals: GlobalOptions = {
@@ -45,6 +41,39 @@ export async function nativeProductJourney(
     currentDirectory: localPath(workspace),
     environment: createStaticEnvironment(input.environment),
   });
+  return { globals, services };
+}
+
+/** Headless run of one prompt; the scripted model only answers with text. */
+export async function nativePromptJourney(input: {
+  home: string;
+  environment: Record<string, string>;
+  prompt: string;
+}) {
+  const { globals, services } = await productHost(input);
+  const requests: string[] = [];
+  const provider = createDeterministicProviderAdapter({
+    onRequest: (request) => requests.push(JSON.stringify(request)),
+    script: () => ({ kind: "text", text: "Reviewed." }),
+  });
+  const result = await runCoding(
+    services,
+    { promptParts: [input.prompt] },
+    {
+      globals,
+      input: createRecordingCliStreams({ stdin: null }).input,
+      providerAdapter: provider,
+    },
+  );
+  return { result, requests };
+}
+
+export async function nativeProductJourney(
+  input: z.infer<typeof inputSchema>,
+  beforeFirstRequest?: () => Promise<void>,
+  afterRun?: () => Promise<void>,
+) {
+  const { globals, services } = await productHost(input);
   const requests: string[] = [];
   const provider = createDeterministicProviderAdapter({
     onRequest: (request) => requests.push(JSON.stringify(request)),

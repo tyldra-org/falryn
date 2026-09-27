@@ -40,6 +40,7 @@ import {
   type AttachmentDescriptor,
   MAX_EVIDENCE_INLINE_BYTES,
   parseMentions,
+  parsePromptInvocation,
 } from "../../domain/context/index.ts";
 import { isExecutionProfileId } from "../../domain/sessions/index.ts";
 import type { TranscriptBlock } from "../../presentation/index.ts";
@@ -47,7 +48,9 @@ import { providerModelIdentityKey } from "../../providers/index.ts";
 import { type CommandState, commandById } from "../commands/commands.ts";
 import {
   type ComposerAction,
+  PEER_SLASH,
   parseComposerSlash,
+  SCHEDULE_SLASH,
   type SubmissionPort,
   UNAVAILABLE_SUBMISSION,
   workspacePanelForSlashCommand,
@@ -130,6 +133,7 @@ function resolveCommandState(
 
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const peerAction = useRef<AbortController | null>(null);
+  const templateExpansion = useRef<AbortController | null>(null);
   const localControlKind = useRef<"peer" | "schedule">("peer");
   const [peerPending, setPeerPending] = useState(false);
   const modelSelection =
@@ -517,7 +521,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
 
   const submitComposer = useCallback((): void => {
     const current = stateRef.current.composer;
-    if (/^\/schedule(?:\s|$)/u.test(current.text.trim())) {
+    if (SCHEDULE_SLASH.test(current.text.trim())) {
       const schedule = options.submission?.schedule;
       if (!schedule) {
         dispatch({
@@ -572,7 +576,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         });
       return;
     }
-    if (/^\/peer(?:\s|$)/u.test(current.text.trim())) {
+    if (PEER_SLASH.test(current.text.trim())) {
       const peer = options.submission?.peer;
       if (!peer) {
         dispatch({ kind: "notice", message: "Peer messaging is unavailable for this session." });
@@ -842,6 +846,68 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         route: workspaceOverlayRoute(panel, draft),
       });
       dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+      return;
+    }
+
+    // Package prompt templates expand into the draft for review; nothing is sent.
+    const expandTemplate = options.submission?.expandTemplate;
+    if (expandTemplate !== undefined && parsePromptInvocation(current.text) !== null) {
+      if (templateExpansion.current !== null) {
+        dispatch({ kind: "notice", message: "A prompt template is already expanding." });
+        return;
+      }
+      const controller = new AbortController();
+      templateExpansion.current = controller;
+      const requested = current.text;
+      void expandTemplate(requested, controller.signal)
+        .then(
+          (expansion) => {
+            if (controller.signal.aborted) return;
+            if (expansion.kind !== "expanded") {
+              dispatch({
+                kind: "notice",
+                message:
+                  expansion.kind === "failed"
+                    ? "Not expanded: " + expansion.message + ". Your draft is unchanged."
+                    : "Not a prompt template. Your draft is unchanged.",
+              });
+              return;
+            }
+            if (stateRef.current.composer.text !== requested) {
+              dispatch({
+                kind: "notice",
+                message: "/" + expansion.name + " was not applied because the draft changed.",
+              });
+              return;
+            }
+            absorbDraftEcho.current = true;
+            dispatch({ kind: "composer", action: { kind: "draft", text: expansion.text } });
+            setTimeout(() => {
+              absorbDraftEcho.current = false;
+            }, 0);
+            dispatch({
+              kind: "notice",
+              message:
+                "Expanded /" +
+                expansion.name +
+                " from " +
+                expansion.fact.prompt +
+                " (" +
+                expansion.fact.contentDigest +
+                "). Review the draft, then send.",
+            });
+          },
+          () => {
+            if (!controller.signal.aborted)
+              dispatch({
+                kind: "notice",
+                message: "Prompt template expansion is unavailable. Your draft is unchanged.",
+              });
+          },
+        )
+        .finally(() => {
+          if (templateExpansion.current === controller) templateExpansion.current = null;
+        });
       return;
     }
 

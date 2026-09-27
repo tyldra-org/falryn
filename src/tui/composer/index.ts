@@ -33,7 +33,10 @@ export type {
   SlashArgumentKind,
 } from "./slash.ts";
 export {
+  isBuiltinComposerSlash,
+  PEER_SLASH,
   parseComposerSlash,
+  SCHEDULE_SLASH,
   SLASH_ARGUMENT_KINDS,
   WORKSPACE_SLASH_ALIASES,
   workspacePanelForSlashCommand,

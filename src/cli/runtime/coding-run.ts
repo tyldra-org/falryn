@@ -44,6 +44,7 @@ import {
 } from "../../application/context/index.ts";
 import { createDebugAdapterSupervisor } from "../../application/debugging/index.ts";
 import { adoptForeignError } from "../../application/diagnostics/index.ts";
+import type { PromptExpansionFact } from "../../application/extensions/native-prompt-owner.ts";
 import { createLanguageServerSupervisor } from "../../application/language/index.ts";
 import { composeProductMemoryTurn } from "../../application/memory/index.ts";
 import { composeDelegatedAgentRuntime } from "../../application/runtime/delegated-agent-runtime.ts";
@@ -104,6 +105,7 @@ import {
   type UsageUnits,
 } from "../../providers/index.ts";
 import type { ProviderAdapterPort } from "../../providers/protocol/port.ts";
+import { isBuiltinComposerSlash } from "../../tui/composer/slash.ts";
 import type { GlobalOptions } from "../options.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
@@ -159,12 +161,15 @@ export type CodingRunPayload = {
   readonly sandbox?: string;
   readonly workspaceTrust?: import("../../domain/security/workspace-trust.ts").WorkspaceTrustReport;
   readonly prompt: string;
+  /** Body-free provenance when the prompt named an admitted package template (#1168). */
+  readonly promptTemplate?: PromptExpansionFact;
   readonly sessionId: string;
   readonly turnId: string | null;
   readonly workspaceId: string;
   /** How far the product graph progressed before the result was formed. */
   readonly stage:
     | "prompt-missing"
+    | "template-failed"
     | "workspace-refused"
     | "trust-required"
     | "compose-failed"
@@ -805,6 +810,40 @@ export async function runCoding(
       options.signal ?? new AbortController().signal,
       selection ? String(sessionId) : undefined,
     );
+    // Built-in composer commands win; a template expands before any turn state exists.
+    let prompt = resolved.prompt;
+    let promptTemplate: PromptExpansionFact | undefined;
+    if (!isBuiltinComposerSlash(prompt)) {
+      const expansion = await extensions.prompts.expand(
+        prompt,
+        options.signal ?? new AbortController().signal,
+      );
+      if (expansion.kind === "failed")
+        return codingResult(
+          {
+            prompt: resolved.prompt,
+            sessionId: ids.sessionId,
+            turnId: null,
+            workspaceId: String(workspaceId),
+            stage: "template-failed",
+            eventCount: 0,
+          },
+          [
+            adoptForeignError(
+              {
+                code: "template." + expansion.code,
+                category: expansion.code === "cancelled" ? "cancellation" : "context",
+                message: "Not sent: " + expansion.message + ".",
+              },
+              { operation: "expand prompt template" },
+            ),
+          ],
+        );
+      if (expansion.kind === "expanded") {
+        prompt = expansion.text;
+        promptTemplate = expansion.fact;
+      }
+    }
     const productTools =
       options.toolExposureOverride === "none"
         ? mergeProductToolBundles(generation, [])
@@ -922,7 +961,7 @@ export async function runCoding(
     if (!composed.ok) {
       return codingResult(
         {
-          prompt: resolved.prompt,
+          prompt,
           sessionId: ids.sessionId,
           turnId: null,
           workspaceId: String(workspaceId),
@@ -952,7 +991,7 @@ export async function runCoding(
       turnId,
       sessionId,
       configurationGeneration: generation,
-      prompt: resolved.prompt,
+      prompt,
       interface: "headless",
     });
     const memoryTurn = composeProductMemoryTurn({
@@ -975,7 +1014,7 @@ export async function runCoding(
     if (selection && (!providerAdapter || !providerCatalog))
       return codingResult(
         {
-          prompt: resolved.prompt,
+          prompt,
           sessionId: ids.sessionId,
           turnId: null,
           workspaceId: String(workspaceId),
@@ -1032,7 +1071,7 @@ export async function runCoding(
       initialExecutionProfile: selectedExecutionProfile,
     });
     const attempted = await executor.run({
-      prompt: resolved.prompt,
+      prompt,
       turnId,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       ...(options.responsePolicyOverride === undefined && briefRequest !== null
@@ -1081,7 +1120,8 @@ export async function runCoding(
     return codingResult(
       {
         ...(selection ? { activation: selection.explanation } : {}),
-        prompt: resolved.prompt,
+        prompt,
+        ...(promptTemplate === undefined ? {} : { promptTemplate }),
         sessionId: ids.sessionId,
         turnId: ids.turnId,
         workspaceId: String(workspaceId),

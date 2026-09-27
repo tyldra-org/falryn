@@ -137,13 +137,18 @@ export function createNativePackageContext(options: {
     if (!selected) throw new ExtensionInputError("native-contribution-missing");
     const isHook = selected.identity.nativeKind === "hook";
     const isSchedule = selected.identity.nativeKind === "schedule";
-    if (!isSchedule && !qualified()) throw new ExtensionInputError("native-tool-host-unavailable");
+    const isPrompt = selected.identity.nativeKind === "prompt";
+    const dataOnly = isSchedule || isPrompt;
+    if (!dataOnly && !qualified()) throw new ExtensionInputError("native-tool-host-unavailable");
     const admitted = await createPackageExecutionAdmission({
       packages: records.packages,
       bytes,
       host,
-      protocol: isHook ? HOOK_COMMAND_PROTOCOL : PACKAGE_TOOL_PROTOCOL,
-      ...(isSchedule ? { declarationKind: "schedule" as const } : {}),
+      ...(isSchedule
+        ? { declarationKind: "schedule" as const }
+        : isPrompt
+          ? { declarationKind: "prompt" as const }
+          : { protocol: isHook ? HOOK_COMMAND_PROTOCOL : PACKAGE_TOOL_PROTOCOL }),
       authority: (installed, contribution, signal) =>
         admission(control, installed, contribution, signal),
     })(
@@ -155,7 +160,7 @@ export function createNativePackageContext(options: {
       },
       signal,
     );
-    if (isSchedule) return admitted;
+    if (dataOnly) return admitted;
     if (isHook) {
       hookCommandContract(admitted.declaration);
       if (!qualifiedHookPython())

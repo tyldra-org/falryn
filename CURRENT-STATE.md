@@ -304,8 +304,9 @@ After correcting a failure or change, reopen interactively to review again.
 The main terminal session, headless `falryn run`, child agents and model workflow
 steps share an instruction-source owner. User or working-profile configuration
 can explicitly register files in `instructions.sources`; conventional files are
-also discovered without registration. Skill invocation and prompt-template
-expansion remain separate loader work. Merely installing a package does not
+also discovered without registration. Skill invocation remains separate loader
+work; package prompt templates expand only as explicit slash actions (see
+native package activation below). Merely installing a package does not
 activate its instruction body.
 
 Discovery reads the user-wide `AGENTS.md` in the effective configuration home
@@ -960,9 +961,10 @@ receipts for exact rollback. Human, quiet, JSON and JSONL expose the same facts.
 
 Installation and trust approval do not create executable bindings. `package enable`
 without a native activation request still returns `activation-owner-unavailable`.
-The explicit native tool path below publishes only its selected contribution
-identities. Remote acquisition, module services, full-user execution and other
-native-kind adapters remain unavailable. Scope controls remain metadata preferences.
+The explicit native tool and prompt-template paths below publish only their
+selected contribution identities. Remote acquisition, module services, full-user
+execution and other native-kind adapters remain unavailable. Scope controls remain
+metadata preferences.
 Package cache files retain exact source bytes and are not redacted artifacts.
 SQLite-only backups and session exports do not include those bytes or confer
 package authority. Removing the state root removes both lifecycle records and
@@ -1044,6 +1046,47 @@ output remains in the attempt record even when cleanup fails; cleanup success
 is separate from semantic invocation success. Source and compiled model fixtures
 verify a real native output, and source tests verify revocation between disclosure
 and invocation, disabled aliases and next-turn replacement.
+
+An activated package prompt contribution, either a non-recursive `prompts/*.md`
+file or an explicit manifest `prompt` entry naming another package file, binds
+as a slash action. Its short alias is the file name or declared id, and
+`/<package>:<alias>` is always available. Activation needs no sandbox because no
+package code runs. Registration keeps only the description and `argument-hint`;
+the body is read from the installed package bytes when the template is invoked,
+after the catalog, activation, trust, scope and installed revision are checked
+again. A disabled, revoked, updated or otherwise stale package fails expansion.
+
+In the terminal composer, `/<alias> <arguments>` replaces the draft with the
+expanded text and names the template and its content digest. Nothing is sent
+until the draft is submitted; if the draft changed during expansion, the result
+is not applied. In `falryn run`, a prompt starting with `/<alias>` is expanded
+and the text is submitted as the ordinary turn. The payload `prompt` is the
+expanded text and `promptTemplate` reports the package, template, content
+digest, argument count, substitutions and rendered bytes without the body. A
+failure returns stage `template-failed` with an error such as
+`template.unknown-template` and makes no provider request. Built-in composer
+commands such as `/mode`, `/model`, `/peer` and `/schedule` always win; headless
+runs send that text unchanged. An alias provided by more than one package or
+scope requires the qualified form. Unknown alias-shaped names fail, while text
+such as `/usr/bin` is not a template name.
+
+Arguments split on Unicode whitespace outside single or double quotes. Quotes
+are removed, adjacent segments join, empty quoted segments are dropped,
+backslash is literal and an unclosed quote fails. The body supports `$1` to
+`$N`, `$@`, `$ARGUMENTS`, `${N:-default}`, `${@:-default}`,
+`${ARGUMENTS:-default}`, `${@:N}` and `${@:N:L}` in one left-to-right,
+non-recursive pass. Values are inserted verbatim and never evaluated. Any other
+`${…}` form, position 0 and numbers above 2,147,483,647 fail; a `$` that starts
+no form stays literal. Optional frontmatter is a YAML 1.2 mapping between exact
+`---` lines, after one BOM is removed and CRLF is normalized. Aliases, anchors,
+merge keys, custom tags and non-JSON values fail. The body is trimmed after
+frontmatter, and a missing description comes from the first non-empty body line
+(60 characters plus `...`). Limits are 128 conventional templates per package,
+72 KiB per file, 8 KiB frontmatter, 64 KiB body, depth 8, 64 keys of up to 128
+bytes, a 512-byte description, a 256-byte hint, 64 arguments, 16 KiB of argument
+text, 4 KiB per argument, 1,024 substitutions and 128 KiB of expanded text.
+Typed template variables, completion and model invocation of templates are not
+available yet.
 
 `falryn package data --input request.json` exposes version-1 host-owned
 configuration and state operations. Its outer request binds the installed package

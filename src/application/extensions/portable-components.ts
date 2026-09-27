@@ -1,6 +1,10 @@
 import { parseDocument } from "yaml";
 import { z } from "zod";
 import {
+  PROMPT_TEMPLATE_LIMITS,
+  parsePromptTemplateSource,
+} from "../../domain/context/prompt-templates.ts";
+import {
   canonicalJson,
   canonicalText,
   ExtensionInputError,
@@ -15,6 +19,8 @@ export type PortableComponent = {
   readonly id: string;
   readonly path: string;
   readonly metadata: Readonly<Record<string, unknown>>;
+  /** Prompt description from frontmatter, or derived from the first body line. */
+  readonly description?: string;
 };
 const skillHeader = z
   .object({
@@ -66,25 +72,30 @@ export function portableComponents(
   diagnose: (diagnostic: InspectionDiagnostic) => void,
 ): PortableComponent[] {
   const components: PortableComponent[] = [];
+  let prompts = 0;
   for (const [path, bytes] of files) {
     const skill = /^skills\/([^/]+)\/SKILL\.md$/u.exec(path);
     const prompt = /^prompts\/([^/]+)\.md$/u.exec(path);
     if (skill === null && prompt === null) continue;
+    if (prompt !== null && ++prompts > PROMPT_TEMPLATE_LIMITS.templatesPerPackage)
+      throw new ExtensionInputError("prompt-template-limit");
     try {
-      const metadata = markdownMetadata(bytes, skill !== null);
       if (skill !== null) {
+        const metadata = markdownMetadata(bytes, true);
         const checked = skillHeader.safeParse(metadata);
         if (!checked.success || checked.data.name !== skill[1])
           throw new ExtensionInputError("invalid-skill");
         components.push({ kind: "skill", id: checked.data.name, path, metadata: checked.data });
       } else if (prompt?.[1] !== undefined) {
-        if (
-          ["description", "argument-hint"].some(
-            (key) => metadata[key] !== undefined && typeof metadata[key] !== "string",
-          )
-        )
-          throw new ExtensionInputError("invalid-prompt");
-        components.push({ kind: "prompt", id: prompt[1], path, metadata });
+        const template = parsePromptTemplateSource(bytes);
+        if (!template.ok) throw new ExtensionInputError("invalid-prompt");
+        components.push({
+          kind: "prompt",
+          id: prompt[1],
+          path,
+          metadata: template.value.frontmatter,
+          description: template.value.description,
+        });
       }
     } catch {
       diagnose({ code: skill !== null ? "invalid-skill" : "invalid-prompt", path });

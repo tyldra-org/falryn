@@ -9,9 +9,8 @@ import type {
   PackageBytes,
   PackageLifecycleStore,
 } from "../../domain/extensions/lifecycle.ts";
-import { contributionDeclarationSchema } from "../../domain/extensions/manifest.ts";
 import type { PackageSnapshot } from "../../domain/extensions/package-source.ts";
-import { type InspectionHost, preparePackage } from "./prepare-package.ts";
+import { type InspectionHost, nativeDeclaration, preparePackage } from "./prepare-package.ts";
 
 export type PackageExecutionAuthority = {
   trusted: boolean;
@@ -30,9 +29,13 @@ export type PackageAdmissionOptions = {
   packages: Pick<PackageLifecycleStore, "current">;
   bytes: Pick<PackageBytes, "read">;
   host: InspectionHost;
-  protocol: string;
-  /** Native schedule registration admits data only; target execution has its own gateway. */
-  declarationKind?: "schedule";
+  /** Governed execution protocol; data-only declarations start no code and carry none. */
+  protocol?: string;
+  /**
+   * Data-only admission: schedule registration and prompt-template reads admit
+   * declarations and bytes only. Schedule targets execute through their own gateway.
+   */
+  declarationKind?: "schedule" | "prompt";
   authority(
     installed: InstalledPackage,
     contribution: string | null,
@@ -94,7 +97,7 @@ export function createPackageExecutionAdmission(options: PackageAdmissionOptions
             !authority.trusted ? "package-trust-required" : "dependency-disabled",
           );
         }
-        if (!authority.strict && options.declarationKind !== "schedule")
+        if (!authority.strict && options.declarationKind === undefined)
           throw new ExtensionInputError("strict-sandbox-policy-required");
         const snapshot = await options.bytes.read(version, signal);
         inventoryBytes += version.byteLength;
@@ -157,7 +160,7 @@ export function createPackageExecutionAdmission(options: PackageAdmissionOptions
         (entry) => entry.identityDigest === health.contribution,
       );
       if (!selected) throw new ExtensionInputError("contribution-unavailable");
-      const declaration = contributionDeclarationSchema.parse(selected.declaration);
+      const declaration = nativeDeclaration(selected);
       const local = new Map(
         prepared.package.contributions.map((entry) => [
           `${entry.identity.nativeKind}/${entry.identity.namespace}/${entry.identity.localId}`,
@@ -188,7 +191,7 @@ export function createPackageExecutionAdmission(options: PackageAdmissionOptions
         )
           throw new ExtensionInputError("dependency-runtime-unavailable");
         authorities.push({ id: dependency.identityDigest, authority });
-        const child = contributionDeclarationSchema.parse(dependency.declaration);
+        const child = nativeDeclaration(dependency);
         required.push(
           ...child.dependencies.map((id) =>
             id.split("/").length === 3
@@ -208,6 +211,14 @@ export function createPackageExecutionAdmission(options: PackageAdmissionOptions
           declaration.execution
         )
           throw new ExtensionInputError("schedule-declaration-invalid");
+      } else if (options.declarationKind === "prompt") {
+        if (
+          selected.identity.nativeKind !== "prompt" ||
+          selected.mode !== "declarative" ||
+          selected.path === null ||
+          declaration.execution
+        )
+          throw new ExtensionInputError("prompt-declaration-invalid");
       } else {
         if (selected.mode !== "governed" || !declaration.execution)
           throw new ExtensionInputError("governed-execution-required");

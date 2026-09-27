@@ -230,3 +230,19 @@ export {
   explainNormalization,
   normalizePromptDraft,
 } from "./prompt-enhancement.ts";
+export type {
+  PromptInvocation,
+  PromptTemplateError,
+  PromptTemplateErrorCode,
+  PromptTemplateSource,
+  RenderedPromptTemplate,
+} from "./prompt-templates.ts";
+export {
+  expandPromptTemplate,
+  isPromptAlias,
+  PROMPT_TEMPLATE_LIMITS,
+  parsePromptInvocation,
+  parsePromptTemplateSource,
+  renderPromptTemplate,
+  splitPromptArguments,
+} from "./prompt-templates.ts";
