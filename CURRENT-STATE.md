@@ -1051,7 +1051,8 @@ An activated package prompt contribution, either a non-recursive `prompts/*.md`
 file or an explicit manifest `prompt` entry naming another package file, binds
 as a slash action. Its short alias is the file name or declared id, and
 `/<package>:<alias>` is always available. Activation needs no sandbox because no
-package code runs. Registration keeps only the description and `argument-hint`;
+package code runs. Registration keeps only the description, `argument-hint` and
+any declared variables;
 the body is read from the installed package bytes when the template is invoked,
 after the catalog, activation, trust, scope and installed revision are checked
 again. A disabled, revoked, updated or otherwise stale package fails expansion.
@@ -1085,8 +1086,37 @@ frontmatter, and a missing description comes from the first non-empty body line
 72 KiB per file, 8 KiB frontmatter, 64 KiB body, depth 8, 64 keys of up to 128
 bytes, a 512-byte description, a 256-byte hint, 64 arguments, 16 KiB of argument
 text, 4 KiB per argument, 1,024 substitutions and 128 KiB of expanded text.
-Typed template variables, completion and model invocation of templates are not
-available yet.
+
+An explicit manifest `prompt` entry may declare typed variables:
+`variables: { version: 1, additional?, entries: [...] }`. Each entry has a
+`name`, a `type` (`string` with optional length bounds, `number` with
+optional `integer` and range, `boolean`, `enum` with `values`, `array` with
+`items` and a required `maxItems`, or `object` with `properties`), and optional
+`required`, literal `default`, `sensitive` and `description`. Names are
+identifiers other than `ARGUMENTS`; a declaration allows at most 32 variables, type
+nesting depth 4, 64 array items, 32 object properties and 4 KiB of text per
+value. A required or sensitive variable cannot have a default, a default must
+match its type, and other kinds cannot declare variables; package preparation
+rejects violations. The body uses `${name}` or `${name:-fallback}` for a
+declared name; an undeclared name stays malformed. At invocation a
+`name=value` argument binds a declared variable, and the remaining arguments
+stay positional. Strings and enums are plain text, numbers are JSON numbers,
+booleans are `true` or `false`, and arrays and objects are JSON; each renders in
+one deterministic form (objects with sorted keys) through the same renderer and
+128 KiB ceiling. An undeclared `name=value` fails unless `additional` is true,
+when it stays positional; a duplicate or an undeclared object key also fails.
+Failures use typed codes (`variable-missing`, `variable-unknown`,
+`variable-duplicate`, `variable-malformed`, `variable-type`,
+`variable-constraint`, `variable-limit`) naming the variable path, never the
+value. Every given value is checked before missing ones are reported. In the
+composer, each missing required variable is asked for in turn: type the value
+and press Enter, or press Escape to restore the original invocation and send
+nothing. In `falryn run`, a missing required variable fails with
+`template.variable-missing`, names what to pass and makes no provider request. The
+`promptTemplate` fact lists each variable's name, value source (`argument`,
+`entered`, `default` or `absent`) and sensitivity, never a value; a
+sensitive value appears only in the draft or prompt the user sends. Completion
+and model invocation of templates are not available yet.
 
 `falryn package data --input request.json` exposes version-1 host-owned
 configuration and state operations. Its outer request binds the installed package

@@ -106,11 +106,13 @@ export type SubmissionPort = {
   ) => () => void;
   /**
    * Expand slash text naming an admitted package prompt template. Expansion
-   * returns draft text for review and never submits.
+   * returns draft text for review and never submits. Entered values answer
+   * required variables the previous expansion asked for.
    */
   readonly expandTemplate?: (
     text: string,
     signal: AbortSignal,
+    entered?: Readonly<Record<string, string>>,
   ) => Promise<import("../../application/extensions/native-prompt-owner.ts").PromptExpansion>;
   submit(
     snapshot: ComposerSnapshot,

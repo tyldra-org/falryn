@@ -44,7 +44,10 @@ import {
 } from "../../application/context/index.ts";
 import { createDebugAdapterSupervisor } from "../../application/debugging/index.ts";
 import { adoptForeignError } from "../../application/diagnostics/index.ts";
-import type { PromptExpansionFact } from "../../application/extensions/native-prompt-owner.ts";
+import {
+  missingVariablesMessage,
+  type PromptExpansionFact,
+} from "../../application/extensions/native-prompt-owner.ts";
 import { createLanguageServerSupervisor } from "../../application/language/index.ts";
 import { composeProductMemoryTurn } from "../../application/memory/index.ts";
 import { composeDelegatedAgentRuntime } from "../../application/runtime/delegated-agent-runtime.ts";
@@ -818,7 +821,17 @@ export async function runCoding(
         prompt,
         options.signal ?? new AbortController().signal,
       );
-      if (expansion.kind === "failed")
+      // Headless runs have no one to ask: a missing required variable fails like any other.
+      const failure =
+        expansion.kind === "failed"
+          ? { code: expansion.code, message: expansion.message }
+          : expansion.kind === "needs-input"
+            ? {
+                code: "variable-missing",
+                message: missingVariablesMessage(expansion.name, expansion.variables),
+              }
+            : null;
+      if (failure !== null)
         return codingResult(
           {
             prompt: resolved.prompt,
@@ -831,9 +844,9 @@ export async function runCoding(
           [
             adoptForeignError(
               {
-                code: "template." + expansion.code,
-                category: expansion.code === "cancelled" ? "cancellation" : "context",
-                message: "Not sent: " + expansion.message + ".",
+                code: "template." + failure.code,
+                category: failure.code === "cancelled" ? "cancellation" : "context",
+                message: "Not sent: " + failure.message + ".",
               },
               { operation: "expand prompt template" },
             ),

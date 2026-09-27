@@ -1,5 +1,6 @@
 // biome-ignore-all lint/suspicious/noTemplateCurlyInString: literal template placeholders are the subject under test.
 import { describe, expect, test } from "bun:test";
+import { type PromptVariables, promptVariablesSchema } from "../extensions/prompt-variables.ts";
 import {
   expandPromptTemplate,
   PROMPT_TEMPLATE_LIMITS,
@@ -12,7 +13,7 @@ import {
 const bytes = (text: string) => new TextEncoder().encode(text);
 const source = (text: string) => parsePromptTemplateSource(bytes(text));
 const render = (body: string, values: readonly string[]) => {
-  const rendered = renderPromptTemplate(body, values);
+  const rendered = renderPromptTemplate(body, { positional: values, named: new Map() });
   return rendered.ok ? rendered.value.text : rendered.error.code;
 };
 const split = (text: string) => {
@@ -121,16 +122,23 @@ describe("prompt template rendering", () => {
     const parsed = source("---\ndescription: Review\n---\nReview $1 with ${@:2}.");
     expect(parsed.ok).toBe(true);
     if (!parsed.ok) return;
-    expect(expandPromptTemplate(parsed.value, `src/app.ts "extra care"`)).toEqual({
+    const input = (argumentText: string) => ({ argumentText, variables: null });
+    expect(expandPromptTemplate(parsed.value, input(`src/app.ts "extra care"`))).toEqual({
       ok: true,
       value: {
-        text: "Review src/app.ts with extra care.",
-        argumentCount: 2,
-        substitutions: 2,
-        renderedBytes: 34,
+        kind: "rendered",
+        rendered: {
+          text: "Review src/app.ts with extra care.",
+          argumentCount: 2,
+          substitutions: 2,
+          renderedBytes: 34,
+        },
+        variables: [],
       },
     });
-    expect(code(expandPromptTemplate(parsed.value, `"open`))).toBe("unterminated-quote");
+    expect(code(expandPromptTemplate(parsed.value, input(`"open`)))).toBe("unterminated-quote");
+    // Without a declaration, name=value text is an ordinary positional argument.
+    expect(expandPromptTemplate(parsed.value, input("a=b")).ok).toBe(true);
   });
 });
 
@@ -258,5 +266,106 @@ describe("prompt template invocation", () => {
       "/a b".slice(0, 1),
     ])
       expect(parsePromptInvocation(text)).toBeNull();
+  });
+});
+
+describe("typed prompt template variables", () => {
+  const declared = promptVariablesSchema.parse({
+    version: 1,
+    entries: [
+      { name: "file", type: { kind: "string" }, required: true },
+      {
+        name: "depth",
+        type: { kind: "number", integer: true, minimum: 1, maximum: 5 },
+        default: 2,
+      },
+      { name: "tone", type: { kind: "enum", values: ["calm", "blunt"] } },
+      { name: "tags", type: { kind: "array", items: { kind: "string" }, maxItems: 3 } },
+      { name: "token", type: { kind: "string" }, sensitive: true },
+    ],
+  });
+  const body = "Review ${file} at depth ${depth}, tone ${tone:-neutral}, tags ${tags}, rest $@.";
+  const template = { frontmatter: {}, body, description: "", argumentHint: null };
+  const expand = (
+    argumentText: string,
+    entered?: Record<string, string>,
+    variables: PromptVariables | null = declared,
+  ) =>
+    expandPromptTemplate(template, {
+      argumentText,
+      variables,
+      ...(entered === undefined ? {} : { entered }),
+    });
+  const text = (result: ReturnType<typeof expand>) =>
+    result.ok
+      ? result.value.kind === "rendered"
+        ? result.value.rendered.text
+        : "needs " + result.value.missing.map((variable) => variable.name).join(",")
+      : result.error.code;
+
+  test("bind name=value arguments, defaults and absent values through one render", () => {
+    const result = expand('file="src/ä b.ts" tags=\'["x","y"]\' tone=blunt extra words');
+    expect(text(result)).toBe(
+      'Review src/ä b.ts at depth 2, tone blunt, tags ["x","y"], rest extra words.',
+    );
+    expect(result.ok && result.value.kind === "rendered" && result.value.variables).toEqual([
+      { name: "file", source: "argument", sensitive: false },
+      { name: "depth", source: "default", sensitive: false },
+      { name: "tone", source: "argument", sensitive: false },
+      { name: "tags", source: "argument", sensitive: false },
+      { name: "token", source: "absent", sensitive: true },
+    ]);
+    expect(text(expand("file=a"))).toBe("Review a at depth 2, tone neutral, tags , rest .");
+    // Rendering is deterministic for the same inputs.
+    expect(text(expand("file=a depth=4"))).toBe(text(expand("depth=4 file=a")));
+  });
+
+  test("report missing required variables only after every given value checks", () => {
+    expect(text(expand("tone=calm"))).toBe("needs file");
+    expect(text(expand("depth=9"))).toBe("variable-constraint");
+    expect(text(expand("", { file: "entered.ts" }))).toBe(
+      "Review entered.ts at depth 2, tone neutral, tags , rest .",
+    );
+    const entered = expand("", { file: "a", token: "hunter2" });
+    expect(entered.ok && entered.value.kind === "rendered" && entered.value.variables[4]).toEqual({
+      name: "token",
+      source: "entered",
+      sensitive: true,
+    });
+  });
+
+  test("reject extras, duplicates and wrong values with a typed reason naming no value", () => {
+    expect(text(expand("file=a bogus=1"))).toBe("variable-unknown");
+    expect(text(expand("file=a", { bogus: "1" }))).toBe("variable-unknown");
+    expect(text(expand("file=a file=b"))).toBe("variable-duplicate");
+    expect(text(expand("file=a", { file: "b" }))).toBe("variable-duplicate");
+    expect(text(expand("file=a depth=deep"))).toBe("variable-malformed");
+    expect(text(expand("file=a tags=[1]"))).toBe("variable-type");
+    const failed = expand("file=a depth=secret-ish");
+    expect(failed.ok ? "" : JSON.stringify(failed.error)).not.toContain("secret-ish");
+    expect(failed.ok ? null : failed.error).toMatchObject({ variable: "depth" });
+    // A declaration that allows extras keeps undeclared assignments positional.
+    const open = { ...declared, additional: true };
+    expect(text(expand("file=a bogus=1", undefined, open))).toBe(
+      "Review a at depth 2, tone neutral, tags , rest bogus=1.",
+    );
+    // Without a declaration, entered values have nothing to bind.
+    expect(text(expand("", { file: "a" }, null))).toBe("variable-unknown");
+  });
+
+  test("leave undeclared names malformed and keep the rendered ceiling", () => {
+    const other = { ...template, body: "Use ${undeclared}." };
+    expect(code(expandPromptTemplate(other, { argumentText: "file=a", variables: declared }))).toBe(
+      "malformed-placeholder",
+    );
+    const big = { ...template, body: "${file}".repeat(40) };
+    expect(
+      code(
+        expandPromptTemplate(big, {
+          argumentText: "file=" + "x".repeat(4_000),
+          variables: declared,
+        }),
+      ),
+    ).toBe("rendered-limit");
   });
 });

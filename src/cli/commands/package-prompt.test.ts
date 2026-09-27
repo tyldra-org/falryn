@@ -32,8 +32,23 @@ test.skipIf(createHostSandbox().probe().status !== "available")(
             description: "Review one file",
             authority: declaredAuthority,
           },
+          {
+            kind: "prompt",
+            namespace: "fixture",
+            id: "outline",
+            path: "outline.md",
+            description: "Outline one topic",
+            authority: declaredAuthority,
+            variables: {
+              version: 1,
+              entries: [
+                { name: "topic", type: { kind: "string" }, required: true },
+                { name: "depth", type: { kind: "number", integer: true, maximum: 3 }, default: 1 },
+              ],
+            },
+          },
         ] as never,
-        files: { "review.md": TEMPLATE },
+        files: { "review.md": TEMPLATE, "outline.md": "Brief ${topic} at depth ${depth}." },
       },
     );
     const run = (prompt: string) =>
@@ -76,6 +91,30 @@ test.skipIf(createHostSandbox().probe().status !== "available")(
       });
       expect(failed.result.errors[0]?.code).toBe(code);
     }
+
+    // A required variable with no value submits nothing and names what to pass.
+    const missing = await run("/outline depth=2");
+    expect(missing.requests).toEqual([]);
+    expect(missing.result.payload).toMatchObject({ stage: "template-failed", turnId: null });
+    expect(missing.result.errors[0]).toMatchObject({
+      code: "template.variable-missing",
+      message: "Not sent: /outline needs topic (text); pass each as name=value.",
+    });
+    const typed = await run('/outline topic="error paths"');
+    expect(typed.result.payload).toMatchObject({
+      stage: "attempt-completed",
+      prompt: "Brief error paths at depth 1.",
+      promptTemplate: {
+        prompt: "fixture:outline",
+        variables: [
+          { name: "topic", source: "argument", sensitive: false },
+          { name: "depth", source: "default", sensitive: false },
+        ],
+      },
+    });
+    const wrong = await run("/outline topic=a depth=9");
+    expect(wrong.requests).toEqual([]);
+    expect(wrong.result.errors[0]?.code).toBe("template.variable-constraint");
 
     const disable = { packageId: "fixture", operationId: randomUUID(), expectedRevision: 1 };
     const proposed = await fixture.invoke(["package", "disable"], disable, packageReceiptSchema);

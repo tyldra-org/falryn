@@ -38,11 +38,14 @@ function expanded(name: string, text: string): PromptExpansion {
       argumentCount: 2,
       substitutions: 2,
       renderedBytes: text.length,
+      variables: [],
     },
   };
 }
 
-async function shellWith(expand: (text: string) => PromptExpansion) {
+async function shellWith(
+  expand: (text: string, entered?: Readonly<Record<string, string>>) => PromptExpansion,
+) {
   const submitted: string[] = [];
   const requested: string[] = [];
   const shell = await mount(
@@ -55,9 +58,11 @@ async function shellWith(expand: (text: string) => PromptExpansion) {
           submitted.push(snapshot.text);
           return { kind: "accepted", snapshot };
         },
-        async expandTemplate(text) {
+        async expandTemplate(text, _signal, entered) {
           requested.push(text);
-          return expand(text);
+          // Settle after a render, as package I/O does, so draft checks see painted state.
+          await new Promise((resolve) => setTimeout(resolve, 20));
+          return expand(text, entered);
         },
       }}
     />,
@@ -112,4 +117,62 @@ test("built-in slash commands take precedence over package templates", async () 
   await shell.press("\r");
   await shell.frame();
   expect(requested).toEqual([]);
+});
+
+test("a missing required variable is asked for, then the answers expand into the draft", async () => {
+  const entries: (Readonly<Record<string, string>> | undefined)[] = [];
+  const { shell, submitted } = await shellWith((_text, entered) => {
+    entries.push(entered);
+    return entered === undefined
+      ? {
+          kind: "needs-input",
+          name: "review",
+          variables: [
+            { name: "file", expected: "text", description: "File to read", sensitive: false },
+            { name: "token", expected: "text", description: "", sensitive: true },
+          ],
+        }
+      : expanded("review", "Review " + entered.file + " with the token.");
+  });
+  using _ = shell;
+  await shell.type("/review depth=2");
+  await shell.press("\r");
+  let frame = await shell.frame();
+  expect(frame).toContain("/review needs file (text): File to read.");
+  expect(frame).not.toContain("/review depth=2");
+  await shell.type("src/a.ts");
+  await shell.press("\r");
+  frame = await shell.frame();
+  expect(frame).toContain("/review needs token (text; sensitive, kept only in this draft)");
+  await shell.type("hunter2");
+  await shell.press("\r");
+  frame = await shell.frame();
+  expect(entries).toEqual([undefined, { file: "src/a.ts", token: "hunter2" }]);
+  expect(frame).toContain("Review src/a.ts with the token.");
+  expect(frame).toContain("Expanded /review from kit:review");
+  expect(submitted).toEqual([]);
+});
+
+test("cancelling a variable prompt restores the invocation and sends nothing", async () => {
+  let calls = 0;
+  const { shell, submitted } = await shellWith(() => {
+    calls += 1;
+    return {
+      kind: "needs-input",
+      name: "review",
+      variables: [{ name: "file", expected: "text", description: "", sensitive: false }],
+    };
+  });
+  using _ = shell;
+  await shell.type("/review depth=2");
+  await shell.press("\r");
+  await shell.frame();
+  await shell.type("half-typed");
+  await shell.pressEscape();
+  const frame = await shell.frame();
+  expect(frame).toContain("Prompt template cancelled. Nothing was sent; your draft is restored.");
+  expect(frame).toContain("/review depth=2");
+  expect(frame).not.toContain("half-typed");
+  expect(calls).toBe(1);
+  expect(submitted).toEqual([]);
 });

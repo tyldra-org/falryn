@@ -899,8 +899,11 @@ export async function composeProductShellAttachments(
     schedule: (input: unknown, signal: AbortSignal) =>
       active.schedules?.actions.execute(input, "user", signal) ??
       Promise.resolve({ ok: false, error: { code: "schedule-unavailable" } }),
-    expandTemplate: (text: string, signal: AbortSignal) =>
-      active.prompts.expand(text, AbortSignal.any([hostSignal, signal])),
+    expandTemplate: (
+      text: string,
+      signal: AbortSignal,
+      entered?: Readonly<Record<string, string>>,
+    ) => active.prompts.expand(text, AbortSignal.any([hostSignal, signal]), entered),
     peer: (input: unknown, signal: AbortSignal) => {
       const parsed = peerActionSchema.safeParse(input);
       const selected =

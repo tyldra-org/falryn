@@ -1,11 +1,21 @@
 /**
  * Package prompt templates (#138): the one bounded codec for template source,
- * slash invocation text, argument splitting and rendering.
+ * slash invocation text, argument splitting, typed variable binding (#1169) and
+ * rendering.
  *
- * Pure. Argument and default text is inserted verbatim in one pass and is
- * never evaluated as shell, code, frontmatter or another template.
+ * Pure. Argument, variable and default text is inserted verbatim in one pass
+ * and is never evaluated as shell, code, frontmatter or another template.
  */
 import { isAlias, isMap, isScalar, isSeq, parseDocument } from "yaml";
+import {
+  isPromptVariableName,
+  type PromptVariable,
+  type PromptVariableErrorCode,
+  type PromptVariables,
+  parsePromptVariableText,
+  promptVariableError,
+  renderPromptVariableValue,
+} from "../extensions/prompt-variables.ts";
 import { err, ok, type Result } from "../foundation/result.ts";
 
 const KIB = 1024;
@@ -54,10 +64,13 @@ const MESSAGES = {
   "rendered-limit": "the expanded text exceeds 128 KiB",
 } as const;
 
-export type PromptTemplateErrorCode = keyof typeof MESSAGES;
+type TemplateErrorCode = keyof typeof MESSAGES;
+export type PromptTemplateErrorCode = TemplateErrorCode | PromptVariableErrorCode;
 export type PromptTemplateError = {
   readonly code: PromptTemplateErrorCode;
   readonly message: string;
+  /** The variable path a variable error concerns; never its value. */
+  readonly variable?: string;
 };
 
 /** Parsed, bounded template source. The body is rendered only on explicit invocation. */
@@ -76,13 +89,35 @@ export type RenderedPromptTemplate = {
   readonly renderedBytes: number;
 };
 
+/** Values one render substitutes: positional arguments and rendered named variables. */
+export type PromptTemplateValues = {
+  readonly positional: readonly string[];
+  readonly named: ReadonlyMap<string, string>;
+};
+
+/** Where a declared variable's value came from; the value itself is never recorded. */
+export type PromptVariableUse = {
+  readonly name: string;
+  readonly source: "argument" | "entered" | "default" | "absent";
+  readonly sensitive: boolean;
+};
+
+export type PromptTemplateExpansion =
+  | {
+      readonly kind: "rendered";
+      readonly rendered: RenderedPromptTemplate;
+      readonly variables: readonly PromptVariableUse[];
+    }
+  /** Required variables with no value; nothing was rendered. */
+  | { readonly kind: "needs-input"; readonly missing: readonly PromptVariable[] };
+
 /** Slash text that names a template: /<alias> or /<package>:<alias>, then argument text. */
 export type PromptInvocation = {
   readonly name: string;
   readonly argumentText: string;
 };
 
-function failure(code: PromptTemplateErrorCode): { ok: false; error: PromptTemplateError } {
+function failure(code: TemplateErrorCode): { ok: false; error: PromptTemplateError } {
   return err({ code, message: MESSAGES[code] });
 }
 
@@ -195,7 +230,7 @@ function inspectNode(
   node: unknown,
   depth: number,
   keys: { count: number },
-): PromptTemplateErrorCode | null {
+): TemplateErrorCode | null {
   if (node === null) return null;
   if (isAlias(node)) return "frontmatter-invalid";
   if (isScalar(node) || isMap(node) || isSeq(node)) {
@@ -266,6 +301,7 @@ const DIGITS = /[0-9]+/y;
 const POSITION_DEFAULT = /^([0-9]+):-([\s\S]*)$/u;
 const ALL_DEFAULT = /^(?:@|ARGUMENTS):-([\s\S]*)$/u;
 const SLICE = /^@:([0-9]+)(?::([0-9]+))?$/u;
+const NAMED = /^([A-Za-z_][A-Za-z0-9_]*)(?::-([\s\S]*))?$/u;
 
 function decimal(digits: string): number | null {
   const significant = digits.replace(/^0+/u, "");
@@ -283,7 +319,7 @@ function position(digits: string): Result<number, PromptTemplateError> {
 function placeholder(
   body: string,
   at: number,
-  values: readonly string[],
+  { positional: values, named }: PromptTemplateValues,
 ): Result<Placeholder | null, PromptTemplateError> {
   const all = values.join(" ");
   if (body[at + 1] === "{") {
@@ -300,6 +336,11 @@ function placeholder(
     }
     const fallback = ALL_DEFAULT.exec(inner);
     if (fallback !== null) return ok({ text: all === "" ? (fallback[1] ?? "") : all, end });
+    // Only declared variables are names; any other name stays malformed.
+    const variable = NAMED.exec(inner);
+    const value = variable === null ? undefined : named.get(variable[1] ?? "");
+    if (variable !== null && value !== undefined)
+      return ok({ text: value === "" ? (variable[2] ?? "") : value, end });
     const slice = SLICE.exec(inner);
     if (slice === null) return failure("malformed-placeholder");
     const start = position(slice[1] ?? "");
@@ -324,7 +365,7 @@ function placeholder(
 /** Substitute placeholders left to right in one non-recursive pass. */
 export function renderPromptTemplate(
   body: string,
-  values: readonly string[],
+  values: PromptTemplateValues,
 ): Result<RenderedPromptTemplate, PromptTemplateError> {
   const parts: string[] = [];
   let bytes = 0;
@@ -354,19 +395,98 @@ export function renderPromptTemplate(
   if (!emit(body.slice(literal))) return failure("rendered-limit");
   return ok({
     text: parts.join(""),
-    argumentCount: values.length,
+    argumentCount: values.positional.length,
     substitutions,
     renderedBytes: bytes,
   });
 }
 
-/** Split invocation arguments, then render the parsed template body. */
+const ASSIGNMENT = /^([A-Za-z_][A-Za-z0-9_]*)=([\s\S]*)$/u;
+
+export type PromptTemplateInput = {
+  readonly argumentText: string;
+  /** The manifest's declared variables, or null for a compatibility template. */
+  readonly variables: PromptVariables | null;
+  /** Raw text the user entered for named variables after being asked. */
+  readonly entered?: Readonly<Record<string, string>>;
+};
+
+function variableFailure(
+  code: PromptVariableErrorCode,
+  name: string,
+): { ok: false; error: PromptTemplateError } {
+  return err(promptVariableError(code, name));
+}
+
+/**
+ * Split invocation arguments, bind declared variables, then render the body.
+ *
+ * With declared variables, a name=value argument naming one binds it; one naming
+ * an undeclared variable fails unless the declaration allows extras, when it stays
+ * positional. Every given value is checked before missing required variables are
+ * reported, so a wrong value is never followed by a request for more input.
+ */
 export function expandPromptTemplate(
   template: PromptTemplateSource,
-  argumentText: string,
-): Result<RenderedPromptTemplate, PromptTemplateError> {
-  const values = splitPromptArguments(argumentText);
-  return values.ok ? renderPromptTemplate(template.body, values.value) : values;
+  input: PromptTemplateInput,
+): Result<PromptTemplateExpansion, PromptTemplateError> {
+  const split = splitPromptArguments(input.argumentText);
+  if (!split.ok) return split;
+  const declared = input.variables;
+  if (declared === null) {
+    const unknown = Object.keys(input.entered ?? {})[0];
+    if (unknown !== undefined) return variableFailure("variable-unknown", unknown);
+    const rendered = renderPromptTemplate(template.body, {
+      positional: split.value,
+      named: new Map(),
+    });
+    return rendered.ok
+      ? ok({ kind: "rendered", rendered: rendered.value, variables: [] })
+      : rendered;
+  }
+  const byName = new Map(declared.entries.map((variable) => [variable.name, variable]));
+  const positional: string[] = [];
+  const given = new Map<
+    string,
+    { readonly text: string; readonly source: "argument" | "entered" }
+  >();
+  for (const token of split.value) {
+    const assignment = ASSIGNMENT.exec(token);
+    const name = assignment?.[1];
+    if (assignment === null || name === undefined) positional.push(token);
+    else if (byName.has(name)) {
+      if (given.has(name)) return variableFailure("variable-duplicate", name);
+      given.set(name, { text: assignment[2] ?? "", source: "argument" });
+    } else if (declared.additional || !isPromptVariableName(name)) positional.push(token);
+    else return variableFailure("variable-unknown", name);
+  }
+  for (const [name, text] of Object.entries(input.entered ?? {})) {
+    if (!byName.has(name)) return variableFailure("variable-unknown", name);
+    if (given.has(name)) return variableFailure("variable-duplicate", name);
+    given.set(name, { text, source: "entered" });
+  }
+  const named = new Map<string, string>();
+  const variables: PromptVariableUse[] = [];
+  for (const variable of declared.entries) {
+    const value = given.get(variable.name);
+    const use = (source: PromptVariableUse["source"], text: string) => {
+      named.set(variable.name, text);
+      variables.push({ name: variable.name, source, sensitive: variable.sensitive });
+    };
+    if (value !== undefined) {
+      const parsed = parsePromptVariableText(variable, value.text);
+      if (!parsed.ok) return err(parsed.error);
+      use(value.source, renderPromptVariableValue(parsed.value));
+    } else if (variable.default !== undefined)
+      use("default", renderPromptVariableValue(variable.default));
+    else use("absent", "");
+  }
+  const missing = declared.entries.filter(
+    (variable) => variable.required && !given.has(variable.name),
+  );
+  if (missing.length > 0) return ok({ kind: "needs-input", missing });
+  const rendered = renderPromptTemplate(template.body, { positional, named });
+  return rendered.ok ? ok({ kind: "rendered", rendered: rendered.value, variables }) : rendered;
 }
 
 const INVOCATION = /^\/([^\p{White_Space}]+)(?:\p{White_Space}([\s\S]*))?$/u;
