@@ -1449,17 +1449,48 @@ stderr stays in the managed owner's bounded 64 KiB replay and is never projected
 as MCP content. Environment or
 selected connection changes fence old replies; reconnect closes the old owner
 and captures a new generation. HTTP accepts HTTPS or loopback HTTP, rejects URL
-credentials, queries, fragments and redirects, and sends only its optional
-`credentialEnvironment` bearer reference. Configured secret values are redacted
-from returned content. Other server/provider values are not inherited by stdio.
+credentials, queries, fragments and redirects, and sends only its own bearer
+credential.
+
+An HTTP server may name a credential reference: `credential` with a `storeKind`
+(`operating-system-keychain` or `environment`), a `locator` and an optional
+`accountLabel`, or the shorthand `credentialEnvironment` for an environment
+variable; the two are exclusive. The reference is resolved through the same
+credential stores as provider credentials, and only for that server: its consumer
+is always `mcp:<server-id>`, so no other server or integration can resolve it.
+Resolution happens when the connection starts. A missing or empty secret is
+`mcp-credential-missing`, a locked or refused store `mcp-credential-denied`, and an
+unreachable store `mcp-credential-unavailable`; none of them sends a request. When
+the server answers 401, the reference is resolved again once and the request is
+repeated once, so a rotated secret is picked up without a reconnect. A second
+rejection is `mcp-auth-rejected` and a 403 is `mcp-auth-forbidden`. Either leaves
+the connection `denied` until the credential or access changes, and because the
+server refused before accepting anything, a tool call reports no effect. Every
+secret a connection has sent, and configured secret values, are redacted from
+returned content; failures carry codes, never locators or secrets. Other
+server/provider values are not inherited by stdio.
 
 Limits are 64 configured identities, 1 MiB per protocol message, 32 pending
 requests per endpoint, a 30-second deadline, and three start attempts per endpoint
-in 30 seconds. SDK list walks stop after 16 pages. A safe read may retry once after
-HTTP 502/503/504 within its original deadline. Tool calls are never retried after
-an uncertain result. Shutdown aborts and settles pending requests before reporting
-stopped. Cancellation, configuration changes and disconnects preserve uncertainty
-for a sent tool call.
+in 30 seconds. SDK list walks stop after 16 pages.
+
+Only work the server provably did not accept is retried. A read, list or prompt
+request refused with HTTP 429 (`mcp-rate-limited`) or 502/503/504
+(`mcp-server-unavailable`) is tried at most three times on the same connection,
+waiting the server's `Retry-After` (up to 10 seconds) or a jittered backoff from
+250 ms to 2 seconds. A wait that would pass the request's deadline is not started,
+and the refusal is returned with no effect. A connection start refused the same
+way is retried within the same three-start budget, shown as `mcp-retry-wait` while
+it waits. Cancelling during any wait ends it as `mcp-request-cancelled` or
+`mcp-startup-cancelled` with no further attempt. Tool calls are never retried: a 429
+on a call reports no effect, while a gateway failure, a disconnect or a lost
+response after sending stays uncertain. A server that exits or disconnects leaves
+its connection `degraded`; nothing reconnects or resends by itself. An explicit
+`mcp_connect` or `falryn mcp probe` starts a new transport generation with fresh
+configuration and capability checks, and results or selections from the old
+generation are stale. Shutdown aborts and settles pending requests before
+reporting stopped. Cancellation, configuration changes and disconnects preserve
+uncertainty for a sent tool call.
 
 Stdio is available on POSIX hosts with owned process-group termination. Windows
 stdio returns `mcp-stdio-platform-unavailable` before launch; HTTP remains
@@ -1476,7 +1507,12 @@ Example user configuration:
   "connections": {
     "mcp": {
       "servers": [
-        { "id": "remote", "transport": "http", "url": "https://example.com/mcp", "credentialEnvironment": "MCP_TOKEN" }
+        {
+          "id": "remote",
+          "transport": "http",
+          "url": "https://example.com/mcp",
+          "credential": { "storeKind": "environment", "locator": "MCP_TOKEN" }
+        }
       ]
     }
   }

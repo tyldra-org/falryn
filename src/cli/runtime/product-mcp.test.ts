@@ -8,12 +8,14 @@ import type { LocalQuestionPresenter } from "../../application/orchestration/que
 import { createTurnEventJournal } from "../../application/runtime/turn-event-journal.ts";
 import { createStaticEnvironment, invocationId } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
+import { mcpFixtureReply } from "../../integrations/extensions/mcp-fixtures.ts";
 import { createHostManagedServicePort } from "../../integrations/process/host-process-sessions.ts";
 import { createDeterministicProviderAdapter } from "../../providers/index.ts";
 import { snapshotOf } from "../../tui/composer/index.ts";
 import { runMcp } from "../commands/mcp.ts";
 import type { GlobalOptions } from "../options.ts";
 import { openProductArtifactSession } from "./product-artifact-session.ts";
+import { composeHostProductCredentials } from "./product-credentials.ts";
 import { composeProductMcp } from "./product-mcp.ts";
 import { composeProductShellAttachments } from "./product-shell-attachments.ts";
 import { createServiceProvider } from "./services.ts";
@@ -27,7 +29,11 @@ afterEach(async () => {
 const fixturePath = fileURLToPath(
   new URL("../../integrations/extensions/mcp-fixtures.ts", import.meta.url),
 );
-async function fixture(mode = "environment", preparation?: unknown) {
+async function fixture(
+  mode = "environment",
+  preparation?: unknown,
+  processEnvironment: Record<string, string> = {},
+) {
   const root = await mkdtemp(join(tmpdir(), "falryn-mcp-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   const config = join(root, "config");
@@ -83,6 +89,7 @@ async function fixture(mode = "environment", preparation?: unknown) {
     environment: createStaticEnvironment({
       FALRYN_CONFIG_DIR: config,
       FALRYN_STATE_DIR: join(root, "state"),
+      ...processEnvironment,
     }),
   });
   return { config, document, services, globals };
@@ -102,7 +109,10 @@ async function open(f: Awaited<ReturnType<typeof fixture>>) {
     configuration,
     services: createHostManagedServicePort(),
     context: environment.context,
-    environment: graph.environment,
+    credentials: composeHostProductCredentials({
+      clock: graph.clock,
+      environment: graph.environment,
+    }).resolver,
     authorize: async (signal) => {
       const trust = await graph.workspaceTrust.resolve(undefined, signal);
       return trust.status === "empty" || trust.status === "accepted";
@@ -230,6 +240,45 @@ posix("CLI inspect stays inert and probe discovers the catalog before closing", 
     ],
     ["mcp:fixture/prompt/review", "prompt", "available"],
   ]);
+});
+
+test("CLI probe authenticates through a credential reference and reports a rejection by code", async () => {
+  let valid = "probe-secret";
+  const seen: string[] = [];
+  const server = Bun.serve({
+    port: 0,
+    async fetch(request) {
+      const message = (await request.json()) as Record<string, unknown>;
+      const authorization = request.headers.get("authorization") ?? "";
+      seen.push(authorization);
+      if (authorization !== "Bearer " + valid) return new Response("no", { status: 401 });
+      return Response.json(mcpFixtureReply(message));
+    },
+  });
+  cleanups.push(() => server.stop(true));
+  const f = await fixture("normal", undefined, { MCP_REMOTE_TOKEN: "probe-secret" });
+  f.document.connections.mcp.servers = [
+    {
+      id: "remote",
+      transport: "http",
+      url: "http://127.0.0.1:" + server.port + "/mcp",
+      credential: { storeKind: "environment", locator: "MCP_REMOTE_TOKEN" },
+    } as never,
+  ];
+  await writeFile(join(f.config, "falryn.jsonc"), JSON.stringify(f.document));
+  const probed = await runMcp(f.services, { action: "probe", serverId: "remote" }, f.globals);
+  expect(probed.payload?.probe?.kind, JSON.stringify(probed.payload?.probe)).toBe("completed");
+  expect(new Set(seen)).toEqual(new Set(["Bearer probe-secret"]));
+  expect(JSON.stringify(probed)).not.toContain("probe-secret");
+
+  valid = "rotated-at-the-server";
+  const rejected = await runMcp(f.services, { action: "probe", serverId: "remote" }, f.globals);
+  expect(rejected.payload?.probe).toMatchObject({
+    kind: "denied",
+    code: "mcp-auth-rejected",
+    effect: "none",
+  });
+  expect(JSON.stringify(rejected)).not.toContain("probe-secret");
 });
 
 type ToolStep = { readonly name: string; readonly input: Record<string, unknown> };

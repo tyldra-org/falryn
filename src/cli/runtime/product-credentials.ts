@@ -9,12 +9,19 @@ import type { CommandRunnerPort } from "../../domain/process/index.ts";
 import type { LocalDataPlatform } from "../../domain/storage/index.ts";
 import {
   createEnvironmentCredentialStore,
+  createHostCommandRunner,
   createKeychainCredentialStore,
   createSessionEnvironmentCredentialLookup,
+  hostPlatform,
   type OperatingSystemSecretsPort,
   type SessionEnvironmentCredentialLookupPort,
   writeKeychainCredential,
 } from "../../integrations/index.ts";
+import type { OwnedProcessRegistry } from "../../integrations/process/host-owned-process-registry.ts";
+import {
+  createHostSandbox,
+  installationSandboxPolicy,
+} from "../../integrations/security/host-sandbox.ts";
 import { providerCredentialEnvironmentAliases } from "../../providers/index.ts";
 
 export type ProductCredentialPorts = {
@@ -98,6 +105,27 @@ export function composeProductCredentials(ports: ProductCredentialPorts): Produc
         : { kind: "resolved", value: resolution.value.value, health: resolution.health };
     },
   };
+}
+
+/**
+ * The product credentials for a host-side consumer such as an MCP connection. Keychain
+ * reads run as trusted host commands under the installation sandbox; no model tool or
+ * capability catalog can reach them.
+ */
+export function composeHostProductCredentials(options: {
+  readonly clock: ClockPort;
+  readonly environment: EnvironmentPort;
+  readonly ownedProcesses?: OwnedProcessRegistry;
+}): ProductCredentialBundle {
+  return composeProductCredentials({
+    clock: options.clock,
+    environment: options.environment,
+    platform: hostPlatform(),
+    commands: createHostCommandRunner({
+      sandbox: createHostSandbox({ policy: installationSandboxPolicy }),
+      ...(options.ownedProcesses === undefined ? {} : { ownedProcesses: options.ownedProcesses }),
+    }),
+  });
 }
 
 /**
