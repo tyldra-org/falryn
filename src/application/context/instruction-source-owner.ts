@@ -26,7 +26,11 @@ export type InstructionSourceSnapshot = {
   readonly preferences: SourcePreferences;
 };
 export type InstructionSourcePort = {
-  scan(signal: AbortSignal): Promise<InstructionSourceSnapshot>;
+  /**
+   * Every source for this configuration and workspace. The scope being prepared lets a
+   * discovering host include the ancestor chain it needs; the snapshot is not scope-filtered.
+   */
+  scan(signal: AbortSignal, scope: InstructionScope): Promise<InstructionSourceSnapshot>;
   read(source: InstructionSource, signal: AbortSignal): Promise<Uint8Array>;
   controlsCurrent?(preferences: SourcePreferences, signal: AbortSignal): Promise<boolean>;
   /** Current scope/trust/enablement authority, independent of cached content. */
@@ -110,7 +114,7 @@ export function createInstructionSourceOwner(port: InstructionSourcePort) {
       if (capturedControls !== controlRevision) throw new Error("source-controls-changed");
       try {
         if (retained) throw new Error("retained-generation");
-        const scanned = await port.scan(stop);
+        const scanned = await port.scan(stop, scope);
         if (expectedConfiguration !== undefined && scanned.configuration !== expectedConfiguration)
           throw new Error("source-configuration-changed");
         if (Buffer.byteLength(JSON.stringify(scanned)) > LIMITS.cacheBytes)

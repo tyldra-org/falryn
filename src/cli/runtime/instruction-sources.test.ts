@@ -281,6 +281,17 @@ test("another admitted workspace root cannot supply main-root instructions", asy
 
 test("the existing watcher rescans changed sources and retains exact malformed-source diagnostics", async () => {
   const f = await fixture();
+  // A nested registered file: root instruction files are reviewed by workspace trust, so
+  // corrupting one would withdraw trust instead of exercising the malformed-source path.
+  await mkdir(join(f.workspace, "docs"));
+  await writeFile(join(f.workspace, "docs", "rules.md"), "DOCS_RULE");
+  await f.setting("instructions.sources", {
+    version: 1,
+    entries: [
+      ...f.entries,
+      { root: f.root.name, path: "docs/rules.md", scope: "", enabled: true, references: [] },
+    ],
+  });
   const graph = f.services();
   await graph.workspaceTrust.resolve(async () => "proceed");
   await loadProductConfiguration(graph, productConfigurationLoadRequest(f.globals));
@@ -307,7 +318,7 @@ test("the existing watcher rescans changed sources and retains exact malformed-s
     },
   });
   try {
-    await writeFile(join(f.workspace, "FALRYN.md"), new Uint8Array([0xff]));
+    await writeFile(join(f.workspace, "docs", "rules.md"), new Uint8Array([0xff]));
     changed();
     const deadline = Date.now() + 2000;
     while (!observed && Date.now() < deadline) await Bun.sleep(5);
@@ -323,9 +334,9 @@ test("the existing watcher rescans changed sources and retains exact malformed-s
             version: 1,
             kind: "instruction",
             root: scope.root,
-            path: "FALRYN.md",
+            path: "docs/rules.md",
             namespace: "instructions",
-            localId: "FALRYN.md",
+            localId: "rules.md",
           }),
         },
       },

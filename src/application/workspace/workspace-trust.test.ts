@@ -67,6 +67,20 @@ test("first open is inert; refusal suppresses loaders; exact committed approval 
   expect((await restarted.project()).text).toBe('{"project":true}');
   expect((await create(canonicalDigest("another-actor")).resolve()).status).toBe("review-required");
 });
+test("every root instruction file discovery can load is reviewed", async () => {
+  const { inventory, fs } = fixture();
+  fs.put("/work/CLAUDE.md", { kind: "file", text: "claude" });
+  fs.put("/work/FALRYN.md", { kind: "file", text: "falryn" });
+  const inspected = await inventory.inspect();
+  if (!inspected.ok) throw new Error(inspected.error.code);
+  expect(
+    inspected.value.report.loaders
+      .filter((loader) => loader.family === "instructions")
+      .map((loader) => loader.label)
+      .sort(),
+  ).toEqual(["root 1/AGENTS.md", "root 1/CLAUDE.md", "root 1/FALRYN.md"]);
+});
+
 test("changes during review, after commit, and before a reload cannot activate new bytes", async () => {
   const { trust, fs, create } = fixture();
   expect(
