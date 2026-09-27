@@ -3,8 +3,8 @@
  *
  * Built-in hooks observe or influence named capability-invocation points.
  * They never receive a runner, secrets, UI, or an unrestricted container, and
- * they cannot execute tools. Plugin adapters and other hook families remain
- * later owners.
+ * they cannot execute tools themselves. A handler that needs a capability asks the
+ * enclosing gateway, which admits that hook-origin work like any other invocation.
  */
 
 import { canonicalDigest, freezeMetadata } from "../extensions/canonical.ts";
@@ -120,7 +120,25 @@ export type ToolHookContext = {
   readonly resourceTaskId: string;
   /** Typed, payload-free transport facts; reporting never controls settlement. */
   readonly report?: (facts: HookHandlerFacts) => void;
+  /**
+   * Hook-origin capability work (#1174), present only inside a gateway. The enclosing
+   * gateway admits each request once with hook lineage: ordinary policy, confirmation,
+   * resources and receipts, never the same hook point again.
+   */
+  readonly invokeCapability?: HookCapabilityPort;
 };
+
+export type HookCapabilityRequest = {
+  readonly toolName: string;
+  readonly input: Readonly<Record<string, unknown>>;
+  readonly signal: AbortSignal;
+};
+/** The settled outcome and, when it completed intact, the exact validated tool output. */
+export type HookCapabilityResult = {
+  readonly outcome: ToolInvocationOutcome;
+  readonly output: Readonly<Record<string, unknown>> | null;
+};
+export type HookCapabilityPort = (request: HookCapabilityRequest) => Promise<HookCapabilityResult>;
 
 export type RegisteredToolHook = HookOrderMetadata & {
   readonly id: string;

@@ -148,6 +148,14 @@ const FAILURE_CODES = new Set([
   "hook-redirect-refused",
   "hook-http-status",
   "hook-response-too-large",
+  "hook-recursion-denied",
+  "hook-mcp-gateway-unavailable",
+  "hook-mcp-tool-unavailable",
+  "hook-mcp-schema-changed",
+  "hook-mcp-call-refused",
+  "hook-mcp-effect-uncertain",
+  "hook-mcp-tool-error",
+  "hook-mcp-output-missing",
 ]);
 export function safeHookFailureCode(value: unknown): string {
   return typeof value === "string" && FAILURE_CODES.has(value) ? value : "hook-handler-failed";

@@ -87,6 +87,55 @@ type WireRequest = {
   readonly envelope: Record<string, unknown> & { readonly payload: unknown };
 };
 
+/**
+ * A package MCP tool hook asking the configured fixture server's tool. The mapping sends
+ * the decision binding and the subject capability, the fields the fixture tools take.
+ */
+export function mcpHookDeclaration(
+  toolId: string,
+  schemaDigest: string,
+  options: {
+    readonly serverId?: string;
+    readonly outputField?: string;
+    readonly point?: "before-capability-invocation" | "after-capability-invocation";
+    readonly mode?: "sync" | "async";
+  } = {},
+): ContributionDeclaration {
+  return contributionDeclarationSchema.parse({
+    kind: "hook",
+    namespace: "fixture",
+    id: "mcp",
+    description: "MCP decision fixture",
+    authority: {
+      effects: ["external"],
+      permissions: [],
+      roots: [],
+      destinations: [],
+      secretReferences: [],
+      localData: [],
+    },
+    hook: {
+      version: 1,
+      point: options.point ?? "before-capability-invocation",
+      pointVersion: 1,
+      mode: options.mode ?? "sync",
+      nonlocalOptIn: true,
+      timeoutMs: 10_000,
+      handler: {
+        kind: "mcp-tool-v1",
+        serverId: options.serverId ?? "decisions",
+        toolId,
+        schemaDigest,
+        outputField: options.outputField ?? "decision",
+        arguments: [
+          { name: "binding", from: "binding" },
+          { name: "capability", from: "payload.capabilityId" },
+        ],
+      },
+    },
+  });
+}
+
 /** The decision a hook service answers with: observe, or a veto bound to its subject. */
 export function hookServiceDecision(request: WireRequest, veto: boolean): string {
   const envelope = request.envelope;

@@ -13,6 +13,8 @@ export function withHookCatalog(
     configurationGeneration?: number;
     declaredEffect?: "observation" | "mutation" | "external" | "interactive";
     remainingMs?: number;
+    /** "hook" for hook-origin work; its recursion depth is above zero. */
+    origin?: "system" | "hook";
   } = {},
 ): ToolHookEnvelope {
   const outcome = input.observedOutcome;
@@ -46,7 +48,7 @@ export function withHookCatalog(
       turnId: context.turnId ?? null,
       attemptId: context.attemptId ?? null,
     },
-    origin: "system",
+    origin: context.origin ?? "system",
     reason: "normal",
     remainingMs: context.remainingMs ?? HOOK_BUDGETS.local.maximumMs,
     recursionDepth: input.recursionDepth,

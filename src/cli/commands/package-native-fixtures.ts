@@ -59,9 +59,12 @@ export async function prepareNativeCliFixture(
       }),
     }),
   );
-  expect(catalog.page.entries.filter((entry) => entry.availability === "available")).toHaveLength(
-    1 + fixture.extraContributions.length,
-  );
+  // An MCP tool hook binds only to a session's MCP runtime, which this CLI catalog has none of.
+  expect(
+    catalog.page.entries.filter(
+      (entry) => entry.availability === "available" || entry.reason === "hook-mcp-session-required",
+    ),
+  ).toHaveLength(1 + fixture.extraContributions.length);
   expect(
     catalog.page.entries.find((entry) => entry.reason === "scope-disabled")?.binding,
   ).toBeNull();

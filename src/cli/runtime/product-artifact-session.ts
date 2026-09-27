@@ -21,6 +21,7 @@ import {
 } from "../../application/artifacts/index.ts";
 import { createLoomPort, type LoomPort } from "../../application/compression/index.ts";
 import type { CatalogRehydration } from "../../application/extensions/catalog-rehydration.ts";
+import type { HookMcpSession } from "../../application/extensions/hook-mcp.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
 import { createDurableMemoryRecords, type MemoryRecords } from "../../application/memory/index.ts";
 import { createReflectionActions } from "../../application/memory/reflection-actions.ts";
@@ -156,6 +157,8 @@ export type ProductArtifactSession = {
     generation: ConfigurationGeneration,
     signal: AbortSignal,
     session?: string,
+    /** The session's MCP runtime; without one, MCP tool hooks stay unavailable. */
+    mcp?: HookMcpSession,
   ): Promise<NativePublication>;
   rehydrateExtensions(signal: AbortSignal, session?: string): Promise<CatalogRehydration>;
   openWorkspaceIndex(
@@ -541,7 +544,7 @@ export async function openProductArtifactSession(
     questionPresenter,
     localUserQuestions,
     workQueues,
-    async publishNativePackages(generation, signal, session) {
+    async publishNativePackages(generation, signal, session, mcp) {
       if (closed) throw new Error("catalog-host-closed");
       const workspace = await services.ensureWorkspaceSet(signal);
       if (nativeOwner === null || nativeOwner.session !== session) {
@@ -566,7 +569,7 @@ export async function openProductArtifactSession(
           }),
         };
       }
-      const publication = await nativeOwner.owner.publish(generation, signal);
+      const publication = await nativeOwner.owner.publish(generation, signal, mcp);
       if (closed) throw new Error("catalog-host-closed");
       return publication;
     },

@@ -816,6 +816,7 @@ export async function runCoding(
       generation,
       options.signal ?? new AbortController().signal,
       selection ? String(sessionId) : undefined,
+      mcp,
     );
     // Built-in composer commands win; a template expands before any turn state exists.
     let prompt = resolved.prompt;

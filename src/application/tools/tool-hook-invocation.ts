@@ -11,6 +11,7 @@ import {
 import { validateToolHookDecision } from "../../domain/tools/tool-hook-decision.ts";
 import { hookIdentity } from "../../domain/tools/tool-hook-order.ts";
 import {
+  type HookCapabilityPort,
   phaseForHookPoint,
   type RegisteredToolHook,
   type ToolHookDecision,
@@ -70,6 +71,8 @@ export async function invokeHook(input: {
   signal: AbortSignal;
   task?: ProductTaskResources;
   onStarted?: () => void;
+  /** The enclosing gateway's hook-origin admission for this hook, when there is one. */
+  invokeCapability?: HookCapabilityPort;
 }): Promise<HookInvocationResult> {
   const { hook, envelope, clock } = input;
   const control = new AbortController();
@@ -116,6 +119,7 @@ export async function invokeHook(input: {
           signal: combined,
           expiresAt: input.expiresAt,
           resourceTaskId: input.task?.id ?? "builtin-test",
+          ...(input.invokeCapability ? { invokeCapability: input.invokeCapability } : {}),
           report(value) {
             if (sealed) return;
             const checked = hookHandlerFactsSchema.safeParse(value);

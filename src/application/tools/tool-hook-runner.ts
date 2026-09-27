@@ -4,6 +4,7 @@ import { HOOK_BUDGETS } from "../../domain/extensions/hook-points.ts";
 import { type HookFailureEvidence, safeHookFailureCode } from "../../domain/tools/hook-evidence.ts";
 import { inspectHookHealth } from "../../domain/tools/hook-health.ts";
 import { hookIdentity } from "../../domain/tools/tool-hook-order.ts";
+import type { HookCapabilityPort } from "../../domain/tools/tool-hooks.ts";
 import type { ProductTaskResources } from "../orchestration/product-resources.ts";
 import { invokeHook, snapshotHookEnvelope } from "./tool-hook-invocation.ts";
 import { admitHookObserver } from "./tool-hook-observers.ts";
@@ -51,6 +52,8 @@ export type RunToolHooksInput = {
   readonly onPlan?: (order: readonly string[]) => Promise<boolean>;
   readonly task?: ProductTaskResources;
   readonly resourceOwner?: object;
+  /** Hook-origin capability admission for one hook, supplied by the enclosing gateway. */
+  readonly invokeCapability?: (hookId: string) => HookCapabilityPort;
 };
 
 export type PreHookRunResult =
@@ -217,6 +220,7 @@ export function createToolHookRunner(options: ToolHookRunnerOptions): ToolHookRu
               signal: input.signal,
               ...(onStarted ? { onStarted } : {}),
               ...(task ? { task } : {}),
+              ...(input.invokeCapability ? { invokeCapability: input.invokeCapability(id) } : {}),
             });
         if (registration.mode !== "async") spent[budgetClass] += Math.max(0, Number(at()) - began);
         if (result.cleanup !== "not-started") {

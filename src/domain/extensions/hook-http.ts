@@ -12,6 +12,7 @@ import {
 } from "../security/credential.ts";
 import { ExtensionInputError } from "./canonical.ts";
 import type { HookRegistration } from "./hook-handlers.ts";
+import { isRemoteHookDeclaration } from "./hook-remote.ts";
 import { digestSchema } from "./identity.ts";
 import type { ContributionDeclaration } from "./manifest.ts";
 
@@ -45,28 +46,16 @@ export type HookGrantRequirement = {
 };
 
 /**
- * An HTTP hook starts no package code: it declares only an external effect and, at
- * most, its own named credential. Anything broader is refused, not narrowed.
+ * An HTTP hook starts no package code and may name, at most, its own credential.
  */
 export function httpHookContract(declaration: ContributionDeclaration): HttpHookRegistration {
   const registration = declaration.hook;
   const handler = registration?.handler;
-  const authority = declaration.authority;
   const credential = handler?.kind === "http-v1" ? (handler.credentialReference ?? null) : null;
   if (
-    declaration.kind !== "hook" ||
     registration === undefined ||
     handler?.kind !== "http-v1" ||
-    declaration.execution !== undefined ||
-    declaration.module !== undefined ||
-    !authority.effects.includes("external") ||
-    authority.effects.some((effect) => effect !== "external" && effect !== "observation") ||
-    authority.permissions.length > 0 ||
-    authority.roots.length > 0 ||
-    authority.destinations.length > 0 ||
-    authority.localData.length > 0 ||
-    JSON.stringify(authority.secretReferences) !==
-      JSON.stringify(credential === null ? [] : [credential])
+    !isRemoteHookDeclaration(declaration, credential === null ? [] : [credential])
   )
     throw new ExtensionInputError("hook-http-declaration-invalid");
   return { ...registration, handler };

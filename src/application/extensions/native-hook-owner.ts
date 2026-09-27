@@ -1,6 +1,7 @@
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import { hookCommandContract } from "../../domain/extensions/hook-command-profile.ts";
 import { httpHookContract } from "../../domain/extensions/hook-http.ts";
+import { mcpHookContract } from "../../domain/extensions/hook-mcp.ts";
 import { contributionDeclarationSchema } from "../../domain/extensions/manifest.ts";
 import type { HookHealth } from "../../domain/tools/hook-health.ts";
 import {
@@ -13,7 +14,7 @@ import type { NativeRegistrationOwner } from "./native-registration.ts";
 
 export const PACKAGE_HOOK_OWNER = "falryn-hook-registry-v1";
 /** The package handler kinds a host can run; others stay unavailable. */
-export type PackageHookHandlerKind = "external-command-v1" | "http-v1";
+export type PackageHookHandlerKind = "external-command-v1" | "http-v1" | "mcp-tool-v1";
 export type PackageHookInvocation = {
   packageId: string;
   expectedRevision: number;
@@ -37,13 +38,23 @@ export function createNativeHookOwner(options: {
         if (entry.source.kind !== "package") throw new ExtensionInputError("hook-package-required");
         const declaration = contributionDeclarationSchema.parse(contribution.declaration);
         const packageId = entry.source.owner.packageId;
+        const declared = declaration.hook?.handler.kind;
         const registration =
-          declaration.hook?.handler.kind === "http-v1"
+          declared === "http-v1"
             ? httpHookContract(declaration)
-            : hookCommandContract(declaration);
-        const handler = registration.handler.kind === "http-v1" ? "http-v1" : "external-command-v1";
+            : declared === "mcp-tool-v1"
+              ? mcpHookContract(declaration)
+              : hookCommandContract(declaration);
+        const handler: PackageHookHandlerKind =
+          registration.handler.kind === "http-v1" || registration.handler.kind === "mcp-tool-v1"
+            ? registration.handler.kind
+            : "external-command-v1";
         if (!options.qualified(handler))
-          throw new ExtensionInputError("hook-execution-profile-unavailable");
+          throw new ExtensionInputError(
+            handler === "mcp-tool-v1"
+              ? "hook-mcp-session-required"
+              : "hook-execution-profile-unavailable",
+          );
         if (!isToolHookPoint(registration.point))
           throw new ExtensionInputError("hook-publisher-unavailable");
         const owner = `p${canonicalDigest({ packageId: entry.source.owner.packageId, scope: activation.scopeKey }).slice(7, 70)}`;

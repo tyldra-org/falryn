@@ -2,6 +2,7 @@
 import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
+import type { ProductToolConfirmationPort } from "../../application/tools/product-tool-gateway.ts";
 import {
   configurationGeneration,
   createStaticEnvironment,
@@ -185,11 +186,16 @@ export async function nativePromptShellJourney(input: {
 
 export async function nativeProductJourney(
   input: z.infer<typeof inputSchema>,
-  beforeFirstRequest?: () => Promise<void>,
-  afterRun?: () => Promise<void>,
-  /** Test egress for package HTTP hooks; the compiled journey never passes one. */
-  hookEgress?: HookEgressOptions,
+  options: {
+    readonly beforeFirstRequest?: () => Promise<void>;
+    readonly afterRun?: () => Promise<void>;
+    /** Test egress for package HTTP hooks; the compiled journey never passes one. */
+    readonly hookEgress?: HookEgressOptions;
+    /** The user's answer to focused tool confirmations, such as a hook's MCP call. */
+    readonly toolConfirmation?: ProductToolConfirmationPort;
+  } = {},
 ) {
+  const { beforeFirstRequest, afterRun, hookEgress, toolConfirmation } = options;
   const { globals, services } = await productHost({
     ...input,
     ...(hookEgress === undefined ? {} : { hookEgress }),
@@ -213,6 +219,7 @@ export async function nativeProductJourney(
     {
       globals,
       input: createRecordingCliStreams({ stdin: null }).input,
+      ...(toolConfirmation === undefined ? {} : { toolConfirmation }),
       providerAdapter: {
         ...provider,
         async *stream(request, options) {

@@ -137,11 +137,13 @@ export function createNativePackageContext(options: {
     );
     if (!selected) throw new ExtensionInputError("native-contribution-missing");
     const isHook = selected.identity.nativeKind === "hook";
-    // An HTTP hook starts no package code; its request goes through the governed egress owner.
-    const isHttpHook = isHook && nativeDeclaration(selected).hook?.handler.kind === "http-v1";
+    // A remote hook starts no package code: HTTP goes through the governed egress owner and
+    // an MCP tool through the session's gateway.
+    const handler = isHook ? nativeDeclaration(selected).hook?.handler.kind : undefined;
+    const isRemoteHook = handler === "http-v1" || handler === "mcp-tool-v1";
     const isSchedule = selected.identity.nativeKind === "schedule";
     const isPrompt = selected.identity.nativeKind === "prompt";
-    const dataOnly = isSchedule || isPrompt || isHttpHook;
+    const dataOnly = isSchedule || isPrompt || isRemoteHook;
     if (!dataOnly && !qualified()) throw new ExtensionInputError("native-tool-host-unavailable");
     const admitted = await createPackageExecutionAdmission({
       packages: records.packages,
@@ -151,8 +153,8 @@ export function createNativePackageContext(options: {
         ? { declarationKind: "schedule" as const }
         : isPrompt
           ? { declarationKind: "prompt" as const }
-          : isHttpHook
-            ? { declarationKind: "http-hook" as const }
+          : isRemoteHook
+            ? { declarationKind: "remote-hook" as const }
             : { protocol: isHook ? HOOK_COMMAND_PROTOCOL : PACKAGE_TOOL_PROTOCOL }),
       authority: (installed, contribution, signal) =>
         admission(control, installed, contribution, signal),
