@@ -33,8 +33,8 @@ const argumentRecord = (pairs: unknown): Record<string, string> =>
   Object.fromEntries(
     (pairs as { name: string; value: string }[]).map((pair) => [pair.name, pair.value]),
   );
-// The protocol payload is encoded so the model boundary retains a closed schema.
-const paramsSchema = z
+// Tool arguments are encoded so the model boundary retains a closed schema.
+const argumentsJson = z
   .string()
   .max(256 * 1024)
   .refine((value) => {
@@ -43,9 +43,7 @@ const paramsSchema = z
     } catch {
       return false;
     }
-  }, "paramsJson must encode a bounded JSON object");
-/** Discovery, reads and prompts have typed owners; only these methods stay generic until #130. */
-const requestMethod = z.enum(["tools/call", "ping"]);
+  }, "argumentsJson must encode a bounded JSON object");
 const definitions = {
   mcp_inspect: {
     description:
@@ -61,10 +59,11 @@ const definitions = {
   },
   mcp_catalog: {
     description:
-      'Page discovered MCP catalog entries with their kind, availability and catalog generation. Makes no server call. Read an available resource with the read tool using its readHandle as a virtual resource: {"resources":[{"kind":"virtual","uri":readHandle}]}.',
+      'Page discovered MCP catalog entries with their kind, availability and catalog generation. Makes no server call. Pages omit tool input schemas; pass one entryId to get that entry complete. Read an available resource with the read tool using its readHandle as a virtual resource: {"resources":[{"kind":"virtual","uri":readHandle}]}.',
     schema: z.strictObject({
       serverId: identity.optional(),
       kind: z.enum(MCP_CATALOG_KINDS).optional(),
+      entryId: entryId.optional(),
       cursor: z.string().min(1).max(512).optional(),
       limit: z.number().int().positive().max(100).optional(),
     }),
@@ -82,16 +81,10 @@ const definitions = {
     schema: z.strictObject({ entryId, catalogGeneration, arguments: argumentValues }),
     effect: "observation",
   },
-  mcp_request: {
+  mcp_call_tool: {
     description:
-      "Call an MCP tool (tools/call) or ping an admitted transport generation. Tool calls require normal external-effect approval. Never resend an uncertain call.",
-    schema: z.strictObject({
-      serverId: identity,
-      configurationGeneration,
-      transportGeneration: z.number().int().positive(),
-      method: requestMethod,
-      paramsJson: paramsSchema,
-    }),
+      "Call one MCP tool selected from the current catalog generation. argumentsJson is a JSON object matching the tool's input schema from mcp_catalog. Every call is an external effect that needs approval, whatever the server claims. isError results are the tool's own error; never resend an uncertain call.",
+    schema: z.strictObject({ entryId, catalogGeneration, argumentsJson }),
     effect: "external",
   },
   mcp_stop: {
@@ -246,15 +239,15 @@ export function composeProductMcpTools(
         );
         return prompt.kind === "completed" ? completed(prompt.value) : fromCatalog(prompt);
       }
-      case "mcp_request":
-        return fromOutcome(
-          await lifecycle.request(
-            admission,
-            Number(input.transportGeneration),
-            requestMethod.parse(input.method),
-            boundedProtocolObjectSchema.parse(JSON.parse(String(input.paramsJson))),
-          ),
+      case "mcp_call_tool": {
+        const called = await catalog.callTool(
+          String(input.entryId),
+          Number(input.catalogGeneration),
+          boundedProtocolObjectSchema.parse(JSON.parse(String(input.argumentsJson))),
+          context,
         );
+        return called.kind === "completed" ? completed(called.value) : fromCatalog(called);
+      }
       case "mcp_stop":
         return fromOutcome(await lifecycle.stop(serverId));
     }

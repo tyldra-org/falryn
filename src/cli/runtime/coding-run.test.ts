@@ -104,14 +104,14 @@ const homes: string[] = [];
       }),
     );
     let configurationGeneration = 0;
-    let transportGeneration = 0;
+    let catalogGeneration = 0;
     const outputs: unknown[] = [];
-    const names = ["mcp_inspect", "mcp_connect", "mcp_request", "mcp_stop"];
+    const names = ["mcp_inspect", "mcp_connect", "mcp_call_tool", "mcp_stop"];
     const result = await runCoding(
       providerFor(seeded)(globalsFor(seeded)),
       {
         promptParts: [
-          "Use mcp_inspect mcp_connect and mcp_request to call the configured fixture echo tool with value product-proof.",
+          "Use mcp_inspect mcp_connect and mcp_call_tool to call the configured fixture echo tool with value product-proof.",
         ],
       },
       {
@@ -136,7 +136,7 @@ const homes: string[] = [];
               outputs.push(value);
               if (index === 1)
                 configurationGeneration = value.connections[0].configurationGeneration;
-              if (index === 2) transportGeneration = value.connection.transportGeneration;
+              if (index === 2) catalogGeneration = value.catalog.catalogGeneration;
             }
             const name = names[index];
             if (!name) return { kind: "text", text: "MCP transport completed." };
@@ -147,14 +147,9 @@ const homes: string[] = [];
                   ? { serverId: "fixture", configurationGeneration }
                   : index === 2
                     ? {
-                        serverId: "fixture",
-                        configurationGeneration,
-                        transportGeneration,
-                        method: "tools/call",
-                        paramsJson: JSON.stringify({
-                          name: "echo",
-                          arguments: { value: "product-proof" },
-                        }),
+                        entryId: "mcp:fixture/tool/echo",
+                        catalogGeneration,
+                        argumentsJson: JSON.stringify({ value: "product-proof" }),
                       }
                     : { serverId: "fixture" };
             return {

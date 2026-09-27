@@ -39,6 +39,8 @@ import type { McpLifecycle } from "./mcp-lifecycle.ts";
 export const MCP_CATALOG_PAGE_ENTRIES = 100;
 export const MCP_TEMPLATE_RESOLUTIONS = 256;
 export const MCP_PROMPT_MESSAGES = 256;
+export const MCP_TOOL_VALIDATORS = 256;
+export const MCP_TOOL_CONTENT_ITEMS = 1024;
 const PENDING_READS = 8;
 
 export type McpCatalogState = "unknown" | "current" | "stale";
@@ -57,6 +59,8 @@ export type McpCatalogListing = McpCatalogEntry & {
   readonly availability: "available" | "stale" | "unsupported";
   /** Unified Read target for an available resource; null otherwise. */
   readonly readHandle: string | null;
+  /** Pages are compact (tool schemas omitted); selecting one entryId returns it complete. */
+  readonly detail: "compact" | "complete";
 };
 export type McpCatalogFailure = {
   readonly kind: Exclude<McpOutcome["kind"], "completed"> | "malformed" | "unsupported";
@@ -83,6 +87,16 @@ export type McpPrompt = {
     readonly role: "user" | "assistant";
     readonly content: readonly McpPromptPart[];
   }[];
+};
+/** One MCP tool invocation with its exact selected identity; content stays untrusted. */
+export type McpToolResult = {
+  readonly entryId: string;
+  readonly catalogGeneration: number;
+  readonly schemaDigest: string;
+  /** The tool ran and reported a problem; the model may correct and call again. */
+  readonly isError: boolean;
+  readonly content: readonly unknown[];
+  readonly structuredContent: unknown;
 };
 /** Per-call identity supplied by the invoking tool; the catalog adds server generations. */
 export type McpCatalogCall = Pick<McpAdmission, "origin" | "requestId" | "deadline" | "signal">;
@@ -161,6 +175,11 @@ const promptResultSchema = z.looseObject({
     .array(z.looseObject({ role: z.enum(["user", "assistant"]), content: z.unknown() }))
     .max(MCP_PROMPT_MESSAGES),
 });
+const toolResultSchema = z.looseObject({
+  content: z.array(z.unknown()).max(MCP_TOOL_CONTENT_ITEMS).default([]),
+  structuredContent: z.unknown().optional(),
+  isError: z.boolean().nullish(),
+});
 function promptPart(content: unknown): McpPromptPart {
   const value = (content ?? {}) as Record<string, unknown>;
   const type = typeof value.type === "string" ? value.type : "unknown";
@@ -185,6 +204,8 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
   const published = new Map<string, Published>();
   const latest = new Map<string, number>();
   const pendingReads = new Map<string, Uint8Array>();
+  // Compiled argument validators are keyed by the normalized schema digest.
+  const validators = new Map<string, z.ZodType>();
   let nextGeneration = 0;
   let publication = 0;
   let tickets = 0;
@@ -401,6 +422,7 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
     page(query: {
       readonly serverId?: string | undefined;
       readonly kind?: McpCatalogKind | undefined;
+      readonly entryId?: string | undefined;
       readonly cursor?: string | undefined;
       readonly limit?: number | undefined;
     }): McpCatalogResult<{
@@ -408,7 +430,7 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
       readonly entries: readonly McpCatalogListing[];
       readonly nextCursor: string | null;
     }> {
-      const filter = (query.serverId ?? "") + "|" + (query.kind ?? "");
+      const filter = [query.serverId ?? "", query.kind ?? "", query.entryId ?? ""].join("|");
       let offset = 0;
       if (query.cursor !== undefined) {
         const match = /^(\d+):(\d+):(.*)$/u.exec(query.cursor);
@@ -430,16 +452,21 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
         if (!record?.discovered) continue;
         for (const entry of record.entries) {
           if (query.kind !== undefined && entry.kind !== query.kind) continue;
+          if (query.entryId !== undefined && entry.id !== query.entryId) continue;
+          const detail = query.entryId === undefined ? "compact" : "complete";
           const availability =
             catalog.state !== "current"
               ? "stale"
-              : entry.kind === "resource-template" && entry.arguments === null
+              : (entry.kind === "resource-template" && entry.arguments === null) ||
+                  (entry.kind === "tool" && entry.schemaDigest === null)
                 ? "unsupported"
                 : "available";
           listed.push({
             ...entry,
+            ...(entry.kind === "tool" && detail === "compact" ? { inputSchema: null } : {}),
             catalogGeneration: record.catalogGeneration,
             availability,
+            detail,
             readHandle:
               entry.kind === "resource" && availability === "available"
                 ? mcpReadHandle(entry.serverId, entry.uri, record.catalogGeneration)
@@ -447,6 +474,8 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
           });
         }
       }
+      if (query.entryId !== undefined && listed.length === 0)
+        return failure("unavailable", "mcp-catalog-entry-unknown");
       const entries = listed.slice(offset, offset + limit);
       return {
         kind: "completed",
@@ -528,6 +557,54 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
               promptPart,
             ),
           })),
+        },
+      };
+    },
+    /**
+     * Invoke one tool selected from an exact catalog generation. Arguments must satisfy its
+     * normalized schema; the selection is revalidated immediately before the single dispatch.
+     */
+    async callTool(
+      entryId: string,
+      catalogGeneration: number,
+      values: Readonly<Record<string, unknown>>,
+      context: McpCatalogCall,
+    ): Promise<McpCatalogResult<McpToolResult>> {
+      const found = selected(entryId, catalogGeneration, "tool");
+      if ("kind" in found) return found;
+      const { record, entry } = found;
+      if (entry.kind !== "tool") return failure("malformed", "mcp-catalog-entry-kind-mismatch");
+      if (entry.inputSchema === null || entry.schemaDigest === null)
+        return failure("unsupported", "mcp-tool-schema-unsupported");
+      let validator = validators.get(entry.schemaDigest);
+      if (!validator) {
+        validator = z.fromJSONSchema(entry.inputSchema as Parameters<typeof z.fromJSONSchema>[0]);
+        if (validators.size >= MCP_TOOL_VALIDATORS) validators.clear();
+        validators.set(entry.schemaDigest, validator);
+      }
+      if (!validator.safeParse(values).success)
+        return failure("malformed", "mcp-tool-arguments-invalid");
+      if (!currentRecord(record.serverId, catalogGeneration))
+        return failure("stale", "mcp-catalog-entry-stale");
+      const outcome = await ports.lifecycle.request(
+        call(record, context),
+        record.transportGeneration,
+        "tools/call",
+        { name: entry.name, arguments: values },
+      );
+      if (outcome.kind !== "completed") return fromOutcome(outcome);
+      // The call ran; a later catalog change cannot undo it, so the result is kept as returned.
+      const parsed = toolResultSchema.safeParse(outcome.value);
+      if (!parsed.success) return failure("failed", "mcp-tool-result-malformed", "uncertain");
+      return {
+        kind: "completed",
+        value: {
+          entryId,
+          catalogGeneration,
+          schemaDigest: entry.schemaDigest,
+          isError: parsed.data.isError === true,
+          content: parsed.data.content,
+          structuredContent: parsed.data.structuredContent ?? null,
         },
       };
     },

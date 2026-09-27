@@ -12,8 +12,8 @@ import {
   MCP_MESSAGE_BYTES,
   MCP_STDERR_BYTES,
   type McpClientFactory,
-  McpLimitExceeded,
   type McpListChanges,
+  McpRequestFailure,
   McpUnavailable,
 } from "../../domain/extensions/mcp.ts";
 import { MCP_SERVER_FEATURES } from "../../domain/extensions/mcp-catalog.ts";
@@ -221,6 +221,9 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
             if (method === "resources/templates/list")
               return client.listResourceTemplates(params, options);
             if (method === "prompts/list") return client.listPrompts(params, options);
+            // callTool also validates structured output against the listed output schema.
+            if (method === "tools/call")
+              return client.callTool(params as Parameters<Client["callTool"]>[0], options);
             return client.request({ method, params }, options);
           };
           let result: unknown;
@@ -228,7 +231,13 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
             result = await execute();
           } catch (error) {
             if (error instanceof SdkError && error.code === SdkErrorCode.ListPaginationExceeded)
-              throw new McpLimitExceeded("mcp-list-pagination-exceeded");
+              throw new McpRequestFailure("mcp-list-pagination-exceeded");
+            if (
+              error instanceof SdkError &&
+              error.code === SdkErrorCode.UnsupportedResultType &&
+              (error.data as { resultType?: unknown } | undefined)?.resultType === "input_required"
+            )
+              throw new McpRequestFailure("mcp-input-required-unavailable");
             // Only a safe read receiving a transient HTTP failure gets one retry.
             if (
               method === "tools/call" ||
@@ -240,7 +249,7 @@ export function createHostMcpClient(ports: HostMcpPorts): McpClientFactory {
             result = await execute();
           }
           if (new TextEncoder().encode(JSON.stringify(result)).length > MCP_MESSAGE_BYTES)
-            throw new McpLimitExceeded("mcp-result-too-large");
+            throw new McpRequestFailure("mcp-result-too-large");
           const secrets = [credential, ...Object.values(values ?? {})].filter(
             (value): value is string => typeof value === "string" && value.length > 0,
           );

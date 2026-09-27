@@ -1213,14 +1213,12 @@ final stopped state. Human, quiet, JSON and JSONL output share those facts. Prob
 failures retain a named code.
 
 Headless and terminal model runtimes publish `mcp_inspect`, `mcp_connect`,
-`mcp_catalog`, `mcp_resource_template`, `mcp_get_prompt`, `mcp_request` and
+`mcp_catalog`, `mcp_resource_template`, `mcp_get_prompt`, `mcp_call_tool` and
 `mcp_stop` through the existing registry, confirmation, resource admission and tool
 runner. MCP-related tasks or explicit discovery disclose the controls. No peer
-starts until an admitted connect request. `mcp_request` sends only `tools/call`
-or `ping` (`ping` exists only on legacy connections) with the captured
-configuration and transport generations and bounded JSON object text in
-`paramsJson`. Results use normal invocation history, projection and replay; replay
-never reconnects or repeats a remote effect.
+starts until an admitted connect request. The model has no untyped protocol
+request tool; each MCP operation has a typed owner. Results use normal invocation
+history, projection and replay; replay never reconnects or repeats a remote effect.
 
 ### MCP catalog, resources and prompts
 
@@ -1244,8 +1242,10 @@ does not advertise one, or whose subscription closes, is reported as
 notice, and a subscription that ends marks the catalog stale once.
 
 `mcp_catalog` pages entries (at most 100 per page) with kind, availability and read
-handles and makes no server call. Its cursor is bound to the published catalog and
-filter; an old cursor is `mcp-catalog-cursor-stale`. `mcp_resource_template`
+handles and makes no server call. Pages are compact and omit tool input schemas;
+passing one `entryId` returns that entry complete. Its cursor is bound to the
+published catalog and filter; an old cursor is `mcp-catalog-cursor-stale`.
+`mcp_resource_template`
 validates name/value arguments against the template's variables (RFC 6570 levels
 1–3; path-forming variables are required, query-style ones optional; other syntax is
 listed as `unsupported`) and returns a read handle without a server call.
@@ -1266,9 +1266,39 @@ Server resources are readable evidence, not workspace mutation targets. Retained
 evidence stays readable, reported as historical, after its handle becomes stale, and
 is denied once the server is removed or disabled. Results larger than 1 MiB fail as
 `mcp-result-too-large` and non-converging pagination as
-`mcp-list-pagination-exceeded`. MCP tool descriptors are listed for inspection;
-invoking them through the unified tool pipeline, user-input requests, MCP Skills,
-MCP Apps and deferred catalog disclosure are separate capabilities.
+`mcp-list-pagination-exceeded`. User-input requests, task-backed tool calls, MCP
+Skills, MCP Apps, MCP-proposed workspace changes and provider-native disclosure of
+MCP tools are separate capabilities.
+
+### MCP tool invocation
+
+Discovery normalizes each tool's input schema into Falryn's bounded definition
+subset: annotation-only keys (`$schema`, `$id`, `$comment`, `title`, `default`,
+`examples`, `format`, `readOnly`, `writeOnly`, `deprecated`) are dropped and
+objects that do not declare `additionalProperties` are closed. A schema still outside
+the subset (for example `anyOf`, `$ref` or an open object) lists the tool as
+`unsupported`. The normalized schema and its digest belong to the catalog
+generation. Server hints (`readOnlyHint`, `destructiveHint`, `idempotentHint`,
+`openWorldHint`) are shown as untrusted metadata only.
+
+`mcp_call_tool` takes an `entryId`, its `catalogGeneration` and `argumentsJson`.
+Every MCP tool call is an external effect that goes through normal confirmation,
+whatever the server's hints say. Arguments must be a JSON object that satisfies the
+normalized schema (`mcp-tool-arguments-invalid` otherwise), and an unsupported
+schema is `mcp-tool-schema-unsupported`; neither reaches the server. Immediately
+before dispatch the selection is revalidated, so a stale generation, a disabled or
+removed server, a configuration change or a lost connection returns a stale result
+with no call. The call validates structured output against a declared output
+schema.
+
+The result records the entry, catalog generation and schema digest with `isError`,
+`content` and `structuredContent`. `isError` is the tool's own reported error: the
+invocation completes so the model can correct it. A malformed result is
+`mcp-tool-result-malformed`, an input request is
+`mcp-input-required-unavailable`, and oversized results are
+`mcp-result-too-large`; these and disconnects after dispatch report an uncertain
+effect and are never retried. A result is untrusted content: payloads that resemble
+task progress or Todo state carry no authority.
 
 The integration pins `@modelcontextprotocol/client` 2.0.0. The default protocol is
 2026-07-28: HTTP uses protocol/routing metadata without initialize or a protocol

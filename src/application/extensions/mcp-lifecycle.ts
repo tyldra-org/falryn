@@ -7,9 +7,9 @@ import {
   type McpClientPort,
   type McpConfiguration,
   type McpConnection,
-  McpLimitExceeded,
   type McpMethod,
   type McpOutcome,
+  McpRequestFailure,
   type McpSnapshot,
   McpUnavailable,
 } from "../../domain/extensions/mcp.ts";
@@ -322,7 +322,7 @@ export function createMcpLifecycle(ports: McpLifecyclePorts) {
         snapshot: { ...live.snapshot, pending: live.requests.size - 1 },
       };
     } catch (error) {
-      if (error instanceof McpLimitExceeded && !admission.signal.aborted)
+      if (error instanceof McpRequestFailure && !admission.signal.aborted)
         return failed("failed", error.code, live, effect);
       const kind = admission.signal.aborted
         ? "cancelled"

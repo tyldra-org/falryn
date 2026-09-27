@@ -72,32 +72,78 @@ export function mcpFixtureReply(message: Record<string, unknown>) {
             serverInfo: { name: "fixture", version: "1" },
           }
         : message.method === "tools/list"
-          ? {
-              resultType: "complete",
-              ttlMs: 0,
-              cacheScope: "private",
-              tools: [
-                {
-                  name: "echo",
-                  inputSchema: { type: "object", properties: { value: { type: "string" } } },
-                },
-              ],
-            }
+          ? { resultType: "complete", ttlMs: 0, cacheScope: "private", tools: fixtureTools }
           : message.method === "tools/call"
-            ? {
-                resultType: "complete",
-                content: [
-                  {
-                    type: "text",
-                    text:
-                      params.name === "pid"
-                        ? String(process.pid)
-                        : JSON.stringify(params.arguments ?? {}),
-                  },
-                ],
-              }
+            ? toolCall(params)
             : { resultType: "complete" };
   return { jsonrpc: "2.0", id: message.id, result };
+}
+
+const fixtureTools = [
+  { name: "echo", inputSchema: { type: "object", properties: { value: { type: "string" } } } },
+  {
+    name: "sum",
+    title: "Add numbers",
+    description: "Add two numbers.",
+    annotations: { readOnlyHint: true, openWorldHint: false },
+    inputSchema: {
+      $schema: "https://json-schema.org/draft/2020-12/schema",
+      type: "object",
+      properties: { a: { type: "number", title: "A" }, b: { type: "number", default: 0 } },
+      required: ["a", "b"],
+    },
+    outputSchema: {
+      type: "object",
+      properties: { sum: { type: "number" } },
+      required: ["sum"],
+    },
+  },
+  { name: "fail", description: "Always reports a tool error.", inputSchema: { type: "object" } },
+  { name: "ask", description: "Asks the user first.", inputSchema: { type: "object" } },
+  {
+    name: "union",
+    inputSchema: {
+      type: "object",
+      properties: { value: { anyOf: [{ type: "string" }, { type: "number" }] } },
+    },
+  },
+];
+function toolCall(params: Record<string, unknown>) {
+  const values = (params.arguments ?? {}) as Record<string, unknown>;
+  if (params.name === "sum") {
+    const sum = Number(values.a) + Number(values.b);
+    return {
+      resultType: "complete",
+      content: [{ type: "text", text: String(sum) }],
+      structuredContent: { sum },
+    };
+  }
+  if (params.name === "fail")
+    return {
+      resultType: "complete",
+      isError: true,
+      content: [{ type: "text", text: "bad input" }],
+    };
+  if (params.name === "ask")
+    return {
+      resultType: "input_required",
+      inputRequests: {
+        confirm: {
+          method: "elicitation/create",
+          params: {
+            mode: "form",
+            message: "Continue?",
+            requestedSchema: { type: "object", properties: {} },
+          },
+        },
+      },
+    };
+  return {
+    resultType: "complete",
+    content: [
+      { type: "text", text: params.name === "pid" ? String(process.pid) : JSON.stringify(values) },
+    ],
+  };
 }
 
 if (import.meta.main) {
