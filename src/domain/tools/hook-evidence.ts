@@ -141,6 +141,13 @@ const FAILURE_CODES = new Set([
   "invalid-handler-evidence",
   "hook-transport-failed",
   "hook-handler-refused",
+  "hook-destination-unapproved",
+  "hook-destination-unresolved",
+  "hook-destination-private",
+  "hook-credential-unavailable",
+  "hook-redirect-refused",
+  "hook-http-status",
+  "hook-response-too-large",
 ]);
 export function safeHookFailureCode(value: unknown): string {
   return typeof value === "string" && FAILURE_CODES.has(value) ? value : "hook-handler-failed";

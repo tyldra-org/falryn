@@ -67,6 +67,7 @@ import {
   resolveLocalPath,
   type WorkspaceSet,
 } from "../../domain/workspace/index.ts";
+import type { HookEgressOptions } from "../../integrations/extensions/host-hook-http.ts";
 import {
   createHostEnvironment,
   createHostFileSystem,
@@ -118,6 +119,8 @@ export type Services = {
   readonly fileSystem: FileSystemPort;
   readonly environment: EnvironmentPort;
   readonly clock: ClockPort;
+  /** Present only in tests; production resolves and classifies every address itself. */
+  readonly hookEgress?: HookEgressOptions;
   /**
    * Where this run's events were appended.
    *
@@ -194,6 +197,12 @@ export type HostServiceOptions = {
   readonly clock?: ClockPort;
   /** The directory a relative `--workspace` resolves against. */
   readonly currentDirectory?: LocalPath;
+  /**
+   * Test composition of package HTTP hook egress: a resolver, a trusted certificate and
+   * the exact addresses a local test service may use. Never reachable from the CLI,
+   * environment or configuration.
+   */
+  readonly hookEgress?: HookEgressOptions;
 };
 
 /** Every v0.1 owner whose local-data bytes can be named by the CLI surface. */
@@ -333,6 +342,7 @@ export function createServiceProvider(
       fileSystem,
       environment,
       clock,
+      ...(overrides.hookEgress === undefined ? {} : { hookEgress: overrides.hookEgress }),
       eventStore,
       localData,
       removalData,

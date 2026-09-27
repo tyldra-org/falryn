@@ -9,6 +9,7 @@ import {
   streamId,
 } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
+import type { HookEgressOptions } from "../../integrations/extensions/host-hook-http.ts";
 import {
   catalogFromAdapterModels,
   createDeterministicProviderAdapter,
@@ -26,7 +27,11 @@ const inputSchema = z.object({
   name: z.string(),
   environment: z.record(z.string(), z.string()),
 });
-async function productHost(input: { home: string; environment: Record<string, string> }) {
+async function productHost(input: {
+  home: string;
+  environment: Record<string, string>;
+  hookEgress?: HookEgressOptions;
+}) {
   const workspace = join(input.home, "workspace");
   await mkdir(workspace, { recursive: true });
   const globals: GlobalOptions = {
@@ -46,6 +51,7 @@ async function productHost(input: { home: string; environment: Record<string, st
     home: localPath(input.home),
     currentDirectory: localPath(workspace),
     environment: createStaticEnvironment(input.environment),
+    ...(input.hookEgress === undefined ? {} : { hookEgress: input.hookEgress }),
   });
   return { globals, services };
 }
@@ -181,8 +187,13 @@ export async function nativeProductJourney(
   input: z.infer<typeof inputSchema>,
   beforeFirstRequest?: () => Promise<void>,
   afterRun?: () => Promise<void>,
+  /** Test egress for package HTTP hooks; the compiled journey never passes one. */
+  hookEgress?: HookEgressOptions,
 ) {
-  const { globals, services } = await productHost(input);
+  const { globals, services } = await productHost({
+    ...input,
+    ...(hookEgress === undefined ? {} : { hookEgress }),
+  });
   const requests: string[] = [];
   const provider = createDeterministicProviderAdapter({
     onRequest: (request) => requests.push(JSON.stringify(request)),

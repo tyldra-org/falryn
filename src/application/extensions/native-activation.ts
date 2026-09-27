@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
+import type { HookGrantRequirement } from "../../domain/extensions/hook-http.ts";
 import type { PackageReceipt, PackageRequest } from "../../domain/extensions/lifecycle.ts";
 import {
   type NativeActivation,
@@ -11,6 +12,10 @@ export type NativeActivationCandidate = {
   record: Omit<NativeActivation, "revision">;
   inputs: string;
   scopeRevision: number;
+  /** What each selected HTTP hook needs approved (#1175); empty for everything else. */
+  requirements: readonly HookGrantRequirement[];
+  /** Why the request's grants do not approve those requirements exactly, if they do not. */
+  grantProblem: string | null;
 };
 /** Explicit preview and compare-and-write. A scope preference never calls this implicitly. */
 export function createNativeActivation(options: {
@@ -66,6 +71,13 @@ export function createNativeActivation(options: {
         };
       }
       const candidate = await options.capture(request, signal);
+      if (candidate.grantProblem !== null)
+        return {
+          ...receipt,
+          code: candidate.grantProblem,
+          currentDigest: candidate.record.package,
+          data: z.json().parse({ requirements: candidate.requirements }),
+        };
       const key = nativeActivationKey(candidate.record);
       const current = options.store.get(key);
       if (!current.ok) throw new ExtensionInputError(current.error.code);
@@ -82,6 +94,7 @@ export function createNativeActivation(options: {
           data: z.json().parse({
             scope: candidate.record.authority.scope,
             contributions: candidate.record.contributions,
+            requirements: candidate.requirements,
             priorActivationRevision: current.value?.revision ?? 0,
           }),
         };

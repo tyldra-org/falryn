@@ -13,6 +13,12 @@ import { createPackageToolRecovery } from "../../application/extensions/package-
 import type { CatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import { catalogEntryKey, createExtensionCatalog } from "../../domain/extensions/catalog.ts";
+import {
+  type HookGrantRequirement,
+  hookGrantProblem,
+  hookGrantRequirement,
+  httpHookContract,
+} from "../../domain/extensions/hook-http.ts";
 import type { PackageRequest } from "../../domain/extensions/lifecycle.ts";
 import {
   type NativeActivationStore,
@@ -22,9 +28,11 @@ import type { PackageHealthStore } from "../../domain/extensions/package-health.
 import { scopeControlDigest, scopeControlKey } from "../../domain/extensions/scope-controls.ts";
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type { ToolInvocationOutcome } from "../../domain/tools/index.ts";
+import { createHostHookHttp } from "../../integrations/extensions/host-hook-http.ts";
 import { createHostPackageProcess } from "../../integrations/extensions/host-package-health.ts";
 import { composeNativeHooks } from "./native-hooks.ts";
 import { createNativePackageContext } from "./native-package-context.ts";
+import { composeHostProductCredentials } from "./product-credentials.ts";
 import type { Services } from "./services.ts";
 
 /** Compose the native owner with the same stores used by CLI lifecycle and metadata inspection. */
@@ -37,7 +45,18 @@ export function composeNativePackages(options: {
   session?: string;
 }) {
   const context = createNativePackageContext(options);
-  const hookOwner = composeNativeHooks(context, options.records, options.activations);
+  const hookOwner = composeNativeHooks(
+    context,
+    options.records,
+    options.activations,
+    createHostHookHttp({
+      credentials: composeHostProductCredentials({
+        clock: options.services.clock,
+        environment: options.services.environment,
+      }).resolver,
+      ...(options.services.hookEgress === undefined ? {} : { egress: options.services.hookEgress }),
+    }),
+  );
   const stopped = new AbortController();
   const active = new Set<Promise<ToolInvocationOutcome>>();
   const track = async (run: () => Promise<ToolInvocationOutcome>) => {
@@ -79,10 +98,33 @@ export function composeNativePackages(options: {
       )
         throw new ExtensionInputError("stale-native-package");
       const proofs: string[] = [];
-      for (const contribution of intent.contributions)
-        proofs.push(
-          (await context.validate(control, installed.value, contribution, signal)).generation,
-        );
+      const requirements: HookGrantRequirement[] = [];
+      for (const contribution of intent.contributions) {
+        const admitted = await context.validate(control, installed.value, contribution, signal);
+        proofs.push(admitted.generation);
+        if (admitted.declaration.hook?.handler.kind === "http-v1")
+          requirements.push(
+            hookGrantRequirement(contribution, httpHookContract(admitted.declaration)),
+          );
+      }
+      // Every HTTP hook needs exactly one matching grant, and nothing else may carry one.
+      const grants = [...(intent.grants ?? [])].sort((a, b) =>
+        a.contribution < b.contribution ? -1 : 1,
+      );
+      const grantProblem =
+        requirements
+          .map((requirement) =>
+            hookGrantProblem(
+              requirement,
+              grants.find((grant) => grant.contribution === requirement.contribution),
+            ),
+          )
+          .find((problem) => problem !== null) ??
+        (grants.some(
+          (grant) => !requirements.some((item) => item.contribution === grant.contribution),
+        )
+          ? "hook-grant-unexpected"
+          : null);
       return {
         record: {
           version: 1,
@@ -94,6 +136,7 @@ export function composeNativePackages(options: {
           installedRevision: installed.value.revision,
           configuration: context.configuration(installed.value),
           contributions: [...intent.contributions].sort(),
+          ...(grants.length > 0 ? { grants } : {}),
         },
         inputs: canonicalDigest({
           proofs,
@@ -101,6 +144,8 @@ export function composeNativePackages(options: {
           control: scopeControlDigest(control),
         }),
         scopeRevision: control.revision,
+        requirements,
+        grantProblem,
       };
     },
   });
