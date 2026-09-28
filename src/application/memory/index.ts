@@ -15,10 +15,10 @@ export { createMemoryRecall } from "./memory-recall.ts";
 export type { MemoryRecords } from "./memory-record.ts";
 export { createMemoryRecords } from "./memory-record.ts";
 export type {
-  ProductMemoryAdmissionResult,
   ProductMemoryRecallResult,
   ProductMemoryTurn,
   ProductMemoryTurnPorts,
+  ProductReflectionRequest,
 } from "./product-memory-turn.ts";
 export { composeProductMemoryTurn } from "./product-memory-turn.ts";
 export type {

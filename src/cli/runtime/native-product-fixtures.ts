@@ -143,6 +143,7 @@ export async function nativePromptShellJourney(input: {
         }
       : {}),
     publishNativePackages: durable.publishNativePackages,
+    openReflection: durable.openReflection,
     rehydrateExtensions: durable.rehydrateExtensions,
     records: durable.records,
     eventStore: durable.eventStore,

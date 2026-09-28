@@ -2186,9 +2186,9 @@ change the shell workspace-set view rather than recomposing generation-bound
 runtime authority. GitHub issue #879 owns that product wiring and revocation.
 
 Workspace-scoped memory records persist in SQLite. Relevant records are
-recalled before prompt composition. A new record is admitted only after the
-model attempt, terminal turn event, and durable replay all report completion;
-failed, cancelled, partial, or uncertain turns are not learned.
+recalled before prompt composition. A turn no longer admits memory by itself:
+records come only from the explicit `memory_admit` tool. Records admitted by the
+earlier automatic task-text path stay as they were, source-attributed.
 
 The shared product state host also exposes an explicitly bound reflection
 persistence owner. Migration 0025 stores version-1 source-range requests,
@@ -2207,9 +2207,47 @@ result is processed, while unavailable and unprocessed ranges stay explicit.
 The owner bounds requests, source handles, candidates, bytes, publications,
 generations and scans. Exhausted publication capacity retains partial coverage;
 a bounded coverage response marks omitted ranges pending. Source history and
-accepted memory remain separate. There is no automatic reflection worker,
-provider call, candidate review UI, or compaction consumer in this persistence
-path.
+accepted memory remain separate. The persistence owner itself runs nothing; there
+is no provider call, candidate review UI, or compaction consumer in this path.
+
+Headless runs and terminal sessions compose a turn-end reflection worker over this
+owner. After a turn's model attempt, terminal event and durable replay all report
+completion, the turn result's `reflection` is `requested` and the worker is woken
+with the committed stream head; otherwise it is `skipped`, or `unavailable` without
+a durable store. Opening a session wakes it once for startup reconciliation. There
+is no timer, polling loop, model call, tool, delegated agent or general task.
+
+Each wake creates due requests (transform `turn-end-deterministic-v1`) for exactly
+the events committed after the last requested range, in chunks of at most 256
+events and 4 MiB, then processes at most eight due or expired-lease requests,
+oldest first, and becomes idle. Startup reconciliation stops at the last completed
+turn, so an unfinished turn is never requested. For each request the worker takes a
+fenced lease, reads the committed events and checks each against the request's
+recorded identity and digest, extracts, and publishes. Publication identities are
+deterministic, so a retry after an interrupted acknowledgement finds the committed
+publication instead of writing again, and a stale owner adds nothing.
+
+Extraction reads only user messages recorded inline (up to 2 KiB) by turns whose
+terminal outcome is completed, and capability failures in those turns. Sentences
+outside fenced code that state a preference ("Prefer …", "Always …", "I prefer …"),
+a correction ("No, …", "Actually …"), a decision ("We decided …"), a changed
+assumption ("From now on …"), an unresolved task ("TODO …") or a noted fact
+("Note that …") become pending `derived` candidates of the matching memory kind,
+proposed for the workspace, each citing its source event. The same capability
+failing twice in one range becomes one operational candidate. Repeats are
+deduplicated and add no confidence; at most 32 candidates per request, with the
+rest counted. Assistant, tool, repository and model text is never a source.
+Messages kept as artifacts are published as `unavailable` ranges, not processed.
+Candidates still need the existing review and admission; nothing is recalled until
+then.
+
+Shutdown is idempotent: it refuses new wakes, cancels extraction before the next
+commit, releases an uncommitted lease by shortening it to one millisecond so the
+work stays due, and waits at most two seconds. Receipts report `empty`,
+`completed`, `partial`, `unavailable`, `failed`, `cancelled`, `stale` or
+`uncertain` with counts and a code, never candidate or source text. The headless
+run payload includes them as `reflectionReceipts`; the terminal does not display
+them yet. Repository, branch and worktree are not part of the binding yet.
 
 ## Unified resource Read and Search
 

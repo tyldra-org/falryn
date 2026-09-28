@@ -98,6 +98,7 @@ export async function runSchedule(
         joins: product.joins,
         schedules: { ...product.schedules, autostart: command.operation === "host" },
         publishNativePackages: product.publishNativePackages,
+        openReflection: product.openReflection,
         agentRegistry: agentRegistryFrom(configuration.values),
         async resolveAgentProvider(profile, signal) {
           const resolved = await connections.resolveProfile(profile, signal);

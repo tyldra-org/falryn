@@ -1,4 +1,8 @@
-/** Product memory recall-before-prompt and terminal admission ordering (#788). */
+/**
+ * Product memory around the real turn boundary: recall before the prompt (#788) and,
+ * after a settled committed turn, a wake for deterministic reflection (#882). A turn
+ * never admits memory by itself; candidates wait for the existing review and admission.
+ */
 
 import type { PromptSectionInput } from "../../domain/context/index.ts";
 import {
@@ -9,14 +13,14 @@ import {
   timestampFromEpochMilliseconds,
   type WorkspaceId,
 } from "../../domain/foundation/index.ts";
-import type { TerminalOutcome } from "../../domain/orchestration/index.ts";
 import { PRODUCT_MEMORY_TOOLS_OWNER } from "../tools/product-tools-memory.ts";
-import type { MemoryAdmissionPort } from "./memory-admission.ts";
 import type { MemoryRecallPort } from "./memory-recall.ts";
+import type { ReflectionWorker } from "./reflection-worker.ts";
 
 export type ProductMemoryTurnPorts = {
-  readonly admission: MemoryAdmissionPort;
   readonly recall: MemoryRecallPort;
+  /** Absent when the session has no durable reflection store. */
+  readonly reflection?: Pick<ReflectionWorker, "wake">;
 };
 
 export type ProductMemoryRecallResult = {
@@ -25,11 +29,8 @@ export type ProductMemoryRecallResult = {
   readonly recalledCount: number;
 };
 
-export type ProductMemoryAdmissionResult = {
-  readonly owner: typeof PRODUCT_MEMORY_TOOLS_OWNER;
-  readonly admittedId: string | null;
-  readonly admitted: boolean;
-};
+/** Whether a settled turn woke reflection; learning itself is reported by the worker. */
+export type ProductReflectionRequest = "requested" | "skipped" | "unavailable";
 
 export type ProductMemoryTurn = {
   readonly owner: typeof PRODUCT_MEMORY_TOOLS_OWNER;
@@ -38,13 +39,11 @@ export type ProductMemoryTurn = {
     readonly task: string;
     readonly signal?: AbortSignal;
   }): Result<ProductMemoryRecallResult, { readonly code: string }>;
-  admitAfterTurn(input: {
+  /** Only a completed turn whose events are committed through this sequence. */
+  reflectAfterTurn(input: {
     readonly turnId: TurnId;
-    readonly workspaceId: WorkspaceId;
-    readonly task: string;
-    readonly outcome: TerminalOutcome;
-    readonly signal?: AbortSignal;
-  }): Result<ProductMemoryAdmissionResult, { readonly code: string }>;
+    readonly committedThrough: number | null;
+  }): ProductReflectionRequest;
 };
 
 /** Compose the memory lifecycle around the real terminal turn boundary. */
@@ -84,41 +83,11 @@ export function composeProductMemoryTurn(ports: ProductMemoryTurnPorts): Product
               },
       });
     },
-    admitAfterTurn(input) {
-      if (input.outcome.kind !== "completed") {
-        return ok({
-          owner: PRODUCT_MEMORY_TOOLS_OWNER,
-          admittedId: null,
-          admitted: false,
-        });
-      }
-
-      const id = `mem-${String(input.turnId)}`;
-      const admitted = ports.admission.admit(
-        {
-          memoryId: id,
-          scope: { kind: "workspace", workspaceId: String(input.workspaceId) },
-          kind: "project-fact",
-          subject: `turn:${String(input.turnId)}`,
-          content: input.task.slice(0, 2_048),
-          provenance: [{ origin: "user-request", locator: String(input.turnId) }],
-          confidence: 70,
-          createdAt: timestampFromEpochMilliseconds(Date.now()),
-        },
-        {
-          sourceKind: "user",
-          sourceTrust: "user-confirmed",
-          workspaceId: String(input.workspaceId),
-        },
-        input.signal,
-      );
-      if (!admitted.ok) {
-        if (admitted.error.code === "conflict" && ports.admission.get(id).ok) {
-          return ok({ owner: PRODUCT_MEMORY_TOOLS_OWNER, admittedId: id, admitted: false });
-        }
-        return err({ code: admitted.error.code });
-      }
-      return ok({ owner: PRODUCT_MEMORY_TOOLS_OWNER, admittedId: id, admitted: true });
+    reflectAfterTurn(input) {
+      if (ports.reflection === undefined || input.committedThrough === null) return "unavailable";
+      return ports.reflection.wake({ throughSequence: input.committedThrough }) === "accepted"
+        ? "requested"
+        : "unavailable";
     },
   };
 }
