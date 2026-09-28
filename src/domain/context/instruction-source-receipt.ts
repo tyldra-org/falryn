@@ -7,6 +7,7 @@ import {
   instructionSourceIdentitySchema,
   SOURCE_ORIGINS,
 } from "./instruction-sources.ts";
+import { PROMPT_TOKEN_ESTIMATOR } from "./prompt-composition.ts";
 
 export const sourceDecisionSchema = z.strictObject({
   identity: instructionSourceIdentitySchema,
@@ -22,8 +23,19 @@ export const sourceDecisionSchema = z.strictObject({
 });
 
 /**
+ * Context one admission contributed to the request, estimated with `estimatePromptTokens`.
+ */
+export const contextContributionSchema = z.strictObject({
+  bytes: z.int().nonnegative(),
+  tokens: z.int().nonnegative(),
+});
+export type ContextContribution = z.infer<typeof contextContributionSchema>;
+
+/**
  * One automatic skill routing decision (#136). A loaded route names the admitted source,
  * its digest and the body bytes admitted into the request; others carry only a reason.
+ * Receipts written since #1191 also carry the estimated body tokens of a loaded route and
+ * the route's own line in the routing section; older receipts lack both.
  */
 export const skillRouteSchema = z.strictObject({
   name: z.string().min(1).max(64),
@@ -32,12 +44,18 @@ export const skillRouteSchema = z.strictObject({
   source: digestSchema.nullable(),
   digest: digestSchema.nullable(),
   bytes: z.int().nonnegative().nullable(),
+  tokens: z.int().nonnegative().nullable().optional(),
+  listing: contextContributionSchema.optional(),
 });
 export type SkillRouteFact = z.infer<typeof skillRouteSchema>;
 export const skillRoutingSchema = z.strictObject({
   /** Automatically eligible candidates in scope that routing considered. */
   candidates: z.int().nonnegative(),
   routes: z.array(skillRouteSchema).max(INSTRUCTION_SOURCE_LIMITS.pageEntries),
+  /** The whole routing section, including text no single route owns (#1191). */
+  section: contextContributionSchema.nullable().optional(),
+  /** Names the estimate behind every `tokens` figure in this block (#1191). */
+  estimator: z.literal(PROMPT_TOKEN_ESTIMATOR).optional(),
 });
 export type SkillRoutingFact = z.infer<typeof skillRoutingSchema>;
 

@@ -23,6 +23,7 @@ import { mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { pluginManifest } from "./application/extensions/package-fixtures.ts";
+import { skillUsageCliJourney } from "./cli/commands/extension-skills-fixtures.ts";
 import { packageCliJourney } from "./cli/commands/package-fixtures.ts";
 import { packageHealthCliJourney } from "./cli/commands/package-health-fixtures.ts";
 import { peerCliJourney } from "./cli/commands/peer-fixtures.ts";
@@ -475,6 +476,13 @@ describe.if(built)("the standalone executable", () => {
   test("installed package generations survive command restart and offline rollback", async () => {
     await packageCliJourney([EXECUTABLE], await temporaryRoot());
   }, 30_000);
+  test(
+    "skill usage from real admission receipts matches the source owner through the compiled command",
+    async () => {
+      await skillUsageCliJourney([EXECUTABLE], await temporaryRoot());
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
   test(
     "persists and revokes scoped trust through the compiled command boundary",
     async () => {

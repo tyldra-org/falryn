@@ -433,11 +433,11 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           group
             .positional("action", {
               type: "string",
-              choices: ["inspect", "trust", "catalog", "scope", "listing"],
+              choices: ["inspect", "trust", "catalog", "scope", "listing", "skills"],
             })
             .option("input", {
               type: "string",
-              describe: "bounded trust, scope, or catalog query JSON request file",
+              describe: "bounded trust, scope, catalog, listing or skill usage JSON request file",
             })
             .positional("path", { type: "string", describe: "local package directory path" }),
         () => {},
@@ -1028,6 +1028,36 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
       };
     extensionListingArgs = checked.data;
   }
+  let extensionSkillsArgs:
+    | import("./commands/extension-skills.ts").ExtensionSkillsArguments
+    | undefined;
+  if (command === "extension.skills") {
+    if (parsed.path !== undefined)
+      return { kind: "invalid", message: "extension skills takes no package path." };
+    let input: unknown = {};
+    if (parsed.input !== undefined) {
+      const loaded = await loadTaskInputFile(parsed.input);
+      if (!loaded.ok || Buffer.byteLength(loaded.value) > 16_384)
+        return {
+          kind: "invalid",
+          message: "Invalid extension request file (maximum 16384 bytes).",
+        };
+      try {
+        input = JSON.parse(loaded.value);
+      } catch {
+        return { kind: "invalid", message: "Invalid extension request JSON." };
+      }
+    }
+    const { extensionSkillsArgumentsSchema } = await import("./commands/extension-skills.ts");
+    const checked = extensionSkillsArgumentsSchema.safeParse(input);
+    if (!checked.success)
+      return {
+        kind: "invalid",
+        message:
+          "The skill usage request accepts session, skill, since, until, limit, after and aggregate.",
+      };
+    extensionSkillsArgs = checked.data;
+  }
   let compactArgs: CompactArguments | undefined;
   let mcpArgs: import("./commands/mcp.ts").McpArguments | undefined;
   if (command === "mcp") {
@@ -1190,6 +1220,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     ...(modelArgs === undefined ? {} : { modelArgs }),
     ...(extensionCatalogArgs === undefined ? {} : { extensionCatalogArgs }),
     ...(extensionListingArgs === undefined ? {} : { extensionListingArgs }),
+    ...(extensionSkillsArgs === undefined ? {} : { extensionSkillsArgs }),
     ...(extensionTrust === undefined ? {} : { extensionTrust }),
     ...(packageArgs === undefined ? {} : { packageArgs }),
     ...(scheduleArgs === undefined ? {} : { scheduleArgs }),
