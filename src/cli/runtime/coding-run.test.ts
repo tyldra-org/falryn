@@ -1268,7 +1268,7 @@ describe("runCoding", () => {
     expect(firstPayload).toContain("citation:");
   });
 
-  test("recalls durable memory before the next prompt and admits only completed turns", async () => {
+  test("a completed turn yields a pending reflection candidate, never recalled memory", async () => {
     const seeded = await seededHome();
     const services = providerFor(seeded)(globalsFor(seeded));
     const first = await runCoding(
@@ -1285,7 +1285,12 @@ describe("runCoding", () => {
         },
       },
     );
-    expect(first.payload?.memoryAdmission).toBe("admitted");
+    expect(first.payload?.reflection).toBe("requested");
+    // One source-backed candidate awaits review; its text is not in the receipt.
+    expect(first.payload?.reflectionReceipts).toMatchObject([
+      { outcome: "completed", candidates: 1, unavailableMessages: 0, code: null },
+    ]);
+    expect(JSON.stringify(first.payload?.reflectionReceipts)).not.toContain("default branch");
 
     const requests: ModelRequest[] = [];
     const second = await runCoding(
@@ -1305,8 +1310,9 @@ describe("runCoding", () => {
       },
     );
 
-    expect(second.payload?.recalledMemories).toBeGreaterThan(0);
-    expect(JSON.stringify(requests[0])).toContain("Prefer main as the default branch.");
+    // No automatic admission: the next session recalls nothing from the first.
+    expect(second.payload?.recalledMemories).toBe(0);
+    expect(JSON.stringify(requests[0])).not.toContain("Prefer main as the default branch.");
   });
 
   test("reopens the durable store for a second session without lifecycle identity collisions", async () => {
@@ -2617,7 +2623,7 @@ describe("runCoding", () => {
       stage: "attempt-failed",
       modelAttempts: 1,
       toolResults: 1,
-      memoryAdmission: "skipped",
+      reflection: "skipped",
     });
     expect(providerRequests).toBe(2);
   });

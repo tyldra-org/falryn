@@ -121,6 +121,7 @@ import type { ControlCatalog } from "../../tui/controls/index.ts";
 import type { SessionCreationPort } from "../../tui/shell/session-creation.ts";
 import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
+import { composeSessionReflection } from "./session-reflection.ts";
 
 export type ProductShellAttachmentPorts = {
   readonly schedules?: import("../../application/runtime/schedule-product-runtime.ts").ProductSchedulePorts;
@@ -166,6 +167,8 @@ export type ProductShellAttachmentPorts = {
   readonly modelSettings?: import("../../application/providers/model-settings.ts").ModelSettingsService;
   /** Durable in production; tests may inject the in-memory event-store double. */
   readonly eventStore: EventStorePort;
+  /** Durable reflection store; without it settled turns report reflection unavailable. */
+  readonly openReflection?: import("./product-artifact-session.ts").ProductArtifactSession["openReflection"];
   readonly clock: ClockPort;
   /** Compatibility input retained for callers; provider auth is now composed before this seam. */
   readonly environment?: EnvironmentPort;
@@ -683,12 +686,27 @@ export async function composeProductShellAttachments(
                 workspaceId,
                 additionalCandidates: workspaceTools.contextCandidates,
               });
+      // Settled turns wake deterministic reflection; opening the session reconciles due work.
+      const reflection =
+        ports.openReflection === undefined
+          ? undefined
+          : composeSessionReflection({
+              store: {
+                openReflection: ports.openReflection,
+                eventStore: ports.eventStore,
+              },
+              sessionId: String(sessionId),
+              workspaceId: String(workspaceId),
+              streamId: String(composed.value.streamId),
+              configurationGeneration: () => Number(generation),
+              clock: ports.clock,
+            });
       const memory =
         memoryTools === null
           ? undefined
           : composeProductMemoryTurn({
-              admission: memoryTools.admission,
               recall: memoryTools.recall,
+              ...(reflection === undefined ? {} : { reflection }),
             });
       let publishedRuntime = composed.value;
       if (selection) {
@@ -821,6 +839,7 @@ export async function composeProductShellAttachments(
           // Closing a session is a stop: its observers are cancelled and leave receipts.
           await settleHookObservers(publishedRuntime.resources, String(sessionId), "cancel");
           await publishedRuntime.schedules?.close();
+          await reflection?.close();
           publishedRuntime.closeBindings();
           const stopped = await mcp.close();
           await mcpServices.close();

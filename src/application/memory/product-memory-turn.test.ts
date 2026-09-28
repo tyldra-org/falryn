@@ -66,47 +66,46 @@ describe("composeProductMemoryTools", () => {
 });
 
 describe("composeProductMemoryTurn", () => {
-  test("recalls before the prompt and admits only after a completed terminal turn", () => {
+  test("a settled committed turn wakes reflection and admits nothing by itself", () => {
     const tools = composeProductMemoryTools({
       generation: configurationGeneration.from(0),
       workspaceId: "workspace-1",
     });
+    const wakes: number[] = [];
     const turn = composeProductMemoryTurn({
-      admission: tools.admission,
       recall: tools.recall,
+      reflection: {
+        wake: ({ throughSequence }) => {
+          wakes.push(throughSequence);
+          return "accepted";
+        },
+      },
     });
     const before = turn.recallBeforeTurn({
       workspaceId: workspaceId.from("workspace-1"),
       task: "Prefer main as the default branch.",
     });
     expect(before.ok && before.value.recalledCount).toBe(0);
-
-    const ended = turn.admitAfterTurn({
-      turnId: turnId.from("turn-1"),
-      workspaceId: workspaceId.from("workspace-1"),
-      task: "Prefer main as the default branch.",
-      outcome: { kind: "completed" },
-    });
-    expect(ended.ok).toBe(true);
-    if (!ended.ok) {
-      return;
-    }
-    expect(ended.value.admittedId).toBe("mem-turn-1");
-    expect(ended.value.admitted).toBe(true);
-
+    expect(turn.reflectAfterTurn({ turnId: turnId.from("turn-1"), committedThrough: 7 })).toBe(
+      "requested",
+    );
+    expect(wakes).toEqual([7]);
+    // The task text is no longer admitted as memory at turn end.
     const after = turn.recallBeforeTurn({
       workspaceId: workspaceId.from("workspace-1"),
       task: "default branch main",
     });
-    expect(after.ok && after.value.recalledCount).toBeGreaterThan(0);
-    expect(after.ok && after.value.memorySection?.role).toBe("memory");
-
-    const failed = turn.admitAfterTurn({
-      turnId: turnId.from("turn-2"),
-      workspaceId: workspaceId.from("workspace-1"),
-      task: "unfinished work",
-      outcome: { kind: "failed", effect: "none" },
-    });
-    expect(failed.ok && failed.value.admittedId).toBeNull();
+    expect(after.ok && after.value.recalledCount).toBe(0);
+    // Without a committed boundary or a reflection store, nothing is requested.
+    expect(turn.reflectAfterTurn({ turnId: turnId.from("turn-2"), committedThrough: null })).toBe(
+      "unavailable",
+    );
+    expect(
+      composeProductMemoryTurn({ recall: tools.recall }).reflectAfterTurn({
+        turnId: turnId.from("turn-3"),
+        committedThrough: 9,
+      }),
+    ).toBe("unavailable");
+    expect(wakes).toEqual([7]);
   });
 });

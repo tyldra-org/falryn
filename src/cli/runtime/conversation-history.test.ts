@@ -2,7 +2,6 @@ import { afterEach, expect, test } from "bun:test";
 import { createProductCheckpointAction } from "../../application/compression/product-checkpoint.ts";
 import { conversationBudget } from "../../application/context/conversation-budget.ts";
 import {
-  reflectionBinding,
   reflectionCandidate,
   reflectionRecord,
   reflectionValue,
@@ -37,6 +36,7 @@ import { createRecordingCliStreams } from "../output/streams.ts";
 import { runCoding } from "./coding-run.ts";
 import { createCheckpointFixture } from "./history-checkpoint.fixtures.ts";
 import { composeProductShellAttachments } from "./product-shell-attachments.ts";
+import { sessionReflectionBinding } from "./session-reflection.ts";
 
 const cleanups: (() => Promise<unknown>)[] = [];
 afterEach(async () => {
@@ -355,13 +355,13 @@ test("two real headless turns consume settled tool evidence once across checkpoi
   if (!events.ok) throw new Error(events.error.code);
   const correlation = events.value[0]?.correlation;
   if (!correlation) throw new Error("missing live correlation");
-  const binding = {
-    ...reflectionBinding,
+  // The product's own binding: this session's worker rechecks every record against it.
+  const binding = sessionReflectionBinding({
     sessionId: String(correlation.sessionId),
     workspaceId: String(correlation.workspaceId),
     streamId: String(stream),
     configurationGeneration: Number(correlation.configurationGeneration),
-  };
+  });
   let allowCandidate = true;
   const reflection = f.durable.openReflection(
     {

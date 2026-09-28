@@ -598,6 +598,7 @@ async function launchShell(
               }),
               rehydrateExtensions: productArtifactSession.rehydrateExtensions,
               publishNativePackages: productArtifactSession.publishNativePackages,
+              openReflection: productArtifactSession.openReflection,
               eventStore: productArtifactSession.eventStore,
               records: productArtifactSession.records,
               clock: graph.clock,

@@ -128,7 +128,8 @@ export type ProductLiveTurnResult = {
   readonly contextStatus: ProductContextReceipt["status"] | "static";
   readonly contextGeneration: string | null;
   readonly recalledMemories: number;
-  readonly memoryAdmission: "admitted" | "skipped" | "failed";
+  /** Whether this settled turn woke deterministic reflection; learning is reported separately. */
+  readonly reflection: import("../memory/product-memory-turn.ts").ProductReflectionRequest;
   readonly executionProfile: ExecutionProfileId;
   readonly executionProfileVersion: 1;
   readonly completionCriterion: ExecutionProfileCompletion;
@@ -523,7 +524,7 @@ export function createProductLiveTurnExecutor(
           contextStatus: "static",
           contextGeneration: null,
           recalledMemories: 0,
-          memoryAdmission: "skipped",
+          reflection: "skipped",
         });
       }
       sessionStarted = true;
@@ -543,7 +544,7 @@ export function createProductLiveTurnExecutor(
         contextStatus: "static",
         contextGeneration: null,
         recalledMemories: 0,
-        memoryAdmission: "skipped",
+        reflection: "skipped",
       });
     }
     return null;
@@ -604,7 +605,7 @@ export function createProductLiveTurnExecutor(
           | "contextStatus"
           | "contextGeneration"
           | "recalledMemories"
-          | "memoryAdmission"
+          | "reflection"
           | "instructionFailure"
         >
       >,
@@ -636,7 +637,7 @@ export function createProductLiveTurnExecutor(
       contextStatus: fields.contextStatus ?? "static",
       contextGeneration: fields.contextGeneration ?? null,
       recalledMemories: fields.recalledMemories ?? 0,
-      memoryAdmission: fields.memoryAdmission ?? "skipped",
+      reflection: fields.reflection ?? "skipped",
       executionProfile: policy.profileId,
       executionProfileVersion: policy.profileVersion,
       completionCriterion: policy.completion,
@@ -850,7 +851,7 @@ export function createProductLiveTurnExecutor(
             contextStatus: "static",
             contextGeneration: null,
             recalledMemories: 0,
-            memoryAdmission: "skipped",
+            reflection: "skipped",
             executionProfile: executionPolicy.profileId,
           });
         }
@@ -868,7 +869,7 @@ export function createProductLiveTurnExecutor(
             contextStatus: "static",
             contextGeneration: null,
             recalledMemories: 0,
-            memoryAdmission: "skipped",
+            reflection: "skipped",
             executionProfile: executionPolicy.profileId,
           });
         }
@@ -900,7 +901,7 @@ export function createProductLiveTurnExecutor(
               contextStatus: "static",
               contextGeneration: null,
               recalledMemories: 0,
-              memoryAdmission: "skipped",
+              reflection: "skipped",
               executionProfile: executionPolicy.profileId,
             });
           }
@@ -933,7 +934,7 @@ export function createProductLiveTurnExecutor(
               contextStatus: "static",
               contextGeneration: null,
               recalledMemories: 0,
-              memoryAdmission: "skipped",
+              reflection: "skipped",
             });
           const attachments = await admitResourceAttachments(
             input.attachmentSelection ?? { attachments: [], mentions: [] },
@@ -955,7 +956,7 @@ export function createProductLiveTurnExecutor(
               contextStatus: "static",
               contextGeneration: null,
               recalledMemories: 0,
-              memoryAdmission: "skipped",
+              reflection: "skipped",
             });
           const startedTurn = await producer.startTurn({
             turnId: input.turnId,
@@ -978,7 +979,7 @@ export function createProductLiveTurnExecutor(
               contextStatus: "static",
               contextGeneration: null,
               recalledMemories: 0,
-              memoryAdmission: "skipped",
+              reflection: "skipped",
               executionProfile: executionPolicy.profileId,
             });
           }
@@ -1514,15 +1515,20 @@ export function createProductLiveTurnExecutor(
             completed.ok &&
             refreshed.ok &&
             (executionPolicy.completion !== "durable-plan" || planArtifactId !== null);
-          const memoryAdmission =
+          // Only after the terminal event and replay commit: the committed head bounds the
+          // range reflection may read, so it never sees a later, uncommitted turn.
+          const committedHead = succeeded
+            ? runtime.historyEvents.head?.(runtime.streamId)
+            : undefined;
+          const reflection =
             !succeeded || options.memory === undefined
-              ? null
-              : options.memory.admitAfterTurn({
+              ? ("skipped" as const)
+              : options.memory.reflectAfterTurn({
                   turnId: input.turnId,
-                  workspaceId: correlation.workspaceId,
-                  task: input.prompt,
-                  outcome: terminalOutcome,
-                  ...(input.signal === undefined ? {} : { signal: input.signal }),
+                  committedThrough:
+                    committedHead?.ok && committedHead.value !== null
+                      ? Number(committedHead.value)
+                      : null,
                 });
           return result({
             kind: succeeded ? "completed" : "failed",
@@ -1564,14 +1570,7 @@ export function createProductLiveTurnExecutor(
             contextStatus: prepared.receipt?.status ?? "static",
             contextGeneration: prepared.receipt?.generation ?? null,
             recalledMemories,
-            memoryAdmission:
-              memoryAdmission === null
-                ? "skipped"
-                : memoryAdmission.ok && memoryAdmission.value.admitted
-                  ? "admitted"
-                  : memoryAdmission.ok
-                    ? "skipped"
-                    : "failed",
+            reflection,
             executionProfile: executionPolicy.profileId,
             executionProfileVersion: executionPolicy.profileVersion,
             completionCriterion: executionPolicy.completion,
@@ -1609,7 +1608,7 @@ export function createProductLiveTurnExecutor(
           contextStatus: "static",
           contextGeneration: null,
           recalledMemories: 0,
-          memoryAdmission: "skipped",
+          reflection: "skipped",
         }),
       executor.run,
     ),

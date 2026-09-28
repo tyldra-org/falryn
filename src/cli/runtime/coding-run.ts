@@ -137,6 +137,7 @@ import {
 import { composeHostProductCredentials, composeProductCredentials } from "./product-credentials.ts";
 import { composeProductProviderConnections } from "./product-provider-connections.ts";
 import type { ServiceProvider } from "./services.ts";
+import { composeSessionReflection } from "./session-reflection.ts";
 import { describeWorkspaceResolveError } from "./workspace-resolution.ts";
 import { workspaceTrustEvent } from "./workspace-trust.ts";
 
@@ -198,7 +199,10 @@ export type CodingRunPayload = {
   readonly contextStatus?: string;
   readonly contextGeneration?: string | null;
   readonly recalledMemories?: number;
-  readonly memoryAdmission?: string;
+  /** Whether the settled turn woke deterministic reflection (#882). */
+  readonly reflection?: string;
+  /** What the worker settled for this run; codes and counts, never candidate text. */
+  readonly reflectionReceipts?: readonly import("../../application/memory/reflection-worker.ts").ReflectionReceipt[];
   /** Final assistant text from the terminal model attempt. */
   readonly response?: string;
   readonly modelAttempts?: number;
@@ -447,6 +451,9 @@ export async function runCoding(
   let mainPeer: import("../../application/orchestration/peer-mailbox.ts").PeerMailbox | null = null;
   /** The session whose async hook observers must settle before its stores close. */
   let observerSession: string | null = null;
+  let reflectionWorker:
+    | import("../../application/memory/reflection-worker.ts").ReflectionWorker
+    | null = null;
 
   try {
     const ids = {
@@ -1039,9 +1046,20 @@ export async function runCoding(
       prompt,
       interface: "headless",
     });
+    // Settled turns wake deterministic reflection; opening the session reconciles its due work.
+    reflectionWorker = composeSessionReflection({
+      store: productArtifactSession,
+      sessionId: String(sessionId),
+      workspaceId: String(workspaceId),
+      streamId: String(
+        selection?.record.streamId ?? streamId.from("live-turn:" + String(sessionId)),
+      ),
+      configurationGeneration: () => Number(generation),
+      clock: graph.clock,
+    });
     const memoryTurn = composeProductMemoryTurn({
-      admission: memoryTools.admission,
       recall: memoryTools.recall,
+      reflection: reflectionWorker,
     });
     const contextSource =
       indexStore === null
@@ -1132,6 +1150,10 @@ export async function runCoding(
           }),
     });
     peer?.state("idle");
+    // A headless run reports the reflection its settled turn woke. The work is bounded
+    // and local, and it never changed the turn result above.
+    await reflectionWorker.idle();
+    const reflectionReceipts = reflectionWorker.status().receipts;
     // A run that ends on its own still owes its admitted observers their reserved time; a
     // stopped run cancels them. Either way each leaves its receipt before anything closes.
     await settleHookObservers(
@@ -1201,7 +1223,8 @@ export async function runCoding(
         contextStatus: attempted.contextStatus,
         contextGeneration: attempted.contextGeneration,
         recalledMemories: attempted.recalledMemories,
-        memoryAdmission: attempted.memoryAdmission,
+        reflection: attempted.reflection,
+        reflectionReceipts,
         response: attempted.response,
         modelAttempts: attempted.modelAttempts,
         toolResults: attempted.toolResults,
@@ -1229,6 +1252,7 @@ export async function runCoding(
     await mcp?.close();
     environmentRuntime?.close();
     await mainPeer?.close();
+    await reflectionWorker?.close();
     if (options.ownedProcesses === undefined) await productArtifactSession?.close();
     configReload?.dispose();
   }
