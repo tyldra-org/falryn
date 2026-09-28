@@ -1253,6 +1253,50 @@ Package descriptors have no native binding and remain unavailable even
 when their scoped preference is enabled. Rehydration does not prepare full
 instructions or schemas, resolve credentials, start code, or contact a model.
 
+### Curated catalog listings
+
+`falryn extension listing --input request.json` imports and pages curated catalog
+metadata. The request is `{ "operation": "import", "file": "catalog.json" }` or
+`{ "operation": "list", "query": { ... } }` with optional `sourceId`, `kind`, `text`,
+`offset` and `limit` (1–100, default 50). Import reads one local file; nothing is
+fetched, downloaded, installed, enabled or trusted. There is no remote source or
+search yet.
+
+A catalog is a `falryn.curated-catalog` generation-1 JSON document of at most 1 MiB:
+`source` (`id`, `title`), a positive `sequence`, `publishedAt` and up to 512
+`entries`. Each entry has a `listingId` (`namespace/name`), a `kind` from the design's
+package classes (`skill`, `plugin`, `hook-pack`, `workflow-pack`, `mcp-preset`,
+`documentation-set`, `example-pack`, `theme`), bounded `title`, `summary` and
+`description`, `publisher`, `license`, https-only display `links`, `tags`,
+`localizations`, `provides` contribution kinds, and 1–32 `versions`. Each version is an
+exact `PackageIdentityV1` with optional `compatibility` and `withdrawn`, so a listing
+never redefines package equality and links are never a download location. Optional
+`claims` (`review`, `signature`, `tests`) are stored as `absent`, `unsupported` or
+`claimed` true or false under `authority: "catalog-claim"` and never become trust
+evidence. `editorial` labels, rank and featured flags are kept separately and never
+affect identity, ordering, trust or availability.
+
+An unsupported schema or generation, an unknown field named in the document's
+`requires`, a malformed header, duplicate JSON keys or an oversized document refuses
+the whole catalog. An entry problem refuses only that entry, with a JSON-pointer
+path and code but never the submitted value: invalid or credential-bearing links,
+text containing control, bidirectional-override or zero-width characters, an unknown
+`requires` field, or versions that mix packages or repeat one. Two entries with the
+same `listingId` or the same exact package identity are both refused. Other unknown
+fields are ignored and reported, never kept. The normalized record is canonical
+JSON with a digest, so the same content always serializes identically.
+
+Migration 0034 stores one record per source (at most 64). Only a higher sequence
+replaces it; the same sequence with a different body is `catalog-sequence-conflict`
+and an older one `catalog-stale`. When a newer import refuses an entry, the listing's
+previously accepted form is kept and listed as retained with the sequence it came
+from, unless the new catalog lists its package under another entry. Other sources are
+never changed; listing shows which other sources list the same exact package. A stored
+record with an unknown record version or a changed body is reported unavailable and
+is not replaced by a later import. Listing orders by source and listing ID, with
+per-version host compatibility and withdrawal. Human output labels claims as
+unverified.
+
 Headless runs and new interactive sessions rehydrate before producer composition.
 The same migration stores a version-1 historical catalog with `session.started` and
 the session record. It retains at most 32 entries and 49,152 bytes, with total

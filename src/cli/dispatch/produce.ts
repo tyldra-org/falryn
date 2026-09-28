@@ -14,6 +14,7 @@ import {
   type ExtensionCatalogArguments,
   runExtensionCatalog,
 } from "../commands/extension-catalog.ts";
+import { runExtensionListing } from "../commands/extension-listing.ts";
 import { runImport, runReplay } from "../commands/import-replay-commands.ts";
 import { runModel } from "../commands/model.ts";
 import { type PackageArguments, runPackage } from "../commands/package.ts";
@@ -66,6 +67,7 @@ import {
 export type DispatchProduceOptions = {
   readonly workingConfigurationArgs?: import("../commands/profile.ts").WorkingConfigurationArguments;
   readonly extensionCatalogArgs?: ExtensionCatalogArguments;
+  readonly extensionListingArgs?: import("../commands/extension-listing.ts").ExtensionListingArguments;
   readonly packageArgs?: PackageArguments;
   readonly scheduleArgs?: ScheduleArguments;
   readonly peerArgs?: PeerArguments;
@@ -139,6 +141,11 @@ export async function produce(
       )
         onMutationStart?.();
       return runExtensionCatalog(services, options.extensionCatalogArgs, signal);
+    case "extension.listing":
+      if (options.extensionListingArgs === undefined)
+        throw new Error("Missing extension listing arguments.");
+      if (options.extensionListingArgs.operation === "import") onMutationStart?.();
+      return runExtensionListing(services, options.extensionListingArgs, signal);
     case "package":
       if (options.packageArgs === undefined) throw new Error("Missing package arguments.");
       if (options.packageArgs.request.confirmation !== undefined) onMutationStart?.();

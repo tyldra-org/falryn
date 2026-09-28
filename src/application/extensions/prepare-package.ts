@@ -1,4 +1,3 @@
-import { satisfies } from "semver";
 import { parsePromptTemplateSource } from "../../domain/context/prompt-templates.ts";
 import {
   bytesDigest,
@@ -27,6 +26,7 @@ import {
   FALRYN_EXTENSION_NAMESPACE,
   type FalrynManifest,
   falrynManifestSchema,
+  hostCompatible,
   type PortableManifest,
   portableManifestSchema,
 } from "../../domain/extensions/manifest.ts";
@@ -228,9 +228,9 @@ export async function preparePackage(
           ? "full-user"
           : "declarative");
       const compatible =
-        compatibleWith(falryn.compatibility, host) &&
-        compatibleWith(nativeDeclaration?.compatibility, host) &&
-        compatibleWith(nativeDeclaration?.execution?.compatibility, host);
+        hostCompatible(falryn.compatibility, host) &&
+        hostCompatible(nativeDeclaration?.compatibility, host) &&
+        hostCompatible(nativeDeclaration?.execution?.compatibility, host);
       contributions.push({
         authority: nativeDeclaration?.authority ?? {
           effects: kind === "mcp-connection" ? ["external"] : [],
@@ -320,7 +320,7 @@ export async function preparePackage(
       ok: true,
       package: freezeMetadata({
         ownership: subject.data.ownership,
-        compatibility: compatibleWith(falryn.compatibility, host) ? "compatible" : "incompatible",
+        compatibility: hostCompatible(falryn.compatibility, host) ? "compatible" : "incompatible",
         identity: decoded.value,
         identityDigest: decoded.digest,
         manifest,
@@ -338,16 +338,6 @@ export async function preparePackage(
       code: error instanceof ExtensionInputError ? error.code : "invalid-package-input",
     };
   }
-}
-
-function compatibleWith(value: FalrynManifest["compatibility"], host: InspectionHost): boolean {
-  return (
-    value === undefined ||
-    ((value.falryn === undefined || satisfies(host.falryn, value.falryn)) &&
-      (value.bun === undefined || satisfies(host.bun, value.bun)) &&
-      (value.os.length === 0 || value.os.some((os) => os === host.os)) &&
-      (value.arch.length === 0 || value.arch.some((arch) => arch === host.arch)))
-  );
 }
 
 function validateDeclarations(

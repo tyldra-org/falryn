@@ -48,6 +48,7 @@ import type { DoctorPayload, runDoctor } from "./commands/doctor.ts";
 import type { ExportCommandPayload, runExport } from "./commands/export.ts";
 import type { runExtensionInspect } from "./commands/extension.ts";
 import type { ExtensionCatalogPayload, runExtensionCatalog } from "./commands/extension-catalog.ts";
+import type { ExtensionListingPayload, runExtensionListing } from "./commands/extension-listing.ts";
 import type { runImport, runReplay } from "./commands/import-replay-commands.ts";
 import type { runModel } from "./commands/model.ts";
 import type { PeerPayload } from "./commands/peer.ts";
@@ -314,6 +315,14 @@ export function stoppedResult(
         outcome,
         effect,
       );
+    case "extension.listing":
+      return resultFor<"extension.listing", ExtensionListingPayload>(
+        command,
+        null,
+        [],
+        outcome,
+        effect,
+      );
     case "extension.inspect":
     case "extension.trust":
       return resultFor<"extension.inspect" | "extension.trust", PackageInspectionReport>(
@@ -398,5 +407,6 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runProvider>>
   | Awaited<ReturnType<typeof runModel>>
   | Awaited<ReturnType<typeof runExtensionCatalog>>
+  | Awaited<ReturnType<typeof runExtensionListing>>
   | Awaited<ReturnType<typeof runExtensionInspect>>
   | Awaited<ReturnType<typeof runCoding>>;

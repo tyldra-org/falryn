@@ -213,6 +213,7 @@ export type Invocation =
       readonly modelArgs?: ModelSettingsRequest;
       readonly extensionPath?: string;
       readonly extensionCatalogArgs?: import("../commands/extension-catalog.ts").ExtensionCatalogArguments;
+      readonly extensionListingArgs?: import("../commands/extension-listing.ts").ExtensionListingArguments;
       readonly packageArgs?: import("../commands/package.ts").PackageArguments;
       readonly scheduleArgs?: import("../commands/schedule.ts").ScheduleArguments;
       readonly peerArgs?: import("../commands/peer.ts").PeerArguments;

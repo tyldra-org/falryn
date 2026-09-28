@@ -95,6 +95,7 @@ export const COMMAND_IDS = [
   "extension.trust",
   "extension.catalog",
   "extension.scope",
+  "extension.listing",
   "package",
   "peer",
   "schedule",
