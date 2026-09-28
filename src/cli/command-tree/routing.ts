@@ -58,7 +58,9 @@ export function commandFrom(
             ? "extension.scope"
             : action === "listing"
               ? "extension.listing"
-              : null;
+              : action === "skills"
+                ? "extension.skills"
+                : null;
   if (group === "provider") {
     return action === null ? null : "provider";
   }

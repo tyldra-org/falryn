@@ -90,6 +90,9 @@ export function estimatePromptTokens(text: string): number {
   return estimateTokensForLength(text.length);
 }
 
+/** The identity recorded beside any figure produced by `estimatePromptTokens`. */
+export const PROMPT_TOKEN_ESTIMATOR = "utf16-code-units-per-4-v1";
+
 /** The same estimate over a UTF-16 length, for callers that keep only a running count. */
 export function estimateTokensForLength(codeUnits: number): number {
   if (codeUnits <= 0) {

@@ -4,6 +4,10 @@ import {
   EMPTY_SOURCE_PREFERENCES,
   type InstructionSource,
 } from "../../domain/context/instruction-sources.ts";
+import {
+  estimatePromptTokens,
+  PROMPT_TOKEN_ESTIMATOR,
+} from "../../domain/context/prompt-composition.ts";
 import { bytesDigest } from "../../domain/extensions/canonical.ts";
 import { createInstructionSourceOwner } from "./instruction-source-owner.ts";
 
@@ -74,6 +78,8 @@ test("routing loads only the selected skill's complete body and records its admi
   expect(bodies).toContain("BODY_release-notes_project-agents");
   expect(bodies).not.toContain("BODY_incident");
   expect(prepared.binding.sections[0]?.id).toBe("skill-routing");
+  const routing = prepared.binding.sections[0]?.content ?? "";
+  const listing = "release-notes (named-in-task)";
   expect(prepared.binding.receipt.skills).toEqual({
     candidates: 2,
     routes: [
@@ -84,9 +90,15 @@ test("routing loads only the selected skill's complete body and records its admi
         source: expect.stringMatching(/^sha256:/),
         digest: bytesDigest(new TextEncoder().encode("BODY_release-notes_project-agents")),
         bytes: "BODY_release-notes_project-agents".length,
+        tokens: estimatePromptTokens("BODY_release-notes_project-agents"),
+        listing: { bytes: listing.length, tokens: estimatePromptTokens(listing) },
       },
     ],
+    // The shared section, with header text no route owns, is recorded once.
+    section: { bytes: routing.length, tokens: estimatePromptTokens(routing) },
+    estimator: PROMPT_TOKEN_ESTIMATOR,
   });
+  expect(routing).toContain(listing);
 });
 
 test("an ambiguous or ineligible automatic pick is omitted with its reason, never failing the turn", async () => {
@@ -124,7 +136,12 @@ test("an ambiguous or ineligible automatic pick is omitted with its reason, neve
   const refused = await manual.prepare("Use deploy now");
   if (!refused.ok) throw new Error(refused.code);
   expect(manual.reads).toEqual([]);
-  expect(refused.binding.receipt.skills).toEqual({ candidates: 0, routes: [] });
+  expect(refused.binding.receipt.skills).toEqual({
+    candidates: 0,
+    routes: [],
+    section: null,
+    estimator: PROMPT_TOKEN_ESTIMATOR,
+  });
   expect(JSON.stringify(refused.binding.sections)).not.toContain("Deploy the service");
 });
 

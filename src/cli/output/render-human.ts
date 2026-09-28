@@ -2,6 +2,7 @@ import { checkpointMessage } from "../../application/compression/checkpoint-requ
 import { extensionCatalogLines } from "../../application/extensions/catalog-report.ts";
 import { curatedCatalogLines } from "../../application/extensions/curated-catalogs.ts";
 import { packageInspectionLines } from "../../application/extensions/inspection-report.ts";
+import { skillUsageLines } from "../../application/extensions/skill-usage.ts";
 import { modelSettingsLines } from "../../application/providers/model-settings-format.ts";
 /**
  * The human and quiet projections of a `CommandResult`.
@@ -527,6 +528,11 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
         lines: result.payload === null ? [] : curatedCatalogLines(result.payload).map(safe),
         diagnostics: [],
       };
+    case "extension.skills":
+      return {
+        lines: result.payload === null ? [] : skillUsageLines(result.payload).map(safe),
+        diagnostics: [],
+      };
     case "extension.inspect":
     case "extension.trust":
       return {
@@ -630,6 +636,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "extension.catalog":
     case "extension.scope":
     case "extension.listing":
+    case "extension.skills":
     case "package":
     case "schedule":
     case "peer":

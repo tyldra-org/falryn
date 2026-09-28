@@ -96,6 +96,7 @@ export const COMMAND_IDS = [
   "extension.catalog",
   "extension.scope",
   "extension.listing",
+  "extension.skills",
   "package",
   "peer",
   "schedule",

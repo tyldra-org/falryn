@@ -270,6 +270,9 @@ async function runCommand(
       ...(invocation.extensionListingArgs === undefined
         ? {}
         : { extensionListingArgs: invocation.extensionListingArgs }),
+      ...(invocation.extensionSkillsArgs === undefined
+        ? {}
+        : { extensionSkillsArgs: invocation.extensionSkillsArgs }),
       ...(invocation.packageArgs === undefined ? {} : { packageArgs: invocation.packageArgs }),
       ...(invocation.scheduleArgs === undefined ? {} : { scheduleArgs: invocation.scheduleArgs }),
       ...(invocation.peerArgs === undefined ? {} : { peerArgs: invocation.peerArgs }),

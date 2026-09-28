@@ -214,6 +214,7 @@ export type Invocation =
       readonly extensionPath?: string;
       readonly extensionCatalogArgs?: import("../commands/extension-catalog.ts").ExtensionCatalogArguments;
       readonly extensionListingArgs?: import("../commands/extension-listing.ts").ExtensionListingArguments;
+      readonly extensionSkillsArgs?: import("../commands/extension-skills.ts").ExtensionSkillsArguments;
       readonly packageArgs?: import("../commands/package.ts").PackageArguments;
       readonly scheduleArgs?: import("../commands/schedule.ts").ScheduleArguments;
       readonly peerArgs?: import("../commands/peer.ts").PeerArguments;

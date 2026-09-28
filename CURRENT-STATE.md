@@ -474,6 +474,37 @@ eligible candidates and each route's name, decision (`loaded`, `recommended` or
 loaded skill. It holds no body, so replay and export show these decisions without
 reading a skill. Child agents, workflow steps and scheduled runs do not route
 skills (#1180), and supporting files inside a bundle are not loaded (#137).
+Receipts also record estimated context contributions: a loaded body's tokens, each
+route's own line in the routing section (bytes and tokens) and the whole section.
+Estimates use the prompt composer's four-UTF-16-code-units-per-token rule and name
+it (`utf16-code-units-per-4-v1`); they are not provider-measured. Receipts written
+before these fields existed report their tokens as unestimated, never zero.
+
+`falryn extension skills [--input request.json]` reports skill usage from those
+stored receipts only. It never reads a skill, starts a script or MCP server, calls a
+provider or records anything. The optional request selects one `session` of the
+current workspace (default: all of its sessions, at most 256), a `skill` name,
+`since`/`until` timestamps, a `limit` of stored events to scan (default 1,024,
+maximum 4,096), an `after` continuation from the previous page of the same query,
+and `aggregate: "source"` to merge a source's generations while keeping the
+per-generation breakdown. Rows are keyed by source, content digest and configuration
+generation, and count discovered, selected, shadowed, excluded, conflicting,
+recommended, loaded and refused separately, plus reuse of an identical earlier
+admission, load reasons and the admission scope (main, child or workflow). A
+recommended or refused route belongs to the source that won name resolution, so a
+shadowed same-named source never inherits it. Body and listing contributions, and the
+shared routing-section total, are reported with the estimator's name.
+
+Coverage lists each session's scanned sequence range and whether it reached the end.
+Sequence gaps, unreadable events (skipped, with their neighbours still counted),
+events outside the workspace or session, cancellation, and receipts that omitted
+sources are reported as omissions, and only a window with none of these is marked
+complete. A workspace with no admissions reports usage as unavailable, not zero.
+Explicit invocation and supporting-resource loads have no producer yet and are listed
+as not recorded. Provider-reported input totals are not stored per session, so they are
+reported as unavailable and never attributed to a skill. An unknown session and a
+continuation reused with a different query are refused. There is no Extensions view
+for these results yet (#274).
 
 ## Executable sandbox policy
 
