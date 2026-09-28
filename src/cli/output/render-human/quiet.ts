@@ -1,4 +1,5 @@
 import { extensionCatalogLines } from "../../../application/extensions/catalog-report.ts";
+import { curatedCatalogLines } from "../../../application/extensions/curated-catalogs.ts";
 import { packageInspectionLines } from "../../../application/extensions/inspection-report.ts";
 import { modelSettingsLines } from "../../../application/providers/model-settings-format.ts";
 /** Primary-result projection for quiet CLI output. */
@@ -142,6 +143,8 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
     case "extension.catalog":
     case "extension.scope":
       return result.payload === null ? [] : extensionCatalogLines(result.payload).map(safe);
+    case "extension.listing":
+      return result.payload === null ? [] : curatedCatalogLines(result.payload).map(safe);
     case "extension.inspect":
     case "extension.trust":
       return result.payload === null ? [] : packageInspectionLines(result.payload).map(safe);

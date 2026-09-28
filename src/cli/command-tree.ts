@@ -433,7 +433,7 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           group
             .positional("action", {
               type: "string",
-              choices: ["inspect", "trust", "catalog", "scope"],
+              choices: ["inspect", "trust", "catalog", "scope", "listing"],
             })
             .option("input", {
               type: "string",
@@ -1001,6 +1001,33 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
       };
     extensionCatalogArgs = checked.data;
   }
+  let extensionListingArgs:
+    | import("./commands/extension-listing.ts").ExtensionListingArguments
+    | undefined;
+  if (command === "extension.listing") {
+    if (parsed.path !== undefined || parsed.input === undefined)
+      return {
+        kind: "invalid",
+        message: "extension listing requires --input and no package path.",
+      };
+    const loaded = await loadTaskInputFile(parsed.input);
+    if (!loaded.ok || Buffer.byteLength(loaded.value) > 16_384)
+      return { kind: "invalid", message: "Invalid extension request file (maximum 16384 bytes)." };
+    let input: unknown;
+    try {
+      input = JSON.parse(loaded.value);
+    } catch {
+      return { kind: "invalid", message: "Invalid extension request JSON." };
+    }
+    const { extensionListingArgumentsSchema } = await import("./commands/extension-listing.ts");
+    const checked = extensionListingArgumentsSchema.safeParse(input);
+    if (!checked.success)
+      return {
+        kind: "invalid",
+        message: "The listing request must be an import of a file or a bounded list query.",
+      };
+    extensionListingArgs = checked.data;
+  }
   let compactArgs: CompactArguments | undefined;
   let mcpArgs: import("./commands/mcp.ts").McpArguments | undefined;
   if (command === "mcp") {
@@ -1162,6 +1189,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     ...(workingConfigurationArgs === undefined ? {} : { workingConfigurationArgs }),
     ...(modelArgs === undefined ? {} : { modelArgs }),
     ...(extensionCatalogArgs === undefined ? {} : { extensionCatalogArgs }),
+    ...(extensionListingArgs === undefined ? {} : { extensionListingArgs }),
     ...(extensionTrust === undefined ? {} : { extensionTrust }),
     ...(packageArgs === undefined ? {} : { packageArgs }),
     ...(scheduleArgs === undefined ? {} : { scheduleArgs }),

@@ -1,4 +1,5 @@
 /** Static declarations are upper bounds and never executable admission. */
+import { satisfies } from "semver";
 import { z } from "zod";
 import { scheduleDefinitionSchema } from "../orchestration/schedule-state.ts";
 import { isDeclarationSchema } from "./declaration-schema.ts";
@@ -54,7 +55,8 @@ export const integrityFileSchema = z.strictObject({
   path: relativePathSchema,
   digest: digestSchema,
 });
-const compatibility = z.strictObject({
+/** The host, platform and runtime ranges a package or curated listing declares. */
+export const packageCompatibilitySchema = z.strictObject({
   falryn: versionRangeSchema.optional(),
   bun: versionRangeSchema.optional(),
   os: z
@@ -66,6 +68,23 @@ const compatibility = z.strictObject({
     .max(2)
     .default([]),
 });
+export type PackageCompatibility = z.infer<typeof packageCompatibilitySchema>;
+export type HostFacts = {
+  readonly falryn: string;
+  readonly bun: string;
+  readonly os: string;
+  readonly arch: string;
+};
+/** Whether a declared compatibility admits this host. An absent declaration admits any. */
+export function hostCompatible(value: PackageCompatibility | undefined, host: HostFacts): boolean {
+  return (
+    value === undefined ||
+    ((value.falryn === undefined || satisfies(host.falryn, value.falryn)) &&
+      (value.bun === undefined || satisfies(host.bun, value.bun)) &&
+      (value.os.length === 0 || value.os.some((os) => os === host.os)) &&
+      (value.arch.length === 0 || value.arch.some((arch) => arch === host.arch)))
+  );
+}
 const resources = z.strictObject({
   startupMs: z.int().positive().max(30_000),
   requestMs: z.int().positive().max(1_800_000),
@@ -83,7 +102,7 @@ const execution = z.strictObject({
   protocolVersion: identityText,
   expectedChildren: names.default([]),
   hostIntegrations: names.default([]),
-  compatibility,
+  compatibility: packageCompatibilitySchema,
   resources,
 });
 const authority = z.strictObject({
@@ -154,7 +173,7 @@ export const contributionDeclarationSchema = z
     inputSchema: schemaObject.optional(),
     outputSchema: schemaObject.optional(),
     authority,
-    compatibility: compatibility.optional(),
+    compatibility: packageCompatibilitySchema.optional(),
     execution: execution.optional(),
     configuration: names.default([]),
     state: names.default([]),
@@ -273,7 +292,7 @@ export const falrynManifestSchema = z.strictObject({
   packageId: identityText.optional(),
   contributions: z.array(contributionDeclarationSchema).max(1_024).default([]),
   dependencies: z.array(dependencySchema).max(256).default([]),
-  compatibility: compatibility.optional(),
+  compatibility: packageCompatibilitySchema.optional(),
   scopes: z.array(z.enum(EXTENSION_SCOPES)).max(5).default([]),
   files: z.array(integrityFileSchema).max(4_096).default([]),
   configuration: z

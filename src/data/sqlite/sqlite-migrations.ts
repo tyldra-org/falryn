@@ -1,3 +1,4 @@
+import { CURATED_CATALOG_TABLE, MIGRATION_0034 } from "../extensions/curated-catalog-repository.ts";
 import { HOOK_HEALTH_TABLE, MIGRATION_0029 } from "../extensions/hook-health-repository.ts";
 import { MIGRATION_0030, SCHEDULE_TABLES } from "../orchestration/schedule-store.ts";
 import { MIGRATION_0022, WORKFLOW_TABLES } from "../orchestration/workflow-store.ts";
@@ -149,6 +150,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0031,
   MIGRATION_0032,
   MIGRATION_0033,
+  MIGRATION_0034,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -189,6 +191,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   ...WORK_HIERARCHY_TABLES,
   ...PEER_ROUTE_TABLES,
   ...AGENT_EDIT_SCOPE_TABLES,
+  CURATED_CATALOG_TABLE,
 ];
 
 function issue(
