@@ -140,7 +140,7 @@ describe("automatic discovery in real turns", () => {
     await mkdir(join(multi.workspace, "docs", "api"), { recursive: true });
     await writeFile(join(multi.workspace, "docs", "AGENTS.md"), "DOCS_SUBTREE_RULE");
     await writeFile(join(multi.workspace, "docs", "api", "CLAUDE.md"), "API_SUBTREE_RULE");
-    const run = await multi.run(undefined, scopedStep("docs"));
+    const run = await multi.run({ script: scopedStep("docs") });
     expect(run.result.outcome.kind, text(run.result)).toBe("completed");
     const [main, step] = run.requests.map((request) => text(request.messages));
     expect(main).toContain("ROOT_AGENTS_RULE");
@@ -166,7 +166,7 @@ describe("automatic discovery in real turns", () => {
     await mkdir(join(f.home, "outside"));
     await writeFile(join(f.home, "outside", "AGENTS.md"), "OUTSIDE_SECRET_RULE");
     await symlink(join(f.home, "outside"), join(f.workspace, "linked"));
-    const run = await f.run(undefined, scopedStep("linked"));
+    const run = await f.run({ script: scopedStep("linked") });
     // The step ran with the root's scope chain; the linked directory was never entered.
     expect(run.result.outcome.kind, text(run.result)).toBe("completed");
     expect(run.requests.length).toBeGreaterThanOrEqual(2);
@@ -185,7 +185,7 @@ describe("automatic discovery in real turns", () => {
       new Uint8Array([0x41, 0xff, 0xfe, 0x42]),
     );
     await writeFile(join(f.workspace, "docs", "CLAUDE.md"), "x".repeat(1_048_577));
-    const run = await f.run(undefined, scopedStep("docs"));
+    const run = await f.run({ script: scopedStep("docs") });
     expect(run.result.outcome.kind, text(run.result)).toBe("completed");
     expect(text(run.requests[1]?.messages)).toContain("DOCS_FALRYN_RULE");
     // The step's own receipt names each excluded file and why.

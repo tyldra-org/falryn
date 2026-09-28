@@ -20,7 +20,12 @@ import {
 import type { GlobalOptions } from "../options.ts";
 import { createRecordingCliStreams } from "../output/streams.ts";
 import { runCoding } from "./coding-run.ts";
+import { composeInstructionSources } from "./instruction-sources.ts";
 import { openProductArtifactSession } from "./product-artifact-session.ts";
+import {
+  loadProductConfiguration,
+  productConfigurationLoadRequest,
+} from "./product-configuration.ts";
 import { composeProductShellAttachments } from "./product-shell-attachments.ts";
 import { createServiceProvider } from "./services.ts";
 
@@ -111,10 +116,15 @@ export async function nativePromptJourney(input: {
 export async function nativePromptShellJourney(input: {
   home: string;
   environment: Record<string, string>;
+  /** Wire the terminal's instruction-source owner, as dispatch does. */
+  instructions?: boolean;
 }) {
-  const { services } = await productHost(input);
+  const { globals, services } = await productHost(input);
   const graph = services();
   await graph.ensureWorkspaceSet();
+  // Dispatch loads configuration before composing the terminal; instruction sources bind to it.
+  if (input.instructions)
+    await loadProductConfiguration(graph, productConfigurationLoadRequest(globals));
   const durable = await openProductArtifactSession(graph);
   if (!durable) throw new Error("native-fixture-store-unavailable");
   const requests: ModelRequest[] = [];
@@ -124,6 +134,13 @@ export async function nativePromptShellJourney(input: {
   });
   const controller = new AbortController();
   const attached = await composeProductShellAttachments({
+    ...(input.instructions
+      ? {
+          instructionSources: (configuration: Parameters<typeof composeInstructionSources>[1]) =>
+            composeInstructionSources(graph, configuration),
+          sandboxConfiguration: () => graph.loader.current(),
+        }
+      : {}),
     publishNativePackages: durable.publishNativePackages,
     rehydrateExtensions: durable.rehydrateExtensions,
     records: durable.records,

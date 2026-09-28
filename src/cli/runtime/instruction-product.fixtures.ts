@@ -64,9 +64,15 @@ export async function instructionProduct(home: string, addDirs: readonly string[
     if (result.outcome.kind !== "completed") throw new Error(JSON.stringify(result));
   }
   async function run(
-    beforeResponse?: () => Promise<void>,
-    script?: (request: ModelRequest, index: number) => DeterministicProviderScript,
+    options: {
+      readonly beforeResponse?: () => Promise<void>;
+      readonly script?: (request: ModelRequest, index: number) => DeterministicProviderScript;
+      readonly prompt?: string;
+      /** Continue this session instead of starting a new one. */
+      readonly session?: string;
+    } = {},
   ) {
+    const { beforeResponse, script } = options;
     await services().ensureWorkspaceSet();
     await services().workspaceTrust.resolve(async () => "proceed");
     const requests: ModelRequest[] = [];
@@ -76,7 +82,10 @@ export async function instructionProduct(home: string, addDirs: readonly string[
     });
     const result = await runCoding(
       services,
-      { promptParts: ["Follow the applicable instructions."] },
+      {
+        promptParts: [options.prompt ?? "Follow the applicable instructions."],
+        ...(options.session === undefined ? {} : { session: options.session }),
+      },
       {
         globals,
         input: createRecordingCliStreams({ stdin: null }).input,

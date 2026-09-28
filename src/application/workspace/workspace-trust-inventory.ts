@@ -232,6 +232,7 @@ export function createWorkspaceInventory(options: {
         await visit(".falryn/hooks", "hooks", 0, "directory");
         await visit(".falryn/hooks.json", "hooks", 0, "file");
         await visit(".agents/skills", "skills", 0, "directory");
+        await visit(".claude/skills", "skills", 0, "directory");
         await visit(".falryn/skills", "skills", 0, "directory");
         await visit(".falryn/workflows", "workflows", 0, "directory");
       }

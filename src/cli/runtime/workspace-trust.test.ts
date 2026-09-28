@@ -178,3 +178,19 @@ test("changes to user configuration invalidate prior project approval", async ()
   expect(loaded.trust.status).toBe("stale");
   expect(loaded.values["diagnostics.level"]).toBe("debug");
 });
+
+test("a project skill in any conventional location is part of the reviewed inventory", async () => {
+  for (const location of [".falryn/skills", ".agents/skills", ".claude/skills"]) {
+    const { work, provider } = await fixture();
+    expect((await provider()().workspaceTrust.resolve(async () => "proceed")).status).toBe(
+      "accepted",
+    );
+    await mkdir(join(work, location, "release-notes"), { recursive: true });
+    await writeFile(
+      join(work, location, "release-notes", "SKILL.md"),
+      "---\nname: release-notes\ndescription: Draft release notes.\n---\nBody\n",
+    );
+    // Approval covered the earlier inventory; a new project skill needs review first.
+    expect((await provider()().workspaceTrust.resolve()).status).toBe("stale");
+  }
+});

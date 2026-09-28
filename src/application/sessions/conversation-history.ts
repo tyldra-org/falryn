@@ -27,6 +27,7 @@ import {
   type ConversationRecord,
   projectConversationHistory,
 } from "../context/conversation-projection.ts";
+import { activatedSkills } from "../context/skill-activations.ts";
 import type { ProductTaskResources } from "../orchestration/product-resources.ts";
 import { historyDigest } from "./session-history.ts";
 
@@ -52,6 +53,8 @@ export type ConversationHistorySnapshot = {
   readonly projectionDigest: string;
   readonly records: readonly ConversationRecord[];
   readonly messages: readonly ModelMessage[];
+  /** Skills earlier turns loaded, from their admission receipts (#136); no body is read. */
+  readonly activatedSkills: readonly string[];
   readonly omissions: readonly { readonly id: string; readonly reason: string }[];
   readonly pendingOperations: readonly string[];
   readonly eventBytes: number;
@@ -281,6 +284,7 @@ export function createConversationHistoryReader(ports: ConversationHistoryPorts)
         messages: projection.messages,
         omissions: projection.omissions,
         records,
+        activatedSkills: activatedSkills(events),
         pendingOperations: [...pending],
         eventBytes,
         bytesRead,

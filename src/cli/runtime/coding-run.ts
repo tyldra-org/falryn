@@ -1,4 +1,5 @@
 import { refreshRuntimeInstructions } from "../../application/context/product-instructions.ts";
+import { createSkillActivations } from "../../application/context/skill-activations.ts";
 import { processProductResources } from "../../application/orchestration/product-resources.ts";
 import {
   type PreparedSessionSelection,
@@ -924,6 +925,7 @@ export async function runCoding(
         instructions: {
           owner: composeInstructionSources(graph),
           scope: { root: canonicalDigest({ root: workspaceRoot }), directory: "", kind: "main" },
+          skills: createSkillActivations(selection?.history.activatedSkills),
         },
         eventStore: productArtifactSession.eventStore,
         historyArtifacts: options.artifacts ?? productArtifactSession.artifacts,

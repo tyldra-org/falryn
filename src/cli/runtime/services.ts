@@ -140,6 +140,8 @@ export type Services = {
   ) => Pick<Services, "registry" | "loader">;
   /** Current user-authored configuration home, normally `~/.falryn`. */
   readonly configurationRoot: LocalPath;
+  /** The user's home directory, which holds cross-tool locations such as `~/.agents`. */
+  readonly userHome: LocalPath;
   /** Previous platform-default home, absent under an explicit override. */
   readonly legacyConfigurationRoot: LocalPath | null;
   /** Selects the effective read home without creating or moving anything. */
@@ -349,6 +351,7 @@ export function createServiceProvider(
       ...configurationSession(FIRST_CONFIGURATION_GENERATION, eventStore),
       configurationSession,
       configurationRoot,
+      userHome: home,
       legacyConfigurationRoot,
       configurationHomeForRead: (signal) =>
         resolveConfigurationHome(
