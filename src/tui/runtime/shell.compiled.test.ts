@@ -245,6 +245,12 @@ function settledFrame(step: string): string {
 /** Bytes a step drew, once the interface stopped drawing more. */
 const QUIET_MS = 300;
 const STEP_TIMEOUT_MS = 4_000;
+/**
+ * Leaving takes two Ctrl+C presses within two seconds (#1184). A step waits for a quiet
+ * screen, which an animated status line can hold off for longer than that window, so a
+ * test leaves the way a person does: both presses together.
+ */
+const DOUBLE_CTRL_C = [0x03, 0x03] as const;
 
 /**
  * The interface, driven one step at a time.
@@ -467,7 +473,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
         // A focus move redraws without changing the region ownership of any
         // landmark, so the settled frame is the empty shell's ordinary layout.
         step = await driver.press([0x09]);
-        await driver.press([0x03]);
+        await driver.press(DOUBLE_CTRL_C);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       const screen = await emulateScreen(settledFrame(step), {
@@ -498,7 +504,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
             expect(driver.pty.transcript()).toContain("Review workspace trust");
             expect(driver.pty.transcript()).not.toContain("private-workspace-secret");
             await driver.press(choice, ["Nothing has happened in this session yet"]);
-            await driver.press([0x03]);
+            await driver.press(DOUBLE_CTRL_C);
           },
           {
             prepare: async (root) => {
@@ -537,7 +543,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
           [],
           async (driver) => {
             step = await driver.press([0x09]);
-            await driver.press([0x03]);
+            await driver.press(DOUBLE_CTRL_C);
           },
           { columns, rows: 70 },
         );
@@ -612,9 +618,21 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       // as `SIGINT` — before the keymap existed nothing consumed it, and the
       // only way out of the interface was killing the process from another
       // window while the status line said `^C exit`.
-      const run = await runOnPty([], ({ pty }) => {
-        writeSync(pty.master, Buffer.from([0x03]));
+      // One stray press only arms the exit (#1184): it draws the hint and the shell
+      // stays open until the second press.
+      let armed = "";
+      let openAfterOne = false;
+      const run = await runOnPty([], async (driver) => {
+        writeSync(driver.pty.master, Buffer.from([0x03]));
+        await Bun.sleep(400);
+        openAfterOne = driver.process.exitCode === null;
+        armed = (
+          await emulateScreen(driver.pty.transcript(), { columns: COLUMNS, rows: ROWS })
+        ).rows.join("\n");
+        writeSync(driver.pty.master, Buffer.from([0x03]));
       });
+      expect(openAfterOne).toBe(true);
+      expect(armed).toContain("Press Ctrl+C again to exit.");
       // Zero, not 130: this is a deliberate quit, not a cancellation.
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expectRestored(run);
@@ -635,11 +653,11 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
         await driver.press("\u001b[F");
         scrolled = driver.pty.transcript();
         closed = await driver.press([0x1b]);
-        await driver.press([0x03]);
+        await driver.press(DOUBLE_CTRL_C);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(opened).toContain("Help");
-      expect(opened).toContain("Ctrl+C ends the session");
+      expect(opened).toContain("Press Ctrl+C twice");
       // End reaches the task-intelligence block. OpenTUI may repaint only
       // changed cells, so assert the resulting terminal rather than a byte chunk.
       const screen = await emulateScreen(scrolled, { columns: COLUMNS, rows: ROWS });
@@ -673,7 +691,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
         opened = await driver.press([0x10]);
         searched = await driver.press("exit");
         closed = await driver.press([0x1b]);
-        await driver.press([0x03]);
+        await driver.press(DOUBLE_CTRL_C);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(opened).toContain("Commands");
@@ -703,7 +721,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
         // Submission can pause between clearing the composer and resolving the
         // provider. A quiet terminal alone does not establish completion.
         submitted = await driver.press([0x0d], ["Not sent", "provider connection is unavailable"]);
-        await driver.press([0x03]);
+        await driver.press(DOUBLE_CTRL_C);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(typed).toContain("hello");
@@ -751,7 +769,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
         await driver.press([0x09]);
         await driver.press([0x09]);
         typed = await driver.press("hello");
-        await driver.press([0x03]);
+        await driver.press(DOUBLE_CTRL_C);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
 
@@ -811,7 +829,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       const run = await runOnPty([], async (driver) => {
         narrow = await driver.resize(44, 14);
         wide = await driver.resize(COLUMNS, ROWS);
-        await driver.press([0x03]);
+        await driver.press(DOUBLE_CTRL_C);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       // The frame it settled on, not the transition: a resize repaints at the

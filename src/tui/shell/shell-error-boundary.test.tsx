@@ -22,6 +22,6 @@ test("a render failure becomes a safe frame with an exit instruction", async () 
   }
 
   expect(frame).toContain("Falryn could not render this frame.");
-  expect(frame).toContain("Press Ctrl+C to exit and restore the terminal.");
+  expect(frame).toContain("Press Ctrl+C twice to exit and restore the terminal.");
   expect(frame).not.toContain("foreign render detail");
 });

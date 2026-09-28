@@ -19,6 +19,7 @@ import { SHELL_COMMANDS } from "../commands/commands.ts";
 import { frameOf, mount, type Rendered, type TerminalShape } from "../runtime/harness.tsx";
 import { type Frame, FrameProvider } from "../shell/context.tsx";
 import { ShellApp } from "../shell/shell-app.tsx";
+import { EXIT_CONFIRMATION } from "../shell/shell-runtime.tsx";
 import type { CommandEntry } from "../shell/view-model.ts";
 import { known, type ShellModel, unavailable } from "../shell/view-model.ts";
 import type { ThemeRequest } from "../theme/index.ts";
@@ -163,8 +164,10 @@ describe("typing into the palette", () => {
     shell.setup.mockInput.pressArrow("down");
     await shell.frame();
     shell.setup.mockInput.pressEnter();
-    await shell.frame();
-
+    // Choosing Exit is the same command as its key: it arms, and a second press leaves.
+    expect(await shell.frame()).toContain(EXIT_CONFIRMATION.notice);
+    expect(shell.exits()).toBe(0);
+    await shell.press("c", { ctrl: true });
     expect(shell.exits()).toBe(1);
   });
 });

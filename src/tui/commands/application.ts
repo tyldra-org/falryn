@@ -23,7 +23,7 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
   {
     id: "app.exit",
     title: "Exit",
-    description: "Close the shell and restore the terminal.",
+    description: "Close the shell and restore the terminal. Press twice to confirm.",
     context: "global",
     defaultBinding: "ctrl+c",
     keywords: ["quit", "close", "leave"],
