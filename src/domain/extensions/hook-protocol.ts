@@ -55,6 +55,30 @@ export function hookDecisionBinding(envelope: HookEnvelope) {
     payloadDigest: createHash("sha256").update(JSON.stringify(envelope.payload)).digest("hex"),
   };
 }
+
+/**
+ * The values of a handler's explicit field mappings: the decision binding, an envelope
+ * header field, or a point payload field as payload.<name> (see hookArgumentSources).
+ * Nothing else leaves the envelope; an absent optional field is omitted.
+ */
+export function hookMappedValues(
+  mappings: readonly { readonly name: string; readonly from: string }[],
+  envelope: HookEnvelope,
+): Record<string, unknown> {
+  const payload = envelope.payload as Readonly<Record<string, unknown>>;
+  const header = envelope as unknown as Readonly<Record<string, unknown>>;
+  const values: Record<string, unknown> = {};
+  for (const { name, from } of mappings) {
+    const value =
+      from === "binding"
+        ? hookDecisionBinding(envelope)
+        : from.startsWith("payload.")
+          ? payload[from.slice("payload.".length)]
+          : header[from];
+    if (value !== undefined) values[name] = value;
+  }
+  return values;
+}
 export const hookDecisionSchema = z.discriminatedUnion("kind", [
   z.strictObject({
     kind: z.literal("observe"),

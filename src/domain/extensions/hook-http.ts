@@ -21,7 +21,7 @@ export type HttpHookRegistration = HookRegistration & {
 };
 
 /** The user's approval for one HTTP hook contribution, stored with its activation. */
-export const hookGrantSchema = z.strictObject({
+export const httpHookGrantSchema = z.strictObject({
   contribution: digestSchema,
   /** Exactly the declared endpoint; approving it is the only way it can be reached. */
   url: z.string().min(1).max(2_048),
@@ -35,10 +35,10 @@ export const hookGrantSchema = z.strictObject({
     .nullable()
     .default(null),
 });
-export type HookGrant = z.infer<typeof hookGrantSchema>;
+export type HttpHookGrant = z.infer<typeof httpHookGrantSchema>;
 
 /** What enabling one HTTP hook contribution requires the user to approve. */
-export type HookGrantRequirement = {
+export type HttpHookGrantRequirement = {
   readonly contribution: string;
   readonly url: string;
   /** The handler's credential name, or null when it sends none. */
@@ -61,10 +61,10 @@ export function httpHookContract(declaration: ContributionDeclaration): HttpHook
   return { ...registration, handler };
 }
 
-export function hookGrantRequirement(
+export function httpHookGrantRequirement(
   contribution: string,
   registration: HttpHookRegistration,
-): HookGrantRequirement {
+): HttpHookGrantRequirement {
   return {
     contribution,
     url: registration.handler.url,
@@ -72,13 +72,16 @@ export function hookGrantRequirement(
   };
 }
 
-/** Why a grant does not approve its requirement, or null when it does exactly. */
-export function hookGrantProblem(
-  requirement: HookGrantRequirement,
-  grant: HookGrant | undefined,
+/**
+ * Why a grant does not approve its requirement, or null when it does exactly. A grant of
+ * another kind (null) approves no destination.
+ */
+export function httpHookGrantProblem(
+  requirement: HttpHookGrantRequirement,
+  grant: HttpHookGrant | null | undefined,
 ): string | null {
   if (grant === undefined) return "hook-grant-required";
-  if (grant.url !== requirement.url) return "hook-grant-destination-mismatch";
+  if (grant === null || grant.url !== requirement.url) return "hook-grant-destination-mismatch";
   if ((requirement.credential === null) !== (grant.credential === null))
     return "hook-grant-credential-mismatch";
   return null;
@@ -88,7 +91,7 @@ export function hookGrantProblem(
  * The reference a granted credential resolves as. Its consumer is the contribution, so
  * the shared resolver refuses it to any other hook, server or integration.
  */
-export function hookCredentialReference(grant: HookGrant): CredentialReference | null {
+export function hookCredentialReference(grant: HttpHookGrant): CredentialReference | null {
   return grant.credential === null
     ? null
     : { ...grant.credential, consumer: "hook:" + grant.contribution };

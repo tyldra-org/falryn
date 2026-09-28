@@ -7,7 +7,7 @@
 import { ExtensionInputError } from "./canonical.ts";
 import type { HookRegistration } from "./hook-handlers.ts";
 import type { HookEnvelope } from "./hook-points.ts";
-import { hookDecisionBinding } from "./hook-protocol.ts";
+import { hookMappedValues } from "./hook-protocol.ts";
 import { isRemoteHookDeclaration } from "./hook-remote.ts";
 import type { ContributionDeclaration } from "./manifest.ts";
 
@@ -28,25 +28,15 @@ export function mcpHookContract(declaration: ContributionDeclaration): McpHookRe
   return { ...registration, handler };
 }
 
-/** The tool arguments, each read from exactly the envelope field its mapping names. */
+/**
+ * The tool arguments, each read from exactly the envelope field its mapping names. An
+ * absent optional field is omitted; the tool schema decides whether that is allowed.
+ */
 export function mcpHookArguments(
   registration: McpHookRegistration,
   envelope: HookEnvelope,
 ): Record<string, unknown> {
-  const payload = envelope.payload as Readonly<Record<string, unknown>>;
-  const header = envelope as unknown as Readonly<Record<string, unknown>>;
-  const values: Record<string, unknown> = {};
-  for (const { name, from } of registration.handler.arguments) {
-    const value =
-      from === "binding"
-        ? hookDecisionBinding(envelope)
-        : from.startsWith("payload.")
-          ? payload[from.slice("payload.".length)]
-          : header[from];
-    // An absent optional field is omitted; the tool schema decides whether that is allowed.
-    if (value !== undefined) values[name] = value;
-  }
-  return values;
+  return hookMappedValues(registration.handler.arguments, envelope);
 }
 
 /**

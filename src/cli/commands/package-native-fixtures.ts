@@ -1,7 +1,7 @@
 import { expect } from "bun:test";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
-import type { HookGrantRequirement } from "../../domain/extensions/hook-http.ts";
+import type { HookGrantRequirement } from "../../domain/extensions/hook-grants.ts";
 import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
 import { type ExtraPackageFixture, preparePackageCliFixture } from "./package-health-fixtures.ts";
 
@@ -59,10 +59,13 @@ export async function prepareNativeCliFixture(
       }),
     }),
   );
-  // An MCP tool hook binds only to a session's MCP runtime, which this CLI catalog has none of.
+  // MCP tool and evaluator hooks bind only to a session's runtimes; this CLI catalog has none.
   expect(
     catalog.page.entries.filter(
-      (entry) => entry.availability === "available" || entry.reason === "hook-mcp-session-required",
+      (entry) =>
+        entry.availability === "available" ||
+        entry.reason === "hook-mcp-session-required" ||
+        entry.reason === "hook-evaluator-session-required",
     ),
   ).toHaveLength(1 + fixture.extraContributions.length);
   expect(

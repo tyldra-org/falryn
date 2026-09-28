@@ -208,7 +208,12 @@ test("context additions stay bounded, attributed, untrusted and limited to the f
   const evaluator = hookRegistrationSchema.parse({
     ...externalHookFixture,
     nonlocalOptIn: true,
-    handler: { kind: "agent-evaluator-v1", bindingId: "b", instructions: "i.md" },
+    handler: {
+      kind: "agent-evaluator-v1",
+      bindingId: "b",
+      instructions: "i.md",
+      readTools: ["read_file"],
+    },
   });
   expect(() =>
     decodeHookResponse(

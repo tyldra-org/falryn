@@ -13,6 +13,19 @@ import {
 import { relativePathSchema } from "./identity.ts";
 
 const credential = hookIdentity.optional();
+/** Each named value and the envelope field it is read from; nothing else is sent. */
+const fieldMappings = z
+  .array(z.strictObject({ name: z.string().min(1).max(256), from: hookIdentity }))
+  .max(HOOK_LIMITS.argumentMappings)
+  .default([]);
+/** Trusted instructions plus the envelope fields a model may see (#1186). */
+const evaluator = {
+  /** The package's name for the model it needs; only the user's grant maps it to a model. */
+  bindingId: hookIdentity,
+  /** Package-relative UTF-8 instructions, used verbatim and never interpolated. */
+  instructions: relativePathSchema,
+  evidence: fieldMappings,
+};
 export const hookHandlerSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("builtin"), id: hookIdentity }),
   z.strictObject({
@@ -45,20 +58,14 @@ export const hookHandlerSchema = z.discriminatedUnion("kind", [
     /** The structured result field that holds the decision. */
     outputField: hookIdentity,
     /** Each tool argument and the envelope field it is read from; nothing else is sent. */
-    arguments: z
-      .array(z.strictObject({ name: z.string().min(1).max(256), from: hookIdentity }))
-      .max(HOOK_LIMITS.argumentMappings)
-      .default([]),
+    arguments: fieldMappings,
   }),
-  z.strictObject({
-    kind: z.literal("prompt-evaluator-v1"),
-    bindingId: hookIdentity,
-    instructions: relativePathSchema,
-  }),
+  z.strictObject({ kind: z.literal("prompt-evaluator-v1"), ...evaluator }),
   z.strictObject({
     kind: z.literal("agent-evaluator-v1"),
-    bindingId: hookIdentity,
-    instructions: relativePathSchema,
+    ...evaluator,
+    /** Exact tool names the evaluator's child may call; each must be natively read-only. */
+    readTools: z.array(hookIdentity).min(1).max(8),
   }),
 ]);
 export type HookHandler = z.infer<typeof hookHandlerSchema>;
@@ -113,13 +120,25 @@ export const hookRegistrationSchema = z
       reject("hook-completion-cannot-wait");
     if (budget === "evaluator" && value.mode === "sync" && !descriptor.evaluatorGate)
       reject("hook-evaluator-point-unavailable");
-    if (value.handler.kind === "mcp-tool-v1") {
+    const mappings =
+      value.handler.kind === "mcp-tool-v1"
+        ? value.handler.arguments
+        : value.handler.kind === "prompt-evaluator-v1" ||
+            value.handler.kind === "agent-evaluator-v1"
+          ? value.handler.evidence
+          : null;
+    if (mappings !== null) {
       const sources = hookArgumentSources(value.point);
-      const names = value.handler.arguments.map((mapping) => mapping.name);
-      if (new Set(names).size !== names.length) reject("hook-mcp-argument-duplicate");
-      if (value.handler.arguments.some((mapping) => !sources.includes(mapping.from)))
-        reject("hook-mcp-argument-unavailable");
+      const names = mappings.map((mapping) => mapping.name);
+      if (new Set(names).size !== names.length) reject("hook-mapping-duplicate");
+      if (mappings.some((mapping) => !sources.includes(mapping.from)))
+        reject("hook-mapping-unavailable");
     }
+    if (
+      value.handler.kind === "agent-evaluator-v1" &&
+      new Set(value.handler.readTools).size !== value.handler.readTools.length
+    )
+      reject("hook-evaluator-tool-duplicate");
     for (const filter of value.filters) {
       if (!descriptor.filters.includes(filter.field)) reject("hook-filter-field-unavailable");
       if (

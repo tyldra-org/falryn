@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { removeTemporaryRoots, temporaryRoot } from "../../data/fixtures.ts";
 import { hookServiceDecision, httpHookDeclaration } from "../../domain/extensions/hook-fixtures.ts";
-import type { HookGrantRequirement } from "../../domain/extensions/hook-http.ts";
+import type { HookGrantRequirement } from "../../domain/extensions/hook-grants.ts";
 import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
 import { hookTestCertificate } from "../../integrations/extensions/hook-http-fixtures.ts";
 import type { HookEgressOptions } from "../../integrations/extensions/host-hook-http.ts";
@@ -17,6 +17,11 @@ const tls = hookTestCertificate("hooks.test");
 const unavailable = tls === null || createHostSandbox().probe().status !== "available";
 const COMMAND = [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname];
 const CREDENTIAL = { storeKind: "environment" as const, locator: "HOOK_TOKEN", accountLabel: null };
+/** Answer an HTTP hook's approval requirement with its exact URL and this credential. */
+const httpGrant = (credential: typeof CREDENTIAL | null) => (requirement: HookGrantRequirement) => {
+  if (!("url" in requirement)) throw new Error("http-requirement-expected");
+  return { contribution: requirement.contribution, url: requirement.url, credential };
+};
 
 /** A deterministic HTTPS decision service for the test hostname. */
 function decisionService(veto: boolean) {
@@ -66,11 +71,7 @@ test.skipIf(unavailable).each([
       const fixture = await prepareNativeCliFixture(COMMAND, root, {
         declarations: [httpHookDeclaration(service.url, { credential: "hook_token" })],
         files: {},
-        grant: (requirement) => ({
-          contribution: requirement.contribution,
-          url: requirement.url,
-          credential: CREDENTIAL,
-        }),
+        grant: httpGrant(CREDENTIAL),
       });
       const journey = await nativeProductJourney(
         {
@@ -106,7 +107,7 @@ test.skipIf(unavailable)(
       const fixture = await prepareNativeCliFixture(COMMAND, root, {
         declarations: [httpHookDeclaration(service.url)],
         files: {},
-        grant: (requirement) => ({ ...requirement, credential: null }),
+        grant: httpGrant(null),
       });
       const journey = await nativeProductJourney(
         { home: root, environment: fixture.environment, name: fixture.name },
@@ -133,7 +134,7 @@ test.skipIf(unavailable)(
           httpHookDeclaration(service.url, { point: "after-capability-invocation", mode: "async" }),
         ],
         files: {},
-        grant: (requirement) => ({ ...requirement, credential: null }),
+        grant: httpGrant(null),
       });
       const journey = await nativeProductJourney(
         { home: root, environment: fixture.environment, name: fixture.name },
