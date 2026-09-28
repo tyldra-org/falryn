@@ -14,6 +14,7 @@ import {
   type HookCapabilityPort,
   phaseForHookPoint,
   type RegisteredToolHook,
+  type ToolHookContext,
   type ToolHookDecision,
   type ToolHookEnvelope,
 } from "../../domain/tools/tool-hooks.ts";
@@ -53,6 +54,16 @@ export class HookExecutionError extends Error {
   ) {
     super(code);
   }
+}
+
+/**
+ * The resource task each live hook context runs under, keyed by the exact context object
+ * this module created. Handlers that admit nested model work (#1186) subdivide it, so
+ * evaluator spending shares the triggering task's budgets. A copied context has none.
+ */
+const hookTasks = new WeakMap<ToolHookContext, ProductTaskResources>();
+export function hookTask(context: ToolHookContext): ProductTaskResources | undefined {
+  return hookTasks.get(context);
 }
 export type HookInvocationResult = {
   readonly decision?: ToolHookDecision;
@@ -115,7 +126,7 @@ export async function invokeHook(input: {
     const called = Promise.resolve()
       .then(() => {
         if (combined.aborted) throw new HookExecutionError(stopped());
-        return hook.run(snapshot, {
+        const context: ToolHookContext = {
           signal: combined,
           expiresAt: input.expiresAt,
           resourceTaskId: input.task?.id ?? "builtin-test",
@@ -135,7 +146,9 @@ export async function invokeHook(input: {
             if (!checked.success || checked.data.kind !== expected) invalidFacts = true;
             else facts = freezeMetadata(checked.data);
           },
-        });
+        };
+        if (input.task) hookTasks.set(context, input.task);
+        return hook.run(snapshot, context);
       })
       .then(
         (value): HookInvocationResult => {

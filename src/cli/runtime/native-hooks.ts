@@ -1,15 +1,20 @@
 import { join } from "node:path";
+import {
+  createHookEvaluator,
+  type HookEvaluatorSession,
+} from "../../application/extensions/hook-evaluator.ts";
 import type { HookHttpPort } from "../../application/extensions/hook-http-port.ts";
 import { createHookMcp, type HookMcpSession } from "../../application/extensions/hook-mcp.ts";
 import {
   createNativeHookOwner,
+  isRemoteHookHandler,
   type PackageHookHandlerKind,
 } from "../../application/extensions/native-hook-owner.ts";
 import {
   createPackageExecutionAdmission,
   PackageAdmissionError,
 } from "../../application/extensions/package-execution-admission.ts";
-import { HookExecutionError } from "../../application/tools/tool-hook-invocation.ts";
+import { HookExecutionError, hookTask } from "../../application/tools/tool-hook-invocation.ts";
 import type { CatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
 import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { catalogEntryKey } from "../../domain/extensions/catalog.ts";
@@ -17,6 +22,11 @@ import {
   HOOK_COMMAND_PROTOCOL,
   hookCommandContract,
 } from "../../domain/extensions/hook-command-profile.ts";
+import {
+  evaluatorHookContract,
+  evaluatorInstructions,
+} from "../../domain/extensions/hook-evaluator.ts";
+import { isHttpHookGrant } from "../../domain/extensions/hook-grants.ts";
 import { httpHookContract } from "../../domain/extensions/hook-http.ts";
 import { mcpHookContract } from "../../domain/extensions/hook-mcp.ts";
 import {
@@ -27,6 +37,11 @@ import { createHostHookCommand } from "../../integrations/extensions/host-hook-c
 import type { createNativePackageContext } from "./native-package-context.ts";
 
 type Context = ReturnType<typeof createNativePackageContext>;
+/** The session runtimes remote hooks bind to; each absent one leaves its hooks unavailable. */
+export type NativeHookSession = {
+  readonly mcp?: HookMcpSession;
+  readonly evaluator?: HookEvaluatorSession;
+};
 export function composeNativeHooks(
   context: Context,
   records: CatalogRepositories,
@@ -60,8 +75,10 @@ export function composeNativeHooks(
      * One publication's hook owner. MCP tool hooks run only in a session that composes MCP,
      * through that session's runtime; elsewhere they stay unavailable.
      */
-    owner(captured: Awaited<ReturnType<Context["registered"]>>, session?: HookMcpSession) {
-      const mcp = session === undefined ? undefined : createHookMcp(session);
+    owner(captured: Awaited<ReturnType<Context["registered"]>>, session: NativeHookSession = {}) {
+      const mcp = session.mcp === undefined ? undefined : createHookMcp(session.mcp);
+      const evaluator =
+        session.evaluator === undefined ? undefined : createHookEvaluator(session.evaluator);
       const activeActivations = new Set(
         captured.catalog.entries
           .filter((entry) => entry.enabled)
@@ -92,8 +109,13 @@ export function composeNativeHooks(
       }
       return createNativeHookOwner({
         qualified: (handler) =>
-          handler === "http-v1" ||
-          (handler === "mcp-tool-v1" ? mcp !== undefined : host.available()),
+          handler === "http-v1"
+            ? true
+            : handler === "mcp-tool-v1"
+              ? mcp !== undefined
+              : handler === "prompt-evaluator-v1" || handler === "agent-evaluator-v1"
+                ? evaluator !== undefined
+                : host.available(),
         health: records.hookHealth,
         async execute(input) {
           const key = `${input.activation}:${input.contribution}`;
@@ -132,7 +154,7 @@ export function composeNativeHooks(
               packages: records.packages,
               bytes: context.bytes,
               host: context.host,
-              ...(input.handler !== "external-command-v1"
+              ...(isRemoteHookHandler(input.handler)
                 ? { declarationKind: "remote-hook" as const }
                 : { protocol: HOOK_COMMAND_PROTOCOL }),
               async authority(installed, contribution, signal) {
@@ -179,9 +201,10 @@ export function composeNativeHooks(
             if (input.handler === "http-v1") {
               // Only the user's grant on this exact activation approves the endpoint.
               const grant = activation.grants?.find(
-                (value) => value.contribution === input.contribution,
+                (value) => value.contribution === input.contribution && isHttpHookGrant(value),
               );
-              if (!grant) throw new HookExecutionError("hook-destination-unapproved");
+              if (!grant || !isHttpHookGrant(grant))
+                throw new HookExecutionError("hook-destination-unapproved");
               return http.run({
                 registration: httpHookContract(admitted.declaration),
                 grant,
@@ -196,6 +219,40 @@ export function composeNativeHooks(
                 registration: mcpHookContract(admitted.declaration),
                 wire,
                 context: { ...input.context, signal },
+                current,
+              });
+            }
+            if (input.handler === "prompt-evaluator-v1" || input.handler === "agent-evaluator-v1") {
+              if (evaluator === undefined)
+                throw new HookExecutionError("hook-evaluator-unavailable");
+              const registration = evaluatorHookContract(admitted.declaration);
+              // Only the user's grant on this exact activation names the model.
+              const grant = activation.grants?.find(
+                (value) => value.contribution === input.contribution,
+              );
+              if (
+                !grant ||
+                isHttpHookGrant(grant) ||
+                grant.binding !== registration.handler.bindingId
+              )
+                throw new HookExecutionError("hook-model-unapproved");
+              const file = admitted.snapshot.files.find(
+                (entry) => entry.path === registration.handler.instructions,
+              );
+              let instructions: string;
+              try {
+                if (!file) throw new Error("missing");
+                instructions = evaluatorInstructions(file.bytes);
+              } catch {
+                throw new HookExecutionError("hook-instructions-invalid");
+              }
+              return evaluator.run({
+                registration,
+                grant,
+                instructions,
+                wire,
+                context: { ...input.context, signal },
+                task: hookTask(input.context),
                 current,
               });
             }

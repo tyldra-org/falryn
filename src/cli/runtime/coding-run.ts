@@ -123,6 +123,7 @@ import { attachResultEvents } from "../output/result-events.ts";
 import type { CliStreams } from "../output/streams.ts";
 import { agentRegistryFrom } from "./agent-configuration.ts";
 import { startConfigurationReloadWatcher } from "./configuration-reload.ts";
+import { composeHookEvaluatorSession } from "./hook-evaluator-session.ts";
 import { composeInstructionSources } from "./instruction-sources.ts";
 import { modelPreferencesFrom } from "./model-configuration.ts";
 import {
@@ -817,11 +818,30 @@ export async function runCoding(
       "busy",
     );
     mainPeer = peer;
+    // Package evaluator hooks run their model through this session's own providers.
+    const evaluator = composeHookEvaluatorSession({
+      main: () =>
+        providerAdapter && providerCatalog
+          ? { adapter: providerAdapter, catalog: providerCatalog }
+          : null,
+      async resolve(profileId, signal) {
+        const resolved = await providerConnections.resolveProfile(profileId, signal);
+        return resolved.kind === "ready"
+          ? { adapter: resolved.adapter, catalog: resolved.session.catalog }
+          : { reason: resolved.code };
+      },
+      ports: {
+        eventStore: productArtifactSession.eventStore,
+        clock: graph.clock,
+        correlation: { workspaceId, sessionId, traceId, configurationGeneration: generation },
+      },
+      ...(productArtifacts === undefined ? {} : { artifacts: productArtifacts }),
+    });
     const extensions = await productArtifactSession.publishNativePackages(
       generation,
       options.signal ?? new AbortController().signal,
       selection ? String(sessionId) : undefined,
-      mcp,
+      { mcp, evaluator: evaluator.session },
     );
     // Built-in composer commands win; a template expands before any turn state exists.
     let prompt = resolved.prompt;
@@ -920,6 +940,7 @@ export async function runCoding(
               },
             },
           );
+    evaluator.bindTools(productTools);
     const composed = composeDelegatedAgentRuntime(
       {
         instructions: {

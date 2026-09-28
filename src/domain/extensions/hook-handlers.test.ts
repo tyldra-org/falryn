@@ -24,7 +24,12 @@ test("one handler union owns explicit local, remote and evaluator declarations",
       outputField: "result",
     },
     { kind: "prompt-evaluator-v1", bindingId: "binding:1", instructions: "hooks/evaluate.md" },
-    { kind: "agent-evaluator-v1", bindingId: "binding:1", instructions: "hooks/evaluate.md" },
+    {
+      kind: "agent-evaluator-v1",
+      bindingId: "binding:1",
+      instructions: "hooks/evaluate.md",
+      readTools: ["read_file"],
+    },
   ];
   expect(
     handlers.map((handler) =>

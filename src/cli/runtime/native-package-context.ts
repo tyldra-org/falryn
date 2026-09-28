@@ -1,4 +1,5 @@
 import { join } from "node:path";
+import { isRemoteHookHandler } from "../../application/extensions/native-hook-owner.ts";
 import { createPackageExecutionAdmission } from "../../application/extensions/package-execution-admission.ts";
 import { packageToolContract } from "../../application/extensions/package-tool-contract.ts";
 import {
@@ -137,10 +138,10 @@ export function createNativePackageContext(options: {
     );
     if (!selected) throw new ExtensionInputError("native-contribution-missing");
     const isHook = selected.identity.nativeKind === "hook";
-    // A remote hook starts no package code: HTTP goes through the governed egress owner and
-    // an MCP tool through the session's gateway.
+    // A remote hook starts no package code: HTTP goes through the governed egress owner,
+    // an MCP tool through the session's gateway and an evaluator through its model.
     const handler = isHook ? nativeDeclaration(selected).hook?.handler.kind : undefined;
-    const isRemoteHook = handler === "http-v1" || handler === "mcp-tool-v1";
+    const isRemoteHook = isRemoteHookHandler(handler);
     const isSchedule = selected.identity.nativeKind === "schedule";
     const isPrompt = selected.identity.nativeKind === "prompt";
     const dataOnly = isSchedule || isPrompt || isRemoteHook;

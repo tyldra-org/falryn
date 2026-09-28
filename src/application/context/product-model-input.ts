@@ -3,7 +3,7 @@
 import type { BriefProjection, BriefRequest } from "../../domain/compression/index.ts";
 import type { ComposedPromptRequest, RenderedPromptSection } from "../../domain/context/index.ts";
 import type { EffectiveExecutionPolicy } from "../../domain/sessions/index.ts";
-import type { ModelMessage } from "../../providers/index.ts";
+import type { ModelMessage, OutputContract } from "../../providers/index.ts";
 import { promptCacheStablePrefixDigest } from "../providers/provider-prompt-cache.ts";
 import type { AttemptModelInput } from "../runtime/turn-attempt-policy.ts";
 import type { ProductToolDisclosure } from "../tools/product-tool-disclosure.ts";
@@ -102,6 +102,8 @@ export function attemptModelInputFromPrompt(
     readonly history?: import("../sessions/conversation-history.ts").ConversationHistorySnapshot;
     readonly brief?: { readonly request: BriefRequest; readonly projection: BriefProjection };
     readonly maxOutputTokens?: number;
+    readonly maxInputTokens?: number;
+    readonly output?: OutputContract;
   } = {},
 ): AttemptModelInput {
   const stableSystem = prompt.sections.filter((section) => STABLE_SYSTEM_ROLES.has(section.role));
@@ -128,8 +130,9 @@ export function attemptModelInputFromPrompt(
       toolCatalogGeneration: Number(disclosure.receipt.catalogGeneration),
     },
     tools: disclosure.modelTools,
-    output: { kind: "text" },
+    output: options.output ?? { kind: "text" },
     budgets: {
+      ...(options.maxInputTokens === undefined ? {} : { maxInputTokens: options.maxInputTokens }),
       ...(options.brief === undefined && options.maxOutputTokens === undefined
         ? {}
         : {

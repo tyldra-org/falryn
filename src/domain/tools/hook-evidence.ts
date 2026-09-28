@@ -6,6 +6,7 @@ import { hookHealthSnapshotSchema } from "./hook-health.ts";
 import { HOOK_SOURCE_ORDER } from "./tool-hook-order.ts";
 
 const count = z.int().nonnegative();
+const modelIdentity = z.string().min(1).max(256).nullable();
 const response = z.enum(["valid", "invalid", "missing", "refused", "stale", "unknown"]);
 export const hookHandlerFactsSchema = z.discriminatedUnion("kind", [
   z.strictObject({
@@ -67,8 +68,14 @@ export const hookHandlerFactsSchema = z.discriminatedUnion("kind", [
     status: z.enum(["not-started", "completed", "failed", "cancelled", "timed-out"]),
     response,
     requests: count,
+    /** Tool reads an agent evaluator's child made through the gateway. */
+    reads: count,
     inputTokens: count.nullable(),
     outputTokens: count.nullable(),
+    /** The granted model, the catalog model it resolved to, and the served model if reported. */
+    requestedModel: modelIdentity,
+    resolvedModel: modelIdentity,
+    actualModel: modelIdentity,
     effects: z.enum(["none", "observed", "unknown"]),
   }),
 ]);
@@ -156,6 +163,16 @@ const FAILURE_CODES = new Set([
   "hook-mcp-effect-uncertain",
   "hook-mcp-tool-error",
   "hook-mcp-output-missing",
+  "hook-model-unapproved",
+  "hook-model-unavailable",
+  "hook-model-unsupported",
+  "hook-instructions-invalid",
+  "hook-evaluator-ineligible",
+  "hook-evaluator-unavailable",
+  "hook-evaluator-limit",
+  "hook-evaluator-incomplete",
+  "hook-evaluator-output-invalid",
+  "hook-evaluator-tool-refused",
 ]);
 export function safeHookFailureCode(value: unknown): string {
   return typeof value === "string" && FAILURE_CODES.has(value) ? value : "hook-handler-failed";

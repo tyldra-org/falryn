@@ -2,9 +2,9 @@ import { expect, test } from "bun:test";
 import { httpHookDeclaration } from "./hook-fixtures.ts";
 import {
   hookCredentialReference,
-  hookGrantProblem,
-  hookGrantRequirement,
   httpHookContract,
+  httpHookGrantProblem,
+  httpHookGrantRequirement,
 } from "./hook-http.ts";
 import { contributionDeclarationSchema } from "./manifest.ts";
 
@@ -53,7 +53,7 @@ test("an HTTP hook declares only an external effect and at most its own credenti
 });
 
 test("a grant approves exactly the declared endpoint and credential", () => {
-  const requirement = hookGrantRequirement(
+  const requirement = httpHookGrantRequirement(
     CONTRIBUTION,
     httpHookContract(httpHookDeclaration(URL, { credential: "hook_token" })),
   );
@@ -64,12 +64,12 @@ test("a grant approves exactly the declared endpoint and credential", () => {
     accountLabel: null,
   };
   const grant = { contribution: CONTRIBUTION, url: URL, credential };
-  expect(hookGrantProblem(requirement, grant)).toBeNull();
-  expect(hookGrantProblem(requirement, undefined)).toBe("hook-grant-required");
-  expect(hookGrantProblem(requirement, { ...grant, url: URL + "/other" })).toBe(
+  expect(httpHookGrantProblem(requirement, grant)).toBeNull();
+  expect(httpHookGrantProblem(requirement, undefined)).toBe("hook-grant-required");
+  expect(httpHookGrantProblem(requirement, { ...grant, url: URL + "/other" })).toBe(
     "hook-grant-destination-mismatch",
   );
-  expect(hookGrantProblem(requirement, { ...grant, credential: null })).toBe(
+  expect(httpHookGrantProblem(requirement, { ...grant, credential: null })).toBe(
     "hook-grant-credential-mismatch",
   );
   // The credential resolves only for this contribution.

@@ -1,5 +1,4 @@
 import { join } from "node:path";
-import type { HookMcpSession } from "../../application/extensions/hook-mcp.ts";
 import { createNativeActivation } from "../../application/extensions/native-activation.ts";
 import { createNativePromptOwner } from "../../application/extensions/native-prompt-owner.ts";
 import {
@@ -16,10 +15,9 @@ import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/ca
 import { catalogEntryKey, createExtensionCatalog } from "../../domain/extensions/catalog.ts";
 import {
   type HookGrantRequirement,
-  hookGrantProblem,
   hookGrantRequirement,
-  httpHookContract,
-} from "../../domain/extensions/hook-http.ts";
+  hookGrantsProblem,
+} from "../../domain/extensions/hook-grants.ts";
 import type { PackageRequest } from "../../domain/extensions/lifecycle.ts";
 import {
   type NativeActivationStore,
@@ -31,7 +29,7 @@ import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type { ToolInvocationOutcome } from "../../domain/tools/index.ts";
 import { createHostHookHttp } from "../../integrations/extensions/host-hook-http.ts";
 import { createHostPackageProcess } from "../../integrations/extensions/host-package-health.ts";
-import { composeNativeHooks } from "./native-hooks.ts";
+import { composeNativeHooks, type NativeHookSession } from "./native-hooks.ts";
 import { createNativePackageContext } from "./native-package-context.ts";
 import { composeHostProductCredentials } from "./product-credentials.ts";
 import type { Services } from "./services.ts";
@@ -103,29 +101,14 @@ export function composeNativePackages(options: {
       for (const contribution of intent.contributions) {
         const admitted = await context.validate(control, installed.value, contribution, signal);
         proofs.push(admitted.generation);
-        if (admitted.declaration.hook?.handler.kind === "http-v1")
-          requirements.push(
-            hookGrantRequirement(contribution, httpHookContract(admitted.declaration)),
-          );
+        const requirement = hookGrantRequirement(contribution, admitted.declaration);
+        if (requirement !== null) requirements.push(requirement);
       }
-      // Every HTTP hook needs exactly one matching grant, and nothing else may carry one.
+      // Every HTTP or evaluator hook needs exactly one matching grant; nothing else may.
       const grants = [...(intent.grants ?? [])].sort((a, b) =>
         a.contribution < b.contribution ? -1 : 1,
       );
-      const grantProblem =
-        requirements
-          .map((requirement) =>
-            hookGrantProblem(
-              requirement,
-              grants.find((grant) => grant.contribution === requirement.contribution),
-            ),
-          )
-          .find((problem) => problem !== null) ??
-        (grants.some(
-          (grant) => !requirements.some((item) => item.contribution === grant.contribution),
-        )
-          ? "hook-grant-unexpected"
-          : null);
+      const grantProblem = hookGrantsProblem(requirements, grants);
       return {
         record: {
           version: 1,
@@ -211,8 +194,12 @@ export function composeNativePackages(options: {
     },
     activate,
     recover: createPackageToolRecovery(options.processes, execution),
-    /** Publish the current catalog; MCP tool hooks bind to the session's MCP runtime, if any. */
-    async publish(generation: ConfigurationGeneration, signal: AbortSignal, mcp?: HookMcpSession) {
+    /** Publish the current catalog; remote hooks bind to the session's runtimes, if any. */
+    async publish(
+      generation: ConfigurationGeneration,
+      signal: AbortSignal,
+      hooks?: NativeHookSession,
+    ) {
       if (stopped.signal.aborted) throw new ExtensionInputError("native-host-closed");
       const captured = await context.registered(signal);
       /** Recheck the catalog and exact stored activation before any package bytes are used. */
@@ -319,7 +306,7 @@ export function composeNativePackages(options: {
       const trustById = new Map<string, NonNullable<ReturnType<typeof captured.trust.get>>>();
       const publication = createNativeRegistrationPublisher([
         owner,
-        hookOwner.owner(captured, mcp),
+        hookOwner.owner(captured, hooks),
         createNativeScheduleOwner(options.schedules),
         prompts,
       ]).publish({

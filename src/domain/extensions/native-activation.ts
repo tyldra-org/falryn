@@ -2,13 +2,13 @@
 import { z } from "zod";
 import type { Result } from "../foundation/result.ts";
 import { canonicalDigest } from "./canonical.ts";
-import { hookGrantSchema } from "./hook-http.ts";
+import { hookGrantSchema } from "./hook-grants.ts";
 import { digestSchema, generationSchema } from "./identity.ts";
 import { scopeAuthoritySchema } from "./scope-controls.ts";
 
 /**
- * One grant per selected HTTP hook contribution; none for anything else. Absent rather
- * than empty, so an activation without grants keeps the digest it always had.
+ * One grant per selected HTTP or evaluator hook contribution; none for anything else.
+ * Absent rather than empty, so an activation without grants keeps the digest it always had.
  */
 const grants = z
   .array(hookGrantSchema)

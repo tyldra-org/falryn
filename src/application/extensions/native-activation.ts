@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
-import type { HookGrantRequirement } from "../../domain/extensions/hook-http.ts";
+import type { HookGrantRequirement } from "../../domain/extensions/hook-grants.ts";
 import type { PackageReceipt, PackageRequest } from "../../domain/extensions/lifecycle.ts";
 import {
   type NativeActivation,
@@ -12,7 +12,7 @@ export type NativeActivationCandidate = {
   record: Omit<NativeActivation, "revision">;
   inputs: string;
   scopeRevision: number;
-  /** What each selected HTTP hook needs approved (#1175); empty for everything else. */
+  /** What each selected HTTP or evaluator hook needs approved (#1175, #1186); empty for everything else. */
   requirements: readonly HookGrantRequirement[];
   /** Why the request's grants do not approve those requirements exactly, if they do not. */
   grantProblem: string | null;

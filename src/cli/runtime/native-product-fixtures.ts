@@ -15,6 +15,7 @@ import { reduceTranscript } from "../../presentation/transcript/reducer.ts";
 import {
   catalogFromAdapterModels,
   createDeterministicProviderAdapter,
+  type DeterministicProviderScript,
   type ModelRequest,
 } from "../../providers/index.ts";
 import type { GlobalOptions } from "../options.ts";
@@ -211,25 +212,35 @@ export async function nativeProductJourney(
     readonly hookEgress?: HookEgressOptions;
     /** The user's answer to focused tool confirmations, such as a hook's MCP call. */
     readonly toolConfirmation?: ProductToolConfirmationPort;
+    /**
+     * How the scripted model answers a package evaluator hook: every request that asks for
+     * a structured verdict, numbered among those requests. Main-turn requests are unaffected.
+     */
+    readonly evaluate?: (request: ModelRequest, index: number) => DeterministicProviderScript;
   } = {},
 ) {
-  const { beforeFirstRequest, afterRun, hookEgress, toolConfirmation } = options;
+  const { beforeFirstRequest, afterRun, hookEgress, toolConfirmation, evaluate } = options;
   const { globals, services } = await productHost({
     ...input,
     ...(hookEgress === undefined ? {} : { hookEgress }),
   });
   const requests: string[] = [];
+  let turns = 0;
+  let evaluations = 0;
   const provider = createDeterministicProviderAdapter({
     onRequest: (request) => requests.push(JSON.stringify(request)),
-    script: (_request, index) =>
-      index === 0
+    script: (request) => {
+      if (request.output.kind === "json-schema" && evaluate)
+        return evaluate(request, evaluations++);
+      return turns++ === 0
         ? {
             kind: "tool",
             name: input.name,
             toolCallId: "native-fixture",
             argumentFragments: [JSON.stringify({ question: "answer" })],
           }
-        : { kind: "text", text: "The fixture answered 42." },
+        : { kind: "text", text: "The fixture answered 42." };
+    },
   });
   const result = await runCoding(
     services,

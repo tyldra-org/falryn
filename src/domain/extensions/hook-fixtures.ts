@@ -155,3 +155,56 @@ export function hookServiceDecision(request: WireRequest, veto: boolean): string
       : { kind: "observe", annotations: { remote: "ok" } },
   });
 }
+
+/** Instructions a fixture evaluator package ships beside its declaration. */
+export const EVALUATOR_FIXTURE_INSTRUCTIONS =
+  "Deny any capability whose identifier mentions secrets; otherwise allow.";
+
+/**
+ * A package evaluator hook (#1186): the prompt kind sees the subject capability only; the
+ * agent kind may also read through the listed tools. Its binding is named "judge".
+ */
+export function evaluatorHookDeclaration(
+  options: {
+    readonly agent?: boolean;
+    readonly readTools?: readonly string[];
+    readonly point?: "before-capability-invocation" | "after-capability-invocation";
+    readonly mode?: "sync" | "async";
+    readonly timeoutMs?: number;
+  } = {},
+): ContributionDeclaration {
+  const common = {
+    bindingId: "judge",
+    instructions: "judge.md",
+    evidence: [{ name: "capability", from: "payload.capabilityId" }],
+  };
+  return contributionDeclarationSchema.parse({
+    kind: "hook",
+    namespace: "fixture",
+    id: "judge",
+    description: "Evaluator decision fixture",
+    authority: {
+      effects: ["external"],
+      permissions: [],
+      roots: [],
+      destinations: [],
+      secretReferences: [],
+      localData: [],
+    },
+    hook: {
+      version: 1,
+      point: options.point ?? "before-capability-invocation",
+      pointVersion: 1,
+      mode: options.mode ?? "sync",
+      nonlocalOptIn: true,
+      timeoutMs: options.timeoutMs ?? 10_000,
+      handler: options.agent
+        ? {
+            kind: "agent-evaluator-v1",
+            ...common,
+            readTools: [...(options.readTools ?? ["read_file"])],
+          }
+        : { kind: "prompt-evaluator-v1", ...common },
+    },
+  });
+}

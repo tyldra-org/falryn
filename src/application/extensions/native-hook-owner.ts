@@ -1,5 +1,6 @@
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import { hookCommandContract } from "../../domain/extensions/hook-command-profile.ts";
+import { evaluatorHookContract } from "../../domain/extensions/hook-evaluator.ts";
 import { httpHookContract } from "../../domain/extensions/hook-http.ts";
 import { mcpHookContract } from "../../domain/extensions/hook-mcp.ts";
 import { contributionDeclarationSchema } from "../../domain/extensions/manifest.ts";
@@ -14,7 +15,33 @@ import type { NativeRegistrationOwner } from "./native-registration.ts";
 
 export const PACKAGE_HOOK_OWNER = "falryn-hook-registry-v1";
 /** The package handler kinds a host can run; others stay unavailable. */
-export type PackageHookHandlerKind = "external-command-v1" | "http-v1" | "mcp-tool-v1";
+export type PackageHookHandlerKind =
+  | "external-command-v1"
+  | "http-v1"
+  | "mcp-tool-v1"
+  | "prompt-evaluator-v1"
+  | "agent-evaluator-v1";
+/** Hooks that run no package code: governed egress, the MCP gateway or a model (#1186). */
+export function isRemoteHookHandler(kind: string | undefined): boolean {
+  return (
+    kind === "http-v1" ||
+    kind === "mcp-tool-v1" ||
+    kind === "prompt-evaluator-v1" ||
+    kind === "agent-evaluator-v1"
+  );
+}
+/** Why a host that cannot run this handler kind leaves it unavailable. */
+function unqualified(handler: PackageHookHandlerKind): string {
+  switch (handler) {
+    case "mcp-tool-v1":
+      return "hook-mcp-session-required";
+    case "prompt-evaluator-v1":
+    case "agent-evaluator-v1":
+      return "hook-evaluator-session-required";
+    default:
+      return "hook-execution-profile-unavailable";
+  }
+}
 export type PackageHookInvocation = {
   packageId: string;
   expectedRevision: number;
@@ -44,17 +71,14 @@ export function createNativeHookOwner(options: {
             ? httpHookContract(declaration)
             : declared === "mcp-tool-v1"
               ? mcpHookContract(declaration)
-              : hookCommandContract(declaration);
-        const handler: PackageHookHandlerKind =
-          registration.handler.kind === "http-v1" || registration.handler.kind === "mcp-tool-v1"
-            ? registration.handler.kind
-            : "external-command-v1";
-        if (!options.qualified(handler))
-          throw new ExtensionInputError(
-            handler === "mcp-tool-v1"
-              ? "hook-mcp-session-required"
-              : "hook-execution-profile-unavailable",
-          );
+              : declared === "prompt-evaluator-v1" || declared === "agent-evaluator-v1"
+                ? evaluatorHookContract(declaration)
+                : hookCommandContract(declaration);
+        // Built-in handlers belong to the host, never to a package.
+        if (registration.handler.kind === "builtin")
+          throw new ExtensionInputError("hook-contract-unavailable");
+        const handler: PackageHookHandlerKind = registration.handler.kind;
+        if (!options.qualified(handler)) throw new ExtensionInputError(unqualified(handler));
         if (!isToolHookPoint(registration.point))
           throw new ExtensionInputError("hook-publisher-unavailable");
         const owner = `p${canonicalDigest({ packageId: entry.source.owner.packageId, scope: activation.scopeKey }).slice(7, 70)}`;

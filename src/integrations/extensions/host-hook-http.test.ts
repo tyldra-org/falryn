@@ -6,7 +6,7 @@ import {
   hookServiceDecision,
   httpHookDeclaration,
 } from "../../domain/extensions/hook-fixtures.ts";
-import { type HookGrant, httpHookContract } from "../../domain/extensions/hook-http.ts";
+import { type HttpHookGrant, httpHookContract } from "../../domain/extensions/hook-http.ts";
 import { createSystemClock } from "../../domain/foundation/index.ts";
 import { createInMemoryCredentialStore } from "../../domain/security/credential.ts";
 import type { HookHandlerFacts } from "../../domain/tools/hook-evidence.ts";
@@ -50,13 +50,13 @@ function harness(
     readonly secrets?: Record<string, string>;
     readonly resolve?: readonly ResolvedAddress[];
     readonly reachable?: readonly string[];
-    readonly grant?: Partial<HookGrant>;
+    readonly grant?: Partial<HttpHookGrant>;
   } = {},
 ) {
   const registration = httpHookContract(
     httpHookDeclaration(url, options.credential ? { credential: "hook_token" } : {}),
   );
-  const grant: HookGrant = {
+  const grant: HttpHookGrant = {
     contribution: CONTRIBUTION,
     url,
     credential: options.credential

@@ -21,7 +21,6 @@ import {
 } from "../../application/artifacts/index.ts";
 import { createLoomPort, type LoomPort } from "../../application/compression/index.ts";
 import type { CatalogRehydration } from "../../application/extensions/catalog-rehydration.ts";
-import type { HookMcpSession } from "../../application/extensions/hook-mcp.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
 import { createDurableMemoryRecords, type MemoryRecords } from "../../application/memory/index.ts";
 import { createReflectionActions } from "../../application/memory/reflection-actions.ts";
@@ -118,6 +117,7 @@ import type { OwnedProcessRegistry } from "../../integrations/process/host-owned
 import { createHostProcessIdentityPort } from "../../integrations/process/host-process-identity.ts";
 import type { ProviderContinuationStatePort } from "../../providers/index.ts";
 import { composeExtensionCatalog } from "./extension-catalog.ts";
+import type { NativeHookSession } from "./native-hooks.ts";
 import { composeNativePackages } from "./native-packages.ts";
 import {
   composeProductPeerMailboxes,
@@ -157,8 +157,8 @@ export type ProductArtifactSession = {
     generation: ConfigurationGeneration,
     signal: AbortSignal,
     session?: string,
-    /** The session's MCP runtime; without one, MCP tool hooks stay unavailable. */
-    mcp?: HookMcpSession,
+    /** The session's MCP and model runtimes; without one, those remote hooks stay unavailable. */
+    hooks?: NativeHookSession,
   ): Promise<NativePublication>;
   rehydrateExtensions(signal: AbortSignal, session?: string): Promise<CatalogRehydration>;
   openWorkspaceIndex(
@@ -544,7 +544,7 @@ export async function openProductArtifactSession(
     questionPresenter,
     localUserQuestions,
     workQueues,
-    async publishNativePackages(generation, signal, session, mcp) {
+    async publishNativePackages(generation, signal, session, hooks) {
       if (closed) throw new Error("catalog-host-closed");
       const workspace = await services.ensureWorkspaceSet(signal);
       if (nativeOwner === null || nativeOwner.session !== session) {
@@ -569,7 +569,7 @@ export async function openProductArtifactSession(
           }),
         };
       }
-      const publication = await nativeOwner.owner.publish(generation, signal, mcp);
+      const publication = await nativeOwner.owner.publish(generation, signal, hooks);
       if (closed) throw new Error("catalog-host-closed");
       return publication;
     },

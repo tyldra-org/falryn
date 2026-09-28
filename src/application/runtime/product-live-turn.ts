@@ -90,6 +90,10 @@ export type ProductLiveTurnInput = {
   readonly responsePolicySection?: PromptSectionInput;
   /** Explicit matched provider ceiling used by comparative tooling. */
   readonly maxOutputTokens?: number;
+  /** Explicit per-request input ceiling, admitted before every request and continuation. */
+  readonly maxInputTokens?: number;
+  /** Host-owned response format, such as a hook evaluator's verdict schema; text by default. */
+  readonly output?: import("../../providers/index.ts").OutputContract;
 };
 
 export type ProductLiveTurnResult = {
@@ -1376,6 +1380,10 @@ export function createProductLiveTurnExecutor(
               ...(input.maxOutputTokens === undefined
                 ? {}
                 : { maxOutputTokens: input.maxOutputTokens }),
+              ...(input.maxInputTokens === undefined
+                ? {}
+                : { maxInputTokens: input.maxInputTokens }),
+              ...(input.output === undefined ? {} : { output: input.output }),
             },
           );
           const historyBudget = conversationBudget(

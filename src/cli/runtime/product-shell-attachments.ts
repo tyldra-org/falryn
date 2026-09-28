@@ -1,7 +1,6 @@
 import { createSecretResolver } from "../../application/authentication/credential-resolver.ts";
 import { checkpointControl } from "../../application/compression/checkpoint-request.ts";
 import { createSkillActivations } from "../../application/context/skill-activations.ts";
-import type { HookMcpSession } from "../../application/extensions/hook-mcp.ts";
 import { createMcpUserInput } from "../../application/extensions/mcp-input.ts";
 import { createPromptTemplateCatalog } from "../../application/extensions/native-prompt-owner.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
@@ -21,8 +20,10 @@ import type { ConfigurationValues } from "../../domain/configuration/index.ts";
 import type { SessionId } from "../../domain/foundation/index.ts";
 import { agentRegistryFrom } from "./agent-configuration.ts";
 import { createEnvironmentProcessContext } from "./environment-process-context.ts";
+import { composeHookEvaluatorSession } from "./hook-evaluator-session.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { modelPreferencesFrom } from "./model-configuration.ts";
+import type { NativeHookSession } from "./native-hooks.ts";
 import { composeProductMcp } from "./product-mcp.ts";
 import { productToolHost } from "./product-tool-host.ts";
 import type {
@@ -151,7 +152,7 @@ export type ProductShellAttachmentPorts = {
     generation: ConfigurationGeneration,
     signal: AbortSignal,
     session?: string,
-    mcp?: HookMcpSession,
+    hooks?: NativeHookSession,
   ) => Promise<NativePublication>;
   readonly rehydrateExtensions?: (
     signal: AbortSignal,
@@ -338,14 +339,49 @@ export async function composeProductShellAttachments(
       await mcp.close();
       await mcpServices.close();
     };
-    // Package MCP tool hooks bind to this session's MCP runtime, so it exists first.
+    // Package evaluator hooks use the active working profile's providers, when there is one.
+    let evaluatorProfile:
+      | {
+          readonly connections: import("./product-provider-connections.ts").ProductProviderConnections;
+          readonly provider: Extract<
+            import("./product-provider-connections.ts").ProductProviderConnectionHandoff,
+            { kind: "ready" }
+          >;
+        }
+      | undefined;
+    const evaluator = composeHookEvaluatorSession({
+      main: () => {
+        const ready =
+          evaluatorProfile?.provider ??
+          (ports.provider?.kind === "ready" ? ports.provider : undefined);
+        return ready ? { adapter: ready.adapter, catalog: ready.session.catalog } : null;
+      },
+      async resolve(profileId, signal) {
+        if (evaluatorProfile) {
+          const resolved = await evaluatorProfile.connections.resolveProfile(profileId, signal);
+          return resolved.kind === "ready"
+            ? { adapter: resolved.adapter, catalog: resolved.session.catalog }
+            : { reason: resolved.code };
+        }
+        return ports.resolveAgentProvider
+          ? ports.resolveAgentProvider(profileId, signal)
+          : { reason: "provider-profile-unavailable" };
+      },
+      ports: {
+        eventStore: ports.eventStore,
+        clock: ports.clock,
+        correlation: { workspaceId, sessionId, traceId, configurationGeneration: generation },
+      },
+      ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
+    });
+    // Package MCP and evaluator hooks bind to this session's runtimes, so they exist first.
     let native: NativePublication | undefined;
     try {
       native = await ports.publishNativePackages?.(
         generation,
         signal,
         selection ? String(sessionId) : undefined,
-        mcp,
+        { mcp, evaluator: evaluator.session },
       );
     } catch (error) {
       await closeMcp();
@@ -586,6 +622,7 @@ export async function composeProductShellAttachments(
               productTools,
               ...(native === undefined ? [] : [native.tools]),
             ]);
+      if (initialTools !== null) evaluator.bindTools(initialTools);
       const composed = compose({
         ...(ports.instructionSources && ports.workspaceSet
           ? {
@@ -677,6 +714,7 @@ export async function composeProductShellAttachments(
       profileSession = await ports.workingProfileSession?.(
         composed.value,
         (record, connections, provider) => {
+          evaluatorProfile = { connections, provider };
           const correlation = {
             ...composed.value.correlation,
             configurationGeneration: record.generation,
@@ -740,7 +778,7 @@ export async function composeProductShellAttachments(
                   generation,
                   signal,
                   String(sessionId),
-                  mcp,
+                  { mcp, evaluator: evaluator.session },
                 );
                 if (!publication) throw new Error("native-publication-unavailable");
                 prompts = publication.prompts;
@@ -748,6 +786,7 @@ export async function composeProductShellAttachments(
                   productTools,
                   publication.tools,
                 ]);
+                evaluator.bindTools(tools);
                 const next = captured.recomposeTools(tools);
                 if (!next.ok) throw new Error(next.error.code);
                 publishedRuntime = next.value;

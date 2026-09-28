@@ -3280,9 +3280,9 @@ handler/mode combinations. External entrypoints require inventory digest locks.
 handler and availability; human output reports the same unavailable reason.
 Inspection neither activates handlers nor exposes arguments or credentials.
 The handler union includes built-in, command, HTTP, MCP and evaluator declarations.
-Built-ins and explicitly installed/trusted/native-activated Python, HTTP and MCP tool
-package hooks execute at the two gateway points. Other publishers and evaluator
-adapters remain unavailable. One scheduler applies the declared class budgets: local
+Built-ins and explicitly installed/trusted/native-activated Python, HTTP, MCP tool and
+evaluator package hooks execute at the two gateway points. Other publishers remain
+unavailable. One scheduler applies the declared class budgets: local
 50 ms default/1,000 ms maximum/2,000 ms cumulative; remote 5/10/20 seconds;
 evaluator 10/30 seconds; mixed chains 60 seconds. The enclosing deadline always
 narrows them. Inspection displays resolved timeout, chain ceiling, blocking mode
@@ -3345,6 +3345,63 @@ after sending as `hook-mcp-effect-uncertain`. Nothing is retried. Receipts carry
 transport `mcp`, the catalog generation called, response validity, result size and
 the effect certainty, never result content; the call's own ordinary history keeps its
 exact result.
+
+A `prompt-evaluator-v1` or `agent-evaluator-v1` hook asks a model for a verdict. It
+declares a `bindingId` naming the model it needs, package-relative UTF-8
+`instructions` (at most 16 KiB, used verbatim with no interpolation), and up to 16
+`evidence` mappings of `{ name, from }` with the same sources as MCP arguments; an
+agent evaluator also lists 1–8 `readTools` by exact tool name. Like the other remote
+hooks it declares `external` (optionally `observation`), no secret references,
+execution or other authority, and `nonlocalOptIn`. Sync evaluators are accepted only
+at `user.submit`, `user.prompt.expand`, `before-capability-invocation` and
+`model.switch.before`; `turn.complete`, `task.complete`, `workflow.complete`,
+`subagent.stop` and other observation points accept only async evaluators; shutdown,
+idle, job-stop and display points reject them. Only the two gateway points have a
+publisher today. `src/domain/extensions/hook-fixtures.ts` has an example declaration.
+
+Installing a package or matching an event admits no model and no spending. `falryn
+package enable` lists each evaluator's `requirements` as `{ contribution, binding }`;
+its `grants` entry repeats them and adds `model` with the exact `providerProfileId`,
+`providerId` and `modelId`. A different binding fails as `hook-grant-binding-mismatch`.
+Each evaluation resolves that profile with current credentials through the session's
+own provider connections; a missing profile or model is `hook-model-unavailable` and a
+model whose catalog does not report structured output support is
+`hook-model-unsupported`. There is no role inheritance, alias, fallback model or
+premium processing. Evaluators bind only in headless and terminal sessions, so
+`falryn extension catalog` lists them as `hook-evaluator-session-required`.
+
+The evaluation is one owned child on the hook's own resource task, so it shares the
+triggering task's budgets, run by the ordinary live-turn executor with no workspace
+instructions, memory, hooks or confirmation. Its input is the package instructions,
+Falryn's protocol text and one canonical JSON document of the point and declared
+evidence, sent as untrusted user content. Each request asks for a strict JSON-schema
+verdict (`verdict` allow or deny, a `reason` of at most 120 characters, and at a sync
+point that accepts context evidence, up to eight `evidence` notes) with at most
+8,192 input and 1,024 output tokens. A prompt evaluator makes one request with no
+tools. An agent evaluator makes at most four requests and eight reads; each declared
+tool must be natively observation-only with no input-dependent effect or workspace
+writes (otherwise `hook-evaluator-tool-refused` before any request), only those tools
+are offered, and each call goes through the child's ordinary gateway. A suggestion
+outside them fails the evaluation as `hook-evaluator-tool-refused`, and using the
+whole request allowance without a verdict as `hook-evaluator-limit`.
+
+Exactly the complete response is decoded; prose, fences, extra, missing or invalid
+fields are `hook-evaluator-output-invalid`, partial output is
+`hook-evaluator-incomplete`, and provider limits or quota are `hook-evaluator-limit`.
+Nothing is retried or repaired. A deny vetoes only a sync gate it is still holding;
+an allow, or any verdict from an async observer, becomes an observation annotated with
+the verdict and reason. The shared codec then revalidates the decision, so an
+evaluator never transforms input or requests effects. Stops, shutdown, recovery and
+evaluator-origin events never start one (`hook-evaluator-ineligible`). Receipts use
+handler facts of kind `model`: status, response validity, requests, reads, reported
+input and output tokens, the requested and resolved model and `actualModel` (null,
+since providers do not report the served model), and whether evidence left the
+process. The facts never include the verdict text or evidence. Cancellation or timeout
+before dispatch spends nothing; after dispatch the observed usage is kept and the
+request is not replayed. Deterministic journeys cover the protocol; there is no
+recorded evidence yet of verdict quality, false positive or negative rates, latency
+or cost with a real model.
+
 Missing or different runtimes remain unavailable; built-in hooks need no Python.
 There is no PATH search, interpreter installation, shell sourcing or fallback.
 
