@@ -72,6 +72,7 @@ import {
   composeProductMemoryTools,
   composeProductProcessTools,
   composeProductScratchTools,
+  composeProductSkillTools,
   composeProductWorkspaceTools,
   mergeProductToolBundles,
   type ProductToolConfirmationPort,
@@ -618,30 +619,40 @@ export async function composeProductShellAttachments(
                 (ports.provider?.kind === "ready" ? ports.provider.session.catalog : null),
             })
           : composeProductAgentRuntime(runtimePorts);
+      // One owner admits skills for each turn and serves their files to skill_resource.
+      const instructions =
+        ports.instructionSources && ports.workspaceSet
+          ? {
+              owner: ports.instructionSources(
+                () => profileSession?.configuration() ?? ports.sandboxConfiguration?.() ?? null,
+              ),
+              scope: {
+                root: canonicalDigest({ root: primaryWorkspaceRoot(ports.workspaceSet).path }),
+                directory: "",
+                kind: "main" as const,
+              },
+              skills: createSkillActivations(selection?.history.activatedSkills),
+            }
+          : null;
+      const skillTools =
+        instructions === null
+          ? null
+          : composeProductSkillTools({
+              generation,
+              owner: instructions.owner,
+              scope: instructions.scope,
+            });
       const initialTools =
         productTools === null
           ? null
           : mergeProductToolBundles(generation, [
               productTools,
+              ...(skillTools === null ? [] : [skillTools]),
               ...(native === undefined ? [] : [native.tools]),
             ]);
       if (initialTools !== null) evaluator.bindTools(initialTools);
       const composed = compose({
-        ...(ports.instructionSources && ports.workspaceSet
-          ? {
-              instructions: {
-                owner: ports.instructionSources(
-                  () => profileSession?.configuration() ?? ports.sandboxConfiguration?.() ?? null,
-                ),
-                scope: {
-                  root: canonicalDigest({ root: primaryWorkspaceRoot(ports.workspaceSet).path }),
-                  directory: "",
-                  kind: "main" as const,
-                },
-                skills: createSkillActivations(selection?.history.activatedSkills),
-              },
-            }
-          : {}),
+        ...(instructions === null ? {} : { instructions }),
         eventStore: ports.eventStore,
         ...(ports.artifacts === undefined ? {} : { historyArtifacts: ports.artifacts }),
         clock: ports.clock,
@@ -802,6 +813,7 @@ export async function composeProductShellAttachments(
                 prompts = publication.prompts;
                 const tools = mergeProductToolBundles(generation, [
                   productTools,
+                  ...(skillTools === null ? [] : [skillTools]),
                   publication.tools,
                 ]);
                 evaluator.bindTools(tools);

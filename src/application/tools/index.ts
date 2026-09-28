@@ -63,6 +63,8 @@ export {
   composeProductScratchTools,
   PRODUCT_SCRATCH_TOOLS_OWNER,
 } from "./product-tools-scratch.ts";
+export type { ProductSkillToolPorts, ProductSkillTools } from "./product-tools-skills.ts";
+export { composeProductSkillTools, PRODUCT_SKILL_TOOLS_OWNER } from "./product-tools-skills.ts";
 export type {
   ProductWorkspaceToolPorts,
   ProductWorkspaceTools,

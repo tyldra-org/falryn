@@ -177,6 +177,8 @@ test("the terminal's submission path loads a routed skill into the actual reques
   homes.push(home);
   await mkdir(join(home, "config"), { recursive: true });
   await writeSkill(join(home, ".agents/skills"), "release-notes", "BODY_TERMINAL");
+  await mkdir(join(home, ".agents/skills/release-notes/references"), { recursive: true });
+  await writeFile(join(home, ".agents/skills/release-notes/references/guide.md"), "GUIDE_TERMINAL");
   await writeSkill(join(home, ".agents/skills"), "incident", "BODY_UNRELATED_TERMINAL", {
     description: "Write an incident postmortem.",
   });
@@ -187,6 +189,18 @@ test("the terminal's submission path loads a routed skill into the actual reques
       FALRYN_STATE_DIR: join(home, "state"),
     },
     instructions: true,
+    // The terminal's own tool set reads the loaded skill's file.
+    script: (_request, index) =>
+      index === 0
+        ? {
+            kind: "tool",
+            toolCallId: "terminal-skill-resource",
+            name: "skill_resource",
+            argumentFragments: [
+              JSON.stringify({ skill: "release-notes", path: "references/guide.md" }),
+            ],
+          }
+        : { kind: "text", text: "Reviewed." },
   });
   try {
     const submitted = await shell.attached.submission.submit(
@@ -196,6 +210,8 @@ test("the terminal's submission path loads a routed skill into the actual reques
     const text = JSON.stringify(shell.requests[0]?.messages ?? []);
     expect(text).toContain("BODY_TERMINAL");
     expect(text).not.toContain("BODY_UNRELATED_TERMINAL");
+    expect(text).toContain("references/guide.md (reference, text/markdown");
+    expect(JSON.stringify(shell.requests[1]?.messages.at(-1) ?? null)).toContain("GUIDE_TERMINAL");
   } finally {
     await shell.close();
   }

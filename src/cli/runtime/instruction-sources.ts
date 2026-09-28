@@ -15,6 +15,10 @@ import {
   sourcePathSchema,
   sourcePreferencesSchema,
 } from "../../domain/context/instruction-sources.ts";
+import {
+  SKILL_RESOURCE_LIMITS,
+  type SkillResourceRead,
+} from "../../domain/context/skill-resources.ts";
 import { bytesDigest, canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { readSkillEntrypoint } from "../../domain/extensions/skill-metadata.ts";
 import { isInside, joinPath, type LocalPath, parentPath } from "../../domain/workspace/index.ts";
@@ -353,6 +357,73 @@ export function composeInstructionSources(
       if (!root || !path) throw new Error("source-identity-unavailable");
       return read(root, path, signal);
     },
+    async resources(source, signal) {
+      const bundle = skillBundle(source);
+      if (bundle === null) throw new Error("source-identity-unavailable");
+      const entries: { path: string; bytes: number }[] = [];
+      let omitted = 0;
+      let visited = 0;
+      const queue: { directory: LocalPath; prefix: readonly string[] }[] = [
+        { directory: bundle.directory, prefix: [] },
+      ];
+      while (queue.length > 0) {
+        const next = queue.shift();
+        if (next === undefined) break;
+        const listed = await graph.fileSystem.list(next.directory, signal);
+        if (!listed.ok) {
+          omitted++;
+          continue;
+        }
+        for (const item of [...listed.value].sort((a, b) => (a.path < b.path ? -1 : 1))) {
+          const name = item.path.slice(next.directory.length + 1);
+          // Hidden files are not resources; SKILL.md is the loaded body itself.
+          if (name.startsWith(".") || (next.prefix.length === 0 && name === "SKILL.md")) continue;
+          if (++visited > SKILL_RESOURCE_LIMITS.indexScan) {
+            omitted++;
+            continue;
+          }
+          const path = [...next.prefix, name];
+          if (item.kind === "directory" && path.length < SKILL_RESOURCE_LIMITS.depth)
+            queue.push({ directory: item.path, prefix: path });
+          else if (item.kind === "file")
+            entries.push({ path: path.join("/"), bytes: item.byteLength });
+          // Symlinks and special files are never followed or listed.
+          else omitted++;
+        }
+      }
+      return { entries, omitted };
+    },
+    async readResource(source, relative, signal): Promise<SkillResourceRead> {
+      const bundle = skillBundle(source);
+      if (bundle === null) return { ok: false, problem: "unreadable" };
+      const target = joinPath(bundle.directory, ...relative.split("/"));
+      if (!target.ok || !isInside(bundle.directory, target.value))
+        return { ok: false, problem: "escaped" };
+      const found = await graph.fileSystem.stat(target.value, signal);
+      if (!found.ok || found.value === null) return { ok: false, problem: "missing" };
+      if (found.value.kind === "symlink" || found.value.kind === "other")
+        return { ok: false, problem: "escaped" };
+      if (found.value.kind !== "file") return { ok: false, problem: "missing" };
+      if (found.value.byteLength > SKILL_RESOURCE_LIMITS.fileBytes)
+        return { ok: false, problem: "too-large", bytes: found.value.byteLength };
+      try {
+        return { ok: true, bytes: await read(bundle.root, target.value, signal) };
+      } catch (error) {
+        if (signal.aborted) throw error;
+        const code = error instanceof Error ? error.message : "";
+        return {
+          ok: false,
+          problem:
+            code === "instruction-source-byte-limit"
+              ? "too-large"
+              : code === "source-content-changed"
+                ? "changed"
+                : code === "source-path-escape"
+                  ? "escaped"
+                  : "unreadable",
+        };
+      }
+    },
     async controlsCurrent(preferences, signal) {
       if (signal.aborted) return false;
       const current = sourcePreferencesSchema.safeParse(
@@ -455,6 +526,22 @@ export function composeInstructionSources(
       }
     },
   });
+  /** The directory of an authorized, discovered skill entrypoint, and its root. */
+  function skillBundle(source: InstructionSource) {
+    const key = instructionSourceKey(source.identity);
+    const root = roots.get(source.identity.root),
+      entrypoint = files.get(key),
+      directory = entrypoint === undefined ? null : parentPath(entrypoint);
+    if (
+      source.identity.kind !== "skill" ||
+      !authorized.has(key) ||
+      root === undefined ||
+      directory === null ||
+      !isInside(root, directory)
+    )
+      return null;
+    return { root, directory };
+  }
   async function probe(root: LocalPath, path: LocalPath, signal: AbortSignal) {
     const currentRoot = await graph.fileSystem.realPath(root, signal);
     if (!currentRoot.ok || currentRoot.value !== root) throw new Error("source-root-changed");

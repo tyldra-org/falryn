@@ -119,6 +119,8 @@ export async function nativePromptShellJourney(input: {
   environment: Record<string, string>;
   /** Wire the terminal's instruction-source owner, as dispatch does. */
   instructions?: boolean;
+  /** The scripted model; a single text answer by default. */
+  script?: (request: ModelRequest, index: number) => DeterministicProviderScript;
 }) {
   const { globals, services } = await productHost(input);
   const graph = services();
@@ -131,7 +133,7 @@ export async function nativePromptShellJourney(input: {
   const requests: ModelRequest[] = [];
   const adapter = createDeterministicProviderAdapter({
     onRequest: (request) => requests.push(request),
-    script: () => ({ kind: "text", text: "Reviewed." }),
+    script: input.script ?? (() => ({ kind: "text", text: "Reviewed." })),
   });
   const controller = new AbortController();
   const attached = await composeProductShellAttachments({
