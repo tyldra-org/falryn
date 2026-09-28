@@ -21,6 +21,26 @@ export const sourceDecisionSchema = z.strictObject({
   reason: z.string().min(1).max(256),
 });
 
+/**
+ * One automatic skill routing decision (#136). A loaded route names the admitted source,
+ * its digest and the body bytes admitted into the request; others carry only a reason.
+ */
+export const skillRouteSchema = z.strictObject({
+  name: z.string().min(1).max(64),
+  decision: z.enum(["loaded", "recommended", "unavailable"]),
+  reason: z.string().min(1).max(256),
+  source: digestSchema.nullable(),
+  digest: digestSchema.nullable(),
+  bytes: z.int().nonnegative().nullable(),
+});
+export type SkillRouteFact = z.infer<typeof skillRouteSchema>;
+export const skillRoutingSchema = z.strictObject({
+  /** Automatically eligible candidates in scope that routing considered. */
+  candidates: z.int().nonnegative(),
+  routes: z.array(skillRouteSchema).max(INSTRUCTION_SOURCE_LIMITS.pageEntries),
+});
+export type SkillRoutingFact = z.infer<typeof skillRoutingSchema>;
+
 export const instructionSourceReceiptSchema = z.strictObject({
   generation: digestSchema,
   previousGeneration: digestSchema.nullable(),
@@ -41,6 +61,8 @@ export const instructionSourceReceiptSchema = z.strictObject({
   rejectedSource: digestSchema.nullable().optional(),
   contentChanged: z.boolean(),
   reused: z.boolean(),
+  /** Automatic skill routing for this admission; absent when routing did not run. */
+  skills: skillRoutingSchema.optional(),
 });
 export type InstructionSourceReceipt = z.infer<typeof instructionSourceReceiptSchema>;
 

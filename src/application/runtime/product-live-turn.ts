@@ -1057,6 +1057,16 @@ export function createProductLiveTurnExecutor(
                   configurationGeneration: String(generation),
                   resources: taskResources,
                   signal: input.signal ?? new AbortController().signal,
+                  // Main turns route skills automatically; children and workflows do not (#1180).
+                  ...(runtime.instructions.skills !== undefined &&
+                  runtime.instructions.scope.kind === "main"
+                    ? {
+                        route: {
+                          task: input.prompt,
+                          active: runtime.instructions.skills.active(),
+                        },
+                      }
+                    : {}),
                 });
           if (instructionPreparation && !instructionPreparation.ok && runtime.instructions) {
             const recorded = await runtime.journal.persist(
@@ -1096,6 +1106,11 @@ export function createProductLiveTurnExecutor(
           const instructionBinding = instructionPreparation?.ok
             ? instructionPreparation.binding
             : null;
+          runtime.instructions?.skills?.record(
+            (instructionBinding?.receipt.skills?.routes ?? [])
+              .filter((route) => route.decision === "loaded")
+              .map((route) => route.name),
+          );
           if (
             instructionBinding &&
             (instructionBinding.receipt.sources.length > 0 ||

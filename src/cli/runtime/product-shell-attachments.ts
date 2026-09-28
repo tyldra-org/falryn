@@ -1,5 +1,6 @@
 import { createSecretResolver } from "../../application/authentication/credential-resolver.ts";
 import { checkpointControl } from "../../application/compression/checkpoint-request.ts";
+import { createSkillActivations } from "../../application/context/skill-activations.ts";
 import type { HookMcpSession } from "../../application/extensions/hook-mcp.ts";
 import { createMcpUserInput } from "../../application/extensions/mcp-input.ts";
 import { createPromptTemplateCatalog } from "../../application/extensions/native-prompt-owner.ts";
@@ -597,6 +598,7 @@ export async function composeProductShellAttachments(
                   directory: "",
                   kind: "main" as const,
                 },
+                skills: createSkillActivations(selection?.history.activatedSkills),
               },
             }
           : {}),

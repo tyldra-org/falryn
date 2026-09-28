@@ -3,6 +3,7 @@ import {
   createInstructionSourceOwner,
   InstructionSourceFailure,
 } from "../../application/context/instruction-source-owner.ts";
+import { markdownMetadata } from "../../application/extensions/portable-components.ts";
 import {
   type DISCOVERY_PROBLEMS,
   EMPTY_SOURCE_PREFERENCES,
@@ -15,10 +16,15 @@ import {
   sourcePreferencesSchema,
 } from "../../domain/context/instruction-sources.ts";
 import { bytesDigest, canonicalDigest } from "../../domain/extensions/canonical.ts";
+import { readSkillEntrypoint } from "../../domain/extensions/skill-metadata.ts";
 import { isInside, joinPath, type LocalPath, parentPath } from "../../domain/workspace/index.ts";
 import { configuredInstructionSourcesSchema } from "./instruction-configuration.ts";
 import { type DiscoveredInstruction, discoverInstructionFiles } from "./instruction-discovery.ts";
 import type { Services } from "./services.ts";
+import { type DiscoveredSkill, discoverSkillBundles, SKILL_LOCATIONS } from "./skill-discovery.ts";
+
+/** Which user-owned directory a user-scope conventional source was found under. */
+type UserHome = "configuration" | "user";
 
 export function composeInstructionSources(
   graph: Services,
@@ -27,8 +33,8 @@ export function composeInstructionSources(
   const roots = new Map<string, LocalPath>();
   const files = new Map<string, LocalPath>();
   let authorized = new Set<string>();
-  /** Discovered (conventional) sources from the last scan, and whether each is user-wide. */
-  let discovered = new Map<string, { readonly user: boolean }>();
+  /** Discovered (conventional) sources from the last scan, and the user home of a user-wide one. */
+  let discovered = new Map<string, { readonly user: UserHome | null }>();
   /**
    * Directories turns have been scoped to, per root. Discovery walks each one's ancestor
    * chain, so the discovered set stays stable as main and child turns alternate.
@@ -146,28 +152,20 @@ export function composeInstructionSources(
       }
       // Conventional files need no registration. Explicit registrations of the same
       // identity take precedence in the owner.
-      const nextDiscovered = new Map<string, { readonly user: boolean }>();
+      const nextDiscovered = new Map<string, { readonly user: UserHome | null }>();
       const trust = graph.workspaceTrust.current().status;
-      const admit = async (root: LocalPath, found: DiscoveredInstruction, user: boolean) => {
-        const path = found.directory === "" ? found.name : `${found.directory}/${found.name}`;
-        // A name the source contract cannot represent is not a source.
-        if (!sourcePathSchema.safeParse(path).success) return;
-        const identity = {
-          version: 1 as const,
-          kind: "instruction" as const,
-          root: canonicalDigest({ root }),
-          path,
-          namespace: "instructions",
-          localId: found.name,
-        };
-        const key = instructionSourceKey(identity);
-        const trusted = user || trust === "accepted" || trust === "empty";
-        let problem: (typeof DISCOVERY_PROBLEMS)[number] | null = found.problem;
+      /** Read one discovered entrypoint unless untrusted; failures become named problems. */
+      const readDiscovered = async (
+        root: LocalPath,
+        path: LocalPath,
+        trusted: boolean,
+        problem: (typeof DISCOVERY_PROBLEMS)[number] | null,
+      ) => {
         let bytes: Uint8Array | null = null;
         // Untrusted project files are listed but never read.
         if (problem === null && trusted) {
           try {
-            bytes = await read(root, found.path, signal);
+            bytes = await read(root, path, signal);
           } catch (error) {
             if (signal.aborted) throw error;
             const code = error instanceof Error ? error.message : "";
@@ -190,9 +188,26 @@ export function composeInstructionSources(
         totalBytes += bytes?.byteLength ?? 0;
         if (totalBytes > INSTRUCTION_SOURCE_LIMITS.cacheBytes)
           throw new Error("source-scan-byte-limit");
+        return { bytes, problem };
+      };
+      const admit = async (root: LocalPath, found: DiscoveredInstruction, user: boolean) => {
+        const path = found.directory === "" ? found.name : `${found.directory}/${found.name}`;
+        // A name the source contract cannot represent is not a source.
+        if (!sourcePathSchema.safeParse(path).success) return;
+        const identity = {
+          version: 1 as const,
+          kind: "instruction" as const,
+          root: canonicalDigest({ root }),
+          path,
+          namespace: "instructions",
+          localId: found.name,
+        };
+        const key = instructionSourceKey(identity);
+        const trusted = user || trust === "accepted" || trust === "empty";
+        const { bytes, problem } = await readDiscovered(root, found.path, trusted, found.problem);
         nextRoots.set(identity.root, root);
         nextFiles.set(key, found.path);
-        nextDiscovered.set(key, { user });
+        nextDiscovered.set(key, { user: user ? "configuration" : null });
         if (bytes !== null) nextAuthorized.add(key);
         const family =
           found.matches === "FALRYN.md"
@@ -238,6 +253,86 @@ export function composeInstructionSources(
           signal,
         ))
           await admit(canonical.value, found, false);
+      }
+      /**
+       * Skill bundles (#136): each authorized root's three locations, then the user's. The
+       * entrypoint's frontmatter supplies the description and invocation eligibility; its
+       * body is read in full here only to bind the digest, and enters a request only when
+       * selected.
+       */
+      const admitSkill = async (
+        root: LocalPath,
+        found: DiscoveredSkill,
+        origin: InstructionSource["origin"],
+        user: UserHome | null,
+      ) => {
+        const identity = {
+          version: 1 as const,
+          kind: "skill" as const,
+          root: canonicalDigest({ root }),
+          path: found.relative,
+          namespace: "skills",
+          localId: found.bundle,
+        };
+        const key = instructionSourceKey(identity);
+        // The home directory can itself be a workspace root; its project copy already counts.
+        if (nextFiles.has(key)) return;
+        const trusted = user !== null || trust === "accepted" || trust === "empty";
+        const loaded = await readDiscovered(root, found.path, trusted, found.problem);
+        let problem = loaded.problem;
+        let entry: ReturnType<typeof readSkillEntrypoint> | null = null;
+        if (loaded.bytes !== null) {
+          try {
+            entry = readSkillEntrypoint(markdownMetadata(loaded.bytes, true), found.bundle);
+          } catch {
+            entry = { ok: false, problem: "malformed-metadata" };
+          }
+          if (!entry.ok) problem = entry.problem;
+          else if (entry.unsupported !== null) problem = "unsupported-control";
+        }
+        const admitted = loaded.bytes !== null && entry?.ok === true;
+        nextRoots.set(identity.root, root);
+        nextFiles.set(key, found.path);
+        nextDiscovered.set(key, { user });
+        if (admitted) nextAuthorized.add(key);
+        sources.push({
+          identity,
+          digest: loaded.bytes === null ? null : bytesDigest(loaded.bytes),
+          origin,
+          scope: "",
+          declaration: "conventional",
+          enabled: true,
+          trusted,
+          compatible: entry?.ok !== true || entry.unsupported === null,
+          available: admitted,
+          ...(problem === null ? {} : { problem }),
+          eligibility: entry?.ok === true ? entry.invocation : null,
+          ...(entry?.ok === true ? { summary: entry.description } : {}),
+          references: [],
+          conflicts: [],
+        });
+      };
+      for (const workspaceRoot of workspace.value.set.roots) {
+        const canonical = await graph.fileSystem.realPath(workspaceRoot.path, signal);
+        if (!canonical.ok) continue;
+        for (const [location, family] of SKILL_LOCATIONS.project)
+          for (const found of await discoverSkillBundles(
+            graph.fileSystem,
+            canonical.value,
+            location,
+            signal,
+          ))
+            await admitSkill(canonical.value, found, `project-${family}`, null);
+      }
+      const canonicalUser = await graph.fileSystem.realPath(graph.userHome, signal);
+      for (const [root, location, origin, user] of [
+        [canonicalHome.ok ? canonicalHome.value : null, "skills", "user-falryn", "configuration"],
+        [canonicalUser.ok ? canonicalUser.value : null, ".agents/skills", "user-agents", "user"],
+        [canonicalUser.ok ? canonicalUser.value : null, ".claude/skills", "user-claude", "user"],
+      ] as const) {
+        if (root === null) continue;
+        for (const found of await discoverSkillBundles(graph.fileSystem, root, location, signal))
+          await admitSkill(root, found, origin, user);
       }
       roots.clear();
       files.clear();
@@ -289,11 +384,15 @@ export function composeInstructionSources(
       if (source.declaration === "conventional") {
         const found = discovered.get(key);
         if (!found) return false;
-        if (found.user) {
-          const home = await graph.configurationHomeForRead(signal);
-          if (home.kind !== "current" && home.kind !== "legacy" && home.kind !== "empty")
-            return false;
-          const canonicalHome = await graph.fileSystem.realPath(home.root, signal);
+        if (found.user !== null) {
+          let userRoot: LocalPath = graph.userHome;
+          if (found.user === "configuration") {
+            const home = await graph.configurationHomeForRead(signal);
+            if (home.kind !== "current" && home.kind !== "legacy" && home.kind !== "empty")
+              return false;
+            userRoot = home.root;
+          }
+          const canonicalHome = await graph.fileSystem.realPath(userRoot, signal);
           if (!canonicalHome.ok || canonicalHome.value !== root) return false;
         } else {
           const workspace = await graph.ensureWorkspaceSet(signal);

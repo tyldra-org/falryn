@@ -35,6 +35,11 @@ export const DISCOVERY_PROBLEMS = [
   "oversized",
   "unreadable",
   "malformed-utf8",
+  // A skill entrypoint whose metadata cannot be honored (#136).
+  "malformed-metadata",
+  "name-mismatch",
+  "malformed-eligibility",
+  "unsupported-control",
 ] as const;
 
 const name = z
@@ -106,6 +111,8 @@ export const instructionSourceSchema = z.strictObject({
   problem: z.enum(DISCOVERY_PROBLEMS).optional(),
   /** Restriction absence is unknown, never an implicit permission. */
   eligibility: z.strictObject({ user: z.boolean(), automatic: z.boolean() }).nullable(),
+  /** A skill's description: untrusted relevance evidence for routing, never authority. */
+  summary: z.string().min(1).max(1_024).optional(),
   references: z.array(digestSchema).max(INSTRUCTION_SOURCE_LIMITS.references),
   /** Only declared conflicts are mechanically decidable; arbitrary prose is not. */
   conflicts: z.array(digestSchema).max(INSTRUCTION_SOURCE_LIMITS.references),
@@ -254,7 +261,7 @@ export function resolveInstructionSources(input: {
           : !source.trusted
             ? "untrusted"
             : !source.compatible
-              ? "incompatible"
+              ? (source.problem ?? "incompatible")
               : !source.available
                 ? (source.problem ?? "unavailable")
                 : null;

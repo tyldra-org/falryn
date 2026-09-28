@@ -279,7 +279,9 @@ bound to the local actor, canonical workspace roots, exact inventory generation,
 trust policy, and relevant configuration. Restart reuses only a matching record.
 Changed files, permissions, user/profile configuration, or workspace identity
 invalidate approval. Project configuration uses the reviewed bytes and rechecks
-the generation on reload. Automatic skill discovery remains unavailable;
+the generation on reload. Project skill bundles under `.falryn/skills`,
+`.agents/skills` and `.claude/skills` are part of the reviewed inventory, so a new
+project skill needs review before it can load;
 workspace approval does not grant tool permissions or a sandbox. The review covers
 each root's `AGENTS.md`, `CLAUDE.md` and `FALRYN.md`, the files instruction
 discovery can load at a root. A fixed loader name must match an entry exactly, so a
@@ -304,8 +306,8 @@ After correcting a failure or change, reopen interactively to review again.
 The main terminal session, headless `falryn run`, child agents and model workflow
 steps share an instruction-source owner. User or working-profile configuration
 can explicitly register files in `instructions.sources`; conventional files are
-also discovered without registration. Skill invocation remains separate loader
-work; package prompt templates expand only as explicit slash actions (see
+also discovered without registration. Main turns also route conventional skills
+automatically (see Skills below); package prompt templates expand only as explicit slash actions (see
 native package activation below). Merely installing a package does not
 activate its instruction body.
 
@@ -373,8 +375,8 @@ CLAUDE/AGENTS/FALRYN. Project ancestors precede descendants. Source choice never
 changes its instruction role. The shared resolver also handles skill and prompt
 metadata: equal-priority skill collisions and ambiguous prompt aliases require
 a choice; an explicit prompt declaration replaces only its exact same-package
-conventional identity. Their automatic loaders and command dispatch are not
-activated by this registration setting.
+conventional identity. Automatic skill routing uses this resolver (see Skills);
+skill commands and direct invocation are not shipped.
 
 `instructions.preferences` is a version-1 object with `choices` and `restrictions`
 arrays. A choice contains `kind`, `name` and `source`. For instructions, `name` is
@@ -416,6 +418,53 @@ and content digests are separate, so an unchanged rescan or inspection does not
 report new effective instruction content. Parsed products are keyed by source,
 content digest and configuration generation; expanded arguments and rendered
 sensitive prompts are never cached by this owner.
+
+## Skills
+
+Main turns in the terminal and headless `falryn run` discover skill bundles and load
+a relevant skill's complete `SKILL.md` into the request before inference. Each
+authorized workspace root contributes `.falryn/skills/*/SKILL.md`,
+`.agents/skills/*/SKILL.md` and `.claude/skills/*/SKILL.md`. The user contributes
+`skills/*/SKILL.md` in the configuration home (normally `~/.falryn`),
+`~/.agents/skills` and `~/.claude/skills`. Priority falls in that order, project
+before user. A same-named skill in a lower location is reported as shadowed and never
+concatenated. Equal-priority duplicates require a choice through
+`instructions.preferences`; an automatic pick among them is reported unavailable
+(`ambiguous-source`). Another root's project skills never load for the primary root.
+No bundled skills ship, and configured extra locations are not available (#1182).
+
+Discovery reads only immediate bundle directories, at most 256 per location. The
+entrypoint name must be exactly `SKILL.md`: a lookalike, symlinked bundle or
+entrypoint, oversized file (over 1 MiB) or invalid UTF-8 is listed with its problem
+and never loaded. Untrusted project skills are listed but never read. The
+frontmatter must carry the Agent Skills `name` (matching the directory) and
+`description`. `disable-model-invocation: true` keeps a skill out of automatic
+selection, and `user-invocable: false` only affects explicit invocation, which is
+not shipped yet (#1179). These must be real booleans; any other value makes the
+skill unavailable (`malformed-eligibility`). `model`, `effort`, `context`,
+`agent` and `hooks` are recognized but not yet honored, so a skill declaring one
+is unavailable (`unsupported-control`, #1181). `allowed-tools` is a hint that grants
+nothing, and other fields are inert. Restrictions in `instructions.preferences`
+can only narrow this.
+
+Routing uses the task text and each eligible skill's name and description, which are
+untrusted relevance evidence. A skill the task names, such as `release-notes`, is
+loaded. Otherwise one clearly best description match (at least two shared terms and
+more than any other) is loaded, and ties are listed as recommendations without
+loading. At most four bodies load per turn, and a loaded skill stays loaded for the
+rest of the session while it remains eligible, including after a restart. A
+`skill-workflow` section tells the model which skills were loaded and why, lists
+recommendations with their descriptions, and names any skill the task mentioned
+that could not load, with the reason. Manual-only skills are never mentioned. Loaded
+bodies use the instruction limits above and are complete or refused, never
+truncated. Edits and removals apply from the next turn.
+
+The `instructions.resolved` receipt records routing in `skills`: the number of
+eligible candidates and each route's name, decision (`loaded`, `recommended` or
+`unavailable`) and reason, plus the admitted source, digest and body bytes of a
+loaded skill. It holds no body, so replay and export show these decisions without
+reading a skill. Child agents, workflow steps and scheduled runs do not route
+skills (#1180), and supporting files inside a bundle are not loaded (#137).
 
 ## Executable sandbox policy
 
@@ -2008,8 +2057,8 @@ thinking and cannot implicitly reuse an unsupported primary-model control.
 The current disclosure path uses that task-aware opportunity plan to select a
 bounded profile-eligible subset from the shared registry, resolves exact
 executable schemas through `ToolRegistry`, and records selected, fallback,
-rejected, omitted, unavailable, and non-executable facts. Automatic skill loading,
-MCP/plugin execution, and scheduled background work still
+rejected, omitted, unavailable, and non-executable facts. Skills are routed before
+inference by the instruction owner (see Skills). MCP/plugin execution, and scheduled background work still
 belong to their dedicated runtimes; #193 exposes
 the deterministic opportunity and truthful availability without claiming those
 sibling executors.

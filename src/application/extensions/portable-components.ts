@@ -13,6 +13,7 @@ import {
 } from "../../domain/extensions/canonical.ts";
 import { PORTABLE_MCP_SCHEMA, portableMcpServerSchema } from "../../domain/extensions/manifest.ts";
 import type { InspectionDiagnostic } from "../../domain/extensions/package-source.ts";
+import { skillHeaderSchema } from "../../domain/extensions/skill-metadata.ts";
 
 export type PortableComponent = {
   readonly kind: "skill" | "prompt" | "mcp-connection";
@@ -22,21 +23,6 @@ export type PortableComponent = {
   /** Prompt description from frontmatter, or derived from the first body line. */
   readonly description?: string;
 };
-const skillHeader = z
-  .object({
-    name: z
-      .string()
-      .min(1)
-      .max(64)
-      .regex(/^(?!.*--)[a-z0-9]+(?:-[a-z0-9]+)*$/u),
-    description: z.string().trim().min(1).max(1_024),
-    license: z.string().optional(),
-    compatibility: z.string().min(1).max(500).optional(),
-    metadata: z.record(z.string(), z.string()).optional(),
-    "allowed-tools": z.string().optional(),
-  })
-  .catchall(z.unknown());
-
 /** YAML is decoded once as inert metadata, never interpolated or evaluated. */
 export function markdownMetadata(
   bytes: Uint8Array,
@@ -82,7 +68,7 @@ export function portableComponents(
     try {
       if (skill !== null) {
         const metadata = markdownMetadata(bytes, true);
-        const checked = skillHeader.safeParse(metadata);
+        const checked = skillHeaderSchema.safeParse(metadata);
         if (!checked.success || checked.data.name !== skill[1])
           throw new ExtensionInputError("invalid-skill");
         components.push({ kind: "skill", id: checked.data.name, path, metadata: checked.data });

@@ -5,11 +5,18 @@ import {
 } from "../../domain/context/instruction-sources.ts";
 import { NO_RETRY, workUnitId } from "../../domain/orchestration/work.ts";
 import type { ProductTaskResources } from "../orchestration/product-resources.ts";
-import type { InstructionPreparation, InstructionSourceOwner } from "./instruction-source-owner.ts";
+import type {
+  InstructionPreparation,
+  InstructionSourceOwner,
+  SkillRouteRequest,
+} from "./instruction-source-owner.ts";
+import type { SkillActivations } from "./skill-activations.ts";
 
 export type ProductInstructions = {
   readonly owner: InstructionSourceOwner;
   readonly scope: Omit<InstructionScope, "execution">;
+  /** The session's activated skills; automatic skill routing runs for main turns only. */
+  readonly skills?: SkillActivations;
 };
 
 export async function prepareProductInstructions(input: {
@@ -20,6 +27,8 @@ export async function prepareProductInstructions(input: {
   readonly resources: ProductTaskResources;
   readonly signal: AbortSignal;
   readonly observe?: boolean;
+  /** Automatic skill routing for this admission (#136). */
+  readonly route?: SkillRouteRequest;
 }): Promise<InstructionPreparation> {
   const { resources, instructions } = input;
   const executed = await resources.execute({
@@ -52,6 +61,7 @@ export async function prepareProductInstructions(input: {
         signal,
         input.observe ? undefined : input.configurationGeneration,
         input.observe ?? false,
+        input.route,
       ),
       terminated: true,
     }),

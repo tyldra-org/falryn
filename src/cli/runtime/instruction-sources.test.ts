@@ -152,23 +152,24 @@ test("model workflow steps resolve their subtree while deterministic steps add n
     ],
     outputs: { verified: { from: "node", node: "model" } },
   };
-  const result = await f.run(undefined, (_request, index) =>
-    index === 0
-      ? {
-          kind: "tool",
-          name: "workflow",
-          toolCallId: "instructions-workflow",
-          argumentFragments: [
-            JSON.stringify({
-              operation: "execute",
-              handle: { id: "instructions-proof", generation: "one" },
-              definitionJson: JSON.stringify(definition),
-              argumentsJson: "{}",
-            }),
-          ],
-        }
-      : { kind: "text", text: index === 1 ? '"verified"' : "Workflow complete." },
-  );
+  const result = await f.run({
+    script: (_request, index) =>
+      index === 0
+        ? {
+            kind: "tool",
+            name: "workflow",
+            toolCallId: "instructions-workflow",
+            argumentFragments: [
+              JSON.stringify({
+                operation: "execute",
+                handle: { id: "instructions-proof", generation: "one" },
+                definitionJson: JSON.stringify(definition),
+                argumentsJson: "{}",
+              }),
+            ],
+          }
+        : { kind: "text", text: index === 1 ? '"verified"' : "Workflow complete." },
+  });
   expect(result.result.outcome.kind, JSON.stringify(result.result)).toBe("completed");
   expect(
     result.requests,
@@ -183,8 +184,8 @@ test("revocation after a provider request prevents its proposed read and any con
   const f = await fixture();
   await writeFile(join(f.workspace, "private.txt"), "READ_MUST_NOT_HAPPEN");
   let revoked = false;
-  const result = await f.run(
-    async () => {
+  const result = await f.run({
+    beforeResponse: async () => {
       if (revoked) return;
       revoked = true;
       await f.setting("instructions.sources", {
@@ -198,7 +199,7 @@ test("revocation after a provider request prevents its proposed read and any con
         profile: null,
       });
     },
-    (_request, index) =>
+    script: (_request, index) =>
       index === 0
         ? {
             kind: "tool",
@@ -207,7 +208,7 @@ test("revocation after a provider request prevents its proposed read and any con
             argumentFragments: [JSON.stringify({ path: "private.txt" })],
           }
         : { kind: "text", text: "Should not continue" },
-  );
+  });
   expect(result.requests).toHaveLength(1);
   expect(result.result.outcome.kind, JSON.stringify(result.result)).not.toBe("completed");
   expect(
