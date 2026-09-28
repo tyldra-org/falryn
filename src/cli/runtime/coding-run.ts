@@ -60,6 +60,7 @@ import {
   composeProductMemoryTools,
   composeProductProcessTools,
   composeProductScratchTools,
+  composeProductSkillTools,
   composeProductWorkspaceTools,
   mergeProductToolBundles,
   type ProductToolConfirmationPort,
@@ -784,6 +785,18 @@ export async function runCoding(
       scratch: productArtifactSession.scratch,
       sessionId,
     });
+    // One owner admits skills for the turn and serves their files to skill_resource.
+    const instructionOwner = composeInstructionSources(graph);
+    const instructionScope = {
+      root: canonicalDigest({ root: workspaceRoot }),
+      directory: "",
+      kind: "main" as const,
+    };
+    const skillTools = composeProductSkillTools({
+      generation,
+      owner: instructionOwner,
+      scope: instructionScope,
+    });
     const gitTools = composeProductGitTools({
       generation,
       git: createHostGitPort({
@@ -905,6 +918,7 @@ export async function runCoding(
               workspaceTools,
               processTools,
               scratchTools,
+              skillTools,
               gitTools,
               languageTools,
               memoryTools,
@@ -951,8 +965,8 @@ export async function runCoding(
     const composed = composeDelegatedAgentRuntime(
       {
         instructions: {
-          owner: composeInstructionSources(graph),
-          scope: { root: canonicalDigest({ root: workspaceRoot }), directory: "", kind: "main" },
+          owner: instructionOwner,
+          scope: instructionScope,
           skills: createSkillActivations(selection?.history.activatedSkills),
         },
         eventStore: productArtifactSession.eventStore,

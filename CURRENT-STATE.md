@@ -473,12 +473,37 @@ eligible candidates and each route's name, decision (`loaded`, `recommended` or
 `unavailable`) and reason, plus the admitted source, digest and body bytes of a
 loaded skill. It holds no body, so replay and export show these decisions without
 reading a skill. Child agents, workflow steps and scheduled runs do not route
-skills (#1180), and supporting files inside a bundle are not loaded (#137).
-Receipts also record estimated context contributions: a loaded body's tokens, each
+skills (#1180). Receipts also record estimated context contributions: a loaded body's tokens, each
 route's own line in the routing section (bytes and tokens) and the whole section.
 Estimates use the prompt composer's four-UTF-16-code-units-per-token rule and name
 it (`utf16-code-units-per-4-v1`); they are not provider-measured. Receipts written
 before these fields existed report their tokens as unestimated, never zero.
+
+A loaded skill's other files (`references/`, `assets/`, `scripts/`, `templates/`,
+`examples/` or anywhere else in its directory) are listed in the routing section
+with path, kind, media type and size, inside that skill's own listing line. The list
+comes from a directory walk that reads no file, skips hidden files, never follows or
+lists a symlink, and names at most 32 files (with a count of the rest). The model
+reads one with the `skill_resource` tool, which is offered whenever a loaded skill has
+files. It takes a skill name, a path relative to that skill's directory and an
+optional `depth`, and follows relative markdown links outside fenced code up to that
+many hops (at most 16). One request resolves at most 64 files and returns at most
+256 KiB of text, and a file over 1 MiB is refused unread. Each file is read at most
+once and returns its digest and size. Every other outcome is reported separately:
+binary (metadata only), already loaded, cycle, escaped (outside the skill directory,
+absolute, or through a symlink), hidden (any path segment starting with a dot, such
+as `.env` or `.git`, is never read), missing, too large, budget exhausted, beyond the
+requested depth (named for a later request), reference limit, and changed during the
+read.
+
+Only skills loaded by the session's latest turn serve files. A skill whose `SKILL.md`
+changed since it was loaded, or that lost its authority, refuses until the next turn
+admits it. File text is evidence, not instructions. Scripts are listed as not
+executable, and nothing in a skill runs during discovery, loading, indexing or
+reading. A standalone skill's script gains no tool or execution authority; the model
+can only use the ordinary run tools under their own authority. Package-admitted
+executable helpers are not available (#901, #902), and package-installed skills are
+not routed.
 
 `falryn extension skills [--input request.json]` reports skill usage from those
 stored receipts only. It never reads a skill, starts a script or MCP server, calls a
@@ -500,8 +525,9 @@ Sequence gaps, unreadable events (skipped, with their neighbours still counted),
 events outside the workspace or session, cancellation, and receipts that omitted
 sources are reported as omissions, and only a window with none of these is marked
 complete. A workspace with no admissions reports usage as unavailable, not zero.
-Explicit invocation and supporting-resource loads have no producer yet and are listed
-as not recorded. Provider-reported input totals are not stored per session, so they are
+Explicit invocation has no producer yet, and supporting-file reads are recorded only as
+`skill_resource` tool invocations without being counted, so both are listed as not
+recorded (#1192). Provider-reported input totals are not stored per session, so they are
 reported as unavailable and never attributed to a skill. An unknown session and a
 continuation reused with a different query are refused. There is no Extensions view
 for these results yet (#274).

@@ -1242,11 +1242,18 @@ export function createProductLiveTurnExecutor(
               executionPolicy,
             );
           }
+          // A loaded skill with files needs its reader in this turn's tool set (#137).
+          const skillResource = instructionBinding?.skillResources
+            ? registry.resolveByName("skill_resource")
+            : null;
           const disclosure = discloseProductTools(capabilityRegistry, registry, {
             executionPolicy,
             consumer: "native-model",
             task: input.prompt,
             intent: input.intent ?? executionPolicy.workIntent,
+            ...(skillResource === null
+              ? {}
+              : { preferredCapabilityIds: [skillResource.manifest.capabilityId] }),
             healthEvidence: {
               now: options.clock.now(),
               runtime: {
