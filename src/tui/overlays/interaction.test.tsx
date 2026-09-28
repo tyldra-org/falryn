@@ -18,6 +18,7 @@
 import { describe, expect, test } from "bun:test";
 import { mount, type Rendered } from "../runtime/harness.tsx";
 import { ShellApp } from "../shell/shell-app.tsx";
+import { EXIT_CONFIRMATION } from "../shell/shell-runtime.tsx";
 import type { ShellModel } from "../shell/view-model.ts";
 import { known, unavailable } from "../shell/view-model.ts";
 import type { ThemeRequest } from "../theme/index.ts";
@@ -85,8 +86,21 @@ describe("exit", () => {
     // nothing outside the keymap can act on it.
     using shell = await open();
     expect(shell.exits()).toBe(0);
+    // One press only arms the exit (#1184); the second leaves.
+    expect(await shell.press("c", { ctrl: true })).toContain(EXIT_CONFIRMATION.notice);
+    expect(shell.exits()).toBe(0);
     await shell.press("c", { ctrl: true });
     expect(shell.exits()).toBe(1);
+  });
+
+  test("a lapsed first press disarms and clears its notice", async () => {
+    using shell = await open();
+    await shell.press("c", { ctrl: true });
+    await new Promise((resolve) => setTimeout(resolve, EXIT_CONFIRMATION.windowMs + 200));
+    expect(await shell.frame()).not.toContain(EXIT_CONFIRMATION.notice);
+    // A new first press arms again rather than exiting.
+    expect(await shell.press("c", { ctrl: true })).toContain(EXIT_CONFIRMATION.notice);
+    expect(shell.exits()).toBe(0);
   });
 
   test("does not fire on an ordinary key", async () => {
@@ -199,6 +213,8 @@ describe("the keyboard-only journey", () => {
     await shell.pressTab();
     await shell.pressTab({ shift: true });
 
+    expect(shell.exits()).toBe(0);
+    await shell.press("c", { ctrl: true });
     expect(shell.exits()).toBe(0);
     await shell.press("c", { ctrl: true });
     expect(shell.exits()).toBe(1);

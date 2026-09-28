@@ -131,9 +131,27 @@ function resolveCommandState(
   return next;
 }
 
+/**
+ * Leaving with the keyboard takes two Ctrl+C presses within this window (#1184). Raw
+ * mode delivers Ctrl+C as key input on every platform, so this one rule covers macOS,
+ * Linux and Windows alike.
+ */
+export const EXIT_CONFIRMATION = Object.freeze({
+  windowMs: 2_000,
+  notice: "Press Ctrl+C again to exit.",
+});
+
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const peerAction = useRef<AbortController | null>(null);
   const localControlKind = useRef<"peer" | "schedule">("peer");
+  /** Pending disarm of a keyboard exit awaiting its second press (#1184); null when unarmed. */
+  const exitArmed = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(
+    () => () => {
+      if (exitArmed.current !== null) clearTimeout(exitArmed.current);
+    },
+    [],
+  );
   const [peerPending, setPeerPending] = useState(false);
   const [templatePending, setTemplatePending] = useState(false);
   const modelSelection =
@@ -962,6 +980,21 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           return confirm("accept");
         case "confirmation.deny":
           return confirm("deny");
+        case "app.exit":
+          // One stray Ctrl+C must not end the session: the first press arms and a second
+          // within the window leaves (#1184). An external SIGINT is a separate path.
+          if (exitArmed.current === null) {
+            dispatch({ kind: "notice", message: EXIT_CONFIRMATION.notice });
+            exitArmed.current = setTimeout(() => {
+              exitArmed.current = null;
+              if (stateRef.current.notice === EXIT_CONFIRMATION.notice)
+                dispatch({ kind: "notice", message: "" });
+            }, EXIT_CONFIRMATION.windowMs);
+            return true;
+          }
+          clearTimeout(exitArmed.current);
+          exitArmed.current = null;
+          break;
         case "overlay.close":
           if (stateRef.current.overlay.kind === "confirm") {
             return confirm("deny");

@@ -35,6 +35,15 @@ application. The current command surface includes:
 Commands support human-readable and machine-readable output forms. Results go
 to standard output and diagnostics go to standard error.
 
+In the interactive terminal, press Ctrl+C twice within two seconds to leave. The
+first press only shows "Press Ctrl+C again to exit." and changes nothing else. The
+hint clears if no second press follows, and choosing Exit in the command palette
+asks the same way. Leaving this way exits `0` and restores the terminal. The key
+arrives as input in raw mode, so one shared keymap rule covers macOS, Linux and
+Windows; its tests run on all three, and the real-terminal check runs on macOS.
+An external `SIGINT` (such as `kill -INT` or a supervisor) still cancels
+immediately with exit code `130`.
+
 ## Configuration home and local data
 
 Human-authored user configuration defaults to `~/.falryn/falryn.jsonc`, with

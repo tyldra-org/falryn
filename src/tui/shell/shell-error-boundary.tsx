@@ -35,7 +35,7 @@ export class ShellErrorBoundary extends Component<
       return (
         <box flexDirection="column">
           <text>Falryn could not render this frame.</text>
-          <text>Press Ctrl+C to exit and restore the terminal.</text>
+          <text>Press Ctrl+C twice to exit and restore the terminal.</text>
         </box>
       );
     }

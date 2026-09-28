@@ -94,7 +94,8 @@ export const SHELL_HELP = [
   {
     title: "Leaving",
     body:
-      "Ctrl+C ends the session. It reaches Falryn's own cancellation rather than " +
+      "Press Ctrl+C twice within two seconds to end the session; one press only " +
+      "asks for the second. It reaches Falryn's own cancellation rather than " +
       "the renderer's, so the terminal is restored on the way out. A --timeout " +
       "ends it the same way.",
   },
