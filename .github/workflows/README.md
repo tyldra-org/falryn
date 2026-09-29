@@ -101,7 +101,7 @@ so no macOS runner builds or tests a revision that does not typecheck.
 | `typecheck` | `ubuntu-latest` | `tsc --noEmit` under the strict configuration |
 | `dependency-integrity` | `ubuntu-latest` | direct-dependency admission and generated-output ownership |
 | `dependency-audit` | `ubuntu-latest` | `bun audit` against installed packages |
-| `platform-test-ubuntu`, `platform-test-macos` | Ubuntu, macOS | the complete source suite, in three balanced shards per host |
+| `platform-test-ubuntu`, `platform-test-macos` | Ubuntu, macOS | the complete source suite, in three balanced shards on Ubuntu and four on macOS |
 | `platform-test-windows` | `windows-latest` | the Windows platform baseline |
 | `platform-test-*-gate` | `ubuntu-latest` | the required `Platform tests (…)` check for each sharded host |
 | `ubuntu-x64-compiled-smoke` | `ubuntu-latest` | the compiled CLI runs on Linux x64 |
@@ -111,7 +111,10 @@ so no macOS runner builds or tests a revision that does not typecheck.
 ### Sharded source suites
 
 The full suite on one macOS runner took about eight minutes and was the slowest
-part of every run. Ubuntu and macOS now split it with Bun's `--shard=i/3`.
+part of every run. Ubuntu splits it into three shards and macOS, whose hosted
+runners take about twice as long, into four. Each shard job runs `bun run test`
+with `FALRYN_TEST_SHARD=i/N`, the same runner as a local `bun run test`, so the
+shard flags and the known-flake rule below have one owner.
 `--timings=.github/test-timings.json` balances the shards by recorded per-file
 durations instead of file count. A file missing from that record still runs in
 some shard; a stale record only unbalances the shards. Refresh it with
@@ -124,6 +127,12 @@ original required check names, `Platform tests (Ubuntu latest x64)` and
 `Platform tests (macOS latest arm64)`. They run even when a shard is skipped or
 fails, and pass only when every shard of that host passed, so branch rules need
 no change.
+
+A shard reruns a failing test file once, on its own, only when
+`.github/known-flaky-tests.json` lists it with the open issue that owns its fix,
+and at most three files failed. A pass then keeps the shard green but adds a
+warning and a job-summary entry naming that issue. Every other failure fails the
+shard, including a new intermittent one: it may be the change under review.
 
 ### What each platform actually qualifies
 

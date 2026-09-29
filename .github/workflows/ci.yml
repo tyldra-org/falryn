@@ -116,7 +116,9 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Run this shard of the source suite
-        run: bun test --shard=${{ matrix.shard }}/3 --timings=.github/test-timings.json --path-ignore-patterns='**/*.compiled.test.ts'
+        env:
+          FALRYN_TEST_SHARD: ${{ matrix.shard }}/3
+        run: bun run test
 
   platform-test-macos:
     name: Platform tests shard (macOS latest arm64, ${{ matrix.shard }}/4)
@@ -138,7 +140,9 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Run this shard of the source suite
-        run: bun test --shard=${{ matrix.shard }}/4 --timings=.github/test-timings.json --path-ignore-patterns='**/*.compiled.test.ts'
+        env:
+          FALRYN_TEST_SHARD: ${{ matrix.shard }}/4
+        run: bun run test
 
   platform-test-windows:
     name: Platform tests (Windows latest x64)
