@@ -1024,7 +1024,8 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     if (!checked.success)
       return {
         kind: "invalid",
-        message: "The listing request must be an import of a file or a bounded list query.",
+        message:
+          "The listing request must be a file import, a marketplace refresh, a bounded list query or an inspect query.",
       };
     extensionListingArgs = checked.data;
   }

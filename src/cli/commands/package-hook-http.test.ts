@@ -6,8 +6,8 @@ import { hookServiceDecision, httpHookDeclaration } from "../../domain/extension
 import type { HookGrantRequirement } from "../../domain/extensions/hook-grants.ts";
 import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
 import { hookTestCertificate } from "../../integrations/extensions/hook-http-fixtures.ts";
-import type { HookEgressOptions } from "../../integrations/extensions/host-hook-http.ts";
 import { createHostSandbox } from "../../integrations/security/host-sandbox.ts";
+import type { EgressOptions } from "../../integrations/security/pinned-https.ts";
 import { nativeProductJourney, observerNotices } from "../runtime/native-product-fixtures.ts";
 import { preparePackageCliFixture } from "./package-health-fixtures.ts";
 import { prepareNativeCliFixture } from "./package-native-fixtures.ts";
@@ -45,7 +45,7 @@ function decisionService(veto: boolean) {
     stop: () => server.stop(true),
   };
 }
-const egress = (reachable: readonly string[]): HookEgressOptions => ({
+const egress = (reachable: readonly string[]): EgressOptions => ({
   resolve: async () => [{ address: "127.0.0.1", family: 4 }],
   ...(tls === null ? {} : { ca: tls.cert }),
   reachable,
@@ -79,7 +79,7 @@ test.skipIf(unavailable).each([
           environment: { ...fixture.environment, HOOK_TOKEN: "hook-secret" },
           name: fixture.name,
         },
-        { hookEgress: egress(["127.0.0.1"]) },
+        { egress: egress(["127.0.0.1"]) },
       );
       // One approved POST, carrying only the user's credential for this hook.
       expect(service.calls).toEqual(["Bearer hook-secret"]);
@@ -111,7 +111,7 @@ test.skipIf(unavailable)(
       });
       const journey = await nativeProductJourney(
         { home: root, environment: fixture.environment, name: fixture.name },
-        { hookEgress: egress([]) },
+        { egress: egress([]) },
       );
       expect(service.calls).toEqual([]);
       expect(journey.result.payload?.stage).toBe("attempt-failed");
@@ -138,7 +138,7 @@ test.skipIf(unavailable)(
       });
       const journey = await nativeProductJourney(
         { home: root, environment: fixture.environment, name: fixture.name },
-        { hookEgress: egress(["127.0.0.1"]) },
+        { egress: egress(["127.0.0.1"]) },
       );
       expect(journey.result.payload?.stage).toBe("attempt-completed");
       expect(

@@ -253,15 +253,46 @@ test("stored records with an unknown version or changed body are reported, not g
   if (decided.kind !== "replace") throw new Error(decided.kind);
   const text = JSON.stringify(decided.record);
   expect(parseCuratedCatalogRecord(text)).toMatchObject({ ok: true });
-  expect(parseCuratedCatalogRecord(text.replace('"recordVersion":1', '"recordVersion":2'))).toEqual(
+  expect(parseCuratedCatalogRecord(text.replace('"recordVersion":2', '"recordVersion":3'))).toEqual(
     {
       ok: false,
       code: "catalog-record-unsupported",
     },
   );
+  // A version-1 record predates marketplaces, so it reads as a file import.
+  const { origin: _origin, ...legacy } = decided.record;
+  expect(parseCuratedCatalogRecord(JSON.stringify({ ...legacy, recordVersion: 1 }))).toMatchObject({
+    ok: true,
+    record: { recordVersion: 2, origin: { kind: "file" } },
+  });
   expect(parseCuratedCatalogRecord(text.replace("Review helper", "Evil helper"))).toEqual({
     ok: false,
     code: "catalog-record-corrupt",
   });
   expect(parseCuratedCatalogRecord("{")).toEqual({ ok: false, code: "catalog-record-corrupt" });
+});
+
+test("fetching the same catalog again renews only its origin facts", () => {
+  const catalog = accepted(curatedDocument([curatedEntry("tools/keep")])).catalog;
+  const first = {
+    kind: "marketplace" as const,
+    url: "https://market.example.test/catalog.json",
+    fetchedAt: 10,
+    bodyDigest: `sha256:${"a".repeat(64)}`,
+  };
+  const stored = decideCuratedImport(null, catalog, [], 10, first);
+  if (stored.kind !== "replace") throw new Error(stored.kind);
+  expect(stored.record.origin).toEqual(first);
+  const again = decideCuratedImport(stored.record, catalog, [], 20, { ...first, fetchedAt: 20 });
+  expect(again).toMatchObject({
+    kind: "unchanged",
+    refreshed: true,
+    record: { importedAt: 20, origin: { fetchedAt: 20 }, catalog: { digest: catalog.digest } },
+  });
+  // A local re-import of the same catalog claims nothing new and writes nothing.
+  expect(decideCuratedImport(stored.record, catalog, [], 30)).toMatchObject({
+    kind: "unchanged",
+    refreshed: false,
+    record: { origin: { fetchedAt: 10 } },
+  });
 });

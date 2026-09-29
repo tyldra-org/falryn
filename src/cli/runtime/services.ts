@@ -1,3 +1,4 @@
+import { MARKETPLACE_CONFIGURATION_KEYS } from "./marketplace-configuration.ts";
 import { MCP_CONFIGURATION_KEYS } from "./mcp-configuration.ts";
 import { SANDBOX_CONFIGURATION_KEYS } from "./sandbox-configuration.ts";
 /**
@@ -67,13 +68,13 @@ import {
   resolveLocalPath,
   type WorkspaceSet,
 } from "../../domain/workspace/index.ts";
-import type { HookEgressOptions } from "../../integrations/extensions/host-hook-http.ts";
 import {
   createHostEnvironment,
   createHostFileSystem,
   hostHome,
   hostPlatform,
 } from "../../integrations/index.ts";
+import type { EgressOptions } from "../../integrations/security/pinned-https.ts";
 import type { GlobalOptions } from "../options.ts";
 import { AGENT_CONFIGURATION_KEYS } from "./agent-configuration.ts";
 import { ENVIRONMENT_CONFIGURATION_KEYS } from "./environment-configuration.ts";
@@ -112,6 +113,7 @@ export const PRODUCT_CONFIGURATION_KEYS = [
   ...LANGUAGE_SERVICE_CONFIGURATION_KEYS,
   ...ENVIRONMENT_CONFIGURATION_KEYS,
   ...MCP_CONFIGURATION_KEYS,
+  ...MARKETPLACE_CONFIGURATION_KEYS,
 ] as const;
 
 export type Services = {
@@ -120,7 +122,7 @@ export type Services = {
   readonly environment: EnvironmentPort;
   readonly clock: ClockPort;
   /** Present only in tests; production resolves and classifies every address itself. */
-  readonly hookEgress?: HookEgressOptions;
+  readonly egress?: EgressOptions;
   /**
    * Where this run's events were appended.
    *
@@ -200,11 +202,11 @@ export type HostServiceOptions = {
   /** The directory a relative `--workspace` resolves against. */
   readonly currentDirectory?: LocalPath;
   /**
-   * Test composition of package HTTP hook egress: a resolver, a trusted certificate and
-   * the exact addresses a local test service may use. Never reachable from the CLI,
-   * environment or configuration.
+   * Test composition of governed HTTPS egress (package HTTP hooks, marketplace refresh):
+   * a resolver, a trusted certificate and the exact addresses a local test service may
+   * use. Never reachable from the CLI, environment or configuration.
    */
-  readonly hookEgress?: HookEgressOptions;
+  readonly egress?: EgressOptions;
 };
 
 /** Every v0.1 owner whose local-data bytes can be named by the CLI surface. */
@@ -344,7 +346,7 @@ export function createServiceProvider(
       fileSystem,
       environment,
       clock,
-      ...(overrides.hookEgress === undefined ? {} : { hookEgress: overrides.hookEgress }),
+      ...(overrides.egress === undefined ? {} : { egress: overrides.egress }),
       eventStore,
       localData,
       removalData,
