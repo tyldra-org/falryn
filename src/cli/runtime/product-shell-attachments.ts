@@ -80,6 +80,7 @@ import {
 import { composePeerTool } from "../../application/tools/peer-tool.ts";
 import { composeProductIndexLifecycle } from "../../application/workspace/index.ts";
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
+import { resolveSkillCommand, skillCatalogLines } from "../../domain/context/skill-invocation.ts";
 import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { projectCatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import {
@@ -784,6 +785,45 @@ export async function composeProductShellAttachments(
         selection !== undefined,
         () => sessionExecutor?.processing.inspect().override ?? undefined,
       );
+      // Explicit skill invocation and `/skills` (#1179) read the same owner the turn
+      // admits skills through. The catalog is refreshed now, so a bare `/<name>` resolves
+      // before the first turn, and again for each `/skills` page.
+      const skillControl =
+        instructions === null
+          ? null
+          : (() => {
+              const refresh = (signal: AbortSignal) =>
+                instructions.owner
+                  .prepare(
+                    { ...instructions.scope, execution: `skill-catalog:${randomUUID()}` },
+                    [],
+                    signal,
+                    undefined,
+                    true,
+                  )
+                  .catch(() => undefined);
+              void refresh(hostSignal);
+              return {
+                command: (text: string) =>
+                  resolveSkillCommand(text, {
+                    skills: instructions.owner.skillNames(),
+                    templates: new Set(prompts.templates.map((template) => template.localId)),
+                  }),
+                async lines(
+                  page: { readonly filter: string | null; readonly offset: number },
+                  signal: AbortSignal,
+                ) {
+                  await refresh(signal);
+                  return skillCatalogLines(
+                    instructions.owner.skillCatalog(
+                      { ...instructions.scope, execution: "skill-catalog" },
+                      page,
+                    ),
+                    page.filter,
+                  );
+                },
+              };
+            })();
       const executor = createProductLiveTurnExecutor({
         ...(profileSession ? { admissionBinding: profileSession.capture } : {}),
         ...(selection ? { resumed: true, historyParents: selection.parents } : {}),
@@ -846,6 +886,7 @@ export async function composeProductShellAttachments(
         get prompts() {
           return prompts;
         },
+        skills: skillControl,
         profileSession,
         async close() {
           // Closing a session is a stop: its observers are cancelled and leave receipts.
@@ -879,6 +920,7 @@ export async function composeProductShellAttachments(
           brief,
           output,
           isAccepting: () => !hostSignal.aborted,
+          resolveSkill: (text) => skillControl?.command(text) ?? null,
         }),
       };
     } finally {
@@ -948,6 +990,13 @@ export async function composeProductShellAttachments(
       },
     },
     binding: () => `${active.sessionId}:${activationGeneration}`,
+    skillCommand: (text: string) => active.skills?.command(text) ?? null,
+    listSkills: (
+      page: { readonly filter: string | null; readonly offset: number },
+      signal: AbortSignal,
+    ) =>
+      active.skills?.lines(page, AbortSignal.any([hostSignal, signal])) ??
+      Promise.resolve(["Skills are unavailable in this session."]),
     workingProfile: (
       argument: string | null,
       signal: AbortSignal,

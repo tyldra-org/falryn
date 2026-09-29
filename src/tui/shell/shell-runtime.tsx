@@ -41,6 +41,7 @@ import {
   MAX_EVIDENCE_INLINE_BYTES,
   parseMentions,
 } from "../../domain/context/index.ts";
+import { parseSkillsCommand } from "../../domain/context/skill-invocation.ts";
 import { isExecutionProfileId } from "../../domain/sessions/index.ts";
 import type { TranscriptBlock } from "../../presentation/index.ts";
 import { providerModelIdentityKey } from "../../providers/index.ts";
@@ -891,8 +892,33 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       return;
     }
 
+    // `/skills` lists the skill catalog; it never reads a skill body or sends anything.
+    const skillsPage = parseSkillsCommand(current.text);
+    if (skillsPage !== null) {
+      const listSkills = options.submission?.listSkills;
+      dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+      if (!listSkills) {
+        dispatch({ kind: "notice", message: "Skills are unavailable in this session." });
+        return;
+      }
+      void listSkills(skillsPage, new AbortController().signal).then(
+        (lines) => dispatch({ kind: "notice", message: lines.join("\n") }),
+        () => dispatch({ kind: "notice", message: "The skill catalog is unavailable." }),
+      );
+      return;
+    }
+    // A skill command is sent as a turn with the skill loaded; a name that is both a
+    // skill and a template must be qualified, and the draft stays for editing.
+    const skill = options.submission?.skillCommand?.(current.text) ?? null;
+    if (skill?.kind === "ambiguous") {
+      dispatch({
+        kind: "notice",
+        message: `A skill and a prompt template are both named ${skill.name}. Use /skill:${skill.name} for the skill or the template's /<package>:${skill.name}.`,
+      });
+      return;
+    }
     // Package prompt templates expand into the draft for review; nothing is sent.
-    if (expandTemplate(current.text)) return;
+    if (skill === null && expandTemplate(current.text)) return;
 
     const midTurn = options.midTurn ?? null;
     if (midTurn !== null && midTurn.view().active !== null) {

@@ -61,9 +61,18 @@ function owner(skills: readonly ReturnType<typeof skill>[]) {
       return true;
     },
   });
-  const prepare = (task: string, active: readonly string[] = [], signal?: AbortSignal) =>
-    prepared.prepare(sourceScope, [], signal, undefined, false, { task, active });
-  return { prepare, reads };
+  const prepare = (
+    task: string,
+    active: readonly string[] = [],
+    signal?: AbortSignal,
+    explicit?: readonly string[],
+  ) =>
+    prepared.prepare(sourceScope, [], signal, undefined, false, {
+      task,
+      active,
+      ...(explicit === undefined ? {} : { explicit }),
+    });
+  return { prepare, reads, bodies, owner: prepared };
 }
 
 test("routing loads only the selected skill's complete body and records its admission", async () => {
@@ -177,4 +186,75 @@ test("cancellation before admission reads no skill body", async () => {
   const prepared = await f.prepare("Use release-notes", [], controller.signal);
   expect(prepared).toMatchObject({ ok: false, code: "cancelled" });
   expect(f.reads).toEqual([]);
+});
+
+test("an explicit pick is refused on a tie or a changed body, and nothing else is read", async () => {
+  const tied = owner([
+    skill("release-notes", "Draft release notes."),
+    skill("release-notes", "Draft release notes.", {
+      identity: {
+        version: 1,
+        kind: "skill",
+        root: "workspace",
+        path: ".agents/skills/release-notes-copy/SKILL.md",
+        namespace: "skills",
+        localId: "release-notes",
+      },
+    }),
+    skill("incident", "Write an incident postmortem."),
+  ]);
+  const refused = await tied.prepare("Summarize incident", [], undefined, ["release-notes"]);
+  expect(refused.ok).toBe(false);
+  expect(tied.reads).toEqual([]);
+
+  const changing = skill("release-notes", "Draft release notes.");
+  const changed = owner([changing]);
+  changed.bodies.set(changing.source.digest, new TextEncoder().encode("BODY_tampered"));
+  const stale = await changed.prepare("Anything", [], undefined, ["release-notes"]);
+  expect(stale.ok).toBe(false);
+
+  const manual = owner([
+    skill("deploy", "Deploy the service.", { eligibility: { user: true, automatic: false } }),
+  ]);
+  const loaded = await manual.prepare("Ship it", [], undefined, ["deploy"]);
+  if (!loaded.ok) throw new Error(loaded.code);
+  expect(manual.reads).toEqual(["deploy"]);
+  expect(loaded.binding.receipt.skills?.routes).toEqual([
+    expect.objectContaining({ name: "deploy", decision: "loaded", reason: "explicit-invocation" }),
+  ]);
+});
+
+test("the catalog lists every skill with its state and command, without reading a body", async () => {
+  const f = owner([
+    skill("release-notes", "Draft release notes.", { origin: "user-agents" }),
+    skill("release-notes", "Draft release notes.", { origin: "project-falryn" }),
+    skill("triage", "Triage issues.", { eligibility: { user: false, automatic: true } }),
+  ]);
+  expect(f.owner.skillCatalog(sourceScope)).toBeNull();
+  const prepared = await f.prepare("Fix the build");
+  if (!prepared.ok) throw new Error(prepared.code);
+  const readsBefore = f.reads.length;
+  expect([...f.owner.skillNames()].sort()).toEqual(["release-notes", "triage"]);
+  const page = f.owner.skillCatalog(sourceScope);
+  expect(page?.total).toBe(3);
+  expect(page?.nextOffset).toBeNull();
+  const entries = page?.entries ?? [];
+  expect(entries.find((item) => item.origin === "project-falryn")).toMatchObject({
+    name: "release-notes",
+    state: "selected",
+    command: "/skill:release-notes",
+  });
+  expect(entries.find((item) => item.origin === "user-agents")).toMatchObject({
+    state: "shadowed",
+    command: null,
+  });
+  expect(entries.find((item) => item.name === "triage")).toMatchObject({
+    userInvocable: false,
+    command: null,
+  });
+  expect(
+    f.owner.skillCatalog(sourceScope, { filter: "tri" })?.entries.map((item) => item.name),
+  ).toEqual(["triage"]);
+  expect(() => f.owner.skillCatalog(sourceScope, { offset: -1 })).toThrow("invalid-skill-cursor");
+  expect(f.reads.length).toBe(readsBefore);
 });

@@ -79,6 +79,12 @@ export type ProductLiveTurnInput = {
   /** Trusted host admission; no prompt or saved agent definition can manufacture this handle. */
   readonly childAdmission?: AdmittedChild;
   readonly prompt: string;
+  /**
+   * Skills the user invoked explicitly (#1179). Set only by a host that parsed admitted
+   * user input (the terminal composer or headless `falryn run`); never by a model,
+   * repository instruction, template expansion, scheduler or delegated agent.
+   */
+  readonly userSkills?: readonly string[];
   readonly attachmentSelection?: ResourceAttachmentSelection;
   readonly turnId: TurnId;
   readonly signal?: AbortSignal;
@@ -1063,12 +1069,16 @@ export function createProductLiveTurnExecutor(
                   resources: taskResources,
                   signal: input.signal ?? new AbortController().signal,
                   // Main turns route skills automatically; children and workflows do not (#1180).
+                  // Explicit user skills ride the same route with user origin.
                   ...(runtime.instructions.skills !== undefined &&
                   runtime.instructions.scope.kind === "main"
                     ? {
                         route: {
                           task: input.prompt,
                           active: runtime.instructions.skills.active(),
+                          ...(input.userSkills === undefined || input.childAdmission !== undefined
+                            ? {}
+                            : { explicit: input.userSkills }),
                         },
                       }
                     : {}),

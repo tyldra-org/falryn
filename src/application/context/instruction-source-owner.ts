@@ -26,6 +26,12 @@ import {
   type PromptSectionInput,
 } from "../../domain/context/prompt-composition.ts";
 import {
+  SKILL_CATALOG_LIMITS,
+  SKILL_COMMAND_NAMESPACE,
+  type SkillCatalogEntry,
+  type SkillCatalogPage,
+} from "../../domain/context/skill-invocation.ts";
+import {
   loadSkillResources,
   type SkillResourceEntry,
   type SkillResourceIndexEntry,
@@ -93,7 +99,16 @@ export type InstructionSelection = NonNullable<
   Parameters<typeof resolveInstructionSources>[0]["selections"]
 >;
 /** Automatic skill routing for one admission (#136): the task and the session's active skills. */
-export type SkillRouteRequest = { readonly task: string; readonly active: readonly string[] };
+export type SkillRouteRequest = {
+  readonly task: string;
+  readonly active: readonly string[];
+  /**
+   * Skills the user invoked explicitly (#1179), selected with user origin. Only a host
+   * that parsed admitted user input may set this; no model, repository, template or
+   * scheduler text can.
+   */
+  readonly explicit?: readonly string[];
+};
 export type InstructionSourceOwner = ReturnType<typeof createInstructionSourceOwner>;
 
 /** A bounded read of a loaded skill's resources, or the reason it was refused (#137). */
@@ -356,15 +371,24 @@ export function createInstructionSourceOwner(port: InstructionSourcePort) {
           ? { candidates: [], unavailable: [] }
           : automaticSkills(current.sources, scope, current.preferences);
       const eligibleSkills = catalog.candidates;
-      const routes =
-        route === undefined
+      const explicit = [...new Set(route?.explicit ?? [])];
+      // An explicit pick is the user's choice, checked against user eligibility; the
+      // automatic router never adds, recommends or reports the same name again.
+      const routes = [
+        ...explicit.map((name) => ({
+          name,
+          decision: "selected" as const,
+          reason: "explicit-invocation",
+        })),
+        ...(route === undefined
           ? []
           : routeSkills({
               task: route.task,
               candidates: eligibleSkills,
-              active: route.active,
+              active: route.active.filter((name) => !explicit.includes(name)),
               unavailable: catalog.unavailable,
-            });
+            }).filter((item) => !explicit.includes(item.name))),
+      ];
       let chosen: InstructionSelection = [
         ...selections,
         ...routes
@@ -372,7 +396,7 @@ export function createInstructionSourceOwner(port: InstructionSourcePort) {
           .map((item) => ({
             kind: "skill" as const,
             name: item.name,
-            origin: "automatic" as const,
+            origin: explicit.includes(item.name) ? ("user" as const) : ("automatic" as const),
           })),
       ];
       const resolve = () =>
@@ -384,7 +408,8 @@ export function createInstructionSourceOwner(port: InstructionSourcePort) {
         });
       let resolution = resolve();
       // An automatic pick the resolver cannot settle is omitted with its reason; it never
-      // fails the turn or falls through to another source.
+      // fails the turn or falls through to another source. An explicit pick that cannot
+      // be settled fails the admission with its reason instead.
       const dropped = new Map<string, string>();
       for (const code of resolution.unavailable) {
         const match = /^(selection-unavailable|ambiguous-source):(.+)$/u.exec(code);
@@ -392,6 +417,7 @@ export function createInstructionSourceOwner(port: InstructionSourcePort) {
         if (
           match?.[1] !== undefined &&
           name !== undefined &&
+          !explicit.includes(name) &&
           routes.some((item) => item.decision === "selected" && item.name === name)
         )
           dropped.set(name, match[1]);
@@ -737,6 +763,90 @@ export function createInstructionSourceOwner(port: InstructionSourcePort) {
     },
     snapshot() {
       return published;
+    },
+    /** Names of every skill source in the latest publication, whatever its state. */
+    skillNames(): ReadonlySet<string> {
+      return new Set(
+        (published?.sources ?? [])
+          .filter((source) => source.identity.kind === "skill")
+          .map((source) => source.identity.localId),
+      );
+    },
+    /**
+     * One page of the skill catalog as name resolution sees it now (#1179). Built from
+     * the publication's metadata; no skill body is read and no authority is asserted.
+     */
+    skillCatalog(
+      scope: InstructionScope,
+      page: { readonly filter?: string | null; readonly offset?: number } = {},
+    ): SkillCatalogPage | null {
+      if (!published) return null;
+      const offset = page.offset ?? 0;
+      if (!Number.isSafeInteger(offset) || offset < 0) throw new Error("invalid-skill-cursor");
+      // Resolve as if the user invoked every name: the source that would load is
+      // selected, same-named losers are shadowed, restricted sources are excluded and
+      // equal-priority duplicates are conflicting.
+      const names = new Set(
+        published.sources
+          .filter((source) => source.identity.kind === "skill")
+          .map((source) => source.identity.localId),
+      );
+      const resolved = resolveInstructionSources({
+        sources: published.sources,
+        preferences: session ?? published.preferences,
+        scope,
+        selections: [...names].map((name) => ({
+          kind: "skill" as const,
+          name,
+          origin: "user" as const,
+        })),
+      });
+      const decisions = new Map(resolved.decisions.map((item) => [item.source, item]));
+      const restrictions = (session ?? published.preferences).restrictions;
+      const filter = page.filter?.toLowerCase() ?? null;
+      const all = published.sources
+        .filter(
+          (source) =>
+            source.identity.kind === "skill" &&
+            (filter === null || source.identity.localId.includes(filter)),
+        )
+        .map((source): SkillCatalogEntry => {
+          const key = instructionSourceKey(source.identity);
+          const decision = decisions.get(key);
+          const restriction = restrictions.find((item) => item.source === key);
+          const userInvocable =
+            source.eligibility === null
+              ? null
+              : source.eligibility.user && restriction?.user !== false;
+          const state = decision?.state ?? "excluded";
+          const invocable = userInvocable === true && state === "selected";
+          return {
+            name: source.identity.localId,
+            source: key,
+            origin: source.origin,
+            path: source.identity.path,
+            scope: source.scope,
+            state,
+            reason: decision?.reason ?? "unavailable",
+            userInvocable,
+            automatic:
+              source.eligibility === null
+                ? null
+                : source.eligibility.automatic && restriction?.automatic !== false,
+            command: invocable ? `/${SKILL_COMMAND_NAMESPACE}:${source.identity.localId}` : null,
+          };
+        })
+        .sort((a, b) =>
+          a.name < b.name ? -1 : a.name > b.name ? 1 : a.origin < b.origin ? -1 : 1,
+        );
+      const entries = all.slice(offset, offset + SKILL_CATALOG_LIMITS.page);
+      const next = offset + entries.length;
+      return freezeMetadata({
+        generation: published.generation,
+        entries,
+        total: all.length,
+        nextOffset: next < all.length ? next : null,
+      });
     },
     /**
      * Read resources of a skill the scope's latest admission loaded, relative to its own

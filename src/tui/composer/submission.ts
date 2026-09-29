@@ -114,6 +114,15 @@ export type SubmissionPort = {
     signal: AbortSignal,
     entered?: Readonly<Record<string, string>>,
   ) => Promise<import("../../application/extensions/native-prompt-owner.ts").PromptExpansion>;
+  /** Whether submitted text invokes a skill (#1179); built-in commands are checked first. */
+  readonly skillCommand?: (
+    text: string,
+  ) => import("../../domain/context/skill-invocation.ts").SkillCommand | null;
+  /** Human lines for one page of `/skills`; never reads a skill body. */
+  readonly listSkills?: (
+    page: { readonly filter: string | null; readonly offset: number },
+    signal: AbortSignal,
+  ) => Promise<readonly string[]>;
   submit(
     snapshot: ComposerSnapshot,
     context?: {
