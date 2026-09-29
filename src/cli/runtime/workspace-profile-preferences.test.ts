@@ -74,8 +74,11 @@ test("another process reading the database does not make the preference unavaila
     other.all("SELECT count(*) FROM workspace_profile_preferences");
     writer.pragma("wal_autocheckpoint = 0");
     writer.run("INSERT INTO workspace_profile_preferences VALUES ('other-workspace', NULL, 1)");
+    const started = Date.now();
     const read = await workspaceProfilePreference(graph);
     expect(read).toEqual({ ok: true, value: { profile: "work", revision: 1 } });
+    // A read does not wait the busy timeout for the other process's readers.
+    expect(Date.now() - started).toBeLessThan(2_000);
   } finally {
     other.run("ROLLBACK");
     await other.close();

@@ -44,6 +44,7 @@ import {
   migrationChecksum,
   type OwnershipRegistration,
   type SqliteBindings,
+  type SqliteCloseOptions,
   type SqliteCloseReport,
   type SqliteConnectionPort,
   type SqliteFailure,
@@ -205,7 +206,10 @@ function appliedFromRow(row: SqliteRow): AppliedMigration {
  * still has to happen, and hiding the first failure behind the second would
  * lose the reason the sidecars are still there.
  */
-async function runCloseSequence(connection: SqliteConnectionPort): Promise<SqliteCloseReport> {
+async function runCloseSequence(
+  connection: SqliteConnectionPort,
+  waitForReaders = true,
+): Promise<SqliteCloseReport> {
   const failures: SqliteFailure[] = [];
 
   const persistentWal = connection.setPersistentWal(false);
@@ -213,6 +217,13 @@ async function runCloseSequence(connection: SqliteConnectionPort): Promise<Sqlit
     failures.push(persistentWal.error);
   }
 
+  // A store that wrote nothing it must settle does not wait for another process's
+  // readers: the truncating checkpoint is attempted once, and a later close
+  // finishes it. Waiting would cost the whole busy timeout for nothing.
+  if (!waitForReaders) {
+    const noWait = connection.pragma("busy_timeout = 0");
+    if (!noWait.ok) failures.push(noWait.error);
+  }
   const checkpoint = connection.pragma("wal_checkpoint(TRUNCATE)");
   const checkpointed =
     checkpoint.ok &&
@@ -635,8 +646,8 @@ function createStore(connection: SqliteConnectionPort, report: SqliteOpenReport)
       return ok({ value: outcome.value, cancelledAfterCommit: isAborted(signal) });
     },
 
-    close(): Promise<SqliteCloseReport> {
-      closing ??= runCloseSequence(connection);
+    close(_signal?: AbortSignal, options?: SqliteCloseOptions): Promise<SqliteCloseReport> {
+      closing ??= runCloseSequence(connection, options?.waitForReaders !== false);
       return closing;
     },
 
