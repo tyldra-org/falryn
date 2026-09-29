@@ -100,6 +100,11 @@ export async function preparePackageCliFixture(
       timeout: 30_000,
     });
     const stdout = new TextDecoder().decode(child.stdout);
+    // A child killed by its timeout or a signal prints nothing; say so instead of a parse error.
+    if (stdout.trim() === "")
+      throw new Error(
+        `health command ${args.join(" ")} produced no output (exit ${child.exitCode}, signal ${child.signalCode ?? "none"}, timed out ${child.exitedDueToTimeout === true}): ${new TextDecoder().decode(child.stderr).slice(0, 2_000)}`,
+      );
     const decoded = z
       .object({ payload: z.unknown() })
       .safeParse(JSON.parse(stdout.trim().split("\n").at(-1) ?? "null"));

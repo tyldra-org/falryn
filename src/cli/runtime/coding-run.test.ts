@@ -626,7 +626,9 @@ describe("runCoding", () => {
     await expect(readFile(join(seeded.primary, "notes.txt"), "utf8")).resolves.toBe(
       "hello workspace\n",
     );
-  });
+    // A real Git repository, Git processes and a durable product turn; hosted macOS
+    // runners have taken over 5 s here while the same test takes about 0.35 s locally.
+  }, 20_000);
 
   test("uses bounded eager tools when the selected transport is not qualified for native search", async () => {
     const seeded = await seededHome();

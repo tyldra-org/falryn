@@ -187,7 +187,12 @@ export const scheduleAttemptSchema = z.strictObject({
   terminal: scheduleTerminalSchema.nullable(),
 });
 export type ScheduleAttempt = z.infer<typeof scheduleAttemptSchema>;
-export type ScheduleError = { code: string; currentRevision?: number };
+export type ScheduleError = {
+  code: string;
+  currentRevision?: number;
+  /** A bounded diagnostic code naming what failed underneath; never a value. */
+  cause?: string;
+};
 export type ScheduleResult<T> = Result<T, ScheduleError>;
 export type ScheduleStore = {
   create(record: ScheduleRecord): ScheduleResult<ScheduleRecord>;
