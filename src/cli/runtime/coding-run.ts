@@ -75,6 +75,7 @@ import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import type { BriefReceipt } from "../../domain/compression/index.ts";
 import type { CredentialReference } from "../../domain/configuration/index.ts";
 import type { PromptSectionInput } from "../../domain/context/index.ts";
+import { resolveSkillCommand } from "../../domain/context/skill-invocation.ts";
 import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { projectCatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import {
@@ -178,6 +179,7 @@ export type CodingRunPayload = {
   readonly stage:
     | "prompt-missing"
     | "template-failed"
+    | "skill-failed"
     | "workspace-refused"
     | "trust-required"
     | "compose-failed"
@@ -863,10 +865,50 @@ export async function runCoding(
       selection ? String(sessionId) : undefined,
       { mcp, evaluator: evaluator.session },
     );
-    // Built-in composer commands win; a template expands before any turn state exists.
+    // Built-in composer commands win. A skill command is resolved next against the
+    // current catalog; otherwise a template expands before any turn state exists.
     let prompt = resolved.prompt;
     let promptTemplate: PromptExpansionFact | undefined;
-    if (!isBuiltinComposerSlash(prompt)) {
+    let userSkills: readonly string[] | undefined;
+    if (!isBuiltinComposerSlash(prompt) && prompt.trimStart().startsWith("/")) {
+      // A bare name resolves against the sources as they are now, not a previous turn's.
+      await instructionOwner
+        .prepare(
+          { ...instructionScope, execution: `skill-catalog:${String(turnId)}` },
+          [],
+          options.signal ?? new AbortController().signal,
+          undefined,
+          true,
+        )
+        .catch(() => undefined);
+      const command = resolveSkillCommand(prompt, {
+        skills: instructionOwner.skillNames(),
+        templates: new Set(extensions.prompts.templates.map((template) => template.localId)),
+      });
+      if (command?.kind === "ambiguous")
+        return codingResult(
+          {
+            prompt: resolved.prompt,
+            sessionId: ids.sessionId,
+            turnId: null,
+            workspaceId: String(workspaceId),
+            stage: "skill-failed",
+            eventCount: 0,
+          },
+          [
+            adoptForeignError(
+              {
+                code: "skill.ambiguous-command",
+                category: "context",
+                message: `Not sent: a skill and a prompt template are both named ${command.name}. Use /skill:${command.name} for the skill or the template's /<package>:${command.name}.`,
+              },
+              { operation: "invoke skill" },
+            ),
+          ],
+        );
+      if (command?.kind === "skill") userSkills = [command.name];
+    }
+    if (userSkills === undefined && !isBuiltinComposerSlash(prompt)) {
       const expansion = await extensions.prompts.expand(
         prompt,
         options.signal ?? new AbortController().signal,
@@ -1149,6 +1191,7 @@ export async function runCoding(
     });
     const attempted = await executor.run({
       prompt,
+      ...(userSkills === undefined ? {} : { userSkills }),
       turnId,
       ...(options.signal === undefined ? {} : { signal: options.signal }),
       ...(options.responsePolicyOverride === undefined && briefRequest !== null

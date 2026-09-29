@@ -42,6 +42,13 @@ export type ProductSubmissionPortOptions = {
   readonly brief?: ProductBriefControls;
   /** Shared Hush/Loom controls for this TUI session. */
   readonly output?: ProductOutputControls;
+  /**
+   * Resolves a skill command in the submitted text (#1179). The composer's own text is
+   * admitted user input, so a match is sent with user origin.
+   */
+  readonly resolveSkill?: (
+    text: string,
+  ) => import("../../domain/context/skill-invocation.ts").SkillCommand | null;
 };
 
 export type ProductSubmissionPort = SubmissionPort & {
@@ -96,6 +103,12 @@ export function createProductSubmissionPort(
       }
 
       const id = nextTurnId();
+      const skill = options.resolveSkill?.(snapshot.text) ?? null;
+      if (skill?.kind === "ambiguous")
+        return unavailable(
+          snapshot,
+          `a skill and a prompt template are both named ${skill.name}; use /skill:${skill.name} or the template's /<package>:${skill.name}`,
+        );
       const briefRequest = brief.requestForTurn({
         turnId: id,
         sessionId: options.sessionId,
@@ -105,6 +118,7 @@ export function createProductSubmissionPort(
       });
       const started = await options.executor.run({
         prompt: snapshot.text,
+        ...(skill?.kind === "skill" ? { userSkills: [skill.name] } : {}),
         attachmentSelection: {
           attachments: snapshot.attachments,
           mentions: snapshot.mentions,

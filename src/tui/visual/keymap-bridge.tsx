@@ -53,8 +53,10 @@ export function KeymapBridge(props: KeymapBridgeProps): ReactNode {
       commands: SHELL_COMMANDS.map((command) => ({
         name: command.id,
         desc: command.description,
+        // A declining command lets its key reach the next layer's binding.
         run: () => {
-          props.run(command.id);
+          const handled = props.run(command.id);
+          return DECLINABLE.has(command.id) && !handled ? false : undefined;
         },
       })),
     }),
@@ -97,3 +99,6 @@ function useContextBindings(
 function isTextareaOwned(command: string): boolean {
   return command === "composer.submit" || command === "composer.newline";
 }
+
+/** Commands that share a key with a broader layer and pass it on when they do nothing. */
+const DECLINABLE: ReadonlySet<string> = new Set(["composer.complete"]);

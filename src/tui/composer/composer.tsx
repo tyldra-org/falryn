@@ -128,9 +128,10 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
   // it: a history recall replaces the whole text. Typing never comes back
   // through here — `onContentChange` reports it and the state follows.
   //
-  // Guarded on the text actually differing, because `setText` moves the cursor
-  // to the end: applying it on every render would drag the cursor there after
-  // each keystroke, which is the same class of defect as placing it by hand.
+  // Guarded on the text actually differing, because a replacement puts the cursor
+  // at the end (`setText` alone leaves it at the start, so it is moved there):
+  // applying it on every render would drag the cursor there after each keystroke,
+  // which is the same class of defect as placing it by hand.
   //
   // `useLayoutEffect` so a mid-turn clear reaches the renderable before paint
   // and before a stale `onContentChange` echo can restore the buffer.
@@ -138,6 +139,7 @@ export function ComposerView(props: ComposerViewProps): ReactNode {
     const renderable = draft.current;
     if (renderable !== null && renderable.plainText !== model.state.text) {
       renderable.setText(model.state.text);
+      renderable.gotoBufferEnd();
     }
   }, [model.state.text]);
 

@@ -73,6 +73,18 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
   {
+    // Declines when the draft is not a skill command prefix, so Tab still moves focus.
+    id: "composer.complete",
+    title: "Complete skill command",
+    description:
+      "Complete a draft such as /rel or /skill:re to a skill you can invoke; otherwise move focus.",
+    context: "composer",
+    defaultBinding: "tab",
+    keywords: ["complete", "skill", "slash", "command"],
+    availability: (state) =>
+      state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
+  },
+  {
     id: "composer.includePaste",
     title: "Include the held paste",
     description: "Attach the last large paste without inserting it into the draft.",

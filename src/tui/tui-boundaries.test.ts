@@ -964,6 +964,7 @@ describe("the rendered test harness", () => {
         "overlays/session-activation.test.tsx",
         "overlays/session-nav-sheet.test.tsx",
         "shell/shell-error-boundary.test.tsx",
+        "shell/skill-completion.test.tsx",
         "transcript/transcript.test.tsx",
         "overlays/workspace-sheet.test.tsx",
         // The harness's own checks, which are what prove it cleans up.

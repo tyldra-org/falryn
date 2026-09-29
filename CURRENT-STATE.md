@@ -385,7 +385,7 @@ changes its instruction role. The shared resolver also handles skill and prompt
 metadata: equal-priority skill collisions and ambiguous prompt aliases require
 a choice; an explicit prompt declaration replaces only its exact same-package
 conventional identity. Automatic skill routing uses this resolver (see Skills);
-skill commands and direct invocation are not shipped.
+explicit skill invocation uses it with user origin (see Skills).
 
 `instructions.preferences` is a version-1 object with `choices` and `restrictions`
 arrays. A choice contains `kind`, `name` and `source`. For instructions, `name` is
@@ -449,7 +449,7 @@ and never loaded. Untrusted project skills are listed but never read. The
 frontmatter must carry the Agent Skills `name` (matching the directory) and
 `description`. `disable-model-invocation: true` keeps a skill out of automatic
 selection, and `user-invocable: false` only affects explicit invocation, which is
-not shipped yet (#1179). These must be real booleans; any other value makes the
+refused for that skill. These must be real booleans; any other value makes the
 skill unavailable (`malformed-eligibility`). `model`, `effort`, `context`,
 `agent` and `hooks` are recognized but not yet honored, so a skill declaring one
 is unavailable (`unsupported-control`, #1181). `allowed-tools` is a hint that grants
@@ -467,6 +467,34 @@ recommendations with their descriptions, and names any skill the task mentioned
 that could not load, with the reason. Manual-only skills are never mentioned. Loaded
 bodies use the instruction limits above and are complete or refused, never
 truncated. Edits and removals apply from the next turn.
+
+A user invokes a skill explicitly by starting a submitted prompt with
+`/skill:<name>`, in the terminal composer or headless `falryn run`; the rest of the
+prompt is the task. A bare `/<name>` also works when a skill of that name exists.
+Built-in commands always win, so `/skill:<name>` reaches a skill whose name is also a
+built-in. When a prompt template shares the bare name the command is ambiguous and
+must be qualified (`skill.ambiguous-command`); an unknown bare name stays with
+prompt templates. Only text the user submits is parsed: slash text inside a prompt,
+model output, repository instructions, template expansions and scheduled or child
+prompts never invoke a skill. The pick resolves with user origin, so a manual-only
+skill (`disable-model-invocation: true`) loads, while a `user-invocable: false`,
+restricted, missing, conflicting, untrusted or changed skill refuses the turn before
+any provider request, with an `instructions.rejected` fact and no substitute source.
+Headless runs report that failure at stage `skill-failed`. A loaded pick is recorded
+as route reason `explicit-invocation` and is kept out of automatic routing for that
+turn. It carries into later turns only through ordinary automatic eligibility, so a
+manual-only skill is not reloaded without another command.
+
+`/skills [filter] [after N]` lists the skill catalog without reading any body: each
+source's name, origin, path, declared eligibility and either its command or why it
+cannot be invoked (shadowed, excluded, conflicting or not user-invocable). The catalog
+is refreshed when the session opens and for each listing. Pages hold at most 100
+entries or 256 KiB. In the composer, Tab completes a draft that is only a command
+prefix (`/rel`, `/skill:re`) to a skill the user can invoke, using the bare form
+only when nothing else answers to that name; several matches extend to their common
+prefix and are listed in a notice. Otherwise Tab moves focus as before. Completion
+reads the latest catalog, and admission still rechecks the pick. There is no
+completion popup.
 
 The `instructions.resolved` receipt records routing in `skills`: the number of
 eligible candidates and each route's name, decision (`loaded`, `recommended` or
@@ -525,8 +553,9 @@ Sequence gaps, unreadable events (skipped, with their neighbours still counted),
 events outside the workspace or session, cancellation, and receipts that omitted
 sources are reported as omissions, and only a window with none of these is marked
 complete. A workspace with no admissions reports usage as unavailable, not zero.
-Explicit invocation has no producer yet, and supporting-file reads are recorded only as
-`skill_resource` tool invocations without being counted, so both are listed as not
+Explicit invocations appear as loads with reason `explicit-invocation`, but there is no
+separate invoked count yet. Supporting-file reads are recorded only as `skill_resource`
+tool invocations without being counted, so invoked and resource-loaded are listed as not
 recorded (#1192). Provider-reported input totals are not stored per session, so they are
 reported as unavailable and never attributed to a skill. An unknown session and a
 continuation reused with a different query are refused. There is no Extensions view

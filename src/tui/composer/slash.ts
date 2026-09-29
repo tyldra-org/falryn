@@ -111,6 +111,9 @@ export type ParsedComposerSlash =
 /** Slash commands the composer handles before its alias table. */
 export const SCHEDULE_SLASH = /^\/schedule(?:\s|$)/u;
 export const PEER_SLASH = /^\/peer(?:\s|$)/u;
+export { SKILLS_COMMAND as SKILLS_SLASH } from "../../domain/context/skill-invocation.ts";
+
+import { SKILLS_COMMAND } from "../../domain/context/skill-invocation.ts";
 
 /**
  * Whether a built-in composer action owns this slash text. Built-ins always win
@@ -119,7 +122,10 @@ export const PEER_SLASH = /^\/peer(?:\s|$)/u;
 export function isBuiltinComposerSlash(text: string): boolean {
   const trimmed = text.trim();
   return (
-    SCHEDULE_SLASH.test(trimmed) || PEER_SLASH.test(trimmed) || parseComposerSlash(trimmed) !== null
+    SCHEDULE_SLASH.test(trimmed) ||
+    PEER_SLASH.test(trimmed) ||
+    SKILLS_COMMAND.test(trimmed) ||
+    parseComposerSlash(trimmed) !== null
   );
 }
 
