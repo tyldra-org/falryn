@@ -38,7 +38,10 @@ export async function workspaceProfilePreference(
       result.value.revision,
       signal ?? new AbortController().signal,
     );
-  if (!isCleanClose(await opened.store.close()))
-    return err({ code: "workspace-preference-unavailable" });
+  const closed = await opened.store.close();
+  // A read committed nothing, so a close that could not truncate the log (another
+  // Falryn process still reading) leaves its answer intact. A save keeps the strict
+  // close so its caller never assumes a write landed when the store is unsettled.
+  if (save && !isCleanClose(closed)) return err({ code: "workspace-preference-unavailable" });
   return result;
 }
