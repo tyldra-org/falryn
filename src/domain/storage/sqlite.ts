@@ -401,6 +401,16 @@ export type SqliteStoreError = SqliteStoreFailure & {
 export const MAX_INTEGRITY_PROBLEMS = 8;
 
 /** What the close sequence did, step by step. */
+/** How a close treats other processes' readers. */
+export type SqliteCloseOptions = {
+  /**
+   * False for a store that wrote nothing it must settle: the truncating checkpoint is
+   * tried once instead of waiting the busy timeout for other readers, and the close
+   * then reports `checkpointed: false`. Default true.
+   */
+  readonly waitForReaders?: boolean;
+};
+
 export type SqliteCloseReport = {
   /** Whether persistent WAL was disabled, which is what lets the sidecars go. */
   readonly persistentWalDisabled: boolean;
@@ -462,7 +472,7 @@ export type SqliteStorePort = {
   ): Result<SqliteWriteOutcome<Value>, SqliteStoreError>;
 
   /** Runs the close sequence. Idempotent; a second call reports the first result. */
-  close(signal?: AbortSignal): Promise<SqliteCloseReport>;
+  close(signal?: AbortSignal, options?: SqliteCloseOptions): Promise<SqliteCloseReport>;
 
   /**
    * Copies the whole database to a path that must not already exist.

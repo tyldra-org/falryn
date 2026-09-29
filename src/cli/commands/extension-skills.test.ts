@@ -19,6 +19,7 @@ async function home() {
   return created;
 }
 
+// Three real product turns, a restart and several CLI processes: seconds on a hosted runner.
 test("real turns yield source-bound usage; inspection after restart records nothing new", async () => {
   const root = await home();
   const { report, events, cli } = await skillUsageCliJourney(COMMAND, root);
@@ -54,7 +55,7 @@ test("real turns yield source-bound usage; inspection after restart records noth
   // A request outside the schema is invalid before anything is opened.
   await writeFile(request, JSON.stringify({ session: "x", limit: 0 }));
   expect(cli(["--input", request]).exitCode).not.toBe(0);
-});
+}, 30_000);
 
 test("a workspace with no admissions reports usage as unavailable, not zero", async () => {
   const product = await instructionProduct(await home());

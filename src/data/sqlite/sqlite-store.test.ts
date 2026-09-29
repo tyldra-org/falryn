@@ -555,6 +555,35 @@ describe("write transactions", () => {
 });
 
 describe("contention with a second connection", () => {
+  test("a close that does not wait for readers returns at once and reports the checkpoint unfinished", async () => {
+    const root = await temporaryRoot();
+    await (await openOrThrow(root, ONE_TABLE)).close();
+    const reader = openBunSqlite({ path: databasePath(root), create: false });
+    const writer = openBunSqlite({ path: databasePath(root), create: false });
+    if (!reader.ok || !writer.ok) throw new Error("expected the other connections to open");
+    const close = async (waitForReaders: boolean) => {
+      const store = await openOrThrow(root, ONE_TABLE, { busyTimeoutMs: 2_000 });
+      // Another process holds a snapshot that frames written after it still need.
+      reader.value.run("BEGIN");
+      reader.value.all("SELECT count(*) FROM alpha");
+      writer.value.pragma("wal_autocheckpoint = 0");
+      writer.value.run("INSERT INTO alpha (label) VALUES ('later')");
+      const started = Date.now();
+      const report = await store.close(undefined, { waitForReaders });
+      const waited = Date.now() - started;
+      reader.value.run("ROLLBACK");
+      return { report, waited };
+    };
+    const released = await close(false);
+    expect(released.report).toMatchObject({ checkpointed: false, closed: true });
+    expect(released.waited).toBeLessThan(1_000);
+    const settled = await close(true);
+    expect(settled.report.checkpointed).toBe(false);
+    expect(settled.waited).toBeGreaterThanOrEqual(1_900);
+    await reader.value.close();
+    await writer.value.close();
+  });
+
   test("waits the busy timeout and then reports busy rather than hanging", async () => {
     const root = await temporaryRoot();
     const store = await openOrThrow(root, ONE_TABLE, { busyTimeoutMs: MIN_BUSY_TIMEOUT_MS });
