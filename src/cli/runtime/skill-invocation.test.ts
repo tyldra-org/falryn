@@ -152,21 +152,13 @@ test(
     await mkdir(join(home, "config"), { recursive: true });
     const location = join(home, ".agents/skills");
     for (const [name, frontmatter] of [
-      ["deploy", '"disable-model-invocation": true'],
-      ["triage", '"user-invocable": false'],
+      ["deploy", "disable-model-invocation: true"],
+      ["triage", "user-invocable: false"],
     ] as const) {
       await mkdir(join(location, name), { recursive: true });
       await writeFile(
         join(location, name, "SKILL.md"),
-        "---\nname: " +
-          JSON.stringify(name) +
-          '\ndescription: "Handle ' +
-          name +
-          '."\n' +
-          frontmatter.replace(": ", ": ").replace(/^"([^"]+)": /u, "$1: ") +
-          "\n---\nBODY_" +
-          name +
-          "\n",
+        `---\nname: ${name}\ndescription: "Handle ${name}."\n${frontmatter}\n---\nBODY_${name}\n`,
       );
     }
     const shell = await nativePromptShellJourney({
