@@ -26,11 +26,13 @@ export const advisoryStatementSchema = z.strictObject({
   advisoryIds: z.array(identityText).max(32),
   ...lifetime,
 });
-const proof = {
+/** Every signature claim in the ecosystem has this shape; a host verifies it with its own keys. */
+export const signatureProofShape = {
   algorithm: z.literal("ed25519"),
   keyId: digestSchema,
   signature: z.string().regex(/^[A-Za-z0-9+/]{86}==$/u),
 };
+export const signatureProofSchema = z.strictObject(signatureProofShape);
 /** Keys are selected by the invoking host/user, never obtained from the package being checked. */
 export const packageVerificationSchema = z
   .strictObject({
@@ -44,8 +46,12 @@ export const packageVerificationSchema = z
         }),
       )
       .max(16),
-    signature: z.strictObject({ ...proof, statement: packageStatementSchema }).nullable(),
-    advisory: z.strictObject({ ...proof, statement: advisoryStatementSchema }).nullable(),
+    signature: z
+      .strictObject({ ...signatureProofShape, statement: packageStatementSchema })
+      .nullable(),
+    advisory: z
+      .strictObject({ ...signatureProofShape, statement: advisoryStatementSchema })
+      .nullable(),
   })
   .refine(
     (input) => new Set(input.keys.map((key) => `${key.role}:${key.id}`)).size === input.keys.length,
