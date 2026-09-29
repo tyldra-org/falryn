@@ -575,7 +575,13 @@ export function blockFor(
         ),
         invocationId: null,
         note: bound(
-          `Generation ${event.payload.generation}.${event.payload.rejection ? ` Rejected ${event.payload.rejectedSource ?? "catalog"}: ${event.payload.rejection}.` : ""} ${event.payload.sources.map((source) => `${source.namespace}/${source.name}: ${source.state} (${source.reason})`).join("; ")}${event.payload.omitted ? `; ${event.payload.omitted} more sources omitted` : ""}`,
+          `Generation ${event.payload.generation}.${event.payload.rejection ? ` Rejected ${event.payload.rejectedSource ?? "catalog"}: ${event.payload.rejection}.` : ""} ${event.payload.sources.map((source) => `${source.namespace}/${source.name}: ${source.state} (${source.reason})`).join("; ")}${event.payload.omitted ? `; ${event.payload.omitted} more sources omitted` : ""}${
+            // Why each skill loaded or did not: routed, explicit or preloaded. Read from the
+            // stored receipt only; replay never loads a skill.
+            event.kind === "instructions.resolved" && event.payload.skills?.routes.length
+              ? `. Skills: ${event.payload.skills.routes.map((route) => `${route.name} ${route.decision} (${route.reason})`).join("; ")}`
+              : ""
+          }`,
         ),
       };
     case "configuration.generation.changed":

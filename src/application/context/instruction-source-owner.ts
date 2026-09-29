@@ -32,6 +32,11 @@ import {
   type SkillCatalogPage,
 } from "../../domain/context/skill-invocation.ts";
 import {
+  type SkillPin,
+  type SkillPreload,
+  skillPreloadReason,
+} from "../../domain/context/skill-preload.ts";
+import {
   loadSkillResources,
   type SkillResourceEntry,
   type SkillResourceIndexEntry,
@@ -108,6 +113,12 @@ export type SkillRouteRequest = {
    * scheduler text can.
    */
   readonly explicit?: readonly string[];
+  /**
+   * Skills a child agent definition or schedule names (#1180). They are selected with
+   * automatic eligibility, never user origin, and replace automatic routing for the
+   * admission: a preloaded turn loads exactly these or fails.
+   */
+  readonly preload?: SkillPreload;
 };
 export type InstructionSourceOwner = ReturnType<typeof createInstructionSourceOwner>;
 
@@ -372,15 +383,27 @@ export function createInstructionSourceOwner(port: InstructionSourcePort) {
           : automaticSkills(current.sources, scope, current.preferences);
       const eligibleSkills = catalog.candidates;
       const explicit = [...new Set(route?.explicit ?? [])];
+      const preload = route?.preload ?? null;
+      const preloaded = [...new Set(preload?.skills.map((item) => item.name) ?? [])];
+      // Picks the admission must satisfy: an unresolved one fails it, never drops out.
+      const required = [...explicit, ...preloaded];
       // An explicit pick is the user's choice, checked against user eligibility; the
-      // automatic router never adds, recommends or reports the same name again.
+      // automatic router never adds, recommends or reports the same name again. A
+      // preload is the definition's or schedule's choice and replaces routing entirely.
       const routes = [
         ...explicit.map((name) => ({
           name,
           decision: "selected" as const,
           reason: "explicit-invocation",
         })),
-        ...(route === undefined
+        ...(preload === null
+          ? []
+          : preloaded.map((name) => ({
+              name,
+              decision: "selected" as const,
+              reason: skillPreloadReason(preload.origin),
+            }))),
+        ...(route === undefined || preload !== null
           ? []
           : routeSkills({
               task: route.task,
@@ -408,8 +431,8 @@ export function createInstructionSourceOwner(port: InstructionSourcePort) {
         });
       let resolution = resolve();
       // An automatic pick the resolver cannot settle is omitted with its reason; it never
-      // fails the turn or falls through to another source. An explicit pick that cannot
-      // be settled fails the admission with its reason instead.
+      // fails the turn or falls through to another source. An explicit or preloaded pick
+      // that cannot be settled fails the admission with its reason instead.
       const dropped = new Map<string, string>();
       for (const code of resolution.unavailable) {
         const match = /^(selection-unavailable|ambiguous-source):(.+)$/u.exec(code);
@@ -417,7 +440,7 @@ export function createInstructionSourceOwner(port: InstructionSourcePort) {
         if (
           match?.[1] !== undefined &&
           name !== undefined &&
-          !explicit.includes(name) &&
+          !required.includes(name) &&
           routes.some((item) => item.decision === "selected" && item.name === name)
         )
           dropped.set(name, match[1]);
@@ -460,6 +483,23 @@ export function createInstructionSourceOwner(port: InstructionSourcePort) {
             resolution.decisions.find((item) => item.state === "conflicting")?.source ?? null,
           sources: sourceDecisionPage(decisions),
         };
+      // A pinned preload loads only the exact source and body it was bound to. The check
+      // runs on metadata, so a stale pin reads no body.
+      for (const item of preload?.skills ?? []) {
+        if (item.pin === null) continue;
+        const resolved = resolution.selected.find(
+          (source) => source.identity.kind === "skill" && source.identity.localId === item.name,
+        );
+        const key = resolved === undefined ? null : instructionSourceKey(resolved.identity);
+        if (key !== item.pin.source || resolved?.digest !== item.pin.digest)
+          return {
+            ok: false,
+            code: "skill-preload-stale",
+            observedGeneration,
+            rejectedSource: key,
+            sources: sourceDecisionPage(decisions),
+          };
+      }
       const sections: PromptSectionInput[] = [];
       const bound = new Map<string, InstructionSource>();
       const admittedBytes = new Map<string, number>();
@@ -776,6 +816,44 @@ export function createInstructionSourceOwner(port: InstructionSourcePort) {
      * One page of the skill catalog as name resolution sees it now (#1179). Built from
      * the publication's metadata; no skill body is read and no authority is asserted.
      */
+    /**
+     * Resolves skill names to the exact source and body digest an automatic-origin
+     * admission would load now (#1180), from the latest publication's metadata. Nothing
+     * is read. A name that cannot resolve returns the resolver's reason.
+     */
+    skillPins(
+      scope: InstructionScope,
+      names: readonly string[],
+    ):
+      | { readonly ok: true; readonly pins: readonly SkillPin[] }
+      | { readonly ok: false; readonly code: string } {
+      if (!published) return { ok: false, code: "sources-unavailable" };
+      const resolved = resolveInstructionSources({
+        sources: published.sources,
+        preferences: session ?? published.preferences,
+        scope,
+        selections: names.map((name) => ({
+          kind: "skill" as const,
+          name,
+          origin: "automatic" as const,
+        })),
+      });
+      const pins: SkillPin[] = [];
+      for (const name of names) {
+        const source = resolved.selected.find(
+          (item) => item.identity.kind === "skill" && item.identity.localId === name,
+        );
+        if (source === undefined || source.digest === null)
+          return {
+            ok: false,
+            code:
+              resolved.unavailable.find((code) => code.endsWith(`:${name}`)) ??
+              `selection-unavailable:${name}`,
+          };
+        pins.push({ name, source: instructionSourceKey(source.identity), digest: source.digest });
+      }
+      return { ok: true, pins };
+    },
     skillCatalog(
       scope: InstructionScope,
       page: { readonly filter?: string | null; readonly offset?: number } = {},

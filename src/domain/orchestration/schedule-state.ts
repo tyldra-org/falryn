@@ -1,5 +1,6 @@
 /** Durable schedule intent, occurrence evidence and the storage boundary. */
 import { z } from "zod";
+import { skillPinSchema, skillPreloadNamesSchema } from "../context/skill-preload.ts";
 import { canonicalDigest, canonicalJson } from "../extensions/canonical.ts";
 import { digestSchema, identityText } from "../extensions/identity.ts";
 import type { Result } from "../foundation/result.ts";
@@ -75,6 +76,12 @@ export const scheduleDefinitionSchema = z
       ])
       .default({ kind: "none" }),
     lookbackMs: z.int().min(1000).max(SCHEDULE_LIMITS.lookbackMs).default(86_400_000),
+    /**
+     * Skills each model step of a scheduled workflow loads (#1180). They are pinned to
+     * their source and body digest when the schedule is bound; a later change makes the
+     * schedule unavailable instead of loading different instructions.
+     */
+    skills: skillPreloadNamesSchema.optional(),
   })
   .superRefine((value, context) => {
     const input =
@@ -96,6 +103,8 @@ export const scheduleBindingSchema = z.strictObject({
   configuration: digestSchema,
   configurationGeneration: z.int().nonnegative(),
   timezoneData: z.string().min(1).max(128),
+  /** The exact skills the definition's `skills` resolved to when bound (#1180). */
+  skills: z.array(skillPinSchema).min(1).max(8).optional(),
 });
 export type ScheduleBinding = z.infer<typeof scheduleBindingSchema>;
 export const scheduleSourceSchema = z.discriminatedUnion("kind", [

@@ -1,6 +1,7 @@
 /** Inert agent definitions. Registration never authorizes execution. */
 import { z } from "zod";
 import { instructionDirectorySchema } from "../../domain/context/instruction-sources.ts";
+import { skillPreloadNamesSchema } from "../../domain/context/skill-preload.ts";
 import { definitionValueSchema as jsonSchema } from "../../domain/orchestration/definition-values.ts";
 
 export { validateDefinitionValue as validateAgentValue } from "../../domain/orchestration/definition-values.ts";
@@ -42,6 +43,12 @@ export const agentDefinitionSchema = z.strictObject({
   context: z.literal("selected-evidence"),
   workspace: z.literal("inherited"),
   instructionDirectory: instructionDirectorySchema.optional(),
+  /**
+   * Skills the child loads before its first request (#1180), resolved at admission in
+   * its narrowed instruction scope with automatic eligibility. A skill that cannot load
+   * fails the child before any provider request.
+   */
+  skills: skillPreloadNamesSchema.optional(),
   modelRole: z.literal("subagents"),
   model: roleRouteBaseSchema.optional(),
   preset: z.enum(["small", "medium", "big", "default"]).optional(),

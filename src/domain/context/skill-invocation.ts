@@ -8,7 +8,7 @@
 export const SKILL_COMMAND_NAMESPACE = "skill";
 
 /** Agent Skills names: lowercase words joined by single hyphens, at most 64 characters. */
-const SKILL_NAME = /^(?!.*--)[a-z0-9]+(?:-[a-z0-9]+)*$/u;
+export const SKILL_NAME = /^(?!.*--)[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const INVOCATION = /^\/([a-z0-9][a-z0-9:-]{0,127})(?:[ \t\r\n]+([\s\S]*))?$/u;
 
 export const SKILLS_COMMAND = /^\/skills(?:[ \t]+([\s\S]*))?$/u;

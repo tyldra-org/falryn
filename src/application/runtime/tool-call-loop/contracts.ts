@@ -60,6 +60,11 @@ export type ToolRunnerRequest = {
       | null;
     readonly effects: readonly import("../../../domain/orchestration/work.ts").EffectClass[];
     readonly capabilities: readonly string[];
+    /**
+     * Skills a scheduled run's model steps preload, pinned when the schedule was bound
+     * (#1180). Only the schedule host sets this.
+     */
+    readonly skills?: readonly import("../../../domain/context/skill-preload.ts").SkillPin[];
   };
   /** Native delegation and peer actions wait after their metadata reservation has released. */
   readonly afterAdmission?: (run: (signal: AbortSignal) => Promise<ToolInvocationOutcome>) => void;
