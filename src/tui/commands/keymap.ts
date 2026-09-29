@@ -188,6 +188,8 @@ export function isContextActive(context: CommandContext, state: CommandState): b
       return state.hasTranscript;
     case "composer":
       return state.hasComposer;
+    case "suggestions":
+      return state.hasComposer && state.hasSuggestions;
     case "confirmation":
       return state.hasConfirmation;
   }

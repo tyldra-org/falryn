@@ -6,6 +6,7 @@ export const COMMAND_CONTEXTS = [
   "scrollable",
   "transcript",
   "composer",
+  "suggestions",
   "confirmation",
 ] as const;
 
@@ -17,6 +18,9 @@ export const CONTEXT_PRIORITY: Readonly<Record<CommandContext, number>> = {
   scrollable: 20,
   transcript: 30,
   composer: 40,
+  // Above the composer so Tab, Escape and the arrows reach the open list first,
+  // and below overlays, which the list never opens over.
+  suggestions: 45,
   overlay: 50,
   confirmation: 60,
 };
@@ -35,6 +39,8 @@ export function unavailable(reason: string): CommandAvailability {
 export type CommandState = {
   readonly overlayOpen: boolean;
   readonly hasComposer: boolean;
+  /** The composer's suggestion list is open with rows to pick (#1206). */
+  readonly hasSuggestions: boolean;
   readonly hasHeldPaste: boolean;
   readonly hasAttachments: boolean;
   readonly hasDraft: boolean;
@@ -66,6 +72,7 @@ export type CommandState = {
 export const EMPTY_COMMAND_STATE: CommandState = {
   overlayOpen: false,
   hasComposer: false,
+  hasSuggestions: false,
   hasHeldPaste: false,
   hasAttachments: false,
   hasDraft: false,

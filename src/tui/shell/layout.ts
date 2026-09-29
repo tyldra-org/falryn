@@ -185,9 +185,9 @@ export const COMPOSER_CHROME_ROWS = 2;
  * would overdraw the transcript's last line, and the frame would look like a
  * rendering glitch rather than an arithmetic disagreement.
  */
-export function composerRows(lines: number): number {
+export function composerRows(lines: number, suggestions = 0): number {
   const text = Math.min(Math.max(1, Math.floor(lines)), COMPOSER_MAX_TEXT_ROWS);
-  return text + COMPOSER_CHROME_ROWS;
+  return text + COMPOSER_CHROME_ROWS + Math.max(0, Math.floor(suggestions));
 }
 
 /**

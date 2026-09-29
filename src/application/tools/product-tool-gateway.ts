@@ -121,6 +121,7 @@ export type ProductToolGatewayOptions = {
   readonly sandbox?: SandboxInvocationPort;
   readonly trust?: CapabilityTrustPort;
   readonly delegation?: ToolRunnerRequest["delegation"];
+  readonly userSelection?: ToolRunnerRequest["userSelection"];
   readonly clock: ClockPort;
   readonly resources?: ProductResources;
   readonly taskResources?: ProductTaskResources;
@@ -1072,6 +1073,9 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
                 : {}),
               taskResources: task,
               ...(options.delegation === undefined ? {} : { delegation: options.delegation }),
+              ...(options.userSelection === undefined
+                ? {}
+                : { userSelection: options.userSelection }),
               ...(String(manifest.capabilityId) !== "builtin:orchestration/workflow@1"
                 ? {}
                 : {

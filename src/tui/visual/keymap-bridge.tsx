@@ -44,6 +44,7 @@ export function KeymapBridge(props: KeymapBridgeProps): ReactNode {
   useContextBindings("scrollable", props.plan, active, typing);
   useContextBindings("transcript", props.plan, active, typing);
   useContextBindings("composer", props.plan, active, typing);
+  useContextBindings("suggestions", props.plan, active, typing);
   useContextBindings("overlay", props.plan, active, typing);
   useContextBindings("confirmation", props.plan, active, typing);
 
@@ -101,4 +102,4 @@ function isTextareaOwned(command: string): boolean {
 }
 
 /** Commands that share a key with a broader layer and pass it on when they do nothing. */
-const DECLINABLE: ReadonlySet<string> = new Set(["composer.complete"]);
+const DECLINABLE: ReadonlySet<string> = new Set(["composer.suggestions.reopen"]);

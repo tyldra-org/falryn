@@ -51,6 +51,8 @@ import type { TurnEventJournalPort } from "../turn-event-journal.ts";
 export type AttemptModelInput = {
   /** Source content stays pinned while current authority gates each new effect. */
   readonly instructionsCurrent?: (signal: AbortSignal) => Promise<boolean>;
+  /** The user's `$` selection for this turn (#1206); reaches every tool request. */
+  readonly userSelection?: import("../tool-call-loop/contracts.ts").ToolRunnerRequest["userSelection"];
   readonly history?: import("../../sessions/conversation-history.ts").ConversationHistorySnapshot;
   readonly messages: readonly ModelMessage[];
   readonly tools: readonly ModelToolDefinition[];

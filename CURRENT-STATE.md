@@ -494,7 +494,44 @@ prefix (`/rel`, `/skill:re`) to a skill the user can invoke, using the bare form
 only when nothing else answers to that name; several matches extend to their common
 prefix and are listed in a notice. Otherwise Tab moves focus as before. Completion
 reads the latest catalog, and admission still rechecks the pick. There is no
-completion popup.
+completion popup for `/`.
+
+### Composer capability mentions
+
+In the terminal composer, typing `$` at the start of the draft or after whitespace or
+an opening bracket or quote opens a suggestion list above the draft. It lists
+user-invocable skills, activated packages and configured MCP servers from the
+metadata the session already holds; listing reads no skill body or schema and starts
+no server. After a letter, digit or `_`, and for shell-like text (`$5`, `$HOME`,
+`$PATH`, `$?`, `${` and similar), `$` stays an ordinary character and nothing is
+queried. Unavailable rows stay listed with their reason. Up and Down move, Tab or
+Return inserts the selected row as a mention, and Escape closes the list; Tab on a
+plain `$word` reopens it, and otherwise still completes a `/skill` command or moves
+focus. At most 8 rows show (5 below 60 columns, without the source column).
+
+A picked mention is an atomic token bound to the exact identity picked: the cursor
+skips it, Backspace after it removes it whole, undo restores it, and editing inside it
+turns it back into plain text with a notice. Typing an exact label and then a space or
+punctuation while the list shows exactly one exact, available row converts it as if
+picked. Pasted, dictated, enhanced, template, model, scheduled and child text never
+becomes a token. A prompt holds at most 8 capability mentions, of which at most 4
+skills, and 64 tokens in all. Recalled history restores its tokens; prompt
+enhancement keeps them as placeholders and refuses a proposal that drops one.
+
+On submit every token is checked against the current catalog before the turn starts.
+A skill loads exactly like `/skill:<name>`, with reason `explicit-invocation`. A package
+adds its activated bound actions, and an MCP server the MCP tools, to the turn's
+preferred capabilities; a picked server whose catalog is not current is connected
+once as the user's request, and in that turn the model's calls to it count as the
+user's selection, so an explicit-only server can be used. The model sees one section
+naming the picks; nothing else is granted, and the preference ends with the turn. A
+stale, unavailable, untrusted, not-user-invocable or unconnectable pick refuses the
+whole prompt with one reason per token (`mention.*` codes), no turn and no provider
+request, and the draft is kept. While a turn is running a draft with mentions is not
+queued. The user message's history record keeps the tokens, and the transcript shows
+a receipt such as `Using: gmail (package, …) · release-notes (skill)`. Headless
+`falryn run` has no suggestion list: `$` there is plain text.
+
 
 The `instructions.resolved` receipt records routing in `skills`: the number of
 eligible candidates and each route's name, decision (`loaded`, `recommended` or

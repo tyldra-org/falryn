@@ -497,6 +497,7 @@ export function commandStateFor(
     hasTranscript: state.transcriptFacts.blocks > 0,
     hasScrollableContent: state.transcriptFacts.scrollable,
     hasComposer: state.focus.focused === COMPOSER_REGION,
+    hasSuggestions: (state.composer.suggestions?.rows.length ?? 0) > 0,
     hasHeldPaste: state.composer.lastPaste?.verdict === "preview",
     hasAttachments: state.composer.attachments.length > 0,
     hasDraft: state.composer.text.trim().length > 0,

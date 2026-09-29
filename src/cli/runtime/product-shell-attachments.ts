@@ -24,6 +24,7 @@ import { composeHookEvaluatorSession } from "./hook-evaluator-session.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { modelPreferencesFrom } from "./model-configuration.ts";
 import type { NativeHookSession } from "./native-hooks.ts";
+import { composeCapabilityMentions } from "./product-capability-mentions.ts";
 import { composeProductMcp } from "./product-mcp.ts";
 import { productToolHost } from "./product-tool-host.ts";
 import type {
@@ -83,6 +84,7 @@ import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import { resolveSkillCommand, skillCatalogLines } from "../../domain/context/skill-invocation.ts";
 import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { projectCatalogHistory } from "../../domain/extensions/catalog-history.ts";
+import { MCP_DEADLINE_MS } from "../../domain/extensions/mcp.ts";
 import {
   type ClockPort,
   type ConfigurationGeneration,
@@ -402,6 +404,8 @@ export async function composeProductShellAttachments(
       await closeMcp();
       return null;
     }
+    // Packages the composer can offer as `$` mentions; refreshed with each publication.
+    let packageCatalog = extensions?.status === "ready" ? extensions.catalog : undefined;
     const extensionCatalog =
       extensions === undefined
         ? undefined
@@ -804,6 +808,7 @@ export async function composeProductShellAttachments(
                   .catch(() => undefined);
               void refresh(hostSignal);
               return {
+                refresh,
                 command: (text: string) =>
                   resolveSkillCommand(text, {
                     skills: instructions.owner.skillNames(),
@@ -840,6 +845,56 @@ export async function composeProductShellAttachments(
                 },
               };
             })();
+      // `$` mentions read the same owners the turn admits through (#1206).
+      const mentions = composeCapabilityMentions({
+        skills: async (skillsSignal) => {
+          if (instructions === null) return null;
+          const scope = { ...instructions.scope, execution: "skill-catalog" };
+          const read = () => {
+            const pages = [];
+            for (let offset: number | null = 0; offset !== null; ) {
+              const page = instructions.owner.skillCatalog(scope, { offset });
+              if (page === null) return null;
+              pages.push(page);
+              offset = page.nextOffset;
+            }
+            return pages;
+          };
+          // The catalog is published lazily; the first read waits for it once.
+          const current = read();
+          if (current !== null) return current;
+          await skillControl?.refresh(AbortSignal.any([hostSignal, skillsSignal]));
+          return read();
+        },
+        packages: () => packageCatalog,
+        mcp: {
+          servers: () => mcp.configuration().servers,
+          generation: () => mcp.configuration().generation,
+          catalogState: (serverId) =>
+            mcp.catalog.summaries().find((summary) => summary.serverId === serverId)?.state ??
+            "unknown",
+          capabilityIds: () =>
+            mcp.tools.registry.entries.map((entry) => String(entry.manifest.capabilityId)),
+          async connect(serverId, connectSignal) {
+            const call = {
+              origin: "user" as const,
+              requestId: `mention-connect:${randomUUID()}`,
+              deadline: Date.now() + MCP_DEADLINE_MS,
+              signal: AbortSignal.any([hostSignal, connectSignal]),
+            };
+            const connected = await mcp.lifecycle.connect({
+              ...call,
+              serverId,
+              configurationGeneration: mcp.configuration().generation,
+            });
+            if (connected.kind !== "completed") return { ok: false, reason: connected.code };
+            const discovered = await mcp.catalog.discover(serverId, call);
+            return discovered.kind === "completed"
+              ? { ok: true }
+              : { ok: false, reason: discovered.code };
+          },
+        },
+      });
       const executor = createProductLiveTurnExecutor({
         ...(profileSession ? { admissionBinding: profileSession.capture } : {}),
         ...(selection ? { resumed: true, historyParents: selection.parents } : {}),
@@ -867,6 +922,7 @@ export async function composeProductShellAttachments(
                 );
                 if (!publication) throw new Error("native-publication-unavailable");
                 prompts = publication.prompts;
+                packageCatalog = publication.catalog;
                 const tools = mergeProductToolBundles(generation, [
                   productTools,
                   ...(skillTools === null ? [] : [skillTools]),
@@ -903,6 +959,7 @@ export async function composeProductShellAttachments(
           return prompts;
         },
         skills: skillControl,
+        mentions,
         profileSession,
         async close() {
           // Closing a session is a stop: its observers are cancelled and leave receipts.
@@ -937,6 +994,7 @@ export async function composeProductShellAttachments(
           output,
           isAccepting: () => !hostSignal.aborted,
           resolveSkill: (text) => skillControl?.command(text) ?? null,
+          admitMentions: mentions.admit,
         }),
       };
     } finally {
@@ -991,6 +1049,14 @@ export async function composeProductShellAttachments(
     ReturnType<typeof createProductLiveTurnExecutor>,
     import("../../application/providers/model-settings.ts").ModelSettingsService
   >();
+  // One stable `$` source for the composer; each query reads the active session.
+  const mentionSources = [
+    {
+      trigger: "$" as const,
+      query: (query: string, querySignal: AbortSignal) =>
+        active.mentions.source.query(query, querySignal),
+    },
+  ];
   const submission = {
     get processing() {
       return active.executor.processing;
@@ -1014,6 +1080,7 @@ export async function composeProductShellAttachments(
       active.skills?.lines(page, AbortSignal.any([hostSignal, signal])) ??
       Promise.resolve(["Skills are unavailable in this session."]),
     skillCandidates: () => active.skills?.candidates() ?? null,
+    mentionSources,
     workingProfile: (
       argument: string | null,
       signal: AbortSignal,

@@ -103,6 +103,33 @@ const relation = z
     generation: z.int().nonnegative(),
   })
   .strict();
+/**
+ * A picked composer mention on a user message (#1206), so transcript, export and
+ * replay can show what the user selected. Records written before it have none.
+ */
+export const historyMentionTokenSchema = z
+  .object({
+    trigger: z.enum(["/", "$", "@"]),
+    kind: z.enum([
+      "skill",
+      "package",
+      "mcp-server",
+      "template",
+      "file",
+      "directory",
+      "symbol",
+      "resource",
+    ]),
+    identity: z.string().min(1).max(512),
+    label: z.string().min(2).max(129),
+    source: z.string().max(256),
+    generation: z.string().max(128),
+    start: z.int().nonnegative(),
+    end: z.int().nonnegative(),
+  })
+  .strict()
+  .refine((token) => token.end > token.start);
+export type HistoryMentionToken = z.infer<typeof historyMentionTokenSchema>;
 export const historyPayloadSchema = z.discriminatedUnion("type", [
   z
     .object({
@@ -158,6 +185,7 @@ export const historyPayloadSchema = z.discriminatedUnion("type", [
       attemptId: identity.nullable(),
       completion: z.enum(["complete", "partial", "interrupted"]),
       relations: z.array(relation).max(HISTORY_LIMITS.relations),
+      tokens: z.array(historyMentionTokenSchema).max(64).optional(),
     })
     .strict(),
   z

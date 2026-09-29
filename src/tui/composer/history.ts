@@ -25,6 +25,7 @@
  * Pure data and pure functions: no clock, no storage, no renderer.
  */
 
+import type { ComposerToken } from "../../domain/context/composer-mentions.ts";
 import { looksSecret } from "./paste.ts";
 
 /**
@@ -36,9 +37,18 @@ import { looksSecret } from "./paste.ts";
  */
 export const HISTORY_LIMIT = 100;
 
+/**
+ * One remembered submission. Its mention tokens come back with it on recall and are
+ * checked again when it is sent (#1206); text alone never becomes a token.
+ */
+export type HistoryEntry = {
+  readonly text: string;
+  readonly tokens: readonly ComposerToken[];
+};
+
 export type InputHistory = {
   /** Oldest first, so the newest is last and `up` walks towards the start. */
-  readonly entries: readonly string[];
+  readonly entries: readonly HistoryEntry[];
   /**
    * How far back the reader has walked, or `null` when they are on the draft.
    *
@@ -48,7 +58,7 @@ export type InputHistory = {
    */
   readonly recalled: number | null;
   /** The text set aside when the walk began, restored when it ends. */
-  readonly draft: string | null;
+  readonly draft: HistoryEntry | null;
 };
 
 export const EMPTY_HISTORY: InputHistory = { entries: [], recalled: null, draft: null };
@@ -64,21 +74,28 @@ export const EMPTY_HISTORY: InputHistory = { entries: [], recalled: null, draft:
  * Always returns a history with the walk reset, because a new submission is the
  * end of whatever recall was in progress.
  */
-export function remember(history: InputHistory, text: string): InputHistory {
+export function remember(
+  history: InputHistory,
+  text: string,
+  tokens: readonly ComposerToken[] = [],
+): InputHistory {
   const settled: InputHistory = { ...history, recalled: null, draft: null };
   if (text.trim() === "" || looksSecret(text)) {
     return settled;
   }
-  if (history.entries.at(-1) === text) {
+  const top = history.entries.at(-1);
+  if (top?.text === text && top.tokens.length === tokens.length) {
     return settled;
   }
-  return { ...settled, entries: [...history.entries, text].slice(-HISTORY_LIMIT) };
+  return { ...settled, entries: [...history.entries, { text, tokens }].slice(-HISTORY_LIMIT) };
 }
 
 export type Recall = {
   readonly history: InputHistory;
   /** What the composer should now contain, or `null` when nothing moved. */
   readonly text: string | null;
+  /** The tokens that come back with that text. */
+  readonly tokens: readonly ComposerToken[];
 };
 
 /**
@@ -88,18 +105,25 @@ export type Recall = {
  * reader may have edited a recalled entry — and the thing to set aside is what is
  * actually in the composer, not what was put there.
  */
-export function recallPrevious(history: InputHistory, current: string): Recall {
+export function recallPrevious(
+  history: InputHistory,
+  current: string,
+  currentTokens: readonly ComposerToken[] = [],
+): Recall {
   if (history.entries.length === 0) {
-    return { history, text: null };
+    return { history, text: null, tokens: [] };
   }
   const next = (history.recalled ?? 0) + 1;
   if (next > history.entries.length) {
-    return { history, text: null };
+    return { history, text: null, tokens: [] };
   }
-  const draft = history.recalled === null ? current : history.draft;
+  const draft =
+    history.recalled === null ? { text: current, tokens: currentTokens } : history.draft;
+  const entry = history.entries[history.entries.length - next];
   return {
     history: { ...history, recalled: next, draft },
-    text: history.entries[history.entries.length - next] ?? null,
+    text: entry?.text ?? null,
+    tokens: entry?.tokens ?? [],
   };
 }
 
@@ -111,18 +135,21 @@ export function recallPrevious(history: InputHistory, current: string): Recall {
  */
 export function recallNext(history: InputHistory): Recall {
   if (history.recalled === null) {
-    return { history, text: null };
+    return { history, text: null, tokens: [] };
   }
   const next = history.recalled - 1;
   if (next <= 0) {
     return {
       history: { ...history, recalled: null, draft: null },
-      text: history.draft ?? "",
+      text: history.draft?.text ?? "",
+      tokens: history.draft?.tokens ?? [],
     };
   }
+  const entry = history.entries[history.entries.length - next];
   return {
     history: { ...history, recalled: next },
-    text: history.entries[history.entries.length - next] ?? null,
+    text: entry?.text ?? null,
+    tokens: entry?.tokens ?? [],
   };
 }
 
