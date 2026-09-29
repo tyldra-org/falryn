@@ -93,10 +93,14 @@ human decision or unavailable required proof keeps the affected implementation o
 delivery incomplete; name the gap and what resolves it. Use the recovery rules
 below for acceptance discovered incomplete after merge.
 
-During implementation, run focused checks, then the full validation required by
-`DEVELOPMENT.md` before review. Reuse results only when revision, dependencies,
-configuration, toolchain, environment and scope still match. A new command or
-stage alone is not a reason to repeat a successful check.
+During implementation, run focused checks. When the candidate is complete and
+they pass, push it and open the pull request (and any companion) as a draft, so
+CI runs while the full validation required by `DEVELOPMENT.md` runs locally.
+Mark it ready only after both pass and review is complete. Run the full local
+suite once, on the final candidate; a repair gets focused checks and one new full
+run. Reuse results only when revision, dependencies, configuration, toolchain,
+environment and scope still match. A new command or stage alone is not a reason
+to repeat a successful check.
 
 A new head or base requires review of the complete resulting diff and refreshed
 verification. Contract or dependency changes refresh admission. Documentation

@@ -92,7 +92,10 @@ jobs:
   # The complete source suite is split into balanced shards per host. Bun's
   # --shard assigns files by the recorded durations in .github/test-timings.json
   # (refresh with `bun run test:timings`); a file missing from it still runs.
-  # The gate jobs below keep the required check names stable.
+  # Compiled suites are excluded here; the compiled-smoke jobs run them whole
+  # against a fresh build. macOS runs four shards because its hosted runners
+  # take about twice as long as Ubuntu's. The gate jobs below keep the required
+  # check names stable.
   platform-test-ubuntu:
     name: Platform tests shard (Ubuntu latest x64, ${{ matrix.shard }}/3)
     needs:
@@ -113,10 +116,10 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Run this shard of the source suite
-        run: bun test --shard=${{ matrix.shard }}/3 --timings=.github/test-timings.json
+        run: bun test --shard=${{ matrix.shard }}/3 --timings=.github/test-timings.json --path-ignore-patterns='**/*.compiled.test.ts'
 
   platform-test-macos:
-    name: Platform tests shard (macOS latest arm64, ${{ matrix.shard }}/3)
+    name: Platform tests shard (macOS latest arm64, ${{ matrix.shard }}/4)
     needs:
       - typecheck
       - dependency-integrity
@@ -125,7 +128,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
 
     steps:
       - name: Check out the reviewed revision
@@ -135,7 +138,7 @@ jobs:
         uses: ./.github/actions/setup-bun
 
       - name: Run this shard of the source suite
-        run: bun test --shard=${{ matrix.shard }}/3 --timings=.github/test-timings.json
+        run: bun test --shard=${{ matrix.shard }}/4 --timings=.github/test-timings.json --path-ignore-patterns='**/*.compiled.test.ts'
 
   platform-test-windows:
     name: Platform tests (Windows latest x64)
@@ -246,4 +249,3 @@ jobs:
       # skipped here and mistaken for coverage.
       - name: Run the Windows x64 compiled smoke suite
         run: bun run smoke:windows-x64
-
