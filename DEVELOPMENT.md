@@ -208,12 +208,21 @@ Use the smallest command that proves the current edit while iterating.
 | `bun run test:changed` | Tests affected relative to `main` |
 | `bun test <path>` | One focused test file |
 | `bun run test:watch` | Re-run tests while files change |
-| `bun run test:timings` | Refresh the per-file durations CI uses to balance test shards |
-| `bun run test:parallel` | Bounded four-worker source suite |
+| `bun run test` | Full source suite as concurrent shard processes (`FALRYN_TEST_SHARDS` overrides the count) |
+| `bun run test:serial` | Full source suite in one process |
+| `bun run test:timings` | Refresh, serially, the per-file durations that balance local and CI shards |
 | `bun run check` | Canonical static checks and full source suite |
+| `bun run check:fast` | The same, reporting only failures |
 | `bun run build` | Standalone executable compilation |
+| `bun run test:compiled` | Compiled suites against the current `dist/falryn` |
 
-Run `bun run check` and `bun run build` before requesting review. Packaging,
+The source suite excludes `*.compiled.test.ts`. The compiled smoke scripts and
+the CI compiled-smoke jobs run those suites against a fresh build, so a stale
+`dist/falryn` never affects `bun run check`.
+
+Run `bun run check` and `bun run build` before requesting review. A pull request
+may be opened as a draft once focused tests pass, so CI runs while the full local
+suite does; mark it ready for review only after both pass. Packaging,
 entrypoint, terminal, or compiled-runtime changes also need the relevant
 compiled smoke command from `package.json`. Performance claims need the matching
 measurement or benchmark script and a recorded comparison. Report skipped or
