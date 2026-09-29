@@ -32,8 +32,10 @@ export const contextContributionSchema = z.strictObject({
 export type ContextContribution = z.infer<typeof contextContributionSchema>;
 
 /**
- * One automatic skill routing decision (#136). A loaded route names the admitted source,
- * its digest and the body bytes admitted into the request; others carry only a reason.
+ * One skill routing decision: automatic (#136), explicit (#1179) or preloaded by a child
+ * definition or schedule (#1180), told apart by its reason. A loaded route names the
+ * admitted source, its digest and the body bytes admitted into the request; others
+ * carry only a reason.
  * Receipts written since #1191 also carry the estimated body tokens of a loaded route and
  * the route's own line in the routing section; older receipts lack both.
  */
@@ -79,7 +81,7 @@ export const instructionSourceReceiptSchema = z.strictObject({
   rejectedSource: digestSchema.nullable().optional(),
   contentChanged: z.boolean(),
   reused: z.boolean(),
-  /** Automatic skill routing for this admission; absent when routing did not run. */
+  /** Skill routing and preloads for this admission; absent when neither ran. */
   skills: skillRoutingSchema.optional(),
 });
 export type InstructionSourceReceipt = z.infer<typeof instructionSourceReceiptSchema>;

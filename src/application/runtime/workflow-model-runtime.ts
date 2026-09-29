@@ -65,6 +65,8 @@ export async function executeWorkflowModel(options: {
   readonly resources: ProductTaskResources;
   readonly node: Extract<WorkflowNode, { kind: "model" }>;
   readonly input: Readonly<Record<string, unknown>>;
+  /** Pinned skills this step preloads, from a scheduled run's binding (#1180). */
+  readonly skills?: readonly import("../../domain/context/skill-preload.ts").SkillPin[];
 }): Promise<WorkflowNodeOutcome> {
   const { ports, node, resources, request, selection, provider, binding } = options;
   const owner = request.processTask?.owner;
@@ -145,6 +147,14 @@ export async function executeWorkflowModel(options: {
       ...(request.authorityCurrent ? { authorityCurrent: request.authorityCurrent } : {}),
       signal: request.signal,
       turnId: turnId.from(identity),
+      ...(options.skills === undefined || options.skills.length === 0
+        ? {}
+        : {
+            skillPreload: {
+              origin: "schedule" as const,
+              skills: options.skills.map((pin) => ({ name: pin.name, pin })),
+            },
+          }),
       prompt: canonicalJson(options.input),
       otherSections: [
         {

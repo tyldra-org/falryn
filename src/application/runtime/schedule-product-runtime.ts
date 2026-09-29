@@ -2,6 +2,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import { artifactId, contentDigest } from "../../domain/artifacts/index.ts";
+import type { SkillPin } from "../../domain/context/skill-preload.ts";
 import { canonicalDigest, canonicalJson } from "../../domain/extensions/canonical.ts";
 import {
   capabilityId,
@@ -35,6 +36,7 @@ import type {
 } from "../../domain/process/process-identity.ts";
 import { createToolHookRegistry, type ToolInvocationOutcome } from "../../domain/tools/index.ts";
 import type { ModelPreferences } from "../../providers/configuration/policy-schema.ts";
+import { pinScheduledSkills } from "../context/product-instructions.ts";
 import { processProductResources } from "../orchestration/product-resources.ts";
 import { createScheduleActions } from "../orchestration/schedule-actions.ts";
 import { createScheduleRuntime, type ScheduleExecutor } from "../orchestration/schedule-runtime.ts";
@@ -275,6 +277,21 @@ export function composeScheduleProductRuntime(
       !options.preferences().roles.default
     )
       return err({ code: "model-route-unavailable" });
+    // Scheduled skills load into the run's model steps, pinned to what they resolve to
+    // now; the binding captures the pins, so any later change blocks the schedule (#1180).
+    let skills: readonly SkillPin[] | undefined;
+    const named = record.definition.skills;
+    if (named !== undefined) {
+      if (
+        target.kind !== "workflow" ||
+        !target.definition.nodes.some((node) => node.kind === "model")
+      )
+        return err({ code: "schedule-skills-need-model-step" });
+      if (!ports.instructions) return err({ code: "schedule-skills-unavailable" });
+      const pinned = await pinScheduledSkills(ports.instructions, named, signal);
+      if (!pinned.ok) return err({ code: `schedule-skill-unavailable:${pinned.code}` });
+      skills = pinned.pins;
+    }
     return ok({
       descriptor: canonicalDigest(
         JSON.parse(JSON.stringify({ targets, target: record.definition.target })),
@@ -288,6 +305,7 @@ export function composeScheduleProductRuntime(
       configuration: configuration.value,
       configurationGeneration: Number(ports.correlation.configurationGeneration),
       timezoneData: schedules.timezoneData,
+      ...(skills === undefined ? {} : { skills: [...skills] }),
     });
   }
   const executor: ScheduleExecutor = {
@@ -390,6 +408,8 @@ export function composeScheduleProductRuntime(
           binding: null,
           capabilities: idsFor(record, prepared?.definition),
           effects: ["observation", "mutation", "external", "interactive"],
+          // The pins bound when the schedule was enabled; never re-resolved at run time.
+          ...(record.binding?.skills === undefined ? {} : { skills: record.binding.skills }),
         },
         async instructionsCurrent(checkSignal) {
           const current = schedules.store.get(workspace, record.id);

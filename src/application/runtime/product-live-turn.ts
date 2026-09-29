@@ -85,6 +85,13 @@ export type ProductLiveTurnInput = {
    * repository instruction, template expansion, scheduler or delegated agent.
    */
   readonly userSkills?: readonly string[];
+  /**
+   * Skills a child agent definition or schedule names (#1180). Set only by the trusted
+   * host that admitted the child or scheduled run, from its captured definition or
+   * binding; never decoded from model or prompt text. A preloaded turn fails when any
+   * named skill cannot load.
+   */
+  readonly skillPreload?: import("../../domain/context/skill-preload.ts").SkillPreload;
   readonly attachmentSelection?: ResourceAttachmentSelection;
   readonly turnId: TurnId;
   readonly signal?: AbortSignal;
@@ -1068,20 +1075,29 @@ export function createProductLiveTurnExecutor(
                   configurationGeneration: String(generation),
                   resources: taskResources,
                   signal: input.signal ?? new AbortController().signal,
-                  // Main turns route skills automatically; children and workflows do not (#1180).
-                  // Explicit user skills ride the same route with user origin.
-                  ...(runtime.instructions.skills !== undefined &&
-                  runtime.instructions.scope.kind === "main"
+                  // Main turns route skills automatically; children and workflows load only
+                  // what their definition or schedule preloads (#1180). Explicit user skills
+                  // ride the same route with user origin, on main turns only.
+                  ...(input.skillPreload !== undefined
                     ? {
                         route: {
                           task: input.prompt,
-                          active: runtime.instructions.skills.active(),
-                          ...(input.userSkills === undefined || input.childAdmission !== undefined
-                            ? {}
-                            : { explicit: input.userSkills }),
+                          active: [],
+                          preload: input.skillPreload,
                         },
                       }
-                    : {}),
+                    : runtime.instructions.skills !== undefined &&
+                        runtime.instructions.scope.kind === "main"
+                      ? {
+                          route: {
+                            task: input.prompt,
+                            active: runtime.instructions.skills.active(),
+                            ...(input.userSkills === undefined || input.childAdmission !== undefined
+                              ? {}
+                              : { explicit: input.userSkills }),
+                          },
+                        }
+                      : {}),
                 });
           if (instructionPreparation && !instructionPreparation.ok && runtime.instructions) {
             const recorded = await runtime.journal.persist(

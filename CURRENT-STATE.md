@@ -500,8 +500,16 @@ The `instructions.resolved` receipt records routing in `skills`: the number of
 eligible candidates and each route's name, decision (`loaded`, `recommended` or
 `unavailable`) and reason, plus the admitted source, digest and body bytes of a
 loaded skill. It holds no body, so replay and export show these decisions without
-reading a skill. Child agents, workflow steps and scheduled runs do not route
-skills (#1180). Receipts also record estimated context contributions: a loaded body's tokens, each
+reading a skill; the transcript's instruction notice lists each route with its
+decision and reason. Child agents, workflow steps and scheduled runs never route
+skills automatically. They load only what a child's agent definition or a
+schedule preloads, with route reason `child-preload` or `schedule-preload` (see
+Delegated agents and Durable schedules). A preload uses the automatic column of
+the eligibility table, never user origin, so a manual-only (`disable-model-invocation`)
+or restricted skill is refused. Any named skill that cannot load fails that child
+or model step before its provider request, with an `instructions.rejected` fact and
+no substitute. What a child or workflow step loads never becomes active for the
+session's later main turns. Receipts also record estimated context contributions: a loaded body's tokens, each
 route's own line in the routing section (bytes and tokens) and the whole section.
 Estimates use the prompt composer's four-UTF-16-code-units-per-token rule and name
 it (`utf16-code-units-per-4-v1`); they are not provider-measured. Receipts written
@@ -2725,6 +2733,20 @@ artifact capture. Workflows with model nodes require an available concrete
 main model route. Missing targets or producers remain unavailable. Grouped Todo
 Named-route and quota-reset scheduling remain a separate integration under #1113.
 
+A definition may name up to 8 `skills` for its model steps to preload. Only a
+`workflow` target with at least one `model` node accepts them; any other target
+reports `schedule-skills-need-model-step`. Validation resolves each name with
+automatic eligibility from source metadata, without reading a body, and the
+binding captured at enable records the exact source and body digest. A name that
+cannot resolve, including a manual-only skill, blocks the schedule as
+`schedule-skill-unavailable:<reason>`. The host re-validates the binding before
+each run and the scheduled gateway re-checks it as its authority, so a skill edited
+after enable blocks the schedule as `authority-changed`, and one removed, disabled
+or restricted blocks it as `schedule-skill-unavailable:<reason>`, before any body
+read or provider call. Each model step then loads exactly the bound bodies; a change
+that lands mid-run refuses that step as `skill-preload-stale`. Agent nodes load
+their own definitions' skills, not the schedule's.
+
 A `task-list` target selects existing Todo work by queue, scope generation and
 stable group and task IDs (at most 256 of each), with `autoCascade` false by
 default. Only a `project` or `shared` queue in the host workspace qualifies,
@@ -3132,6 +3154,14 @@ use Big. Shared Subagents settings resolve the model and thinking together,
 independently of Fast, including another configured provider account. Missing
 accounts, unsupported thinking, unavailable native capabilities and undisclosable
 tool schemas return an explicit unstarted result.
+
+A definition may name up to 8 `skills` to preload. The child resolves them at
+admission in its own narrowed instruction scope, with automatic eligibility and
+route reason `child-preload`, and receives their complete bodies before its first
+provider request. It does no automatic skill routing. A manual-only, disabled,
+untrusted, restricted, missing or ambiguous skill fails the child before any
+provider request, tool call or body read, and the parent integrates that failure
+with its reason (for example `selection-unavailable:deploy`).
 
 Each launch supplies an objective through `inputJson`, selected context, exact
 capability IDs, requested effects, resource limits and the existing version-1

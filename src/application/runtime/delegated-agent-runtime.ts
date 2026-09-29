@@ -318,6 +318,17 @@ export function composeDelegatedAgentRuntime(
           ...(run.authorityCurrent ? { authorityCurrent: run.authorityCurrent } : {}),
           turnId: turnId.from(`${run.handle.taskId}-${run.handle.generation}`),
           signal: run.signal,
+          ...(run.prepared.definition.definition.skills === undefined
+            ? {}
+            : {
+                skillPreload: {
+                  origin: "child" as const,
+                  skills: run.prepared.definition.definition.skills.map((name) => ({
+                    name,
+                    pin: null,
+                  })),
+                },
+              }),
           prompt: canonicalJson({
             input: run.input,
             selectedEvidence: run.prepared.context,
