@@ -154,6 +154,8 @@ test("the terminal invokes, refuses and lists skills through its own submission 
     expect(text).toContain("deploy — /skill:deploy");
     expect(text).toContain("triage — not user-invocable");
     expect(text).not.toContain("BODY_");
+    // Completion offers only skills a user can invoke.
+    expect([...(submission.skillCandidates?.()?.invocable ?? [])]).toEqual(["deploy"]);
     expect(submission.skillCommand?.("/deploy now")).toEqual({
       kind: "skill",
       name: "deploy",

@@ -809,6 +809,22 @@ export async function composeProductShellAttachments(
                     skills: instructions.owner.skillNames(),
                     templates: new Set(prompts.templates.map((template) => template.localId)),
                   }),
+                // Every invocable skill in the latest publication; admission rechecks it.
+                candidates() {
+                  const invocable = new Set<string>();
+                  const scope = { ...instructions.scope, execution: "skill-catalog" };
+                  for (let offset: number | null = 0; offset !== null; ) {
+                    const page = instructions.owner.skillCatalog(scope, { offset });
+                    if (page === null) return null;
+                    for (const entry of page.entries)
+                      if (entry.command !== null) invocable.add(entry.name);
+                    offset = page.nextOffset;
+                  }
+                  return {
+                    invocable,
+                    templates: new Set(prompts.templates.map((template) => template.localId)),
+                  };
+                },
                 async lines(
                   page: { readonly filter: string | null; readonly offset: number },
                   signal: AbortSignal,
@@ -997,6 +1013,7 @@ export async function composeProductShellAttachments(
     ) =>
       active.skills?.lines(page, AbortSignal.any([hostSignal, signal])) ??
       Promise.resolve(["Skills are unavailable in this session."]),
+    skillCandidates: () => active.skills?.candidates() ?? null,
     workingProfile: (
       argument: string | null,
       signal: AbortSignal,

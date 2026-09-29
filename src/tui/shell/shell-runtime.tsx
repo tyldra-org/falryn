@@ -41,13 +41,14 @@ import {
   MAX_EVIDENCE_INLINE_BYTES,
   parseMentions,
 } from "../../domain/context/index.ts";
-import { parseSkillsCommand } from "../../domain/context/skill-invocation.ts";
+import { completeSkillCommand, parseSkillsCommand } from "../../domain/context/skill-invocation.ts";
 import { isExecutionProfileId } from "../../domain/sessions/index.ts";
 import type { TranscriptBlock } from "../../presentation/index.ts";
 import { providerModelIdentityKey } from "../../providers/index.ts";
 import { type CommandState, commandById } from "../commands/commands.ts";
 import {
   type ComposerAction,
+  isBuiltinComposerSlash,
   PEER_SLASH,
   parseComposerSlash,
   SCHEDULE_SLASH,
@@ -983,6 +984,21 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       if (id.startsWith("model.processing."))
         return runProcessing(id.slice("model.processing.".length));
       switch (id) {
+        case "composer.complete": {
+          const catalog = options.submission?.skillCandidates?.() ?? null;
+          const draft = stateRef.current.composer.text;
+          const completion =
+            catalog === null ? null : completeSkillCommand(draft, catalog, isBuiltinComposerSlash);
+          if (completion === null) return false;
+          if (completion.text !== draft)
+            dispatch({ kind: "composer", action: { kind: "draft", text: completion.text } });
+          if (completion.matches.length > 1)
+            dispatch({
+              kind: "notice",
+              message: `Skills: ${completion.matches.slice(0, 20).join(", ")}${completion.matches.length > 20 ? `, and ${completion.matches.length - 20} more (/skills lists them)` : ""}`,
+            });
+          return true;
+        }
         case "environment.inspect":
           return environment.run(null);
         case "profile.inspect":
@@ -1176,6 +1192,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       cancelSessionExport,
       options.onExit,
       options.submission?.schedule,
+      options.submission?.skillCandidates,
       options.transcriptKeys,
       options.midTurn,
       options.sessionCreation,

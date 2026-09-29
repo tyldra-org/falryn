@@ -123,6 +123,10 @@ export type SubmissionPort = {
     page: { readonly filter: string | null; readonly offset: number },
     signal: AbortSignal,
   ) => Promise<readonly string[]>;
+  /** Skills the user can invoke now, for Tab completion; null when unknown. */
+  readonly skillCandidates?: () =>
+    | import("../../domain/context/skill-invocation.ts").SkillCompletionCatalog
+    | null;
   submit(
     snapshot: ComposerSnapshot,
     context?: {

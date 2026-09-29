@@ -67,6 +67,48 @@ export function parseSkillsCommand(
   return { filter: rest === "" ? null : rest.slice(0, 64), offset };
 }
 
+/** Skills a user can invoke now, and the prompt aliases a bare name must not collide with. */
+export type SkillCompletionCatalog = {
+  readonly invocable: ReadonlySet<string>;
+  readonly templates: ReadonlySet<string>;
+};
+
+/** The completed draft and every command it could still become, in name order. */
+export type SkillCompletion = { readonly text: string; readonly matches: readonly string[] };
+
+/**
+ * Completes a draft that is only a slash command prefix, such as `/rel` or
+ * `/skill:re`, against the skills a user can invoke. A unique match becomes its
+ * command followed by a space; several extend to their longest common prefix. The
+ * bare form is offered only when a bare `/<name>` would reach the skill: a name a
+ * built-in or prompt template also answers to completes to `/skill:<name>`. Null
+ * when the draft is not a command prefix or nothing matches.
+ */
+export function completeSkillCommand(
+  text: string,
+  catalog: SkillCompletionCatalog,
+  isBuiltin: (text: string) => boolean,
+): SkillCompletion | null {
+  const token = /^\/([a-z0-9:-]{0,128})$/u.exec(text)?.[1];
+  if (token === undefined) return null;
+  const qualifiedPrefix = `${SKILL_COMMAND_NAMESPACE}:`;
+  const qualified = token.startsWith(qualifiedPrefix);
+  const prefix = qualified ? token.slice(qualifiedPrefix.length) : token;
+  if (prefix.includes(":")) return null;
+  const names = [...catalog.invocable].filter((name) => name.startsWith(prefix)).sort();
+  const first = names[0];
+  if (first === undefined) return null;
+  const command = (name: string) =>
+    qualified || catalog.templates.has(name) || isBuiltin(`/${name}`)
+      ? `/${qualifiedPrefix}${name}`
+      : `/${name}`;
+  const matches = names.map(command);
+  if (names.length === 1) return { text: `${command(first)} `, matches };
+  let common = first;
+  for (const name of names) while (!name.startsWith(common)) common = common.slice(0, -1);
+  return { text: `/${qualified ? qualifiedPrefix : ""}${common}`, matches };
+}
+
 /** One skill source in the catalog, as it stands; its body is never read to list it. */
 export type SkillCatalogEntry = {
   readonly name: string;

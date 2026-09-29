@@ -489,7 +489,12 @@ manual-only skill is not reloaded without another command.
 source's name, origin, path, declared eligibility and either its command or why it
 cannot be invoked (shadowed, excluded, conflicting or not user-invocable). The catalog
 is refreshed when the session opens and for each listing. Pages hold at most 100
-entries or 256 KiB. The composer's completion popup does not suggest skills yet.
+entries or 256 KiB. In the composer, Tab completes a draft that is only a command
+prefix (`/rel`, `/skill:re`) to a skill the user can invoke, using the bare form
+only when nothing else answers to that name; several matches extend to their common
+prefix and are listed in a notice. Otherwise Tab moves focus as before. Completion
+reads the latest catalog, and admission still rechecks the pick. There is no
+completion popup.
 
 The `instructions.resolved` receipt records routing in `skills`: the number of
 eligible candidates and each route's name, decision (`loaded`, `recommended` or
