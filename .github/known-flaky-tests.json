@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "files": [
+    {
+      "path": "src/cli/commands/schedule.test.ts",
+      "issue": 1201,
+      "symptom": "a schedule command started while two hosts start fails with configuration-unavailable (publish-failed:package-configuration-unavailable) on hosted Ubuntu"
+    }
+  ]
+}
