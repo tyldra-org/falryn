@@ -466,6 +466,30 @@ test.skipIf(process.platform === "win32")(
           await new Promise((resolve) => setTimeout(resolve, 10));
         expect(scheduledRequests).toBe(stale);
         expect(scheduledInputs.join("")).not.toContain("BODY_SCHEDULED_V2");
+        // Usage attributes both scheduled steps to the schedule's preload in workflow scope,
+        // reading the workflow streams no session record lists (#1192).
+        const { querySkillUsage } = await import("../../application/extensions/skill-usage.ts");
+        const streams = product.eventStore.admissionStreams("root-1", 64);
+        if (!streams.ok) throw new Error(streams.error.code);
+        const usage = await querySkillUsage(
+          {
+            workspaceId: "root-1",
+            events: product.eventStore,
+            sessions: () => ({
+              sessions: streams.value.map((stream) => ({
+                sessionId: stream.sessionId,
+                streamId: String(stream.streamId),
+              })),
+              truncated: false,
+            }),
+          },
+          { skill: "release-notes" },
+        );
+        if (usage.status !== "reported") throw new Error(usage.code);
+        const scheduled = usage.rows.filter((row) => row.initiators.schedule > 0);
+        expect(scheduled.reduce((sum, row) => sum + row.initiators.schedule, 0)).toBe(2);
+        expect(scheduled.reduce((sum, row) => sum + row.scopes.workflow, 0)).toBe(2);
+        expect(usage.duplicates).toBe(0);
         const after = product.schedules.store.get("root-1", "skills-current");
         if (after.ok)
           await invoke({

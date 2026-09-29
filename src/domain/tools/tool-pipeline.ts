@@ -154,6 +154,8 @@ export type ToolInvocationOutcome = {
     readonly effect: EffectCertainty;
   }[];
   readonly sandbox?: readonly SandboxReceipt[];
+  /** A completed skill resource read's metadata fact (#1192); never file content. */
+  readonly skillResources?: import("../context/skill-resources.ts").SkillResourceFact;
   readonly admission?: ResourceAdmissionReceipt;
   readonly composition?: CompositionProvenance;
 } & (

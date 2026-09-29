@@ -1,8 +1,10 @@
 /** Test-only admission receipts for the skill usage read model. */
 import {
+  capabilityId,
   configurationGeneration,
   eventId,
   idempotencyKey,
+  invocationId,
   sequence,
   sessionId,
   streamId,
@@ -15,6 +17,8 @@ import { timestampFromEpochMilliseconds } from "../foundation/time.ts";
 import type { RuntimeEvent } from "../sessions/index.ts";
 import type { InstructionSourceReceipt, SkillRouteFact } from "./instruction-source-receipt.ts";
 import { PROMPT_TOKEN_ESTIMATOR } from "./prompt-composition.ts";
+import type { SkillResourceFact } from "./skill-resources.ts";
+import { SKILL_RESOURCE_CAPABILITY } from "./skill-usage.ts";
 
 const hex = (seed: string) =>
   `sha256:${[...seed]
@@ -85,6 +89,8 @@ export function receiptEvent(input: {
 }): RuntimeEvent {
   const session = input.session ?? "session-a";
   const estimates = input.estimates ?? true;
+  // A real receipt's execution is its own turn, so distinct admissions never share it.
+  const turn = `turn-${session}-${input.sequence}`;
   return {
     eventId: eventId.from(input.eventId ?? `event-${session}-${input.sequence}`),
     streamId: streamId.from(`live-turn:${session}`),
@@ -99,7 +105,7 @@ export function receiptEvent(input: {
     correlation: {
       workspaceId: workspaceId.from(input.workspace ?? "workspace-a"),
       sessionId: sessionId.from(session),
-      turnId: turnId.from(`turn-${input.sequence}`),
+      turnId: turnId.from(turn),
       traceId: traceId.from("trace"),
       configurationGeneration: configurationGeneration.from(0),
     },
@@ -108,7 +114,7 @@ export function receiptEvent(input: {
       previousGeneration: null,
       configuration: "0",
       workspace: "workspace-a",
-      scope: { root: "root", directory: "", execution: "turn", kind: input.kind ?? "main" },
+      scope: { root: "root", directory: "", execution: turn, kind: input.kind ?? "main" },
       contentDigest: hex("content"),
       sources: [...input.sources],
       omitted: input.omitted ?? 0,
@@ -126,6 +132,69 @@ export function receiptEvent(input: {
               ...(estimates
                 ? { section: { bytes: 120, tokens: 30 }, estimator: PROMPT_TOKEN_ESTIMATOR }
                 : {}),
+            },
+          }),
+    },
+  } as RuntimeEvent;
+}
+
+/** A completed `skill_resource` read in the same turn as the receipt at `turnOf`. */
+export function resourceEvent(input: {
+  readonly sequence: number;
+  readonly turnOf: number;
+  readonly decision: InstructionSourceReceipt["sources"][number];
+  readonly session?: string;
+  readonly eventId?: string;
+  readonly invocation?: string;
+  readonly files?: SkillResourceFact["files"];
+  /** False writes a read as it was recorded before reads carried a fact. */
+  readonly fact?: boolean;
+}): RuntimeEvent {
+  const session = input.session ?? "session-a";
+  return {
+    eventId: eventId.from(input.eventId ?? `resource-${session}-${input.sequence}`),
+    streamId: streamId.from(`live-turn:${session}`),
+    sequence: sequence.from(input.sequence),
+    schemaVersion: RUNTIME_EVENT_SCHEMA_VERSION,
+    minimumReaderSchemaVersion: RUNTIME_EVENT_SCHEMA_VERSION,
+    occurredAt: timestampFromEpochMilliseconds(Date.UTC(2026, 8, 1, 0, 0, input.sequence)),
+    idempotencyKey: idempotencyKey.from(`key-${session}-${input.sequence}`),
+    kind: "capability.invocation.completed",
+    invocationId: invocationId.from(input.invocation ?? `read-${input.sequence}`),
+    capabilityId: capabilityId.from(SKILL_RESOURCE_CAPABILITY),
+    correlation: {
+      workspaceId: workspaceId.from("workspace-a"),
+      sessionId: sessionId.from(session),
+      turnId: turnId.from(`turn-${session}-${input.turnOf}`),
+      traceId: traceId.from("trace"),
+      configurationGeneration: configurationGeneration.from(0),
+    },
+    payload: {
+      outcome: { kind: "completed", effect: "completed" },
+      ...(input.fact === false
+        ? {}
+        : {
+            skillResources: {
+              version: 1,
+              skill: input.decision.name,
+              source: input.decision.source,
+              skillDigest: input.decision.digest ?? hex("none"),
+              files: input.files ?? [
+                {
+                  path: "references/guide.md",
+                  status: "loaded",
+                  bytes: 60,
+                  digest: hex("guide"),
+                  tokens: 15,
+                },
+                {
+                  path: "references/guide.md",
+                  status: "already-loaded",
+                  bytes: null,
+                  digest: null,
+                  tokens: null,
+                },
+              ],
             },
           }),
     },

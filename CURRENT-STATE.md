@@ -542,29 +542,41 @@ executable helpers are not available (#901, #902), and package-installed skills 
 not routed.
 
 `falryn extension skills [--input request.json]` reports skill usage from those
-stored receipts only. It never reads a skill, starts a script or MCP server, calls a
-provider or records anything. The optional request selects one `session` of the
-current workspace (default: all of its sessions, at most 256), a `skill` name,
+stored receipts and from the metadata fact each completed `skill_resource` read
+records on its invocation event (the skill, source and body digest it was bound to,
+and each file's path, status, size, digest and estimated tokens; never file text).
+It never reads a skill or resource, starts a script or MCP server, calls a provider
+or records anything. It reads each session's stream and, as separate sessions, the
+child, workflow-step and scheduled streams of the workspace that hold admissions,
+which no session record lists. The optional request selects one `session` of the
+current workspace (default: all of them, at most 256), a `skill` name,
 `since`/`until` timestamps, a `limit` of stored events to scan (default 1,024,
 maximum 4,096), an `after` continuation from the previous page of the same query,
 and `aggregate: "source"` to merge a source's generations while keeping the
 per-generation breakdown. Rows are keyed by source, content digest and configuration
 generation, and count discovered, selected, shadowed, excluded, conflicting,
-recommended, loaded and refused separately, plus reuse of an identical earlier
-admission, load reasons and the admission scope (main, child or workflow). A
+recommended, loaded, refused, invoked (explicit user invocations) and resource-loaded
+(supporting files whose text a read returned) separately, plus reuse of an identical
+earlier admission, load reasons, the admission scope (main, child or workflow) and
+who caused each load: `explicit`, `automatic`, `child` preload, `schedule` preload, or
+`unknown` for a reason this build does not recognise. A
 recommended or refused route belongs to the source that won name resolution, so a
 shadowed same-named source never inherits it. Body and listing contributions, and the
-shared routing-section total, are reported with the estimator's name.
+shared routing-section total, are reported with the estimator's name; resource
+contributions are reported separately from the body. Each fact counts once by its
+producer identity (an admission's workspace, scope, execution, generation and content;
+a resource read's invocation and bound skill), so the same admission delivered by
+another stream, an import or a replay is a duplicate, and a parent never counts a
+child's admission.
 
 Coverage lists each session's scanned sequence range and whether it reached the end.
 Sequence gaps, unreadable events (skipped, with their neighbours still counted),
 events outside the workspace or session, cancellation, and receipts that omitted
 sources are reported as omissions, and only a window with none of these is marked
-complete. A workspace with no admissions reports usage as unavailable, not zero.
-Explicit invocations appear as loads with reason `explicit-invocation`, but there is no
-separate invoked count yet. Supporting-file reads are recorded only as `skill_resource`
-tool invocations without being counted, so invoked and resource-loaded are listed as not
-recorded (#1192). Provider-reported input totals are not stored per session, so they are
+complete. A workspace with no admissions reports usage as unavailable, not zero. A
+resource read whose skill has no admission in the window is reported unattributed,
+and a read recorded before reads carried a fact is reported without files; either
+makes the window incomplete. Provider-reported input totals are not stored per session, so they are
 reported as unavailable and never attributed to a skill. An unknown session and a
 continuation reused with a different query are refused. There is no Extensions view
 for these results yet (#274).

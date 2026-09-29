@@ -4,7 +4,10 @@
  * instructions, and nothing here grants execution: every resource reports
  * `executable: false`. A helper script becomes runnable only through package admission.
  */
+import { z } from "zod";
 import { bytesDigest } from "../extensions/canonical.ts";
+import { digestSchema } from "../extensions/identity.ts";
+import { estimatePromptTokens } from "./prompt-composition.ts";
 
 export const SKILL_RESOURCE_LIMITS = Object.freeze({
   /** Path segments below the bundle, and link hops followed by one request. */
@@ -318,4 +321,56 @@ export function skillResourceIndexText(
     );
   const more = omitted + Math.max(0, entries.length - SKILL_RESOURCE_LIMITS.indexEntries);
   return [...listed, ...(more > 0 ? [`${more} more`] : [])].join("; ");
+}
+
+/**
+ * What a completed `skill_resource` read records on its invocation event (#1192): the
+ * skill it was bound to and each file's outcome. It carries metadata only, never file
+ * content, so usage diagnostics count supporting resources without reading them.
+ */
+export const skillResourceFactSchema = z.strictObject({
+  version: z.literal(1),
+  skill: z.string().min(1).max(64),
+  /** The instruction source key the read was bound to. */
+  source: digestSchema,
+  /** The `SKILL.md` body digest the read was bound to. */
+  skillDigest: digestSchema,
+  files: z
+    .array(
+      z.strictObject({
+        path: z.string().min(1).max(SKILL_RESOURCE_LIMITS.pathCharacters),
+        status: z.enum(SKILL_RESOURCE_STATUSES),
+        bytes: z.int().nonnegative().nullable(),
+        digest: digestSchema.nullable(),
+        /** Estimated tokens of a loaded file's text; null for any other outcome. */
+        tokens: z.int().nonnegative().nullable(),
+      }),
+    )
+    .max(SKILL_RESOURCE_LIMITS.references),
+});
+export type SkillResourceFact = z.infer<typeof skillResourceFactSchema>;
+
+/** The fact for one completed read; text is estimated here and then dropped. */
+export function skillResourceFact(read: {
+  readonly skill: string;
+  readonly source: string;
+  readonly skillDigest: string;
+  readonly resources: readonly SkillResourceEntry[];
+}): SkillResourceFact {
+  return {
+    version: 1,
+    skill: read.skill,
+    source: read.source,
+    skillDigest: read.skillDigest,
+    files: read.resources.slice(0, SKILL_RESOURCE_LIMITS.references).map((entry) => ({
+      path: entry.path.slice(0, SKILL_RESOURCE_LIMITS.pathCharacters) || "?",
+      status: entry.status,
+      bytes: entry.bytes,
+      digest: entry.digest,
+      tokens:
+        entry.status === "loaded" && entry.text !== undefined
+          ? estimatePromptTokens(entry.text)
+          : null,
+    })),
+  };
 }

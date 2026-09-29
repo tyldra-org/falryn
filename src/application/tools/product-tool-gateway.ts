@@ -1343,6 +1343,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       admission: admitted.receipt,
       ...(sandboxReceipts === undefined ? {} : { sandbox: sandboxReceipts }),
       ...(degradation === undefined ? {} : { degradation }),
+      ...(outcome.skillResources === undefined ? {} : { skillResources: outcome.skillResources }),
     });
     if (!committed) enveloped = envelopeToolResult({ ...envelopeInput, persistFailed: true });
     if (

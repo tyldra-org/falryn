@@ -76,10 +76,11 @@ async function inspect(
     );
   try {
     const records = createRecordRepositories(opened.store).sessions;
+    const events = createSqliteEventStore(opened.store);
     return await querySkillUsage(
       {
         workspaceId,
-        events: createSqliteEventStore(opened.store),
+        events,
         sessions() {
           const listed = records.listByParent(
             workspaceIdCodec.from(workspaceId),
@@ -92,9 +93,24 @@ async function inspect(
               sessionId: String(record.sessionId),
               streamId: String(record.streamId),
             }));
+          // Child, workflow and scheduled admissions live in streams no session record
+          // lists (#1192); each is read as its own session so its scope stays its own.
+          const admissions = events.admissionStreams(workspaceId, MAX_SESSION_CATALOG + 1);
+          if (!admissions.ok) return null;
+          const listedStreams = new Set(owned.map((session) => session.streamId));
+          const all = [
+            ...owned,
+            ...admissions.value
+              .filter((stream) => !listedStreams.has(String(stream.streamId)))
+              .map((stream) => ({
+                sessionId: stream.sessionId,
+                streamId: String(stream.streamId),
+              })),
+          ];
           return {
-            sessions: owned.slice(0, MAX_SESSION_CATALOG),
-            truncated: owned.length > MAX_SESSION_CATALOG,
+            sessions: all.slice(0, MAX_SESSION_CATALOG),
+            truncated:
+              all.length > MAX_SESSION_CATALOG || admissions.value.length > MAX_SESSION_CATALOG,
           };
         },
       },

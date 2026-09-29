@@ -13,6 +13,7 @@ import { instructionProduct } from "../runtime/instruction-product.fixtures.ts";
 import { runExtensionSkills } from "./extension-skills.ts";
 
 const BODY = "Draft the notes from merged pull requests.";
+const GUIDE = "GUIDE_TEXT_NEVER_REPORTED: cite each merged pull request.";
 
 async function writeSkill(location: string, body: string) {
   await mkdir(join(location, "release-notes"), { recursive: true });
@@ -33,7 +34,25 @@ export async function skillUsageCliJourney(command: readonly string[], home: str
   if (!session) throw new Error("missing session");
   await product.run({ prompt: "Now fix the build.", session });
   await writeSkill(project, `${BODY} Edited.`);
-  const last = await product.run({ prompt: "Check the tests.", session });
+  await product.run({ prompt: "Check the tests.", session });
+  // An explicit invocation whose model reads a supporting file (#1192).
+  await mkdir(join(project, "release-notes", "references"), { recursive: true });
+  await writeFile(join(project, "release-notes", "references", "guide.md"), GUIDE);
+  const last = await product.run({
+    prompt: "/skill:release-notes draft the v3 notes",
+    session,
+    script: (_request, index) =>
+      index === 0
+        ? {
+            kind: "tool",
+            name: "skill_resource",
+            toolCallId: "read-guide",
+            argumentFragments: [
+              JSON.stringify({ skill: "release-notes", path: "references/guide.md" }),
+            ],
+          }
+        : { kind: "text", text: "Drafted." },
+  });
   if (!last.events?.ok) throw new Error("missing events");
   const events: readonly RuntimeEvent[] = last.events.value;
 
@@ -73,14 +92,35 @@ export async function skillUsageCliJourney(command: readonly string[], home: str
   const winners = rows.filter((row) => row.origin === "project-agents");
   const loser = rows.filter((row) => row.origin === "user-agents");
   // One row per generation of the winning source; the edit starts a new one.
-  expect(winners.map((row) => row.counts.loaded)).toEqual([2, 1]);
+  expect(winners.map((row) => row.counts.loaded)).toEqual([2, 2]);
   expect(winners.map((row) => row.reasons)).toEqual([
     { "loaded:named-in-task": 1, "loaded:session-active": 1 },
-    { "loaded:session-active": 1 },
+    { "loaded:session-active": 1, "loaded:explicit-invocation": 1 },
   ]);
+  // Who caused each load (#1192): routing, then the user's explicit invocation.
+  expect(winners.map((row) => [row.initiators.automatic, row.initiators.explicit])).toEqual([
+    [2, 0],
+    [1, 1],
+  ]);
+  expect(winners.map((row) => row.counts.invoked)).toEqual([0, 1]);
+  // The supporting file counts once, against the body it was read under, never the body.
+  const guideBytes = new TextEncoder().encode(GUIDE).byteLength;
+  expect(winners.map((row) => row.counts["resource-loaded"])).toEqual([0, 1]);
+  expect(winners[1]?.resources).toEqual({
+    count: 1,
+    bytes: guideBytes,
+    tokens: estimatePromptTokens(GUIDE),
+    unestimated: 0,
+  });
+  expect(report).toMatchObject({
+    duplicates: 0,
+    resourcesUnattributed: 0,
+    resourceReadsWithoutFact: 0,
+  });
   // The shadowed user copy is discovered and shadowed on every admission and never loaded.
   expect(loser.reduce((sum, row) => sum + row.counts.shadowed, 0)).toBe(receipts.length);
   expect(loser.every((row) => row.counts.loaded === 0 && row.body.count === 0)).toBe(true);
+  expect(loser.every((row) => row.resources.count === 0 && row.counts.invoked === 0)).toBe(true);
   // Contributions agree exactly with the stored receipts.
   const routes = receipts.flatMap((event) =>
     event.kind === "instructions.resolved" ? (event.payload.skills?.routes ?? []) : [],
@@ -102,7 +142,7 @@ export async function skillUsageCliJourney(command: readonly string[], home: str
     ),
   );
   expect(winners.flatMap((row) => [row.listing.count, row.listing.unestimated])).toEqual([
-    2, 0, 1, 0,
+    2, 0, 2, 0,
   ]);
 
   const human = cli([]);
@@ -112,6 +152,8 @@ export async function skillUsageCliJourney(command: readonly string[], home: str
   for (const output of [json.stdout, human.stdout]) {
     expect(output).not.toContain("USER_COPY_NEVER_LOADED");
     expect(output).not.toContain(BODY);
+    expect(output).not.toContain("GUIDE_TEXT_NEVER_REPORTED");
   }
+  expect(human.stdout).toContain("loaded by explicit 1, automatic 1");
   return { product, report, events, cli };
 }

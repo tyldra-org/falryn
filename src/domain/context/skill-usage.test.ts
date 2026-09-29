@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { loadedRoute, receiptEvent, skillDecision, usageDigest } from "./skill-usage.fixtures.ts";
+import {
+  loadedRoute,
+  receiptEvent,
+  resourceEvent,
+  skillDecision,
+  usageDigest,
+} from "./skill-usage.fixtures.ts";
 import { createSkillUsageFold } from "./skill-usage.ts";
 
 const winner = skillDecision("release-notes", "project-agents", "selected");
@@ -157,4 +163,94 @@ test("a skill filter and omitted sources are honoured without inventing counts",
   const totals = fold.totals();
   expect(totals.rows.map((row) => row.name)).toEqual(["incident"]);
   expect(totals.sourcesOmitted).toBe(1);
+});
+
+test("each load is attributed to who caused it; an unknown reason stays unknown", () => {
+  const fold = createSkillUsageFold({});
+  const reasons = [
+    "explicit-invocation",
+    "named-in-task",
+    "child-preload",
+    "schedule-preload",
+    "made-up-reason",
+  ];
+  for (const [index, reason] of reasons.entries())
+    fold.add(
+      receiptEvent({
+        sequence: index + 1,
+        sources: [winner],
+        routes: [loadedRoute(winner, reason)],
+      }),
+    );
+  const [row] = fold.totals().rows;
+  expect(row?.initiators).toEqual({ explicit: 1, automatic: 1, child: 1, schedule: 1, unknown: 1 });
+  expect(row?.counts).toMatchObject({ loaded: 5, invoked: 1 });
+});
+
+test("one admission published by two sessions counts once; so does an imported resource read", () => {
+  const fold = createSkillUsageFold({});
+  const admitted = receiptEvent({
+    sequence: 1,
+    sources: [winner, shadowed],
+    routes: [loadedRoute(winner, "explicit-invocation")],
+  });
+  const read = resourceEvent({ sequence: 2, turnOf: 1, decision: winner });
+  expect(fold.add(admitted)).toBe("counted");
+  expect(fold.add(read)).toBe("counted");
+  // The same facts delivered again, by event and as an imported copy with new event IDs.
+  expect(fold.add(admitted)).toBe("duplicate");
+  expect(fold.add({ ...admitted, eventId: "imported-receipt" } as typeof admitted)).toBe(
+    "duplicate",
+  );
+  expect(fold.add(read)).toBe("duplicate");
+  expect(fold.add({ ...read, eventId: "imported-read" } as typeof read)).toBe("duplicate");
+  const totals = fold.totals();
+  expect(totals).toMatchObject({ admissions: 1, duplicates: 4, resourcesUnattributed: 0 });
+  const byOrigin = Object.fromEntries(totals.rows.map((row) => [row.origin, row]));
+  // Only the loaded file counts, as its own contribution beside the body.
+  expect(byOrigin["project-agents"]?.counts).toMatchObject({
+    loaded: 1,
+    invoked: 1,
+    "resource-loaded": 1,
+  });
+  expect(byOrigin["project-agents"]?.resources).toEqual({
+    count: 1,
+    bytes: 60,
+    tokens: 15,
+    unestimated: 0,
+  });
+  expect(byOrigin["project-agents"]?.body.count).toBe(1);
+  // The shadowed same-named source never inherits the invocation or the file.
+  expect(byOrigin["user-agents"]?.counts).toMatchObject({ invoked: 0, "resource-loaded": 0 });
+});
+
+test("a resource read without its admission or its fact is reported, never counted as zero", () => {
+  const fold = createSkillUsageFold({});
+  fold.add(resourceEvent({ sequence: 1, turnOf: 1, decision: winner }));
+  fold.add(resourceEvent({ sequence: 2, turnOf: 2, decision: winner, fact: false }));
+  expect(fold.totals()).toMatchObject({
+    rows: [],
+    resourcesUnattributed: 1,
+    resourceReadsWithoutFact: 1,
+  });
+});
+
+test("parent and child admissions of one skill stay separate, each counted once", () => {
+  const fold = createSkillUsageFold({});
+  fold.add(receiptEvent({ sequence: 1, sources: [winner], routes: [loadedRoute(winner)] }));
+  const child = receiptEvent({
+    sequence: 1,
+    session: "child-a",
+    kind: "child",
+    sources: [winner],
+    routes: [loadedRoute(winner, "child-preload")],
+  });
+  fold.add(child);
+  expect(fold.add({ ...child, eventId: "projected-into-parent" } as typeof child)).toBe(
+    "duplicate",
+  );
+  const [row] = fold.totals().rows;
+  expect(row?.scopes).toEqual({ main: 1, child: 1, workflow: 0 });
+  expect(row?.initiators).toMatchObject({ automatic: 1, child: 1 });
+  expect(row?.body.count).toBe(2);
 });

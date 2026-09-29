@@ -51,6 +51,7 @@ import {
   type ProductInstructions,
 } from "../context/product-instructions.ts";
 import { createSkillActivations } from "../context/skill-activations.ts";
+import { querySkillUsage, type SkillUsageReport } from "../extensions/skill-usage.ts";
 import { agentDefinitionSchema } from "../orchestration/agent-definition.ts";
 import { createAgentJoins } from "../orchestration/agent-joins.ts";
 import { createAgentRegistry, starterAgentRegistrations } from "../orchestration/agent-registry.ts";
@@ -159,6 +160,10 @@ async function run(
     prompt?: string;
     processing?: boolean;
     instructions?: ProductInstructions;
+    /** Reads the fixture's durable events before the store closes. */
+    inspect?: (
+      events: Awaited<ReturnType<typeof createProcessTaskFixture>>["events"],
+    ) => Promise<void>;
   } = {},
   nativeEffect: "observation" | "mutation" | "external" = "observation",
   native?: {
@@ -375,6 +380,7 @@ async function run(
       await tasks.drain();
     }
     await options.withTaskLists?.after(taskListContext);
+    await options.inspect?.(f.events);
     return {
       result,
       requests,
@@ -1044,12 +1050,35 @@ function skillOwner() {
 
 test("a child definition's skill preload reaches only the child's provider request", async () => {
   const f = skillOwner();
+  let usage: SkillUsageReport | null = null;
   const { result, requests } = await run(
     (_request, index) =>
       index === 0
         ? launch("general", "Draft the notes", [])
         : { kind: "text", text: index === 1 ? generalResult : "Parent completed." },
-    { registry: preloadingRegistry(["release-notes"]), instructions: f.instructions },
+    {
+      registry: preloadingRegistry(["release-notes"]),
+      instructions: f.instructions,
+      // The usage diagnostic finds the child's stream the way the CLI does (#1192).
+      async inspect(events) {
+        const streams = events.admissionStreams("workspace-fixture", 16);
+        if (!streams.ok) throw new Error(streams.error.code);
+        usage = await querySkillUsage(
+          {
+            workspaceId: "workspace-fixture",
+            events,
+            sessions: () => ({
+              sessions: streams.value.map((stream) => ({
+                sessionId: stream.sessionId,
+                streamId: String(stream.streamId),
+              })),
+              truncated: false,
+            }),
+          },
+          {},
+        );
+      },
+    },
   );
   expect(result.terminalOutcome.kind).toBe("completed");
   expect(requests).toHaveLength(3);
@@ -1060,6 +1089,19 @@ test("a child definition's skill preload reaches only the child's provider reque
   expect(f.reads).toEqual(["release-notes"]);
   // The child's load never becomes active for the parent's later main turns.
   expect(f.instructions.skills.active()).toEqual([]);
+  // Usage attributes the load to the child's preload and scope, once.
+  const report = usage as SkillUsageReport | null;
+  if (report?.status !== "reported") throw new Error("usage");
+  expect(report.coverage.sessions.length).toBeGreaterThanOrEqual(2);
+  expect(report.duplicates).toBe(0);
+  const row = report.rows.find((item) => item.name === "release-notes" && item.counts.loaded > 0);
+  expect(row).toMatchObject({
+    counts: { loaded: 1, invoked: 0 },
+    initiators: { child: 1, explicit: 0, automatic: 0, schedule: 0, unknown: 0 },
+    reasons: { "loaded:child-preload": 1 },
+  });
+  expect(row?.scopes.child).toBe(1);
+  expect(row?.body.count).toBe(1);
 });
 
 test("a manual-only child preload fails the child before its provider request", async () => {

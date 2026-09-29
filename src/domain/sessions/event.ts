@@ -245,6 +245,8 @@ export type CapabilityInvocationStartedPayload = {
 export type CapabilityInvocationCompletedPayload = TerminalPayload & {
   readonly historyId?: string | undefined;
   readonly sandbox?: readonly SandboxReceipt[] | undefined;
+  /** A skill resource read's metadata fact (#1192); absent for other capabilities. */
+  readonly skillResources?: import("../context/skill-resources.ts").SkillResourceFact | undefined;
   readonly composition?: CompositionProvenance | undefined;
   readonly admission?: ResourceAdmissionReceipt | undefined;
   /** Exact normalized runner status; absent on legacy events. */
