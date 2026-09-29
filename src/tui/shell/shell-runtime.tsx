@@ -37,6 +37,10 @@ import type {
   ProductModelSelectionControls,
 } from "../../application/runtime/index.ts";
 import {
+  detectMentionTrigger,
+  withTokenPlaceholders,
+} from "../../domain/context/composer-mentions.ts";
+import {
   type AttachmentDescriptor,
   MAX_EVIDENCE_INLINE_BYTES,
   parseMentions,
@@ -89,6 +93,7 @@ import type { ShellRuntime, ShellRuntimeOptions } from "./shell-runtime/contract
 import { useShellControls } from "./shell-runtime/controls.ts";
 import { useShellPromptTemplates } from "./shell-runtime/prompt-templates.ts";
 import { useShellQuestions } from "./shell-runtime/questions.ts";
+import { useComposerSuggestions } from "./shell-runtime/suggestions.ts";
 import {
   COMPOSER_REGION,
   commandStateFor,
@@ -334,6 +339,11 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     onPending: setTemplatePending,
   });
   const payloads = useRef(createMemoryAttachmentPayloads());
+  useComposerSuggestions({
+    dispatch,
+    sources: options.submission?.mentionSources,
+    open: state.composer.suggestions,
+  });
   const transcriptBody = useRef<TextareaRenderable | null>(null);
   const fileProbe = options.fileProbe ?? null;
   const secretRef = useRef("");
@@ -563,6 +573,16 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
 
   const submitComposer = useCallback((): void => {
     const current = stateRef.current.composer;
+    // While the suggestion list shows rows, Return picks one and never sends (#1206).
+    if ((current.suggestions?.rows.length ?? 0) > 0) {
+      // The textarea echoes this Return as a line break; that echo is not an edit.
+      absorbDraftEcho.current = true;
+      dispatch({ kind: "composer", action: { kind: "suggestion-accept" } });
+      setTimeout(() => {
+        absorbDraftEcho.current = false;
+      }, 0);
+      return;
+    }
     // A value being asked for by a prompt template is taken before any other reading.
     if (answerTemplate(current.text)) return;
     if (SCHEDULE_SLASH.test(current.text.trim())) {
@@ -923,6 +943,16 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
 
     const midTurn = options.midTurn ?? null;
     if (midTurn !== null && midTurn.view().active !== null) {
+      // A queued follow-up does not carry mentions yet (#954); sending it without
+      // them would silently drop the user's picks.
+      if (current.tokens.length > 0) {
+        dispatch({
+          kind: "notice",
+          message:
+            "Mentions cannot be queued while a turn is running yet (#954). Send this prompt after the current turn finishes.",
+        });
+        return;
+      }
       // Documented default while a turn is active: queue a follow-up.
       submitMidTurn("follow-up");
       return;
@@ -984,7 +1014,19 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       if (id.startsWith("model.processing."))
         return runProcessing(id.slice("model.processing.".length));
       switch (id) {
-        case "composer.complete": {
+        case "composer.suggestions.reopen": {
+          const composer = stateRef.current.composer;
+          if (
+            detectMentionTrigger(
+              composer.text,
+              composer.cursor,
+              composer.mentionTriggers,
+              composer.tokens,
+            ) !== null
+          ) {
+            dispatch({ kind: "composer", action: { kind: "suggestion-reopen" } });
+            return true;
+          }
           const catalog = options.submission?.skillCandidates?.() ?? null;
           const draft = stateRef.current.composer.text;
           const completion =
@@ -999,6 +1041,18 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
             });
           return true;
         }
+        case "composer.suggestions.accept":
+          dispatch({ kind: "composer", action: { kind: "suggestion-accept" } });
+          return true;
+        case "composer.suggestions.next":
+          dispatch({ kind: "composer", action: { kind: "suggestion-move", delta: 1 } });
+          return true;
+        case "composer.suggestions.previous":
+          dispatch({ kind: "composer", action: { kind: "suggestion-move", delta: -1 } });
+          return true;
+        case "composer.suggestions.dismiss":
+          dispatch({ kind: "composer", action: { kind: "suggestion-dismiss" } });
+          return true;
         case "environment.inspect":
           return environment.run(null);
         case "profile.inspect":
@@ -1106,7 +1160,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         case "composer.enhancePrompt": {
           const current = stateRef.current.composer;
           const outcome = enhancePrompt({
-            text: current.text,
+            // Mentions travel as opaque placeholders; the reducer rebinds them (#1206).
+            text: withTokenPlaceholders(current.text, current.tokens),
             revision: current.draftRevision,
             path: "local",
             attachments: current.attachments.map((item) => item.identity),

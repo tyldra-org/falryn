@@ -32,6 +32,7 @@ import type {
   ModelId,
   TurnId,
 } from "../../domain/foundation/index.ts";
+import { capabilityId } from "../../domain/foundation/index.ts";
 import type { TerminalOutcome } from "../../domain/orchestration/index.ts";
 import {
   type EffectiveExecutionPolicy,
@@ -92,6 +93,16 @@ export type ProductLiveTurnInput = {
    * named skill cannot load.
    */
   readonly skillPreload?: import("../../domain/context/skill-preload.ts").SkillPreload;
+  /**
+   * Capabilities the user picked with `$` mentions (#1206), admitted by the host from
+   * composer tokens. They are preferred for this turn only and grant nothing; the
+   * tokens are recorded on the user message so transcript, export and replay show them.
+   */
+  readonly mentions?: {
+    readonly tokens: readonly import("../../domain/sessions/history.ts").HistoryMentionToken[];
+    readonly preferredCapabilityIds: readonly string[];
+    readonly mcpServers: readonly string[];
+  };
   readonly attachmentSelection?: ResourceAttachmentSelection;
   readonly turnId: TurnId;
   readonly signal?: AbortSignal;
@@ -1018,6 +1029,9 @@ export function createProductLiveTurnExecutor(
                 id: `source-${historyDigest(section.source).slice(8)}`,
                 generation: Number(generation),
               })),
+              ...(input.mentions === undefined || input.mentions.tokens.length === 0
+                ? {}
+                : { tokens: [...input.mentions.tokens] }),
             },
             input.prompt,
             taskResources,
@@ -1277,9 +1291,19 @@ export function createProductLiveTurnExecutor(
             consumer: "native-model",
             task: input.prompt,
             intent: input.intent ?? executionPolicy.workIntent,
-            ...(skillResource === null
+            ...(skillResource === null && (input.mentions?.preferredCapabilityIds.length ?? 0) === 0
               ? {}
-              : { preferredCapabilityIds: [skillResource.manifest.capabilityId] }),
+              : {
+                  preferredCapabilityIds: [
+                    ...(skillResource === null ? [] : [skillResource.manifest.capabilityId]),
+                    ...(input.mentions?.preferredCapabilityIds ?? []).map((id) =>
+                      capabilityId.from(id),
+                    ),
+                  ],
+                  userMentionedCapabilityIds: (input.mentions?.preferredCapabilityIds ?? []).map(
+                    (id) => capabilityId.from(id),
+                  ),
+                }),
             healthEvidence: {
               now: options.clock.now(),
               runtime: {
@@ -1487,6 +1511,9 @@ export function createProductLiveTurnExecutor(
             modelInput: {
               ...modelInput,
               ...(instructionBinding || input.authorityCurrent ? { instructionsCurrent } : {}),
+              ...((input.mentions?.mcpServers.length ?? 0) === 0
+                ? {}
+                : { userSelection: { mcpServers: [...(input.mentions?.mcpServers ?? [])] } }),
             },
           });
           let instructionHistoryFailed = false;

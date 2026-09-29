@@ -125,7 +125,7 @@ describe("a submission something takes", () => {
     const after = apply(sending, { kind: "resolve", outcome: accepted });
 
     expect(after.text).toBe("");
-    expect(after.history.entries).toEqual(["ask something"]);
+    expect(after.history.entries).toEqual([{ text: "ask something", tokens: [] }]);
     expect(after.phase).toBe("editing");
   });
 

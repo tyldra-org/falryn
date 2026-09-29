@@ -50,6 +50,8 @@ export function composeProductMcp(options: {
   return {
     lifecycle,
     catalog,
+    /** The resolved connection configuration, for hosts that list servers. */
+    configuration,
     tools: composeProductMcpTools(options.generation, lifecycle, catalog, options.userInput),
     /** Host-owned unified Read port for catalog resources. */
     resources: catalog.resources,

@@ -232,6 +232,7 @@ function disclosure(): ProductToolDisclosure {
       deferredSchemaBytes: 0,
       deferredSchemaTokensEstimated: 0,
       discoveryHandle: "capability-catalog:3",
+      userMentioned: [],
     },
   };
 }

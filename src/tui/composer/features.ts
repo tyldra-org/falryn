@@ -38,7 +38,7 @@ export const COMPOSER_FEATURES: readonly ComposerFeature[] = [
     id: "composer.completion",
     title: "Command completion",
     reason:
-      "Tab completes skill commands; other slash commands dispatch on submit without a completion popup",
+      "$ suggests capabilities; / commands still dispatch on submit, and Tab completes /skill commands until slash completion (#790)",
   },
   {
     id: "composer.suggestions",

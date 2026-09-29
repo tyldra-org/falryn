@@ -73,16 +73,57 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
   {
-    // Declines when the draft is not a skill command prefix, so Tab still moves focus.
-    id: "composer.complete",
-    title: "Complete skill command",
+    // Declines when there is nothing to reopen or complete, so Tab still moves focus.
+    id: "composer.suggestions.reopen",
+    title: "Suggest mentions",
     description:
-      "Complete a draft such as /rel or /skill:re to a skill you can invoke; otherwise move focus.",
+      "Reopen suggestions for the $ word before the cursor, or complete a /skill command; otherwise move focus.",
     context: "composer",
     defaultBinding: "tab",
-    keywords: ["complete", "skill", "slash", "command"],
+    keywords: ["complete", "suggest", "mention", "skill", "slash", "command"],
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
+  },
+  {
+    id: "composer.suggestions.accept",
+    title: "Use suggestion",
+    description:
+      "Insert the selected suggestion as a mention. Return does the same while the list is open.",
+    context: "suggestions",
+    defaultBinding: "tab",
+    keywords: ["suggestion", "mention", "pick", "use"],
+    availability: (state) =>
+      state.hasSuggestions ? AVAILABLE : unavailable("no suggestion list is open"),
+  },
+  {
+    id: "composer.suggestions.next",
+    title: "Next suggestion",
+    description: "Select the next row of the suggestion list.",
+    context: "suggestions",
+    defaultBinding: "down",
+    keywords: ["suggestion", "next"],
+    availability: (state) =>
+      state.hasSuggestions ? AVAILABLE : unavailable("no suggestion list is open"),
+  },
+  {
+    id: "composer.suggestions.previous",
+    title: "Previous suggestion",
+    description: "Select the previous row of the suggestion list.",
+    context: "suggestions",
+    defaultBinding: "up",
+    keywords: ["suggestion", "previous"],
+    availability: (state) =>
+      state.hasSuggestions ? AVAILABLE : unavailable("no suggestion list is open"),
+  },
+  {
+    id: "composer.suggestions.dismiss",
+    title: "Close suggestions",
+    description: "Close the suggestion list and keep the draft as it is.",
+    context: "suggestions",
+    defaultBinding: "escape",
+    keywords: ["suggestion", "close", "dismiss"],
+    availability: (state) =>
+      state.hasSuggestions ? AVAILABLE : unavailable("no suggestion list is open"),
   },
   {
     id: "composer.includePaste",

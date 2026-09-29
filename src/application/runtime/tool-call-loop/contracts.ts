@@ -66,6 +66,12 @@ export type ToolRunnerRequest = {
      */
     readonly skills?: readonly import("../../../domain/context/skill-preload.ts").SkillPin[];
   };
+  /**
+   * Capabilities the user picked for this turn with `$` mentions (#1206). Captured by
+   * the host from admitted composer tokens, never decoded from model arguments. An
+   * explicit-only MCP server named here accepts this turn's calls as a user selection.
+   */
+  readonly userSelection?: { readonly mcpServers: readonly string[] };
   /** Native delegation and peer actions wait after their metadata reservation has released. */
   readonly afterAdmission?: (run: (signal: AbortSignal) => Promise<ToolInvocationOutcome>) => void;
   readonly composition?: CompositionProvenance;

@@ -1,4 +1,5 @@
 import { artifactId } from "../../domain/artifacts/index.ts";
+import { describeMentionReceipt } from "../../domain/context/composer-mentions.ts";
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
 import type { HistoryPayload } from "../../domain/sessions/history.ts";
 import { historyReferences } from "../../domain/sessions/history.ts";
@@ -407,7 +408,11 @@ export function blockFor(
           status: history.part === 0 ? "final" : "in-progress",
           kind: history.role === "user" ? "user-input" : "model-text",
           source: history.role === "user" ? "user" : "model",
-          summary: complete(`${history.role} content (${history.completion})`),
+          // A prompt with `$` mentions names what the user selected (#1206).
+          summary: complete(
+            (history.role === "user" ? describeMentionReceipt(history.tokens ?? []) : null) ??
+              `${history.role} content (${history.completion})`,
+          ),
           text,
         };
       return {

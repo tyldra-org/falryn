@@ -87,10 +87,18 @@ type Session = Rendered & {
   midTurn: ReturnType<typeof activeMidTurn>;
 };
 
-async function openWithMidTurn(): Promise<Session> {
+async function openWithMidTurn(
+  submission?: Parameters<typeof ShellApp>[0]["submission"],
+): Promise<Session> {
   const midTurn = activeMidTurn();
   const shell = await mount(
-    <ShellApp theme={THEME} model={MODEL} onExit={() => {}} midTurn={midTurn} />,
+    <ShellApp
+      theme={THEME}
+      model={MODEL}
+      onExit={() => {}}
+      midTurn={midTurn}
+      {...(submission === undefined ? {} : { submission })}
+    />,
     { shape: { columns: 100, rows: 24 } },
   );
   await shell.frame();
@@ -128,5 +136,46 @@ describe("live composer during an active turn", () => {
     expect(frame).toContain("Cancelling");
     expect(frame).toContain("Draft kept");
     expect(frame).toContain("keep this draft");
+  });
+
+  test("a draft with mentions is not queued, so the picks are never dropped (#1206, #954)", async () => {
+    using shell = await openWithMidTurn({
+      submit: (snapshot) => ({ kind: "accepted", snapshot }),
+      mentionSources: [
+        {
+          trigger: "$",
+          query: async () => ({
+            rows: [
+              {
+                id: "gmail",
+                label: "$gmail",
+                kind: "package",
+                detail: "package",
+                exact: true,
+                unavailable: null,
+                pick: {
+                  trigger: "$",
+                  kind: "package",
+                  identity: "package:gmail@1",
+                  label: "$gmail",
+                  source: "gmail",
+                  generation: "g1",
+                },
+              },
+            ],
+            total: 1,
+            notice: null,
+          }),
+        },
+      ],
+    });
+    await shell.focusComposer();
+    await shell.type("$gm");
+    await shell.frame("› $gmail");
+    await shell.press("\t");
+    await shell.frame("$gmail");
+    await shell.press("\r");
+    expect(await shell.frame("cannot be queued")).toContain("$gmail");
+    expect(shell.midTurn.view().queue.entries).toHaveLength(0);
   });
 });

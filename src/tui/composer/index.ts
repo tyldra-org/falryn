@@ -61,3 +61,9 @@ export {
   snapshotOf,
   UNAVAILABLE_SUBMISSION,
 } from "./submission.ts";
+export type {
+  ComposerSuggestionSource,
+  ComposerSuggestions,
+  SuggestionPage,
+  SuggestionRow,
+} from "./suggestions.ts";

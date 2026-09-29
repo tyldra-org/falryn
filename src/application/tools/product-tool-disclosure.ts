@@ -99,6 +99,11 @@ export type CapabilityDisclosureReceipt = {
   readonly deferredSchemaBytes: number;
   readonly deferredSchemaTokensEstimated: number;
   readonly discoveryHandle: string;
+  /**
+   * Capabilities preferred because the user picked them with `$` mentions (#1206).
+   * Origin `user-mention`; empty when the prompt had none.
+   */
+  readonly userMentioned: readonly CapabilityId[];
 };
 
 export type ProductToolDisclosure = {
@@ -115,6 +120,8 @@ export type ProductToolDisclosureOptions = {
   readonly task?: string;
   readonly intent?: WorkIntent;
   readonly preferredCapabilityIds?: readonly CapabilityId[];
+  /** The subset of preferred IDs the user picked with mentions, for the receipt. */
+  readonly userMentionedCapabilityIds?: readonly CapabilityId[];
   readonly schemaTokenBudget?: number;
   readonly deferredMaximum?: number;
   readonly deferredSchemaTokenBudget?: number;
@@ -450,6 +457,7 @@ export function discloseProductTools(
         0,
       ),
       discoveryHandle: `capability-catalog:${capabilityRegistry.generation}`,
+      userMentioned: [...(options.userMentionedCapabilityIds ?? [])],
     },
   };
 }
