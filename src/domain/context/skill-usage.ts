@@ -1,8 +1,8 @@
 /**
- * Source-bound skill usage and context-cost observations (#1191), derived only from stored
- * `instructions.resolved` receipts. Nothing here reads a skill, a prompt or the file system:
- * a receipt already names each skill source's decision, its routing and the context its
- * admission contributed. Counts are separate observations, never one usage counter.
+ * Source-bound skill usage and context-cost observations (#1191, #1192), derived only from
+ * stored facts: `instructions.resolved` receipts and the metadata fact a completed
+ * `skill_resource` read records. Nothing here reads a skill, a resource, a prompt or the
+ * file system. Counts are separate observations, never one usage counter.
  */
 import type { RuntimeEvent } from "../sessions/index.ts";
 import type {
@@ -11,6 +11,8 @@ import type {
   SkillRouteFact,
 } from "./instruction-source-receipt.ts";
 import { PROMPT_TOKEN_ESTIMATOR } from "./prompt-composition.ts";
+import { skillPreloadReason } from "./skill-preload.ts";
+import type { SkillResourceFact } from "./skill-resources.ts";
 
 export const SKILL_USAGE_LIMITS = Object.freeze({
   rows: 256,
@@ -21,6 +23,8 @@ export const SKILL_USAGE_LIMITS = Object.freeze({
 /**
  * Each observation a receipt can record. `selected` is the source that won name
  * resolution in scope; `loaded` means its complete body entered the request.
+ * `invoked` counts explicit user invocations; `resource-loaded` counts supporting files
+ * whose text a `skill_resource` read returned.
  */
 export const SKILL_OBSERVATIONS = [
   "discovered",
@@ -31,11 +35,35 @@ export const SKILL_OBSERVATIONS = [
   "recommended",
   "loaded",
   "refused",
+  "invoked",
+  "resource-loaded",
 ] as const;
 export type SkillObservation = (typeof SKILL_OBSERVATIONS)[number];
 
 /** Observations Falryn has no producer for yet; they are reported, never counted as zero. */
-export const UNRECORDED_SKILL_OBSERVATIONS = ["invoked", "resource-loaded"] as const;
+export const UNRECORDED_SKILL_OBSERVATIONS: readonly string[] = [];
+
+/** The capability whose completed events carry a `SkillResourceFact`. */
+export const SKILL_RESOURCE_CAPABILITY = "builtin:workspace/skill_resource@1";
+
+/**
+ * Who caused a skill to load. The route reason names it: an explicit user invocation,
+ * automatic routing, or a child definition's or schedule's preload. A reason this build
+ * does not know stays `unknown`, never guessed.
+ */
+export const SKILL_INITIATORS = ["explicit", "automatic", "child", "schedule", "unknown"] as const;
+export type SkillInitiator = (typeof SKILL_INITIATORS)[number];
+const INITIATOR_BY_REASON: Readonly<Record<string, SkillInitiator>> = {
+  "explicit-invocation": "explicit",
+  "named-in-task": "automatic",
+  "session-active": "automatic",
+  "unambiguous-task-match": "automatic",
+  [skillPreloadReason("child")]: "child",
+  [skillPreloadReason("schedule")]: "schedule",
+};
+export function skillRouteInitiator(reason: string): SkillInitiator {
+  return INITIATOR_BY_REASON[reason] ?? "unknown";
+}
 
 /**
  * Context contributed by counted admissions. `bytes` sums every known size; `tokens`
@@ -77,10 +105,14 @@ export type SkillUsageRow = {
   /** Loads of a body an identical earlier admission already carried. */
   readonly reused: number;
   readonly reasons: Readonly<Record<string, number>>;
+  /** Loaded routes by who caused them (#1192); an unknown reason stays `unknown`. */
+  readonly initiators: Readonly<Record<SkillInitiator, number>>;
   /** Admissions that observed this row, by the admission scope that recorded them. */
   readonly scopes: { readonly main: number; readonly child: number; readonly workflow: number };
   readonly body: ContributionTotal;
   readonly listing: ContributionTotal;
+  /** Supporting files whose text a `skill_resource` read returned; never the body. */
+  readonly resources: ContributionTotal;
   readonly first: ObservationRef;
   readonly last: ObservationRef;
   readonly versions?: readonly SkillUsageVersion[];
@@ -99,6 +131,10 @@ export type SkillUsageTotals = {
   /** The whole routing section, which also holds text no single route owns. */
   readonly routingSection: ContributionTotal;
   readonly duplicates: number;
+  /** Resource reads with no admission of their skill in the window; not attributed. */
+  readonly resourcesUnattributed: number;
+  /** Completed resource reads recorded before reads carried a fact; not counted. */
+  readonly resourceReadsWithoutFact: number;
   readonly estimator: typeof PROMPT_TOKEN_ESTIMATOR;
 };
 
@@ -113,14 +149,21 @@ type MutableRow = {
   counts: Record<SkillObservation, number>;
   reused: number;
   reasons: Record<string, number>;
+  initiators: Record<SkillInitiator, number>;
   scopes: { main: number; child: number; workflow: number };
   body: MutableTotal;
   listing: MutableTotal;
+  resources: MutableTotal;
   first: ObservationRef;
   last: ObservationRef;
 };
 
 const emptyTotal = (): MutableTotal => ({ count: 0, bytes: 0, tokens: 0, unestimated: 0 });
+const noInitiators = () =>
+  Object.fromEntries(SKILL_INITIATORS.map((initiator) => [initiator, 0])) as Record<
+    SkillInitiator,
+    number
+  >;
 
 function addContribution(
   total: MutableTotal,
@@ -137,8 +180,10 @@ function addContribution(
 type SkillSourceDecision = InstructionSourceReceipt["sources"][number];
 
 /**
- * Fold receipts into rows. Each producing event is counted once, however many pages or
- * projections deliver it; a second delivery is reported as a duplicate.
+ * Fold receipts and resource facts into rows. Each fact is counted once by its producer
+ * identity (an admission's scope, execution, generation and content; a resource read's
+ * invocation and bound skill), however many streams, pages, imports or projections
+ * deliver it; a second delivery is reported as a duplicate.
  */
 export function createSkillUsageFold(options: {
   readonly skill?: string | undefined;
@@ -146,12 +191,26 @@ export function createSkillUsageFold(options: {
 }) {
   const rows = new Map<string, MutableRow>();
   const seen = new Set<string>();
+  const produced = new Set<string>();
+  /** The admission generation of each turn, and the latest of each bound skill body. */
+  const turnGeneration = new Map<string, string>();
+  const bodyGeneration = new Map<string, string>();
   let observationsBeyondRowLimit = 0;
   let admissions = 0;
   let reusedAdmissions = 0;
   let sourcesOmitted = 0;
   let duplicates = 0;
+  let resourcesUnattributed = 0;
+  let resourceReadsWithoutFact = 0;
   const section = emptyTotal();
+  const wanted = (name: string) => options.skill === undefined || options.skill === name;
+  const refOf = (event: RuntimeEvent): ObservationRef => ({
+    sessionId: String(event.correlation.sessionId),
+    turnId: String("turnId" in event.correlation ? event.correlation.turnId : ""),
+    eventId: String(event.eventId),
+    sequence: Number(event.sequence),
+    at: String(event.occurredAt),
+  });
 
   const row = (
     ref: ObservationRef,
@@ -180,9 +239,11 @@ export function createSkillUsageFold(options: {
         >,
         reused: 0,
         reasons: {},
+        initiators: noInitiators(),
         scopes: { main: 0, child: 0, workflow: 0 },
         body: emptyTotal(),
         listing: emptyTotal(),
+        resources: emptyTotal(),
         first: ref,
         last: ref,
       };
@@ -192,9 +253,63 @@ export function createSkillUsageFold(options: {
     return current;
   };
 
+  /** A completed `skill_resource` read: its files count against the skill it was bound to. */
+  const addResource = (
+    event: Extract<RuntimeEvent, { readonly kind: "capability.invocation.completed" }>,
+  ): "counted" | "ignored" | "duplicate" => {
+    if (String(event.capabilityId) !== SKILL_RESOURCE_CAPABILITY) return "ignored";
+    const id = String(event.eventId);
+    if (seen.has(id)) {
+      duplicates++;
+      return "duplicate";
+    }
+    seen.add(id);
+    const fact: SkillResourceFact | undefined = event.payload.skillResources;
+    if (fact === undefined) {
+      if (event.payload.outcome.kind === "completed") resourceReadsWithoutFact++;
+      return "counted";
+    }
+    const producer = JSON.stringify([
+      "resource",
+      String(event.correlation.workspaceId),
+      String(event.invocationId),
+      fact.source,
+      fact.skillDigest,
+    ]);
+    if (produced.has(producer)) {
+      duplicates++;
+      return "duplicate";
+    }
+    produced.add(producer);
+    if (!wanted(fact.skill)) return "counted";
+    const ref = refOf(event);
+    const generation =
+      turnGeneration.get(JSON.stringify([ref.sessionId, ref.turnId])) ??
+      bodyGeneration.get(JSON.stringify([fact.source, fact.skillDigest]));
+    if (generation === undefined) {
+      resourcesUnattributed++;
+      return "counted";
+    }
+    const target = row(ref, generation, {
+      name: fact.skill,
+      source: fact.source,
+      origin: null,
+      path: null,
+      digest: fact.skillDigest,
+    });
+    if (target === null) return "counted";
+    for (const file of fact.files)
+      if (file.status === "loaded") {
+        target.counts["resource-loaded"]++;
+        addContribution(target.resources, file.bytes, { tokens: file.tokens });
+      }
+    return "counted";
+  };
+
   return {
-    /** Count one stored event; anything but an admission receipt is ignored. */
+    /** Count one stored event; anything but an admission receipt or resource read is ignored. */
     add(event: RuntimeEvent): "counted" | "ignored" | "duplicate" {
+      if (event.kind === "capability.invocation.completed") return addResource(event);
       if (event.kind !== "instructions.resolved") return "ignored";
       const id = String(event.eventId);
       if (seen.has(id)) {
@@ -203,15 +318,24 @@ export function createSkillUsageFold(options: {
       }
       seen.add(id);
       const receipt = event.payload;
-      const ref: ObservationRef = {
-        sessionId: String(event.correlation.sessionId),
-        turnId: String(event.correlation.turnId),
-        eventId: id,
-        sequence: Number(event.sequence),
-        at: String(event.occurredAt),
-      };
+      const producer = JSON.stringify([
+        "admission",
+        String(event.correlation.workspaceId),
+        receipt.scope.root,
+        receipt.scope.directory,
+        receipt.scope.kind,
+        receipt.scope.execution,
+        receipt.generation,
+        receipt.contentDigest,
+      ]);
+      if (produced.has(producer)) {
+        duplicates++;
+        return "duplicate";
+      }
+      produced.add(producer);
+      const ref = refOf(event);
+      turnGeneration.set(JSON.stringify([ref.sessionId, ref.turnId]), receipt.generation);
       const scope = receipt.scope.kind;
-      const wanted = (name: string) => options.skill === undefined || options.skill === name;
       admissions++;
       if (receipt.reused) reusedAdmissions++;
       if (receipt.omitted > 0) sourcesOmitted++;
@@ -261,6 +385,14 @@ export function createSkillUsageFold(options: {
               tokens: route.tokens === undefined ? null : route.tokens,
             });
             if (receipt.reused) target.reused++;
+            const initiator = skillRouteInitiator(route.reason);
+            target.initiators[initiator]++;
+            if (initiator === "explicit") target.counts.invoked++;
+            if (target.source !== null && target.digest !== null)
+              bodyGeneration.set(
+                JSON.stringify([target.source, target.digest]),
+                receipt.generation,
+              );
           }
           if (route.listing !== undefined)
             addContribution(target.listing, route.listing.bytes, route.listing);
@@ -289,6 +421,8 @@ export function createSkillUsageFold(options: {
         sourcesOmitted,
         routingSection: { ...section },
         duplicates,
+        resourcesUnattributed,
+        resourceReadsWithoutFact,
         estimator: PROMPT_TOKEN_ESTIMATOR,
       };
     },
@@ -331,9 +465,11 @@ function freezeRow(row: MutableRow): SkillUsageRow {
     ...row,
     counts: { ...row.counts },
     reasons: { ...row.reasons },
+    initiators: { ...row.initiators },
     scopes: { ...row.scopes },
     body: { ...row.body },
     listing: { ...row.listing },
+    resources: { ...row.resources },
   };
 }
 
@@ -382,6 +518,12 @@ function aggregateBySource(rows: readonly MutableRow[]): SkillUsageRow[] {
       ) as Record<SkillObservation, number>,
       reused: a.reused + next.reused,
       reasons,
+      initiators: Object.fromEntries(
+        SKILL_INITIATORS.map((initiator) => [
+          initiator,
+          a.initiators[initiator] + next.initiators[initiator],
+        ]),
+      ) as Record<SkillInitiator, number>,
       scopes: {
         main: a.scopes.main + next.scopes.main,
         child: a.scopes.child + next.scopes.child,
@@ -389,6 +531,7 @@ function aggregateBySource(rows: readonly MutableRow[]): SkillUsageRow[] {
       },
       body: sum(a.body, next.body),
       listing: sum(a.listing, next.listing),
+      resources: sum(a.resources, next.resources),
       first: next.first.at < a.first.at ? next.first : a.first,
       last: next.last.at >= a.last.at ? next.last : a.last,
     };

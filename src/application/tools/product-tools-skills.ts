@@ -9,6 +9,7 @@ import {
   SKILL_RESOURCE_KINDS,
   SKILL_RESOURCE_LIMITS,
   SKILL_RESOURCE_STATUSES,
+  skillResourceFact,
 } from "../../domain/context/skill-resources.ts";
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import {
@@ -85,7 +86,12 @@ function outcome(result: SkillResourceResult): ToolInvocationOutcome {
   const { status: _status, ...output } = result;
   return result.cancelled
     ? { status: "cancelled", effect: "none" }
-    : { status: "completed", output, effect: "completed" };
+    : {
+        status: "completed",
+        output,
+        effect: "completed",
+        skillResources: skillResourceFact(result),
+      };
 }
 
 export function composeProductSkillTools(ports: ProductSkillToolPorts): ProductSkillTools {

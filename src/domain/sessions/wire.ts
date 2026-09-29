@@ -4,6 +4,7 @@ import {
   instructionRejectionSchema,
   instructionSourceReceiptSchema,
 } from "../context/instruction-source-receipt.ts";
+import { skillResourceFactSchema } from "../context/skill-resources.ts";
 import { scheduleNoticeSchema } from "../orchestration/schedule-state.ts";
 import { workflowReceiptSchema } from "../orchestration/workflow-state.ts";
 import {
@@ -374,6 +375,7 @@ const capabilityInvocationCompletedPayloadSchema: z.ZodType<CapabilityInvocation
       )
       .optional(),
     composition: compositionProvenanceSchema.optional(),
+    skillResources: skillResourceFactSchema.optional(),
     historyId: z.string().min(1).max(256).optional(),
     observedStatus: z
       .enum([
@@ -674,6 +676,9 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
         outcome: outcomeToJson(event.payload.outcome),
         ...(event.payload.admission === undefined ? {} : { admission: event.payload.admission }),
         ...(event.payload.sandbox === undefined ? {} : { sandbox: event.payload.sandbox }),
+        ...(event.payload.skillResources === undefined
+          ? {}
+          : { skillResources: event.payload.skillResources }),
         ...(event.payload.historyId === undefined ? {} : { historyId: event.payload.historyId }),
         ...(event.payload.observedStatus === undefined
           ? {}

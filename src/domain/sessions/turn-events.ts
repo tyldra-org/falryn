@@ -135,6 +135,7 @@ export type TurnLifecycleFact =
       readonly historyId?: string;
       readonly observedStatus?: CapabilityInvocationCompletedPayload["observedStatus"];
       readonly degradation?: CapabilityInvocationCompletedPayload["degradation"];
+      readonly skillResources?: CapabilityInvocationCompletedPayload["skillResources"];
     };
 
 /**
@@ -336,6 +337,7 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
           ...(fact.historyId === undefined ? {} : { historyId: fact.historyId }),
           ...(fact.observedStatus === undefined ? {} : { observedStatus: fact.observedStatus }),
           ...(fact.degradation === undefined ? {} : { degradation: fact.degradation }),
+          ...(fact.skillResources === undefined ? {} : { skillResources: fact.skillResources }),
         },
       };
       return event;

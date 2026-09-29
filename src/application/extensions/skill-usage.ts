@@ -263,7 +263,9 @@ export async function querySkillUsage(
         omissions.length === 0 &&
         omissionsOmitted === 0 &&
         totals.observationsBeyondRowLimit === 0 &&
-        totals.sourcesOmitted === 0,
+        totals.sourcesOmitted === 0 &&
+        totals.resourcesUnattributed === 0 &&
+        totals.resourceReadsWithoutFact === 0,
     },
     cancelled,
     next: next === null ? null : encodeSkillUsageCursor(query, next),
@@ -295,8 +297,13 @@ export function skillUsageLines(report: SkillUsageReport): string[] {
       .join(", ");
     lines.push(
       `${row.name} [${row.origin ?? "unresolved source"}${row.path === null ? "" : ` ${row.path}`}] ${row.generation === null ? `${plural(row.versions?.length ?? 0, "generation")}` : `generation ${row.generation.slice(7, 19)}`}: ${counts || "no observations"}${row.reused > 0 ? `; reused ${row.reused}` : ""}`,
-      `  body ${estimate(row.body)}; listing ${estimate(row.listing)}; scopes main ${row.scopes.main}, child ${row.scopes.child}, workflow ${row.scopes.workflow}`,
+      `  body ${estimate(row.body)}; listing ${estimate(row.listing)}; resources ${estimate(row.resources)}; scopes main ${row.scopes.main}, child ${row.scopes.child}, workflow ${row.scopes.workflow}`,
     );
+    const initiators = Object.entries(row.initiators)
+      .filter(([, count]) => count > 0)
+      .map(([initiator, count]) => `${initiator} ${count}`)
+      .join(", ");
+    if (initiators !== "") lines.push(`  loaded by ${initiators}`);
   }
   if (report.observationsBeyondRowLimit > 0)
     lines.push(
@@ -305,8 +312,17 @@ export function skillUsageLines(report: SkillUsageReport): string[] {
   lines.push(
     `Routing sections: ${estimate(report.routingSection)}. Estimates use ${report.estimator}; they are not provider-measured.`,
     "Provider-reported input totals: unavailable (not recorded per session); never attributed to a skill.",
-    `Not recorded yet: ${report.unrecorded.join(", ")}.`,
   );
+  if (report.unrecorded.length > 0)
+    lines.push(`Not recorded yet: ${report.unrecorded.join(", ")}.`);
+  if (report.resourcesUnattributed > 0)
+    lines.push(
+      `${plural(report.resourcesUnattributed, "resource read")} had no admission of their skill in this window and were not attributed.`,
+    );
+  if (report.resourceReadsWithoutFact > 0)
+    lines.push(
+      `${plural(report.resourceReadsWithoutFact, "resource read")} predate recorded resource facts; their files are unknown, not zero.`,
+    );
   for (const omission of report.coverage.omissions)
     lines.push(
       `Omitted: ${omission.kind} in session ${omission.sessionId} at sequence ${omission.sequence}${omission.count > 1 ? ` (${omission.count} events)` : ""}.`,
