@@ -1396,14 +1396,36 @@ Package descriptors have no native binding and remain unavailable even
 when their scoped preference is enabled. Rehydration does not prepare full
 instructions or schemas, resolve credentials, start code, or contact a model.
 
-### Curated catalog listings
+### Curated catalog listings and marketplaces
 
-`falryn extension listing --input request.json` imports and pages curated catalog
-metadata. The request is `{ "operation": "import", "file": "catalog.json" }` or
-`{ "operation": "list", "query": { ... } }` with optional `sourceId`, `kind`, `text`,
-`offset` and `limit` (1–100, default 50). Import reads one local file; nothing is
-fetched, downloaded, installed, enabled or trusted. There is no remote source or
-search yet.
+`falryn extension listing --input request.json` imports, refreshes, lists and
+inspects curated catalog metadata. The request is one of:
+
+- `{ "operation": "import", "file": "catalog.json" }` reads one local file.
+- `{ "operation": "refresh" }` or `{ "operation": "refresh", "sourceId": "id" }`
+  fetches configured marketplaces.
+- `{ "operation": "list", "query": { ... } }` with optional `sourceId`, `kind`,
+  `provides`, `text`, `installable`, `offset` and `limit` (1–100, default 50).
+- `{ "operation": "inspect", "query": { "sourceId", "listingId", "packageVersion"? } }`.
+
+Only import and refresh write, and only catalog metadata. Nothing downloads, installs,
+enables, starts or trusts a package.
+
+Marketplaces are user-scope configuration: `connections.marketplaces.sources`
+(flat key `tools.marketplaces`), at most 16 entries of `id`, an https `url` without
+credentials, query or fragment, `enabled` (default true), `maxAgeHours` (1–720,
+default 24) and an optional `credential` reference or `credentialEnvironment`.
+Configuring one contacts nothing. Refresh fetches each enabled marketplace in
+order, or one named source, with one GET per source admitted by the product
+resource owner. Every resolved address must be public and the connection is pinned
+to it; redirects, non-200 statuses, compressed or non-`application/json` bodies and
+bodies over 1 MiB are refused, with a 30-second limit. The credential is resolved for
+consumer `marketplace:<id>` and sent only as a bearer token to that URL. The
+document's `source.id` must equal the configured `id`
+(`marketplace-source-mismatch`), and it is then ingested exactly like a local
+import, including the sequence rules below. A failed, refused or cancelled source
+leaves its cached catalog unchanged; other sources still refresh, and the command
+reports each source's result and fails when any source did.
 
 A catalog is a `falryn.curated-catalog` generation-1 JSON document of at most 1 MiB:
 `source` (`id`, `title`), a positive `sequence`, `publishedAt` and up to 512
@@ -1436,8 +1458,40 @@ previously accepted form is kept and listed as retained with the sequence it cam
 from, unless the new catalog lists its package under another entry. Other sources are
 never changed; listing shows which other sources list the same exact package. A stored
 record with an unknown record version or a changed body is reported unavailable and
-is not replaced by a later import. Listing orders by source and listing ID, with
-per-version host compatibility and withdrawal. Human output labels claims as
+is not replaced by a later import. Record version 2 stores the origin: `file`, or
+`marketplace` with the exact URL, fetch time and received-document digest. Version-1
+records read as file imports. Fetching the same catalog again renews only its fetch
+time.
+
+Listing and inspection read only stored records and work offline. Each source
+reports its origin and freshness:
+
+- `local`: a file import, with no freshness claim.
+- `fresh` or `stale`: the fetch time against `maxAgeHours`.
+- `unconfigured`: fetched from a URL no longer configured for that source.
+- `disabled`: listings are withheld while the marketplace is disabled.
+- `unknown`: configuration could not be read.
+
+Withdrawals are shown as of the fetch; a stale catalog never claims they are
+current. Without `text`, listing orders by source and listing ID. With `text`,
+listing ranks by exact ID or title, then prefix, then substring, then tag, then
+summary, and then orders by listing ID and source. `installable` keeps listings with
+a compatible, unwithdrawn version. Editorial rank, labels and featured flags never
+order, filter or trust anything.
+
+Inspect selects the requested version, or else the newest compatible unwithdrawn
+version, or else the newest. It shows the publisher, source URL and freshness,
+sequence, exact package identity and identity digest, compatibility, withdrawal,
+contribution kinds, catalog claims (labelled unverified) and other sources listing
+the same package. The executable profile is `unknown-until-local-inspection`.
+Install is refused for a withdrawn or incompatible version and for a catalog that is
+not `local` or `fresh` (`source-not-current`). Otherwise it is
+`marketplace-acquisition-unavailable`: a marketplace cannot deliver package bytes,
+so the package must be obtained separately and installed with `falryn package
+install`. Install does not check it against a listing; compare the listed package
+and manifest digests with the installed package's own inspection. A later catalog that
+withdraws or drops the version changes what inspect shows; earlier results are not
+reused. OpenTUI marketplace views are not provided. Human output labels claims as
 unverified.
 
 Headless runs and new interactive sessions rehydrate before producer composition.

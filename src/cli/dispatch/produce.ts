@@ -146,8 +146,18 @@ export async function produce(
     case "extension.listing":
       if (options.extensionListingArgs === undefined)
         throw new Error("Missing extension listing arguments.");
-      if (options.extensionListingArgs.operation === "import") onMutationStart?.();
-      return runExtensionListing(services, options.extensionListingArgs, signal);
+      if (
+        options.extensionListingArgs.operation === "import" ||
+        options.extensionListingArgs.operation === "refresh"
+      )
+        onMutationStart?.();
+      return runExtensionListing(
+        services,
+        options.extensionListingArgs,
+        globals,
+        signal,
+        options.governance?.ownedProcesses,
+      );
     case "extension.skills":
       if (options.extensionSkillsArgs === undefined)
         throw new Error("Missing extension skills arguments.");

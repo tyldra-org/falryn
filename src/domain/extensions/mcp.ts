@@ -45,6 +45,14 @@ const common = {
   explicitOnly: z.boolean().default(false),
   protocol: z.enum([MCP_PROTOCOL_VERSION, "legacy"]).default(MCP_PROTOCOL_VERSION),
 };
+/** A shared credential-store reference in a user setting; its consumer is its owner. */
+export const credentialSettingSchema = z.strictObject({
+  storeKind: z.enum(["operating-system-keychain", "environment"]),
+  locator: z.string().min(1).max(MAX_CREDENTIAL_LOCATOR_LENGTH),
+  accountLabel: z.string().min(1).max(MAX_CREDENTIAL_LABEL_LENGTH).nullable().default(null),
+});
+/** Shorthand for an environment credential reference. */
+export const credentialEnvironmentSchema = environmentName;
 export const mcpConnectionSchema = z
   .discriminatedUnion("transport", [
     z.strictObject({
@@ -83,13 +91,7 @@ export const mcpConnectionSchema = z
         }
       }),
       /** A shared credential-store reference; its consumer is always this server. */
-      credential: z
-        .strictObject({
-          storeKind: z.enum(["operating-system-keychain", "environment"]),
-          locator: z.string().min(1).max(MAX_CREDENTIAL_LOCATOR_LENGTH),
-          accountLabel: z.string().min(1).max(MAX_CREDENTIAL_LABEL_LENGTH).nullable().default(null),
-        })
-        .optional(),
+      credential: credentialSettingSchema.optional(),
       /** Shorthand for an environment credential reference. */
       credentialEnvironment: environmentName.optional(),
     }),
