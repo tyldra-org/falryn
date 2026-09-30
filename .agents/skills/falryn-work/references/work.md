@@ -110,11 +110,10 @@ below for acceptance discovered incomplete after merge.
 
 During implementation, run focused checks. When the candidate is complete, they
 pass and the pre-PR pass is clean, push it and open the pull request (and any
-companion) as a draft, so CI runs while the full validation required by
-`DEVELOPMENT.md` runs locally. Mark it ready only after both pass and review is
-complete. Run the full local suite once, on the final candidate. A later repair
-gets focused checks, plus a new full local run only when `DEVELOPMENT.md` requires
-one for that repair; CI proves the new head either way. Reuse results only when
+companion) as a draft, so CI runs the full matrix while review proceeds. Mark it
+ready only after its checks pass and review is complete. The complete suite is CI's
+job; run it locally only where `DEVELOPMENT.md` requires it. A later repair gets
+focused checks, and CI proves the new head. Reuse results only when
 revision, dependencies, configuration, toolchain,
 environment and scope still match. A new command or stage alone is not a reason
 to repeat a successful check.
@@ -181,7 +180,8 @@ acceptance and integration proof. Refresh evidence affected by landing before
 the final completion report; reuse unchanged proof rather than repeating the
 entire review or test suite. Verify actual issue closure. Reconcile applicable
 Roadmap field, parent and documentation state without declaring incomplete acceptance Done.
-Run affected Roadmap audits. Safely synchronize eligible clean default checkouts
+Run the affected Roadmap audits once, after the last reconciliation mutation.
+Safely synchronize eligible clean default checkouts
 through git-operations; preserve dirty, detached, divergent or locked checkouts.
 Report merge SHAs and recovery through a new revert PR. Branch deletion and
 release publication need their own authority.

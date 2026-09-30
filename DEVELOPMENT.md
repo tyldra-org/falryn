@@ -230,15 +230,16 @@ The source suite excludes `*.compiled.test.ts`. The compiled smoke scripts and
 the CI compiled-smoke jobs run those suites against a fresh build, so a stale
 `dist/falryn` never affects `bun run check`.
 
-Run `bun run check` and `bun run build` before requesting review. A pull request
-may be opened as a draft once focused tests pass, so CI runs while the full local
-suite does; mark it ready for review only after both pass.
-After a review or CI repair, rerun its focused checks. Rerun the full local suite
-only when the repair changes product source or shared test fixtures; a repair
-confined to the failing tests themselves or to documentation is proven by its
-focused tests and CI on the new head. Packaging,
-entrypoint, terminal, or compiled-runtime changes also need the relevant
-compiled smoke command from `package.json`. Performance claims need the matching
+Before opening a pull request, run `bun run check:static` and `bun run test:changed`,
+or the focused tests for the change. Open the pull request as a draft once they pass:
+CI runs the full matrix on it, and the draft is marked ready for review when its checks
+pass. The complete suite is CI's job. Run `bun run check` locally only when CI cannot
+answer the question, such as reproducing a failing shard, or when you want the result
+before pushing a change that touches widely imported modules.
+After a review or CI repair, rerun its focused checks; CI proves the new head. Packaging,
+entrypoint, terminal, or compiled-runtime changes also need `bun run build` and the
+relevant compiled smoke command from `package.json` before review, because a compiled
+failure is otherwise found only by a full CI cycle. Performance claims need the matching
 measurement or benchmark script and a recorded comparison. Report skipped or
 unavailable checks instead of treating them as passes.
 

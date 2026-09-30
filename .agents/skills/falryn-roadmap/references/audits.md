@@ -60,6 +60,9 @@ product discovery to continue a known PR.
 | Priority, Readiness, release milestone, release exception, hierarchy, blockers, closure or PR state | Roadmap audit |
 | Both | Issue-readiness, then Roadmap |
 
+Refresh once, after the last mutation of a reconciliation, not after each edit. An audit
+taken between two mutations describes a state that is about to change.
+
 Both snapshot formats use schema version 4. Older schemas are intentionally
 rejected. Do not convert them silently. Use `--baseline` only for a reviewed
 same-repository issue-readiness comparison. JSON is an output format, not weaker
