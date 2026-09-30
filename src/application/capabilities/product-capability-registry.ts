@@ -32,6 +32,8 @@ function filesystemFamily(name: string): CapabilityFamily {
     name.startsWith("mutate_") ||
     name.startsWith("apply_") ||
     name.startsWith("preview_patch") ||
+    // Preparing an edit is part of editing even though it writes nothing itself.
+    name.startsWith("prepare_") ||
     name === "scratch_write" ||
     name === "scratch_discard"
   ) {

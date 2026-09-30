@@ -2478,8 +2478,47 @@ browser or notebook host and reports those targets unavailable. Binary,
 extracted-document and sources above the source ceiling are unavailable in this
 text route. Native structured Search has no qualified Hush projection adapter
 and returns bounded structured facts with that reason. Heuristic outlines are
-structural evidence, not exact edit preimages. Revision-bound edit preparation
-is not implemented by this reader.
+structural evidence, not exact edit preimages; see Evidence-bound text replacements.
+
+## Evidence-bound text replacements
+
+Live turns register `prepare_replacements` with `read` and `search`. One call takes a
+version-1 `text-replacements` request: up to 8 `targets`, each an `evidenceRef` from
+Read or Search and up to 32 exact `oldText`/`newText` `replacements`, plus up to 8
+read-only `dependencies`. Every item has a unique `itemId`. Omitted `freshness`
+(`exact-revision`), `replaceAll` (false) and `dependencies` normalize before strict
+validation, but provider schemas require them explicitly. Preparation writes nothing.
+It returns per-target facts, a native `patch` bound to the previewed bytes (with
+`expectedPlanId` and each file's digest), and the native preview. The model applies
+that `patch` unchanged with `apply_patch`.
+
+Each reference is revalidated by the shared resource owner, so wrong-scope,
+fabricated, expired, changed-policy and rebound references refuse with their own
+codes. Only exact-fidelity workspace evidence is accepted, and one file may appear
+only once. `exact-revision` refuses evidence that no longer describes the file.
+`covered-ranges` accepts an unrelated change only when every covered byte range is
+identical at its original offset; a shifted range needs fresh evidence. A
+non-`replaceAll` `oldText` must occur exactly once inside the covered text, and
+`replaceAll` needs evidence covering the whole file. Replacements address the same
+original bytes and may not overlap. Line breaks in either text take the file's own
+single style. Requests are limited to 32 native hunks of at most 256 lines.
+
+Each refusal names its code, request item and one recovery (`read-again`,
+`read-more`, `narrow-old-text`, `split-request`, `fix-request`, `use-write-files` or
+`retry`). Every lowering is replayed through the native hunk applier and refused
+unless the result is exactly the requested text. UTF-8 files keep their BOM, CRLF
+or LF and final newline. Mixed newlines, other encodings, binary text and changes
+the line model cannot express, such as removing a final line break, are refused.
+
+Native patch plans accept optional read-only `dependencies` (path and expected
+digest). Any change refuses preview and apply before a write
+(`dependency-changed`), and a written file cannot also be a dependency. The native
+patcher now refuses UTF-16 targets instead of re-encoding them and keeps a UTF-8
+BOM. After a write, `apply_patch` returns `successors`: a fresh evidence reference
+for each applied file's changed lines, or `changed-after-apply` or `unavailable`. A
+failure to issue one never hides the write. Preflight is not an atomic multi-file
+commit; the existing apply policy, per-file writes and rollback still apply.
+Covered-range relocation, hashline addressing and Todo attachment are not provided.
 
 ## Session scratch resources
 

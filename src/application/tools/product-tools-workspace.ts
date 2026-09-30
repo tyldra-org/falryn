@@ -65,6 +65,7 @@ import {
   WRITE_OPERATIONS,
   WRITE_POLICIES,
 } from "../../domain/workspace/index.ts";
+import { textReplacementsInputSchema } from "../../domain/workspace/text-replacements.ts";
 import type { ScratchResourcePort } from "../artifacts/scratch-resources.ts";
 import { createLoomPort, type LoomPort } from "../compression/loom.ts";
 import { createCompactDocumentReader } from "../documents/compact-document-read.ts";
@@ -77,6 +78,10 @@ import type { ToolRunnerPort, ToolRunnerRequest } from "../runtime/tool-call-loo
 import type { ProductReadOutputMode } from "../workspace/product-read.ts";
 import { createProductReadCoordinator, productReadInputSchema } from "../workspace/product-read.ts";
 import { searchResources } from "../workspace/resource-search.ts";
+import {
+  createTextReplacementPreparer,
+  describeTextReplacementRefusal,
+} from "../workspace/text-replacements.ts";
 import { createWorkspaceDiscovery } from "../workspace/workspace-discovery.ts";
 import { createWorkspaceListing } from "../workspace/workspace-listing.ts";
 import { createWorkspaceMutator } from "../workspace/workspace-mutate.ts";
@@ -86,6 +91,30 @@ import { createWorkspaceTextSearch } from "../workspace/workspace-search.ts";
 import { createWorkspaceWriter } from "../workspace/workspace-write.ts";
 
 export const PRODUCT_WORKSPACE_TOOLS_OWNER = "#711";
+
+/** Model-facing help for evidence-bound replacements, including one complete example. */
+const PREPARE_REPLACEMENTS_HELP =
+  "Prepare exact text replacements in one or several existing files in one call, using evidenceRef values from read or search results (resource-evidence-…). Each oldText must match exactly once inside the evidence's covered text; replaceAll needs evidence covering the whole file. Nothing is written: apply the returned patch object unchanged with apply_patch. Example: " +
+  JSON.stringify({
+    version: 1,
+    kind: "text-replacements",
+    freshness: "exact-revision",
+    dependencies: [],
+    targets: [
+      {
+        itemId: "source",
+        evidenceRef: "<evidence reference from read>",
+        replacements: [
+          {
+            itemId: "rename",
+            oldText: "export const oldName =",
+            newText: "export const newName =",
+            replaceAll: false,
+          },
+        ],
+      },
+    ],
+  });
 
 const pathInput = z.object({ path: z.string().min(1) }).strict() as z.ZodType<
   Readonly<Record<string, unknown>>
@@ -245,6 +274,11 @@ const patchPlanInput = z
       )
       .min(1)
       .max(HARD_MAX_PATCH_TARGETS),
+    /** Files the plan reads but never writes; any change refuses the whole plan. */
+    dependencies: z
+      .array(z.object({ path: workspacePath, expectedDigest: contentDigestInput }).strict())
+      .max(HARD_MAX_PATCH_TARGETS)
+      .optional(),
   })
   .strict() as z.ZodType<Readonly<Record<string, unknown>>>;
 
@@ -410,6 +444,63 @@ export function composeProductWorkspaceTools(
     commands: ports.commands,
   });
   const patcher = createWorkspacePatcher({ fileSystem: ports.fileSystem });
+  const replacements =
+    resources === null
+      ? null
+      : createTextReplacementPreparer({ resources, patcher, root: ports.workspaceRoot });
+
+  /**
+   * Fresh evidence for each file an apply wrote, read after its bytes exist. A file that
+   * changed again before it could be read gets no reference rather than a wrong one.
+   */
+  async function successorEvidence(
+    input: Readonly<Record<string, unknown>>,
+    items: readonly { readonly index: number; readonly status: string }[],
+    signal: AbortSignal,
+  ) {
+    if (resources === null) return [];
+    const targets = Array.isArray(input.targets) ? input.targets : [];
+    const successors: Readonly<Record<string, unknown>>[] = [];
+    for (const item of items) {
+      if (item.status !== "applied" || !("digest" in item) || !("changedRegions" in item)) continue;
+      const path = (targets[item.index] as { path?: unknown } | undefined)?.path;
+      const regions = item.changedRegions as readonly { start: number; end: number }[];
+      if (typeof path !== "string") continue;
+      const start = Math.max(1, Math.min(...regions.map((region) => region.start), Infinity));
+      const end = Math.max(start, ...regions.map((region) => region.end));
+      const read = await resources.read(
+        {
+          resources: [{ kind: "workspace", path }],
+          projection: { kind: "lines", start: Number.isFinite(start) ? start : 1, end },
+          maxBytes: 16 * 1024,
+        },
+        signal,
+      );
+      const found = read.ok ? read.value.items[0] : undefined;
+      if (found?.status !== "read" || found.reference?.kind !== "evidence") {
+        successors.push({
+          index: item.index,
+          path,
+          status: "unavailable",
+          code: found?.status === "unavailable" ? found.code : "evidence-unavailable",
+        });
+        continue;
+      }
+      if (found.source.digest !== item.digest) {
+        successors.push({ index: item.index, path, status: "changed-after-apply" });
+        continue;
+      }
+      successors.push({
+        index: item.index,
+        path,
+        status: "issued",
+        evidenceRef: found.reference.reference,
+        lines: { start: Number.isFinite(start) ? start : 1, end },
+        complete: found.complete,
+      });
+    }
+    return successors;
+  }
 
   const invalidateAfterMutation = (): void => {
     productRead.invalidate();
@@ -441,6 +532,23 @@ export function composeProductWorkspaceTools(
                 "search",
               ),
               { inputSchema: resourceSearchInputSchema, outputSchema: openObject },
+            ),
+          ),
+          mustEntry(
+            createToolRegistryEntry(
+              document(
+                "prepare_replacements",
+                "Prepare text replacements",
+                PREPARE_REPLACEMENTS_HELP,
+                "observation",
+                "filesystem",
+              ),
+              {
+                inputSchema: textReplacementsInputSchema as unknown as z.ZodType<
+                  Readonly<Record<string, unknown>>
+                >,
+                outputSchema: openObject,
+              },
             ),
           ),
         ]),
@@ -631,6 +739,13 @@ export function composeProductWorkspaceTools(
           const result = await resources.read(input, request.signal);
           return result.ok ? completed(result.value) : failed(result.error.code);
         }
+        case "prepare_replacements": {
+          if (replacements === null) return failed("resource-scope-unavailable");
+          const prepared = await replacements.prepare(request.input, request.signal);
+          if (prepared.ok) return completed(prepared.value);
+          if (prepared.error.code === "cancelled") return { status: "cancelled", effect: "none" };
+          return failed(describeTextReplacementRefusal(prepared.error));
+        }
         case "list_dir": {
           const path = request.input.path;
           if (typeof path !== "string") {
@@ -712,10 +827,16 @@ export function composeProductWorkspaceTools(
         }
         case "apply_patch": {
           const result = await patcher.apply(root, request.input, request.signal);
-          if (result.ok) {
-            invalidateAfterMutation();
-          }
-          return result.ok ? completed(result.value) : failed(errorCode(result.error));
+          if (!result.ok) return failed(errorCode(result.error));
+          invalidateAfterMutation();
+          if (resources === null) return completed(result.value);
+          // The write happened; a failure to issue successors never hides it.
+          const successors = await successorEvidence(
+            request.input,
+            result.value.items,
+            new AbortController().signal,
+          );
+          return completed({ ...result.value, successors });
         }
         default:
           return {

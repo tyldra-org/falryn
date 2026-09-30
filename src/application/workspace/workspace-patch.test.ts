@@ -623,4 +623,62 @@ describe("patch git awareness", () => {
       expect(vanished.error).toEqual({ code: "git-unavailable", reason: "failed" });
     }
   });
+  test("read-only dependencies gate the plan, and encodings are kept or refused (#996)", async () => {
+    const { fileSystem, workspace } = patcher({
+      "/work/project/bom.txt": {
+        kind: "file",
+        bytes: new Uint8Array([0xef, 0xbb, 0xbf, 0x61, 0x0a]),
+      },
+      "/work/project/wide.txt": {
+        kind: "file",
+        bytes: new Uint8Array([0xff, 0xfe, 0x61, 0x00, 0x0a, 0x00]),
+      },
+    });
+    const hunks = [{ oldStart: 2, oldLines: ["two"], newLines: ["TWO"] }];
+    const plain = await workspace.preview(root, { targets: [{ path: "src/a.ts", hunks }] });
+    const gated = await workspace.preview(root, {
+      targets: [{ path: "src/a.ts", hunks }],
+      dependencies: [{ path: "src/b.ts", expectedDigest: digestFor("alpha\n") }],
+    });
+    // A dependency is part of the plan identity; an empty list is not.
+    const empty = await workspace.preview(root, {
+      targets: [{ path: "src/a.ts", hunks }],
+      dependencies: [],
+    });
+    if (!plain.ok || !gated.ok || !empty.ok) throw new Error("expected previews");
+    expect(gated.value.planId).not.toBe(plain.value.planId);
+    expect(empty.value.planId).toBe(plain.value.planId);
+    await fileSystem.writeBytes(
+      localPath("/work/project/src/b.ts"),
+      new TextEncoder().encode("beta\n"),
+    );
+    expect(
+      await workspace.apply(root, {
+        targets: [{ path: "src/a.ts", hunks }],
+        dependencies: [{ path: "src/b.ts", expectedDigest: digestFor("alpha\n") }],
+      }),
+    ).toEqual({ ok: false, error: { code: "dependency-changed", index: 0 } });
+    expect(
+      await workspace.preview(root, {
+        targets: [{ path: "src/a.ts", hunks }],
+        dependencies: [{ path: "./src/a.ts", expectedDigest: digestFor("one\ntwo\nthree\n") }],
+      }),
+    ).toEqual({ ok: false, error: { code: "overlapping-targets", reason: "duplicate" } });
+    const read = await fileSystem.readBytes(localPath("/work/project/src/a.ts"), 1024);
+    expect(read.ok && new TextDecoder().decode(read.value)).toBe("one\ntwo\nthree\n");
+
+    const bom = await workspace.apply(root, {
+      targets: [{ path: "bom.txt", hunks: [{ oldStart: 1, oldLines: ["a"], newLines: ["b"] }] }],
+    });
+    expect(bom.ok && bom.value.items[0]?.status).toBe("applied");
+    const kept = await fileSystem.readBytes(localPath("/work/project/bom.txt"), 1024);
+    expect(kept.ok && [...kept.value]).toEqual([0xef, 0xbb, 0xbf, 0x62, 0x0a]);
+    const wide = await workspace.apply(root, {
+      targets: [{ path: "wide.txt", hunks: [{ oldStart: 1, oldLines: ["a"], newLines: ["b"] }] }],
+    });
+    expect(wide.ok && wide.value.items[0]).toMatchObject({
+      status: "failed",
+      error: { code: "unsupported" },
+    });
+  });
 });

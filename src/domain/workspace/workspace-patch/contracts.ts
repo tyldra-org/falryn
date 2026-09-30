@@ -50,6 +50,8 @@ export type WorkspacePatchError =
   | { readonly code: "malformed-text" }
   | { readonly code: "overlapping-targets"; readonly reason: WorkspaceWriteOverlapReason }
   | { readonly code: "overlapping-hunks" }
+  /** A declared read-only dependency no longer has its expected bytes. */
+  | { readonly code: "dependency-changed"; readonly index: number }
   | {
       readonly code: "conflict";
       readonly hunkIndex: number;
@@ -144,12 +146,23 @@ export type ParsedPatchTarget = {
   readonly hunks: readonly ParsedPatchHunk[];
 };
 
+/**
+ * A file the plan reads but never writes. Its exact bytes are checked before any
+ * preview or write, so a plan built from it refuses once it changes.
+ */
+export type ParsedPatchDependency = {
+  readonly index: number;
+  readonly path: string;
+  readonly expectedDigest: ContentDigest;
+};
+
 export type ParsedPatchPlan = {
   readonly policy: PatchPolicy;
   readonly expectedPlanId: string | null;
   readonly expectedGitHead: string | null;
   readonly limits: WorkspacePatchLimits;
   readonly targets: readonly ParsedPatchTarget[];
+  readonly dependencies: readonly ParsedPatchDependency[];
 };
 
 export type PatchHunkPreview = {
