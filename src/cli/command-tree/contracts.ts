@@ -221,6 +221,7 @@ export type Invocation =
       readonly mcpArgs?: import("../commands/mcp.ts").McpArguments;
       readonly compactArgs?: import("../commands/compact.ts").CompactArguments;
       readonly extensionTrust?: import("../../application/extensions/package-trust.ts").TrustRequest;
+      readonly extensionNotice?: import("../../application/extensions/package-notices.ts").NoticeRequest;
     }
   /** Show help. `topic` is `null` for the root, or the subcommand asked about. */
   | { readonly kind: "help"; readonly topic: string | null; readonly options: GlobalOptions }

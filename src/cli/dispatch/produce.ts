@@ -15,6 +15,7 @@ import {
   runExtensionCatalog,
 } from "../commands/extension-catalog.ts";
 import { runExtensionListing } from "../commands/extension-listing.ts";
+import { runExtensionNotices } from "../commands/extension-notices.ts";
 import { runExtensionSkills } from "../commands/extension-skills.ts";
 import { runImport, runReplay } from "../commands/import-replay-commands.ts";
 import { runModel } from "../commands/model.ts";
@@ -78,6 +79,7 @@ export type DispatchProduceOptions = {
   readonly modelRequest?: ModelSettingsRequest;
   readonly extensionPath?: string;
   readonly extensionTrust?: import("../../application/extensions/package-trust.ts").TrustRequest;
+  readonly extensionNotice?: import("../../application/extensions/package-notices.ts").NoticeRequest;
   readonly streams: CliStreams;
   readonly governance?: InvocationGovernance;
 };
@@ -158,6 +160,10 @@ export async function produce(
         signal,
         options.governance?.ownedProcesses,
       );
+    case "extension.notices":
+      if (options.extensionPath === undefined) throw new Error("Missing extension package path.");
+      if (options.extensionNotice?.confirmation !== undefined) onMutationStart?.();
+      return runExtensionNotices(options.extensionPath, signal, services, options.extensionNotice);
     case "extension.skills":
       if (options.extensionSkillsArgs === undefined)
         throw new Error("Missing extension skills arguments.");

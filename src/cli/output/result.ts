@@ -93,6 +93,7 @@ export const COMMAND_IDS = [
   "model",
   "extension.inspect",
   "extension.trust",
+  "extension.notices",
   "extension.catalog",
   "extension.scope",
   "extension.listing",

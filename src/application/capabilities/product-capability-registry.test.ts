@@ -1,13 +1,24 @@
 import { describe, expect, test } from "bun:test";
-
+import { z } from "zod";
 import {
   type CapabilityRegistryDocument,
+  createCapabilityRegistry,
   createCapabilityRegistryEntry,
   defaultCapabilityOperationalState,
+  inspectCapabilityHealth,
 } from "../../domain/capabilities/index.ts";
 import { configurationGeneration } from "../../domain/foundation/index.ts";
 import { createStubCommandRunner } from "../../domain/process/index.ts";
+import type { TrustObservation } from "../../domain/security/ecosystem-trust.ts";
+import {
+  createToolRegistryEntry,
+  defaultConcurrencyContract,
+  defaultProjectionContract,
+  defaultToolLimits,
+} from "../../domain/tools/index.ts";
 import { createInMemoryFileSystem, localPath } from "../../domain/workspace/index.ts";
+import { createCapabilityTrust } from "../extensions/capability-trust.ts";
+import { memoryTrustStore, trustFixture } from "../extensions/trust-fixtures.ts";
 import { discloseProductTools } from "../tools/product-tool-disclosure.ts";
 import { mergeProductToolBundles } from "../tools/product-tools-merge.ts";
 import { composeProductWorkspaceTools } from "../tools/product-tools-workspace.ts";
@@ -108,5 +119,93 @@ describe("product capability registry", () => {
     );
     expect(disclosure.modelTools.map((tool) => tool.name)).not.toContain("change_review");
     expect(disclosure.receipt.registryCounts.skill).toBe(1);
+  });
+
+  describe("ecosystem trust", () => {
+    function pluginTool() {
+      const entry = createToolRegistryEntry(
+        {
+          namespace: "extension",
+          name: "inspect_fixture",
+          version: 1,
+          source: "plugin",
+          title: "Inspect",
+          description: "Read a fixture",
+          effect: "observation",
+          capabilityKind: "plugin",
+          platforms: [],
+          limits: defaultToolLimits(),
+          concurrency: defaultConcurrencyContract(),
+          resultProjection: defaultProjectionContract(),
+        },
+        {
+          inputSchema: z.object({}).strict(),
+          outputSchema: z.object({ result: z.string() }).strict(),
+        },
+      );
+      if (!entry.ok) throw new Error(entry.error.code);
+      return entry.value;
+    }
+    function publish(observation: TrustObservation) {
+      const trust = createCapabilityTrust(memoryTrustStore(), () => observation);
+      const entry = capabilityEntryFromTool(pluginTool(), true, trust);
+      const registry = createCapabilityRegistry(configurationGeneration.from(12), [entry]);
+      if (!registry.ok) throw new Error(registry.error.code);
+      const health = inspectCapabilityHealth(registry.value, "native-model").entries[0];
+      if (health === undefined) throw new Error("health");
+      return { entry, health };
+    }
+
+    test.each([
+      ["absent approval", (o: TrustObservation) => o, "ecosystem-trust-required", "denied"],
+      [
+        "an incompatible host",
+        (o: TrustObservation): TrustObservation => ({ ...o, compatibility: "incompatible" }),
+        "ecosystem-trust-incompatible",
+        "incompatible",
+      ],
+      [
+        "stale evidence",
+        (o: TrustObservation): TrustObservation => ({
+          ...o,
+          evidence: { ...o.evidence, expiresAt: o.now - 1 },
+        }),
+        "ecosystem-trust-stale",
+        "denied",
+      ],
+      [
+        "a revoking advisory",
+        (o: TrustObservation): TrustObservation => ({
+          ...o,
+          evidence: { ...o.evidence, advisory: "revoked" },
+        }),
+        "ecosystem-trust-revoked",
+        "quarantined",
+      ],
+      [
+        "a quarantining advisory",
+        (o: TrustObservation): TrustObservation => ({
+          ...o,
+          evidence: { ...o.evidence, advisory: "quarantined" },
+        }),
+        "ecosystem-trust-quarantined",
+        "quarantined",
+      ],
+    ] as const)(
+      "%s publishes one reason as a distinct, non-selectable health state",
+      async (_name, change, reason, state) => {
+        const { observation } = await trustFixture();
+        const { entry, health } = publish(change(observation));
+        expect(entry.state.executable).toBe(false);
+        expect(entry.state.availabilityReason).toBe(reason);
+        expect(entry.state.executionReason).toBe(reason);
+        expect(health.health).toBe(state);
+        expect(health.selectable).toBe(false);
+        expect(health.diagnostics.map((diagnostic) => diagnostic.message)).toContain(reason);
+        expect(health.diagnostics.filter((diagnostic) => diagnostic.message !== reason)).toEqual(
+          [],
+        );
+      },
+    );
   });
 });

@@ -71,6 +71,21 @@ export function createPackageHealthRepository(store: SqliteStorePort): PackageHe
       }
       return ok(failures);
     },
+    latestPerContribution(packageId, identityDigest) {
+      const found = read(
+        "SELECT * FROM package_health_attempts WHERE package_id=$packageId ORDER BY rowid DESC LIMIT 256",
+        { packageId },
+      );
+      if (!found.ok) return found;
+      const newest = new Map<string, PackageHealthRecord>();
+      for (const record of found.value) {
+        if (record.result.binding.package !== identityDigest) continue;
+        if (!newest.has(record.result.binding.contribution))
+          newest.set(record.result.binding.contribution, record);
+        if (newest.size >= 32) break;
+      }
+      return ok([...newest.values()]);
+    },
     save(record, expected) {
       try {
         const parsed = packageHealthRecordSchema.parse(record);
