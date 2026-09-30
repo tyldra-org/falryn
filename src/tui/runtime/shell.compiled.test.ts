@@ -649,10 +649,12 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       let scrolled = "";
       let closed = "";
       const run = await runOnPty([], async (driver) => {
-        opened = await driver.press("?");
+        // Wait for what is asserted: a quiet interval alone can precede the first draw
+        // on a loaded runner, which then reads the previous frame.
+        opened = await driver.press("?", ["Help", "Press Ctrl+C twice"]);
         await driver.press("\u001b[F");
         scrolled = driver.pty.transcript();
-        closed = await driver.press([0x1b]);
+        closed = await driver.press([0x1b], ["Nothing has happened in this session yet"]);
         await driver.press(DOUBLE_CTRL_C);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
@@ -688,9 +690,10 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       let searched = "";
       let closed = "";
       const run = await runOnPty([], async (driver) => {
-        opened = await driver.press([0x10]);
-        searched = await driver.press("exit");
-        closed = await driver.press([0x1b]);
+        // Each step waits for the text its assertion needs; see the help test above.
+        opened = await driver.press([0x10], ["Commands"]);
+        searched = await driver.press("exit", ["exit"]);
+        closed = await driver.press([0x1b], ["Nothing has happened in this session yet"]);
         await driver.press(DOUBLE_CTRL_C);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
@@ -717,7 +720,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
         // Two tabs: header, then the primary region, then the composer.
         await driver.press([0x09]);
         await driver.press([0x09]);
-        typed = await driver.press("hello");
+        typed = await driver.press("hello", ["hello"]);
         // Submission can pause between clearing the composer and resolving the
         // provider. A quiet terminal alone does not establish completion.
         submitted = await driver.press([0x0d], ["Not sent", "provider connection is unavailable"]);
@@ -768,7 +771,7 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       const run = await runOnPty([], async (driver) => {
         await driver.press([0x09]);
         await driver.press([0x09]);
-        typed = await driver.press("hello");
+        typed = await driver.press("hello", ["hello"]);
         await driver.press(DOUBLE_CTRL_C);
       });
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
