@@ -35,3 +35,4 @@ export function err<Error>(error: Error): Err<Error> {
 export function assertNever(value: never, message: string): never {
   throw new Error(`${message}: ${JSON.stringify(value)}`);
 }
+// probe: a hub change whose reach exceeds the limit
