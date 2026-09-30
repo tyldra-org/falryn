@@ -344,15 +344,17 @@ describe.if(built)("the standalone executable", () => {
     },
     COMPILED_RUN_TIMEOUT_MS,
   );
-  test.skipIf(createHostSandbox().probe().status !== "available")(
-    "governed package health and replay cross the compiled command boundary",
-    async () => {
-      await packageHealthCliJourney([EXECUTABLE], await temporaryRoot());
-      await packageHealthCliJourney([EXECUTABLE], await temporaryRoot(), "hostile");
-      await packageHealthCliJourney([EXECUTABLE], await temporaryRoot(), "cancel");
-    },
-    30_000,
-  );
+  // Each journey is a dozen cold compiled-binary starts at about 0.2 s locally and more on hosted
+  // macOS, so each gets its own budget; one shared budget failed one macOS run in five at 30 s.
+  for (const mode of ["healthy", "hostile", "cancel"]) {
+    test.skipIf(createHostSandbox().probe().status !== "available")(
+      `governed package health and replay cross the compiled command boundary (${mode})`,
+      async () => {
+        await packageHealthCliJourney([EXECUTABLE], await temporaryRoot(), mode);
+      },
+      30_000,
+    );
+  }
   test("named routes save and bind real model requests through compiled composition", async () => {
     const binary = join(bootstrapDirectory, "named-route-controls");
     const built = Bun.spawnSync(
