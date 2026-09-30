@@ -15,7 +15,9 @@ const ACTION_HINTS: Readonly<Record<NoticeAction, string>> = {
 };
 
 function time(value: number | null): string {
-  return value === null ? "unrecorded" : new Date(value).toISOString();
+  if (value === null) return "unrecorded";
+  const at = new Date(value);
+  return Number.isFinite(at.getTime()) ? at.toISOString() : "out of range";
 }
 
 function noticeLines(entry: PresentedNotice): string[] {
@@ -26,7 +28,7 @@ function noticeLines(entry: PresentedNotice): string[] {
       `Acknowledged until ${time(entry.acknowledgement.expiresAt)}: ${notice.code} for ${subject}. ${
         notice.impact === "invocation-denied"
           ? `Invocation is still denied (${notice.reason ?? "no reason recorded"}).`
-          : "This notice does not affect invocation."
+          : "This notice does not change the trust decision."
       }`,
       `  Notice: ${notice.id}`,
     ];
@@ -34,7 +36,7 @@ function noticeLines(entry: PresentedNotice): string[] {
     `[${notice.severity}] ${notice.code} (${notice.state}) for ${subject}`,
     notice.impact === "invocation-denied"
       ? `  Invocation is denied: ${notice.reason ?? "no reason recorded"}.`
-      : "  Reported only; invocation eligibility is unchanged.",
+      : "  Reported only; it does not change the trust decision, and launching the package may still be refused.",
     `  Evidence (${notice.evidence.basis}): reference ${notice.evidence.reference}${
       notice.evidence.advisory === null ? "" : `; advisory ${notice.evidence.advisory}`
     }${

@@ -87,7 +87,7 @@ function input(
     trust: evaluateTrust(from, decision),
     advisory: { sequence: 3, ids: ["ADV-2", "ADV-1"], verified: true },
     dependencies: { status: "resolved", degraded: false, digest: digest("dependencies") },
-    health: null,
+    health: [],
     now: from.now,
     ...extra,
   } satisfies NoticeInput;
@@ -214,12 +214,14 @@ describe("notice derivation", () => {
     const notices = deriveEcosystemNotices(
       input(current, null, {
         dependencies: { status: "unresolved", code: "missing-dependency" },
-        health: {
-          state: "failed",
-          code: "health-failed",
-          generation: digest("generation"),
-          contribution: digest("contribution"),
-        },
+        health: [
+          {
+            state: "failed",
+            code: "health-failed",
+            generation: digest("generation"),
+            contribution: digest("contribution"),
+          },
+        ],
       }),
     );
     expect(notices.map((entry) => [entry.code, entry.state, entry.impact])).toEqual([
@@ -235,7 +237,7 @@ describe("notice derivation", () => {
     const notices = deriveEcosystemNotices(
       input(current, approval(current), {
         dependencies: { status: "resolved", degraded: true, digest: "not-a-digest" },
-        health: { state: "failed", code: "x", generation: "bad", contribution: "worse" },
+        health: [{ state: "failed", code: "x", generation: "bad", contribution: "worse" }],
       }),
     );
     expect(notices.map((entry) => entry.code)).toEqual(["dependencies-degraded", "health-failed"]);
@@ -254,17 +256,17 @@ describe("notice derivation", () => {
     });
     for (const state of ["healthy", "completed", "recovered", "starting", "running"])
       expect(
-        deriveEcosystemNotices(input(current, approval(current), { health: health(state) })),
+        deriveEcosystemNotices(input(current, approval(current), { health: [health(state)] })),
       ).toEqual([]);
     const failing = deriveEcosystemNotices(
-      input(current, approval(current), { health: health("failed") }),
+      input(current, approval(current), { health: [health("failed")] }),
     );
     const again = deriveEcosystemNotices(
-      input(current, approval(current), { health: health("failed") }),
+      input(current, approval(current), { health: [health("failed")] }),
     );
     expect(again.map((entry) => entry.id)).toEqual(failing.map((entry) => entry.id));
     const uncertain = deriveEcosystemNotices(
-      input(current, approval(current), { health: health("uncertain") }),
+      input(current, approval(current), { health: [health("uncertain")] }),
     );
     expect(uncertain[0]?.id).not.toBe(failing[0]?.id);
   });

@@ -15,13 +15,17 @@ import {
   PACKAGE_HEALTH_PROTOCOL,
   type PackageHealthStore,
 } from "../../domain/extensions/package-health.ts";
-import { ecosystemTrustReason } from "../../domain/security/ecosystem-notice.ts";
+import {
+  ecosystemTrustReason,
+  noticeAcknowledgementKey,
+} from "../../domain/security/ecosystem-notice.ts";
 import type { TrustObservation } from "../../domain/security/ecosystem-trust.ts";
 import type { SqliteStorePort } from "../../domain/storage/index.ts";
 import { ed25519PackageVerifier } from "../../integrations/extensions/package-signature.ts";
 import { createCapabilityTrust } from "./capability-trust.ts";
 import { inspectionHost, packageSource, pluginManifest } from "./package-fixtures.ts";
 import { inspectPackageNotices, type NoticeRequest } from "./package-notices.ts";
+import { packageNoticeLines } from "./package-notices-report.ts";
 import { inspectProvenanceTrust } from "./package-provenance.ts";
 import { packageTrustObservation, type TrustRequest } from "./package-trust.ts";
 import { type PreparedPackage, preparePackage } from "./prepare-package.ts";
@@ -108,14 +112,14 @@ function seedHealth(
   store: PackageHealthStore,
   pkg: PreparedPackage,
   state: "failed" | "healthy" | "uncertain",
-  generation = canonicalDigest("generation"),
+  options: { generation?: string; contribution?: string; pending?: boolean } = {},
 ) {
   const binding = {
     protocol: PACKAGE_HEALTH_PROTOCOL,
     attempt: randomUUID(),
     package: pkg.identityDigest,
-    contribution: canonicalDigest("contribution"),
-    generation,
+    contribution: options.contribution ?? canonicalDigest("contribution"),
+    generation: options.generation ?? canonicalDigest("generation"),
   } as const;
   const base = {
     operation: randomUUID(),
@@ -126,6 +130,7 @@ function seedHealth(
   };
   const started = store.save({ ...base, revision: 1, result: initialHealthResult(binding) }, 0);
   if (!started.ok) throw new Error(started.error.code);
+  // An uncertain outcome that may still be running stays unterminated and needs recovery.
   const done = store.save(
     {
       ...base,
@@ -134,8 +139,8 @@ function seedHealth(
         ...initialHealthResult(binding),
         state,
         code: `health-${state}`,
-        terminated: true,
-        cleanup: "removed",
+        terminated: options.pending !== true,
+        cleanup: options.pending === true ? "unknown" : "removed",
       },
     },
     1,
@@ -320,10 +325,50 @@ describe("freshness, health and compatibility", () => {
       expect(codes(list(store, pkg, observation))).toEqual([]);
       seedHealth(health, pkg, "failed");
       expect(list(store, pkg, observation).notices[0]?.notice.id).toBe(failed?.notice.id);
-      seedHealth(health, pkg, "failed", canonicalDigest("later generation"));
+      seedHealth(health, pkg, "failed", { generation: canonicalDigest("later generation") });
       expect(list(store, pkg, observation).notices[0]?.notice.id).not.toBe(failed?.notice.id);
       seedHealth(health, pkg, "uncertain");
       expect(list(store, pkg, observation).notices[0]?.notice.code).toBe("health-uncertain");
+    } finally {
+      await store.close();
+    }
+  });
+
+  test("an unterminated uncertain attempt is reported: it blocks the next attempt until recovery", async () => {
+    const root = await temporaryRoot("falryn-notices-uncertain-");
+    const pkg = await prepared();
+    const observation = packageTrustObservation(pkg, actor, 1_000);
+    const store = await openProductStoreOrThrow(root);
+    try {
+      seedHealth(createPackageHealthRepository(store), pkg, "uncertain", { pending: true });
+      const notice = list(store, pkg, observation).notices[0]?.notice;
+      expect(notice).toMatchObject({
+        code: "health-uncertain",
+        state: "degraded",
+        requiredAction: "recover-health",
+        evidence: { healthState: "uncertain" },
+      });
+    } finally {
+      await store.close();
+    }
+  });
+
+  test("health is judged per contribution: a healthy sibling does not hide a failure", async () => {
+    const root = await temporaryRoot("falryn-notices-contributions-");
+    const pkg = await prepared();
+    const observation = packageTrustObservation(pkg, actor, 1_000);
+    const store = await openProductStoreOrThrow(root);
+    try {
+      const health = createPackageHealthRepository(store);
+      const first = canonicalDigest("contribution a");
+      const second = canonicalDigest("contribution b");
+      seedHealth(health, pkg, "failed", { contribution: first });
+      seedHealth(health, pkg, "healthy", { contribution: second });
+      const failing = list(store, pkg, observation).notices;
+      expect(failing.map((entry) => entry.notice.code)).toEqual(["health-failed"]);
+      expect(failing[0]?.notice.evidence.reference).toBe(first);
+      seedHealth(health, pkg, "healthy", { contribution: first });
+      expect(codes(list(store, pkg, observation))).toEqual([]);
     } finally {
       await store.close();
     }
@@ -369,6 +414,32 @@ describe("freshness, health and compatibility", () => {
       expect(ecosystemTrustReason(gatewayTrust(store, changed, 1_000))).toBe(
         "ecosystem-trust-incompatible",
       );
+    } finally {
+      await store.close();
+    }
+  });
+});
+
+describe("rendering", () => {
+  test("out-of-range evidence times render as text instead of throwing", async () => {
+    const pkg = await prepared();
+    const observation = packageTrustObservation(pkg, actor, 1_000);
+    const root = await temporaryRoot("falryn-notices-render-");
+    const store = await openProductStoreOrThrow(root);
+    try {
+      decide(store, observation, [], {
+        action: "refresh",
+        expiresAt: null,
+        verification: signedVerification(observation, {
+          sequence: 1,
+          status: "revoked",
+          issuedAt: 9_000_000_000_000_000,
+          expiresAt: 9_000_000_000_000_001,
+        }),
+      });
+      const result = list(store, pkg, observation);
+      const text = packageNoticeLines(result).join("\n");
+      expect(text).toContain("out of range");
     } finally {
       await store.close();
     }
@@ -460,6 +531,35 @@ describe("acknowledgement boundaries", () => {
           confirmation: preview.confirmation ?? "",
         }),
       ).toEqual({ status: "failed", code: "stale-notice-confirmation" });
+    } finally {
+      await store.close();
+    }
+  });
+
+  test("a corrupt acknowledgement row neither hides the list nor blocks a new acknowledgement", async () => {
+    const { store, pkg, observation, notice } = await revoked();
+    try {
+      const key = noticeAcknowledgementKey(notice.id, observation.scope);
+      expect(
+        store.write((statements) => {
+          statements.run(
+            "INSERT INTO ecosystem_notice_acknowledgements (acknowledgement_key, revision, expires_at, record_json) VALUES ($key, 1, 9999999, 'not json')",
+            { key },
+          );
+          return null;
+        }).ok,
+      ).toBe(true);
+      expect(list(store, pkg, observation).notices[0]).toMatchObject({
+        presentation: "shown",
+        acknowledgement: { status: "unacknowledged" },
+      });
+      const done = acknowledge(store, pkg, observation, {
+        action: "acknowledge",
+        noticeId: notice.id,
+        expiresAt: 1_000 + DAY,
+      });
+      expect(done.status).toBe("applied");
+      expect(list(store, pkg, observation).notices[0]?.presentation).toBe("suppressed");
     } finally {
       await store.close();
     }

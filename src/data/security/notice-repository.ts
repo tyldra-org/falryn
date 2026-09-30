@@ -78,8 +78,10 @@ export function createNoticeAcknowledgementRepository(
           `SELECT revision, record_json FROM ${NOTICE_ACKNOWLEDGEMENTS_TABLE} WHERE acknowledgement_key = $key`,
           { key },
         )[0];
-        if (existing !== undefined && decode(existing, key) === null) return "malformed" as const;
-        if ((existing?.revision ?? 0) !== expectedRevision) return "conflict" as const;
+        // A corrupt row protects no valid state; a caller that expects none may replace it.
+        const corrupt = existing !== undefined && decode(existing, key) === null;
+        if (corrupt && expectedRevision !== 0) return "malformed" as const;
+        if (!corrupt && (existing?.revision ?? 0) !== expectedRevision) return "conflict" as const;
         // Expired acknowledgements hide nothing, so the table holds only live ones.
         statements.run(
           `DELETE FROM ${NOTICE_ACKNOWLEDGEMENTS_TABLE} WHERE expires_at <= $now AND acknowledgement_key <> $key`,

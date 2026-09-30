@@ -97,6 +97,9 @@ test("a corrupt row denies instead of being replaced or read as an acknowledgeme
     expect(store.replace(key, 1, { ...value, revision: 2 })).toMatchObject({
       error: { code: "malformed" },
     });
+    // A corrupt row protects no valid state, so a caller that expects none can repair it.
+    expect(store.replace(key, 0, value).ok).toBe(true);
+    expect(store.get(key)).toEqual({ ok: true, value });
   } finally {
     await opened.close();
   }

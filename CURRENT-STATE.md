@@ -1577,10 +1577,11 @@ decisions, so inspect and revoke them before continuing.
 
 `falryn extension notices <path>` lists why a local package is limited or at risk.
 It derives notices on every read from the facts that decide invocation: the
-package's trust projection, host compatibility, dependency resolution and its
-newest completed package-health attempt for the same installed identity. Only
+package's trust projection, host compatibility, dependency resolution and the
+newest package-health attempt per contribution for the same installed identity,
+including an unterminated uncertain attempt that needs recovery. Only
 acknowledgements are stored. A package with no cause has no notice; an unapproved
-package is a normal state, not a notice. Without a product database the command
+package and a missing execution grant are normal states, not notices. Without a product database the command
 answers from empty owners and does not create one.
 
 A notice carries a digest `id`, the package subject, a closed `code`, a `state`
@@ -1604,7 +1605,9 @@ Notices contain no keys, signatures, paths or catalog display text.
 | `dependencies-degraded`, `health-uncertain` | `degraded` | reported only |
 | `health-failed` | `failed` | reported only |
 
-Dependency and health notices do not change what the gateway decides. There is no
+Dependency and health notices do not change the trust decision. Package launch
+admission is separate and still refuses unresolved dependencies and a contribution
+with three consecutive failed health attempts. There is no
 advisory fetcher, so an advisory arrives through a signed `extension trust` refresh
 with a higher sequence and leaves the same way; a withdrawal does not restore an
 older approval, so the package needs a fresh approval and `approval-changed` says so.
@@ -1626,8 +1629,12 @@ local-user scope. The expiry must be in the future and within 30 days. An
 acknowledgement hides the notice's presentation, leaving one line that says it is
 acknowledged and whether invocation is still denied. It changes no trust,
 provenance, health or eligibility, does not cover a different notice `id`, and
-lapses at its expiry. The table keeps at most 1,024 live records and prunes expired
+lapses at its expiry. A cause that recurs with the same identity, such as a health
+failure in the same generation with the same code, stays acknowledged until then. The table keeps at most 1,024 live records and prunes expired
 ones on the next write. Session export does not carry acknowledgements.
+
+A corrupt acknowledgement row is read as unacknowledged and can be replaced by a new
+acknowledgement.
 
 Limits: notices are per package path. No OpenTUI view, export or replay projection
 exists yet, and `falryn doctor` does not report them; the capability doctor reports

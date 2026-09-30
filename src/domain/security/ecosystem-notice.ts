@@ -246,7 +246,8 @@ export type NoticeInput = {
   readonly trust: TrustProjection;
   readonly advisory: NoticeAdvisoryFacts | null;
   readonly dependencies: NoticeDependencies;
-  readonly health: NoticeHealthObservation | null;
+  /** The newest observation per contribution. */
+  readonly health: readonly NoticeHealthObservation[];
   readonly now: number;
 };
 
@@ -457,8 +458,8 @@ export function deriveEcosystemNotices(input: NoticeInput): readonly EcosystemNo
         { status: "current", observedAt: input.now, expiresAt: null },
       ),
     );
-  const health = input.health;
-  if (health !== null && (health.state === "failed" || health.state === "uncertain")) {
+  for (const health of input.health) {
+    if (health.state !== "failed" && health.state !== "uncertain") continue;
     add(
       build(
         input,

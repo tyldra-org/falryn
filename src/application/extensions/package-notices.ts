@@ -34,18 +34,18 @@ export const noticeRequestSchema = z.strictObject({
 export type NoticeRequest = z.infer<typeof noticeRequestSchema>;
 
 export interface NoticeHealthSource {
-  /** Newest completed health attempt for this installed identity. Health owns the record. */
-  latest(
+  /** Newest attempt per contribution for this installed identity. Health owns the records. */
+  latestPerContribution(
     packageId: string,
     identityDigest: string,
   ): Result<
-    {
+    readonly {
       readonly result: {
         readonly state: string;
         readonly code: string;
         readonly binding: { readonly generation: string; readonly contribution: string };
       };
-    } | null,
+    }[],
     { readonly code: string }
   >;
 }
@@ -88,17 +88,17 @@ export function inspectPackageNotices(
     trustDecisionKey(current.subject, current.scope, current.actor),
   );
   if (!decision.ok) return { status: "failed", code: decision.error.code };
-  const latest = owners.health.latest(prepared.identity.packageId, prepared.identityDigest);
+  const latest = owners.health.latestPerContribution(
+    prepared.identity.packageId,
+    prepared.identityDigest,
+  );
   if (!latest.ok) return { status: "failed", code: latest.error.code };
-  const health: NoticeHealthObservation | null =
-    latest.value === null
-      ? null
-      : {
-          state: latest.value.result.state,
-          code: latest.value.result.code,
-          generation: latest.value.result.binding.generation,
-          contribution: latest.value.result.binding.contribution,
-        };
+  const health: NoticeHealthObservation[] = latest.value.map((record) => ({
+    state: record.result.state,
+    code: record.result.code,
+    generation: record.result.binding.generation,
+    contribution: record.result.binding.contribution,
+  }));
   const notices = deriveEcosystemNotices({
     subject: {
       packageId: prepared.identity.packageId,
@@ -128,8 +128,10 @@ export function inspectPackageNotices(
   const stored = new Map<string, NoticeAcknowledgement | null>();
   for (const notice of notices) {
     const read = owners.acknowledgements.get(noticeAcknowledgementKey(notice.id, current.scope));
-    if (!read.ok) return { status: "failed", code: read.error.code };
-    stored.set(notice.id, read.value);
+    // A corrupt acknowledgement hides nothing, so it must not hide the notice list either.
+    if (!read.ok && read.error.code !== "malformed")
+      return { status: "failed", code: read.error.code };
+    stored.set(notice.id, read.ok ? read.value : null);
   }
   const present = (): readonly PresentedNotice[] =>
     notices.map((notice) => presentNotice(notice, stored.get(notice.id) ?? null, current.now));

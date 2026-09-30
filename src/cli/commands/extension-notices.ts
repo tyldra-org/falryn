@@ -34,7 +34,7 @@ const absentOwners: PackageNoticeOwners = {
   decisions: { get: () => ok(null), replace: () => err({ code: "unavailable" }) },
   provenance: { get: () => ok(null), replace: () => err({ code: "unavailable" }) },
   acknowledgements: { get: () => ok(null), replace: () => err({ code: "unavailable" }) },
-  health: { latest: () => ok(null) },
+  health: { latestPerContribution: () => ok([]) },
 };
 
 async function executeNotices(

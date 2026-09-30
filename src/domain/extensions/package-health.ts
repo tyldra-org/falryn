@@ -98,11 +98,14 @@ export interface PackageHealthStore {
   get(operation: string): Result<PackageHealthRecord | null, { code: string }>;
   pending(contribution: string): Result<PackageHealthRecord | null, { code: string }>;
   failures(contribution: string, generation: string): Result<number, { code: string }>;
-  /** The newest completed attempt recorded against this installed identity, if any. */
-  latest(
+  /**
+   * The newest attempt per contribution recorded against this installed identity, including an
+   * attempt still marked pending (an uncertain outcome that needs recovery is pending).
+   */
+  latestPerContribution(
     packageId: string,
     identityDigest: string,
-  ): Result<PackageHealthRecord | null, { code: string }>;
+  ): Result<readonly PackageHealthRecord[], { code: string }>;
   save(record: PackageHealthRecord, expected: number): Result<null, { code: string }>;
 }
 
