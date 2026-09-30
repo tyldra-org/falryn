@@ -89,7 +89,42 @@ jobs:
       - name: Audit installed dependencies for known vulnerabilities
         run: bun audit
 
-  # The complete source suite is split into balanced shards per host. Bun's
+  # Chooses how much of the suite this revision needs: `scoped` runs only the tests that
+  # can reach the change on Linux and macOS, `full` runs the complete matrix. The rule is
+  # tools/quality/ci-profile.ts. Any doubt, and every push to `main`, selects `full`, and
+  # the gates below fail when this job does, so a broken classifier blocks rather than
+  # waves a change through.
+  classify:
+    name: Select CI tier
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      profile: ${{ steps.profile.outputs.profile }}
+      base: ${{ github.event.pull_request.base.sha }}
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch the base revision
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --no-tags --depth=1 origin "$BASE"
+
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
+        with:
+          install: ${{ github.event_name == 'pull_request' }}
+
+      - name: Classify the change
+        id: profile
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: bun run tools/quality/ci-profile.ts --event "$EVENT" ${BASE:+--base "$BASE"}
+
+  # A `full` revision runs the complete source suite, split into balanced shards per host. Bun's
   # --shard assigns files by the recorded durations in .github/test-timings.json
   # (refresh with `bun run test:timings`); a file missing from it still runs.
   # Compiled suites are excluded here; the compiled-smoke jobs run them whole
@@ -101,6 +136,8 @@ jobs:
     needs:
       - typecheck
       - dependency-integrity
+      - classify
+    if: ${{ needs.classify.outputs.profile == 'full' }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
@@ -125,6 +162,8 @@ jobs:
     needs:
       - typecheck
       - dependency-integrity
+      - classify
+    if: ${{ needs.classify.outputs.profile == 'full' }}
     runs-on: macos-latest
     timeout-minutes: 20
     strategy:
@@ -144,6 +183,76 @@ jobs:
           FALRYN_TEST_SHARD: ${{ matrix.shard }}/4
         run: bun run test
 
+  platform-test-ubuntu-scoped:
+    name: Platform tests scoped (Ubuntu latest x64)
+    needs:
+      - typecheck
+      - dependency-integrity
+      - classify
+    if: ${{ needs.classify.outputs.profile == 'scoped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch the base revision
+        env:
+          BASE: ${{ needs.classify.outputs.base }}
+        run: git fetch --no-tags --depth=1 origin "$BASE"
+
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
+
+      # The tests that import a changed file, through the same shard runner as a full run,
+      # so known-flake handling is identical.
+      - name: Run the tests this change can reach
+        env:
+          BASE: ${{ needs.classify.outputs.base }}
+        run: bun run test --changed="$BASE"
+
+      # Whole-tree suites check placement, text and boundaries of files no import reaches.
+      # They take seconds, so they run every time.
+      - name: Run the whole-tree suites
+        shell: bash
+        run: bun test ./src/*.test.ts --path-ignore-patterns='**/*.compiled.test.ts'
+
+  platform-test-macos-scoped:
+    name: Platform tests scoped (macOS latest arm64)
+    needs:
+      - typecheck
+      - dependency-integrity
+      - classify
+    if: ${{ needs.classify.outputs.profile == 'scoped' }}
+    runs-on: macos-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out the reviewed revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Fetch the base revision
+        env:
+          BASE: ${{ needs.classify.outputs.base }}
+        run: git fetch --no-tags --depth=1 origin "$BASE"
+
+      - name: Set up Bun and install dependencies
+        uses: ./.github/actions/setup-bun
+
+      # The tests that import a changed file, through the same shard runner as a full run,
+      # so known-flake handling is identical.
+      - name: Run the tests this change can reach
+        env:
+          BASE: ${{ needs.classify.outputs.base }}
+        run: bun run test --changed="$BASE"
+
+      # Whole-tree suites check placement, text and boundaries of files no import reaches.
+      # They take seconds, so they run every time.
+      - name: Run the whole-tree suites
+        shell: bash
+        run: bun test ./src/*.test.ts --path-ignore-patterns='**/*.compiled.test.ts'
+
   platform-test-windows:
     name: Platform tests (Windows latest x64)
     needs:
@@ -162,30 +271,59 @@ jobs:
       - name: Run the platform test command
         run: bun run test:platform-baseline
 
-  # Required-check gates. They always run, so a skipped or failed shard (for
-  # example after a failed typecheck) fails the required check instead of
-  # leaving it pending or passing.
+  # Required-check gates. They always run, so a skipped or failed job (for example after a
+  # failed typecheck or a failed classifier) fails the required check instead of leaving it
+  # pending or passing. Each gate accepts exactly one tier: that tier's tests succeeded and the
+  # other tier's were skipped.
   platform-test-ubuntu-gate:
     name: Platform tests (Ubuntu latest x64)
-    needs: platform-test-ubuntu
+    needs:
+      - classify
+      - platform-test-ubuntu
+      - platform-test-ubuntu-scoped
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      CLASSIFY: ${{ needs.classify.result }}
+      PROFILE: ${{ needs.classify.outputs.profile }}
+      FULL: ${{ needs.platform-test-ubuntu.result }}
+      SCOPED: ${{ needs.platform-test-ubuntu-scoped.result }}
 
     steps:
-      - name: Require every Ubuntu shard to pass
-        run: test "${{ needs.platform-test-ubuntu.result }}" = success
+      - name: Require the selected tier's tests to pass
+        run: |
+          test "$CLASSIFY" = success
+          case "$PROFILE" in
+            full) test "$FULL" = success && test "$SCOPED" = skipped ;;
+            scoped) test "$SCOPED" = success && test "$FULL" = skipped ;;
+            *) echo "unknown CI tier: $PROFILE"; exit 1 ;;
+          esac
 
   platform-test-macos-gate:
     name: Platform tests (macOS latest arm64)
-    needs: platform-test-macos
+    needs:
+      - classify
+      - platform-test-macos
+      - platform-test-macos-scoped
     if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    env:
+      CLASSIFY: ${{ needs.classify.result }}
+      PROFILE: ${{ needs.classify.outputs.profile }}
+      FULL: ${{ needs.platform-test-macos.result }}
+      SCOPED: ${{ needs.platform-test-macos-scoped.result }}
 
     steps:
-      - name: Require every macOS shard to pass
-        run: test "${{ needs.platform-test-macos.result }}" = success
+      - name: Require the selected tier's tests to pass
+        run: |
+          test "$CLASSIFY" = success
+          case "$PROFILE" in
+            full) test "$FULL" = success && test "$SCOPED" = skipped ;;
+            scoped) test "$SCOPED" = success && test "$FULL" = skipped ;;
+            *) echo "unknown CI tier: $PROFILE"; exit 1 ;;
+          esac
 
   ubuntu-x64-compiled-smoke:
     name: Ubuntu x64 compiled smoke
