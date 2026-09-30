@@ -9,6 +9,26 @@ Four workflows.
 | [`issue-governance.yml`](issue-governance.yml) | Is the public issue contract complete and are declared labels reconciled? | issue metadata or state changes |
 | [`dependency-pins.yml`](dependency-pins.yml) | Do the reviewed dependency pins match this Dependabot update? | Dependabot `bun` pull requests |
 
+## CI tiers
+
+`ci.yml` chooses how much of the source suite a pull request needs, with the `classify`
+job and [`tools/quality/ci-profile.ts`](../../tools/quality/ci-profile.ts).
+
+| Tier | When | Ubuntu and macOS tests | Always runs |
+| --- | --- | --- | --- |
+| `scoped` | Every changed path is TypeScript under `src/` (other than `src/main.ts`) or documentation, and at most 200 test files can reach the change | Only the tests that import a changed file, plus the whole-tree suites at the `src/` root | Static checks, the Windows baseline, and the compiled smoke suites on all three platforms |
+| `full` | Anything else, and every push to `main` | The complete suite, sharded per host | The same |
+
+The rule fails open. A change is `scoped` only when every path is on an allowlist and none is
+on an exclusion, so a path nobody listed, an unreadable diff, a test count that could not be
+measured, or any event other than a pull request selects `full`. Both Linux and macOS scope the
+tests, not the platforms: four of the last 120 pull-request runs failed only on macOS or
+Windows, and each was caught by a test that imports the changed code or by a compiled suite.
+The `Platform tests (Ubuntu latest x64)` and `Platform tests (macOS latest arm64)` gates accept
+exactly one tier, and they fail when `classify` fails, so a broken classifier blocks a merge
+instead of skipping tests. The push to `main` always runs the full matrix and is the backstop
+for a wrong `scoped` verdict.
+
 `Validate contribution metadata` remains the required `main` check in
 `pr-checks.yml`. It loads the policy from the
 trusted base revision, validates meaningful template content, and verifies the

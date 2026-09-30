@@ -220,6 +220,12 @@ Use the smallest command that proves the current edit while iterating.
 | `bun run build` | Standalone executable compilation |
 | `bun run test:compiled` | Compiled suites against the current `dist/falryn` |
 
+CI does not always run the whole source suite on a pull request. A change confined to TypeScript
+under `src/` (other than `src/main.ts`) or to documentation, that at most 200 test files can reach,
+runs only those tests on Ubuntu and macOS. Anything else runs the full matrix, as does every push to
+`main`. Local `bun run test:changed` selects tests the same way. See
+[`.github/workflows/README.md`](.github/workflows/README.md#ci-tiers).
+
 The source suite excludes `*.compiled.test.ts`. The compiled smoke scripts and
 the CI compiled-smoke jobs run those suites against a fresh build, so a stale
 `dist/falryn` never affects `bun run check`.
