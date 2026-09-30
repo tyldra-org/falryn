@@ -37,3 +37,4 @@ bun run build
 Falryn is [Apache-2.0](LICENSE). The license covers the repository's source,
 tests, build configuration, and other tracked documentation. See [NOTICE](NOTICE)
 for attribution information.
+<!-- probe: a documentation-only change -->
