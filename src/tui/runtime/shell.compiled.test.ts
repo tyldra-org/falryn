@@ -69,6 +69,8 @@ const ROWS = 30;
 
 /** Maximum time for a native renderer to start and commit its first Falryn frame. */
 const MOUNT_TIMEOUT_MS = 10_000;
+/** OpenTUI's terminal-capability probe window, plus a margin. See `runOnPty`. */
+const CAPABILITY_WINDOW_MS = 5_250;
 
 /** Long enough for the shutdown sequence, which is bounded by its own phase grace. */
 const EXIT_MS = 8_000;
@@ -267,6 +269,11 @@ type Driver = {
   press(bytes: string | readonly number[], expected?: readonly string[]): Promise<string>;
   /** Resizes the terminal under the running shell and returns what it redrew. */
   resize(columns: number, rows: number): Promise<string>;
+  /**
+   * Resolves once the shell can take input. `press` and `resize` wait for it themselves; a run
+   * that acts by signal calls it first, because a signal during startup is the same race.
+   */
+  ready(): Promise<void>;
 };
 
 /** Starts the compiled shell on a pseudo-terminal and runs `act` once it has drawn. */
@@ -319,6 +326,7 @@ async function runOnPty(
   // committed visible application content; otherwise the test measures an
   // interruption during OpenTUI startup rather than Falryn's signal policy.
   const mountDeadline = Bun.nanoseconds() + MOUNT_TIMEOUT_MS * 1_000_000;
+  let mountedAt = Bun.nanoseconds();
   while (Bun.nanoseconds() < mountDeadline) {
     const transcript = pty.transcript();
     if (
@@ -327,6 +335,7 @@ async function runOnPty(
       transcript.includes("Nothing has happened") ||
       transcript.includes("falryn")
     ) {
+      mountedAt = Bun.nanoseconds();
       break;
     }
     await Bun.sleep(50);
@@ -359,6 +368,25 @@ async function runOnPty(
     return step;
   };
 
+  // OpenTUI keeps its stdin parser in capability-probe mode for five seconds after it sets the
+  // terminal up, and this pseudo-terminal never answers a probe, so the window runs to its end.
+  // The window opened before the first frame, so it closes no later than the first frame plus
+  // five seconds. Input sent earlier races it, and on a loaded runner the race is lost. The wait
+  // happens once, before the first keystroke, so a run that sends none (a deadline that ends the
+  // session, a signal) is not held up, and it gives way if the process exits first.
+  let inputReady: Promise<void> | null = null;
+  const beforeInput = (): Promise<void> => {
+    inputReady ??= (async () => {
+      const remaining = Math.ceil(
+        (mountedAt + CAPABILITY_WINDOW_MS * 1_000_000 - Bun.nanoseconds()) / 1_000_000,
+      );
+      if (remaining > 0) await Promise.race([Bun.sleep(remaining), started.exited]);
+      // What drew while waiting belongs to no step.
+      read = pty.transcript().length;
+    })();
+    return inputReady;
+  };
+
   // Everything the mount itself drew, consumed before the first step. Without
   // this the first step's slice carries the last frame of the *previous* state,
   // and an assertion that the arrangement changed reads both and passes on the
@@ -370,7 +398,9 @@ async function runOnPty(
   await act({
     process: started,
     pty,
+    ready: beforeInput,
     async press(bytes, expected) {
+      await beforeInput();
       writeSync(
         pty.master,
         Buffer.from(typeof bytes === "string" ? bytes : Uint8Array.from(bytes)),
@@ -378,6 +408,7 @@ async function runOnPty(
       return await drawn(expected);
     },
     async resize(columns, rows) {
+      await beforeInput();
       const stty = Bun.spawn(["stty", "rows", String(rows), "columns", String(columns)], {
         stdin: pty.master,
         stdout: "ignore",
@@ -424,7 +455,10 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
    */
   let started: Promise<ShellRun> | null = null;
   const interrupted = (): Promise<ShellRun> => {
-    started ??= runOnPty([], ({ process: child }) => child.kill("SIGINT"));
+    started ??= runOnPty([], async (driver) => {
+      await driver.ready();
+      driver.process.kill("SIGINT");
+    });
     return started;
   };
 
@@ -594,10 +628,14 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
     async () => {
       // Eight rows is above the 24×6 minimum. No mode fallback is involved:
       // every interactive terminal opens the alternate screen.
-      const run = await runOnPty([], ({ process: started }) => started.kill("SIGINT"), {
-        columns: 100,
-        rows: 8,
-      });
+      const run = await runOnPty(
+        [],
+        async (driver) => {
+          await driver.ready();
+          driver.process.kill("SIGINT");
+        },
+        { columns: 100, rows: 8 },
+      );
       expect(run.exitCode).toBe(EXIT_CODES.CANCELLED);
       expect(run.transcript).not.toContain("could not be started");
       // Content, not merely the absence of the failure. At eight rows the class
@@ -623,12 +661,21 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       let armed = "";
       let openAfterOne = false;
       const run = await runOnPty([], async (driver) => {
+        // Waits for the shell to take input, then polls the emulated screen for the hint rather
+        // than pausing for a fixed time. OpenTUI repaints only changed cells, so the bytes alone
+        // never spell the hint. The hint lasts two seconds, so the poll stays inside that and the
+        // second press still lands within the window that makes it a quit.
+        await driver.ready();
         writeSync(driver.pty.master, Buffer.from([0x03]));
-        await Bun.sleep(400);
+        const pollUntil = Bun.nanoseconds() + 1_500 * 1_000_000;
+        for (;;) {
+          armed = (
+            await emulateScreen(driver.pty.transcript(), { columns: COLUMNS, rows: ROWS })
+          ).rows.join("\n");
+          if (armed.includes("Press Ctrl+C again to exit.") || Bun.nanoseconds() > pollUntil) break;
+          await Bun.sleep(50);
+        }
         openAfterOne = driver.process.exitCode === null;
-        armed = (
-          await emulateScreen(driver.pty.transcript(), { columns: COLUMNS, rows: ROWS })
-        ).rows.join("\n");
         writeSync(driver.pty.master, Buffer.from([0x03]));
       });
       expect(openAfterOne).toBe(true);
