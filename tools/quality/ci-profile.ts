@@ -174,6 +174,7 @@ function argument(name: string): string | undefined {
 }
 
 if (import.meta.main) {
+  throw new Error("probe: the classifier crashes");
   const event = argument("--event") ?? "unknown";
   const base = argument("--base");
   const paths = base === undefined || event !== "pull_request" ? null : await changedPaths(base);
