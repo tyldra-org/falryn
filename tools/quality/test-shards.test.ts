@@ -114,6 +114,26 @@ test("failing files are read from local and GitHub Actions output alike", () => 
   );
 });
 
+test("failing files are read from colour-forced output, where Bun marks failures with a cross", () => {
+  // FORCE_COLOR makes Bun write "\u2717 name" for a failure and wrap lines in colour codes.
+  const coloured = [
+    "\u001b[0m",
+    "src/a.test.ts:",
+    "\u001b[0m\u001b[32m\u2713\u001b[0m fine \u001b[0m\u001b[2m[0.10ms\u001b[0m\u001b[2m]\u001b[0m",
+    "\u001b[0m\u001b[31m\u2717\u001b[0m\u001b[0m\u001b[1m bad\u001b[0m \u001b[0m\u001b[2m[0.36ms\u001b[0m\u001b[2m]\u001b[0m",
+    "src/b.test.ts:",
+    "\u001b[31m\u2717\u001b[0m worse",
+    "\u001b[0m\u001b[1m2 tests failed:\u001b[0m",
+    "\u001b[31m\u2717\u001b[0m bad",
+  ];
+  expect(failingTestFiles(coloured.join("\n"))).toEqual({
+    files: ["src/a.test.ts", "src/b.test.ts"],
+    attributed: true,
+  });
+  // A coloured failure outside any file is still unattributed.
+  expect(failingTestFiles("\u001b[31m\u2717\u001b[0m before any file").attributed).toBe(false);
+});
+
 test("the known-flake registry fails closed on malformed, duplicate or stale entries", () => {
   const entry = { path: "src/a.test.ts", issue: 1201, symptom: "busy close under load" };
   const doc = (files: unknown[]) => JSON.stringify({ version: 1, files });

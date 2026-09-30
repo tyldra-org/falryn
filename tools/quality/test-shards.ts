@@ -152,6 +152,11 @@ export function retryArguments(file: string, passthrough: readonly string[]): st
 }
 
 const FILE_HEADER = /^(?:::group::)?(\S+\.test\.[cm]?[jt]sx?):$/u;
+/**
+ * Colour codes Bun adds when a terminal or `FORCE_COLOR` asks for them. Built from the
+ * escape character rather than written as a literal, which the source-text test refuses.
+ */
+const ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "gu");
 
 /**
  * The test files one `bun test` run reported failures in. `attributed` is false
@@ -164,7 +169,8 @@ export function failingTestFiles(output: string): {
   const files = new Set<string>();
   let current: string | null = null;
   let attributed = true;
-  for (const line of output.split(/\r?\n/u)) {
+  for (const raw of output.split(/\r?\n/u)) {
+    const line = raw.replace(ANSI_SGR, "");
     // Bun ends a run by repeating every failure under "N tests failed:", outside any
     // file. Each one already appeared inside its own file, so the recap adds nothing.
     if (/^\d+ tests? failed:$/u.test(line)) break;
@@ -174,7 +180,12 @@ export function failingTestFiles(output: string): {
       continue;
     }
     if (line.startsWith("::endgroup::")) current = null;
-    else if (line.startsWith("(fail) ") || line.startsWith("# Unhandled error")) {
+    // A coloured run marks a failure "✗ name" where a plain one writes "(fail) name".
+    else if (
+      line.startsWith("(fail) ") ||
+      line.startsWith("\u2717 ") ||
+      line.startsWith("# Unhandled error")
+    ) {
       if (current === null) attributed = false;
       else files.add(current);
     }
