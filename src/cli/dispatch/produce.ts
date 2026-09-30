@@ -165,7 +165,7 @@ export async function produce(
     case "package":
       if (options.packageArgs === undefined) throw new Error("Missing package arguments.");
       if (options.packageArgs.request.confirmation !== undefined) onMutationStart?.();
-      return runPackage(services, options.packageArgs, signal);
+      return runPackage(services, options.packageArgs, signal, globals);
     case "schedule":
       if (!options.scheduleArgs) throw new Error("Missing schedule arguments.");
       if (

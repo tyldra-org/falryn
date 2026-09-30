@@ -511,6 +511,13 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
                   ? []
                   : [`confirmation: ${result.payload.confirmation}`]),
                 `recovery: ${result.payload.recovery}`,
+                ...(result.payload.acquisition === undefined
+                  ? []
+                  : [
+                      safe(
+                        `acquired ${result.payload.acquisition.listing.sourceId}:${result.payload.acquisition.listing.listingId}@${result.payload.acquisition.listing.packageVersion} from ${result.payload.acquisition.download} (${result.payload.acquisition.bytes} bytes, ${result.payload.acquisition.redirects} redirects)`,
+                      ),
+                    ]),
                 ...(result.payload.data === undefined
                   ? []
                   : [safe(JSON.stringify(result.payload.data))]),

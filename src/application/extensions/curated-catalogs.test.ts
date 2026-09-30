@@ -258,10 +258,14 @@ test("inspect shows one exact version and routes install through a local package
     source: { freshness: { state: "fresh" } },
     version: { identity: { packageVersion: "1.0.0" }, compatible: true, withdrawn: null },
     executableProfile: "unknown-until-local-inspection",
-    install: { status: "unavailable", code: "marketplace-acquisition-unavailable" },
+    install: {
+      status: "available",
+      download: "https://registry.example.test/tools-review/1.0.0/package.tgz",
+      credential: "none",
+    },
     view: { listing: { claims: { authority: "catalog-claim" } } },
   });
-  if (chosen.status !== "inspected" || chosen.install.status !== "unavailable") throw new Error();
+  if (chosen.status !== "inspected" || chosen.install.status !== "available") throw new Error();
   expect(chosen.install.identityDigest).toBe(chosen.version.identityDigest);
   expect(inspect("2.0.0")).toMatchObject({
     install: { status: "refused", code: "version-withdrawn" },

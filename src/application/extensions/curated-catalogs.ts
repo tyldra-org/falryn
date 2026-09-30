@@ -26,7 +26,9 @@ import {
   type CatalogFreshness,
   catalogFreshness,
   type MarketplaceSource,
+  marketplaceCredentialReference,
 } from "../../domain/extensions/marketplace.ts";
+import { acquisitionLocation } from "../../domain/extensions/package-acquisition.ts";
 import type { MarketplaceFetchFailure, MarketplaceFetchPort } from "./marketplace-port.ts";
 
 const sourceIdSchema = z.string().min(1).max(64);
@@ -147,9 +149,17 @@ export type CuratedInspection =
             readonly code: "version-withdrawn" | "version-incompatible" | "source-not-current";
           }
         | {
+            /** The listed bytes can be acquired by package install or update (#1210). */
+            readonly status: "available";
+            readonly download: string;
+            /** marketplace: the listing marketplace's credential is sent to this origin only. */
+            readonly credential: "marketplace" | "none";
+            readonly identityDigest: string;
+          }
+        | {
             readonly status: "unavailable";
-            readonly code: "marketplace-acquisition-unavailable";
-            /** The listed exact identity; a separately obtained package is compared by hand. */
+            readonly code: "acquisition-source-unsupported" | "acquisition-insecure-origin";
+            /** The listed exact identity; a package obtained another way is compared by hand. */
             readonly identityDigest: string;
           };
     }
@@ -466,6 +476,21 @@ export function createCuratedCatalogs(options: {
       if (source === undefined) return { status: "failed", code: "catalog-record-corrupt" };
       // Stale or unconfigured withdrawal facts cannot vouch for an install; refresh first.
       const current = match.freshness.state === "local" || match.freshness.state === "fresh";
+      const location = acquisitionLocation(listed.identity);
+      const origin = match.record.origin;
+      const marketplace =
+        origin.kind === "marketplace"
+          ? (marketplaces() ?? []).find(
+              (candidate) => candidate.id === match.sourceId && candidate.url === origin.url,
+            )
+          : undefined;
+      const credential =
+        location.ok &&
+        marketplace !== undefined &&
+        marketplaceCredentialReference(marketplace) !== null &&
+        new URL(location.url).origin === new URL(marketplace.url).origin
+          ? ("marketplace" as const)
+          : ("none" as const);
       return {
         status: "inspected",
         source,
@@ -487,11 +512,18 @@ export function createCuratedCatalogs(options: {
               ? { status: "refused", code: "version-incompatible" }
               : !current
                 ? { status: "refused", code: "source-not-current" }
-                : {
-                    status: "unavailable",
-                    code: "marketplace-acquisition-unavailable",
-                    identityDigest: listed.identityDigest,
-                  },
+                : location.ok
+                  ? {
+                      status: "available",
+                      download: location.url,
+                      credential,
+                      identityDigest: listed.identityDigest,
+                    }
+                  : {
+                      status: "unavailable",
+                      code: location.code,
+                      identityDigest: listed.identityDigest,
+                    },
       };
     },
   };
@@ -635,11 +667,9 @@ export function curatedCatalogLines(payload: CuratedCatalogPayload): readonly st
       ...(view.alsoListedBy.length ? [`  Also listed by: ${view.alsoListedBy.join(", ")}`] : []),
       payload.install.status === "refused"
         ? `Install: refused (${payload.install.code}).`
-        : "Install: a marketplace cannot deliver packages yet. Obtain the package separately and run falryn package install; check that its package and manifest digests match this listing (" +
-          version.identity.packageDigest +
-          ", " +
-          version.identity.manifestDigest +
-          ").",
+        : payload.install.status === "available"
+          ? `Install: available from ${payload.install.download}${payload.install.credential === "marketplace" ? " with the marketplace credential" : ""}; package install with this listing must reproduce identity ${payload.install.identityDigest}.`
+          : `Install: unavailable (${payload.install.code}). A package obtained another way must match package ${version.identity.packageDigest} and manifest ${version.identity.manifestDigest}.`,
     ];
   }
   return [
