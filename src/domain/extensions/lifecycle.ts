@@ -3,6 +3,7 @@ import type { Result } from "../foundation/result.ts";
 import { dependencyCandidateSchema } from "./dependencies.ts";
 import { digestSchema, identityText, packageIdentityV1Schema } from "./identity.ts";
 import { nativeActivationRequestSchema } from "./native-activation.ts";
+import { packageListingRequestSchema } from "./package-acquisition.ts";
 import { packageDataRequestSchema } from "./package-data-control.ts";
 import { type PackageDataDocument, packageDataDeclarationsSchema } from "./package-data-store.ts";
 import { packageHealthRequestSchema } from "./package-health.ts";
@@ -20,25 +21,32 @@ export const PACKAGE_ACTIONS = [
   "enable",
   "health",
 ] as const;
-export const packageRequestSchema = z.strictObject({
-  packageId: identityText,
-  operationId: z.string().uuid(),
-  expectedRevision: z.int().nonnegative(),
-  sourcePath: z.string().min(1).max(4096).optional(),
-  versionDigest: digestSchema.optional(),
-  retention: z.enum(["retain", "remove"]).default("retain"),
-  dataCleanup: z
-    .strictObject({
-      configuration: z.enum(["retain", "remove"]),
-      state: z.enum(["retain", "declared"]),
-    })
-    .optional(),
-  confirmation: digestSchema.optional(),
-  data: packageDataRequestSchema.optional(),
-  health: packageHealthRequestSchema.optional(),
-  nativeActivation: nativeActivationRequestSchema.optional(),
-  nativeRecovery: z.strictObject({ operation: z.string().uuid() }).optional(),
-});
+export const packageRequestSchema = z
+  .strictObject({
+    packageId: identityText,
+    operationId: z.string().uuid(),
+    expectedRevision: z.int().nonnegative(),
+    sourcePath: z.string().min(1).max(4096).optional(),
+    /** Acquire the exact listed version from its marketplace listing (#1210). */
+    listing: packageListingRequestSchema.optional(),
+    versionDigest: digestSchema.optional(),
+    retention: z.enum(["retain", "remove"]).default("retain"),
+    dataCleanup: z
+      .strictObject({
+        configuration: z.enum(["retain", "remove"]),
+        state: z.enum(["retain", "declared"]),
+      })
+      .optional(),
+    confirmation: digestSchema.optional(),
+    data: packageDataRequestSchema.optional(),
+    health: packageHealthRequestSchema.optional(),
+    nativeActivation: nativeActivationRequestSchema.optional(),
+    nativeRecovery: z.strictObject({ operation: z.string().uuid() }).optional(),
+  })
+  .refine(
+    (request) => request.sourcePath === undefined || request.listing === undefined,
+    "sourcePath and listing are exclusive",
+  );
 export type PackageRequest = z.infer<typeof packageRequestSchema>;
 export type PackageAction = (typeof PACKAGE_ACTIONS)[number];
 export const installedVersionSchema = z.strictObject({
@@ -79,6 +87,15 @@ export const packageReceiptSchema = z.strictObject({
   recovery: z.enum(["none", "inspect", "fresh-preview", "recover"]),
   dataEffect: z.enum(["none", "completed"]).optional(),
   data: z.json().optional(),
+  /** What was downloaded for a listing install or update (#1210). */
+  acquisition: z
+    .strictObject({
+      listing: packageListingRequestSchema,
+      download: z.string().max(2_048),
+      bytes: z.int().nonnegative(),
+      redirects: z.int().nonnegative(),
+    })
+    .optional(),
 });
 export type PackageReceipt = z.infer<typeof packageReceiptSchema>;
 export type LifecycleError = { readonly code: string };

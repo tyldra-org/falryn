@@ -186,13 +186,17 @@ Keep the diff focused on the owning issue:
 1. Add the smallest coherent implementation and its tests.
 2. Cover successful, invalid, partial, cancelled, unavailable, restart, and
    cleanup behavior that applies to the slice.
-3. Preserve explicit limits for time, bytes, counts, concurrency, retries,
+3. Give a test that drives real product work, such as durable turns, workspace
+   scans, provider fixtures or the compiled binary, an explicit timeout with a
+   comment naming that work. Hosted CI runners can take several times as long as
+   a local machine, so the 5 s default fails there first.
+4. Preserve explicit limits for time, bytes, counts, concurrency, retries,
    retention, and external effects.
-4. Update [CURRENT-STATE.md](CURRENT-STATE.md) only when source-verified
+5. Update [CURRENT-STATE.md](CURRENT-STATE.md) only when source-verified
    behavior changes.
-5. Update an existing public documentation owner instead of creating a second
+6. Update an existing public documentation owner instead of creating a second
    page for the same subject.
-6. Run focused checks while iterating, then the complete review boundary.
+7. Run focused checks while iterating, then the complete review boundary.
 
 Do not add empty packages for future work, copy a topology from another
 project, weaken a type or test to make a check pass, or hide unsupported
@@ -205,19 +209,42 @@ Use the smallest command that proves the current edit while iterating.
 | Command | Use |
 | --- | --- |
 | `bun run check:static` | Formatting, lint, types, repository integrity, and model catalogs |
-| `bun run test:changed` | Tests affected relative to `main` |
+| `bun run test:changed` | Tests whose imports reach a file changed relative to `main`, in one process; a change to a widely imported module can make it slower than `bun run test` |
 | `bun test <path>` | One focused test file |
 | `bun run test:watch` | Re-run tests while files change |
-| `bun run test:timings` | Refresh the per-file durations CI uses to balance test shards |
-| `bun run test:parallel` | Bounded four-worker source suite |
+| `bun run test` | Full source suite as concurrent shard processes (`FALRYN_TEST_SHARDS` overrides the count; `FALRYN_TEST_SHARD=i/N` runs one shard, as CI does) |
+| `bun run test:serial` | Full source suite in one process |
+| `bun run test:timings` | Refresh, serially, the per-file durations that balance local and CI shards |
 | `bun run check` | Canonical static checks and full source suite |
+| `bun run check:fast` | The same, reporting only failures |
 | `bun run build` | Standalone executable compilation |
+| `bun run test:compiled` | Compiled suites against the current `dist/falryn` |
 
-Run `bun run check` and `bun run build` before requesting review. Packaging,
+The source suite excludes `*.compiled.test.ts`. The compiled smoke scripts and
+the CI compiled-smoke jobs run those suites against a fresh build, so a stale
+`dist/falryn` never affects `bun run check`.
+
+Run `bun run check` and `bun run build` before requesting review. A pull request
+may be opened as a draft once focused tests pass, so CI runs while the full local
+suite does; mark it ready for review only after both pass.
+After a review or CI repair, rerun its focused checks. Rerun the full local suite
+only when the repair changes product source or shared test fixtures; a repair
+confined to the failing tests themselves or to documentation is proven by its
+focused tests and CI on the new head. Packaging,
 entrypoint, terminal, or compiled-runtime changes also need the relevant
 compiled smoke command from `package.json`. Performance claims need the matching
 measurement or benchmark script and a recorded comparison. Report skipped or
 unavailable checks instead of treating them as passes.
+
+A test that fails intermittently is a defect with an owner.
+`.github/known-flaky-tests.json` lists each known flaky test file with the open
+issue that owns its fix and its symptom. `bun run test` and the CI shards rerun a
+failing file once, alone, only when it is listed there and at most three files
+failed; a pass then keeps the run green with a warning naming that issue. Any
+other failure fails the run, even one that would pass on a second try. Add an
+entry only together with its owning issue, and remove it in the change that fixes
+the test; the runner rejects malformed entries and entries for missing files.
+`FALRYN_TEST_RETRIES=0` turns the rerun off.
 
 ## Documentation and code delivery
 

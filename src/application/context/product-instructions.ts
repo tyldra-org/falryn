@@ -3,6 +3,7 @@ import {
   INSTRUCTION_SOURCE_LIMITS,
   instructionDirectorySchema,
 } from "../../domain/context/instruction-sources.ts";
+import type { SkillPin } from "../../domain/context/skill-preload.ts";
 import { NO_RETRY, workUnitId } from "../../domain/orchestration/work.ts";
 import type { ProductTaskResources } from "../orchestration/product-resources.ts";
 import type {
@@ -75,6 +76,24 @@ export async function prepareProductInstructions(input: {
       };
 }
 
+/**
+ * Pins the skills a schedule names (#1180) to the source and body digest a workflow
+ * admission would load now. The publication is refreshed first; no skill body is read.
+ */
+export async function pinScheduledSkills(
+  instructions: ProductInstructions,
+  names: readonly string[],
+  signal: AbortSignal,
+): Promise<
+  | { readonly ok: true; readonly pins: readonly SkillPin[] }
+  | { readonly ok: false; readonly code: string }
+> {
+  const scope = { ...instructions.scope, kind: "workflow" as const, execution: "schedule-binding" };
+  const refreshed = await instructions.owner.prepare(scope, [], signal, undefined, true);
+  if (!refreshed.ok) return { ok: false, code: refreshed.code };
+  return instructions.owner.skillPins(scope, names);
+}
+
 /** Definition metadata narrows an admitted root; it cannot select a new root. */
 export function narrowInstructionScope(
   parent: ProductInstructions,
@@ -85,7 +104,10 @@ export function narrowInstructionScope(
   const base = parent.scope.directory;
   if (base !== "" && directory !== base && !directory.startsWith(`${base}/`))
     throw new Error("instruction-scope-not-admitted");
-  return { ...parent, scope: { ...parent.scope, kind, directory } };
+  // Session activation belongs to the main session: a child or workflow node loads only
+  // what it preloads, and nothing it loads becomes active for later main turns (#1180).
+  const { skills: _mainSession, ...narrowed } = parent;
+  return { ...narrowed, scope: { ...parent.scope, kind, directory } };
 }
 
 /** Reload uses the same process capacity and publication owner as turn admission. */

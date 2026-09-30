@@ -149,5 +149,7 @@ test("no admissions reads as unavailable usage, and the human view labels every 
   expect(text).toContain("(complete window)");
   expect(text).toContain("body 400 bytes, ~100 tokens");
   expect(text).toContain("not provider-measured");
-  expect(text).toContain("Not recorded yet: invoked, resource-loaded.");
+  // Explicit invocation and resource reads have producers now (#1192).
+  expect(text).not.toContain("Not recorded yet");
+  expect(text).toContain("loaded by automatic 1");
 });

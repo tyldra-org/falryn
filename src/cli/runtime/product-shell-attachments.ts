@@ -24,6 +24,7 @@ import { composeHookEvaluatorSession } from "./hook-evaluator-session.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
 import { modelPreferencesFrom } from "./model-configuration.ts";
 import type { NativeHookSession } from "./native-hooks.ts";
+import { composeCapabilityMentions } from "./product-capability-mentions.ts";
 import { composeProductMcp } from "./product-mcp.ts";
 import { productToolHost } from "./product-tool-host.ts";
 import type {
@@ -72,6 +73,7 @@ import {
   composeProductMemoryTools,
   composeProductProcessTools,
   composeProductScratchTools,
+  composeProductSkillTools,
   composeProductWorkspaceTools,
   mergeProductToolBundles,
   type ProductToolConfirmationPort,
@@ -79,8 +81,10 @@ import {
 import { composePeerTool } from "../../application/tools/peer-tool.ts";
 import { composeProductIndexLifecycle } from "../../application/workspace/index.ts";
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
+import { resolveSkillCommand, skillCatalogLines } from "../../domain/context/skill-invocation.ts";
 import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { projectCatalogHistory } from "../../domain/extensions/catalog-history.ts";
+import { MCP_DEADLINE_MS } from "../../domain/extensions/mcp.ts";
 import {
   type ClockPort,
   type ConfigurationGeneration,
@@ -400,6 +404,8 @@ export async function composeProductShellAttachments(
       await closeMcp();
       return null;
     }
+    // Packages the composer can offer as `$` mentions; refreshed with each publication.
+    let packageCatalog = extensions?.status === "ready" ? extensions.catalog : undefined;
     const extensionCatalog =
       extensions === undefined
         ? undefined
@@ -618,30 +624,40 @@ export async function composeProductShellAttachments(
                 (ports.provider?.kind === "ready" ? ports.provider.session.catalog : null),
             })
           : composeProductAgentRuntime(runtimePorts);
+      // One owner admits skills for each turn and serves their files to skill_resource.
+      const instructions =
+        ports.instructionSources && ports.workspaceSet
+          ? {
+              owner: ports.instructionSources(
+                () => profileSession?.configuration() ?? ports.sandboxConfiguration?.() ?? null,
+              ),
+              scope: {
+                root: canonicalDigest({ root: primaryWorkspaceRoot(ports.workspaceSet).path }),
+                directory: "",
+                kind: "main" as const,
+              },
+              skills: createSkillActivations(selection?.history.activatedSkills),
+            }
+          : null;
+      const skillTools =
+        instructions === null
+          ? null
+          : composeProductSkillTools({
+              generation,
+              owner: instructions.owner,
+              scope: instructions.scope,
+            });
       const initialTools =
         productTools === null
           ? null
           : mergeProductToolBundles(generation, [
               productTools,
+              ...(skillTools === null ? [] : [skillTools]),
               ...(native === undefined ? [] : [native.tools]),
             ]);
       if (initialTools !== null) evaluator.bindTools(initialTools);
       const composed = compose({
-        ...(ports.instructionSources && ports.workspaceSet
-          ? {
-              instructions: {
-                owner: ports.instructionSources(
-                  () => profileSession?.configuration() ?? ports.sandboxConfiguration?.() ?? null,
-                ),
-                scope: {
-                  root: canonicalDigest({ root: primaryWorkspaceRoot(ports.workspaceSet).path }),
-                  directory: "",
-                  kind: "main" as const,
-                },
-                skills: createSkillActivations(selection?.history.activatedSkills),
-              },
-            }
-          : {}),
+        ...(instructions === null ? {} : { instructions }),
         eventStore: ports.eventStore,
         ...(ports.artifacts === undefined ? {} : { historyArtifacts: ports.artifacts }),
         clock: ports.clock,
@@ -773,6 +789,112 @@ export async function composeProductShellAttachments(
         selection !== undefined,
         () => sessionExecutor?.processing.inspect().override ?? undefined,
       );
+      // Explicit skill invocation and `/skills` (#1179) read the same owner the turn
+      // admits skills through. The catalog is refreshed now, so a bare `/<name>` resolves
+      // before the first turn, and again for each `/skills` page.
+      const skillControl =
+        instructions === null
+          ? null
+          : (() => {
+              const refresh = (signal: AbortSignal) =>
+                instructions.owner
+                  .prepare(
+                    { ...instructions.scope, execution: `skill-catalog:${randomUUID()}` },
+                    [],
+                    signal,
+                    undefined,
+                    true,
+                  )
+                  .catch(() => undefined);
+              void refresh(hostSignal);
+              return {
+                refresh,
+                command: (text: string) =>
+                  resolveSkillCommand(text, {
+                    skills: instructions.owner.skillNames(),
+                    templates: new Set(prompts.templates.map((template) => template.localId)),
+                  }),
+                // Every invocable skill in the latest publication; admission rechecks it.
+                candidates() {
+                  const invocable = new Set<string>();
+                  const scope = { ...instructions.scope, execution: "skill-catalog" };
+                  for (let offset: number | null = 0; offset !== null; ) {
+                    const page = instructions.owner.skillCatalog(scope, { offset });
+                    if (page === null) return null;
+                    for (const entry of page.entries)
+                      if (entry.command !== null) invocable.add(entry.name);
+                    offset = page.nextOffset;
+                  }
+                  return {
+                    invocable,
+                    templates: new Set(prompts.templates.map((template) => template.localId)),
+                  };
+                },
+                async lines(
+                  page: { readonly filter: string | null; readonly offset: number },
+                  signal: AbortSignal,
+                ) {
+                  await refresh(signal);
+                  return skillCatalogLines(
+                    instructions.owner.skillCatalog(
+                      { ...instructions.scope, execution: "skill-catalog" },
+                      page,
+                    ),
+                    page.filter,
+                  );
+                },
+              };
+            })();
+      // `$` mentions read the same owners the turn admits through (#1206).
+      const mentions = composeCapabilityMentions({
+        skills: async (skillsSignal) => {
+          if (instructions === null) return null;
+          const scope = { ...instructions.scope, execution: "skill-catalog" };
+          const read = () => {
+            const pages = [];
+            for (let offset: number | null = 0; offset !== null; ) {
+              const page = instructions.owner.skillCatalog(scope, { offset });
+              if (page === null) return null;
+              pages.push(page);
+              offset = page.nextOffset;
+            }
+            return pages;
+          };
+          // The catalog is published lazily; the first read waits for it once.
+          const current = read();
+          if (current !== null) return current;
+          await skillControl?.refresh(AbortSignal.any([hostSignal, skillsSignal]));
+          return read();
+        },
+        packages: () => packageCatalog,
+        mcp: {
+          servers: () => mcp.configuration().servers,
+          generation: () => mcp.configuration().generation,
+          catalogState: (serverId) =>
+            mcp.catalog.summaries().find((summary) => summary.serverId === serverId)?.state ??
+            "unknown",
+          capabilityIds: () =>
+            mcp.tools.registry.entries.map((entry) => String(entry.manifest.capabilityId)),
+          async connect(serverId, connectSignal) {
+            const call = {
+              origin: "user" as const,
+              requestId: `mention-connect:${randomUUID()}`,
+              deadline: Date.now() + MCP_DEADLINE_MS,
+              signal: AbortSignal.any([hostSignal, connectSignal]),
+            };
+            const connected = await mcp.lifecycle.connect({
+              ...call,
+              serverId,
+              configurationGeneration: mcp.configuration().generation,
+            });
+            if (connected.kind !== "completed") return { ok: false, reason: connected.code };
+            const discovered = await mcp.catalog.discover(serverId, call);
+            return discovered.kind === "completed"
+              ? { ok: true }
+              : { ok: false, reason: discovered.code };
+          },
+        },
+      });
       const executor = createProductLiveTurnExecutor({
         ...(profileSession ? { admissionBinding: profileSession.capture } : {}),
         ...(selection ? { resumed: true, historyParents: selection.parents } : {}),
@@ -800,8 +922,10 @@ export async function composeProductShellAttachments(
                 );
                 if (!publication) throw new Error("native-publication-unavailable");
                 prompts = publication.prompts;
+                packageCatalog = publication.catalog;
                 const tools = mergeProductToolBundles(generation, [
                   productTools,
+                  ...(skillTools === null ? [] : [skillTools]),
                   publication.tools,
                 ]);
                 evaluator.bindTools(tools);
@@ -834,6 +958,8 @@ export async function composeProductShellAttachments(
         get prompts() {
           return prompts;
         },
+        skills: skillControl,
+        mentions,
         profileSession,
         async close() {
           // Closing a session is a stop: its observers are cancelled and leave receipts.
@@ -867,6 +993,8 @@ export async function composeProductShellAttachments(
           brief,
           output,
           isAccepting: () => !hostSignal.aborted,
+          resolveSkill: (text) => skillControl?.command(text) ?? null,
+          admitMentions: mentions.admit,
         }),
       };
     } finally {
@@ -921,6 +1049,14 @@ export async function composeProductShellAttachments(
     ReturnType<typeof createProductLiveTurnExecutor>,
     import("../../application/providers/model-settings.ts").ModelSettingsService
   >();
+  // One stable `$` source for the composer; each query reads the active session.
+  const mentionSources = [
+    {
+      trigger: "$" as const,
+      query: (query: string, querySignal: AbortSignal) =>
+        active.mentions.source.query(query, querySignal),
+    },
+  ];
   const submission = {
     get processing() {
       return active.executor.processing;
@@ -936,6 +1072,15 @@ export async function composeProductShellAttachments(
       },
     },
     binding: () => `${active.sessionId}:${activationGeneration}`,
+    skillCommand: (text: string) => active.skills?.command(text) ?? null,
+    listSkills: (
+      page: { readonly filter: string | null; readonly offset: number },
+      signal: AbortSignal,
+    ) =>
+      active.skills?.lines(page, AbortSignal.any([hostSignal, signal])) ??
+      Promise.resolve(["Skills are unavailable in this session."]),
+    skillCandidates: () => active.skills?.candidates() ?? null,
+    mentionSources,
     workingProfile: (
       argument: string | null,
       signal: AbortSignal,

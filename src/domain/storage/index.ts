@@ -91,6 +91,7 @@ export type {
   MigrationSetError,
   MigrationSetErrorCode,
   SqliteBindings,
+  SqliteCloseOptions,
   SqliteCloseReport,
   SqliteConnectionPort,
   SqliteFailure,

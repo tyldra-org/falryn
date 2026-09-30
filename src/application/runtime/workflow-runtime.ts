@@ -189,6 +189,7 @@ export function composeWorkflowRuntime(
                 input,
                 request: child,
                 resources: child.taskResources ?? resources,
+                skills: initiating.skills ?? [],
               }),
           });
         }

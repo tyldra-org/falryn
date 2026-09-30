@@ -7,22 +7,16 @@ import {
 } from "../../application/extensions/package-trust.ts";
 import type { PreparedPackage } from "../../application/extensions/prepare-package.ts";
 import { processProductResources } from "../../application/orchestration/product-resources.ts";
-import {
-  openSqliteStore,
-  PRODUCTION_MIGRATIONS,
-  rootChild,
-  sqliteDatabasePath,
-} from "../../data/index.ts";
 import { createPackageProvenanceRepository } from "../../data/security/provenance-repository.ts";
 import { createTrustDecisionRepository } from "../../data/security/trust-repository.ts";
 import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { err, ok } from "../../domain/foundation/result.ts";
 import { conflictKey, NO_RETRY, workUnitId } from "../../domain/orchestration/work.ts";
 import type { TrustDecisionStore } from "../../domain/security/ecosystem-trust.ts";
-import { isCleanClose, isRootUsable } from "../../domain/storage/index.ts";
+import { isCleanClose } from "../../domain/storage/index.ts";
 import { ed25519PackageVerifier } from "../../integrations/extensions/package-signature.ts";
-import { openBunSqlite } from "../../integrations/index.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
+import { createExtensionStateStore } from "./extension-state.ts";
 import { openSessionStore } from "./storage.ts";
 
 const emptyStore: TrustDecisionStore = {
@@ -102,25 +96,9 @@ async function executePackageTrust(
       signal,
     );
   if (opened.kind === "absent") {
-    const roots = await resolved.localData.prepareRoots(["state"], signal);
-    if (!roots.every(isRootUsable)) return { status: "failed", code: "trust-store-unavailable" };
-    const stateRoot = rootChild(resolved.localData.layout, "state");
-    const path = stateRoot === null ? null : sqliteDatabasePath(stateRoot);
-    if (path === null || stateRoot === null)
-      return { status: "failed", code: "trust-store-unavailable" };
-    const created = await openSqliteStore(
-      {
-        open: openBunSqlite,
-        clock: resolved.clock,
-        databasePath: path,
-        backupDirectory: stateRoot,
-        migrations: PRODUCTION_MIGRATIONS,
-        create: true,
-      },
-      signal,
-    );
-    if (!created.ok) return { status: "failed", code: "trust-store-unavailable" };
-    opened = { ok: true, kind: "open", store: created.value };
+    const created = await createExtensionStateStore(resolved, signal);
+    if (created === null) return { status: "failed", code: "trust-store-unavailable" };
+    opened = { ok: true, kind: "open", store: created };
   }
   let result: PackageTrustResult;
   try {

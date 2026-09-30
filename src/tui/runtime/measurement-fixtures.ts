@@ -69,6 +69,7 @@ export function openMeasurementPty(
   const master = new Int32Array(1);
   const slave = new Int32Array(1);
   const size = new Uint16Array([rows, columns, 0, 0]);
+  let duplicate: (fd: number) => number;
 
   try {
     const libc = dlopen(process.platform === "darwin" ? "libSystem.B.dylib" : "libutil.so.1", {
@@ -76,19 +77,31 @@ export function openMeasurementPty(
         args: [FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr, FFIType.ptr],
         returns: FFIType.i32,
       },
+      dup: { args: [FFIType.i32], returns: FFIType.i32 },
     });
     if (libc.symbols.openpty(ptr(master), ptr(slave), null, null, ptr(size)) !== 0) {
       return null;
     }
+    duplicate = (fd) => libc.symbols.dup(fd);
   } catch {
     return null;
   }
 
   const masterFd = master[0] ?? -1;
   const slaveFd = slave[0] ?? -1;
+  // Bun's read stream can close its descriptor number after the owner has closed
+  // it, and by then the number may belong to a newly opened file. The stream
+  // therefore owns a duplicate that only it closes; this fixture closes only
+  // `masterFd` and `slaveFd`.
+  const readerFd = duplicate(masterFd);
+  if (readerFd < 0) {
+    closeSync(masterFd);
+    closeSync(slaveFd);
+    return null;
+  }
   let transcript = "";
   let closed = false;
-  const reader = createReadStream("", { fd: masterFd, autoClose: false });
+  const reader = createReadStream("", { fd: readerFd, autoClose: true });
   reader.on("data", (chunk) => {
     transcript += chunk.toString();
   });

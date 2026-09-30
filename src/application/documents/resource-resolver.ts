@@ -61,6 +61,15 @@ export type ResourceResolverOptions = {
 };
 export type ResourceResolver = {
   read(input: unknown, signal?: AbortSignal): Promise<Result<ResourceReadResult, ResourceFailure>>;
+  /**
+   * Host lookup of one retained evidence reference, revalidated like Read, with the
+   * current workspace bytes when its source is a workspace file. The reference is a
+   * lookup key: resolving it grants no write authority.
+   */
+  resolveEvidence(
+    reference: string,
+    signal?: AbortSignal,
+  ): Promise<Result<ResolvedResourceEvidence, ResourceFailure>>;
   /** Trusted host selection, never exposed as model authorization. */
   retainSelection(
     identity: string,
@@ -72,6 +81,15 @@ export type ResourceResolver = {
     id: string,
     signal?: AbortSignal,
   ): Promise<Result<ResourceTarget, ResourceFailure>>;
+};
+
+export type ResolvedResourceEvidence = {
+  readonly evidence: ResourceEvidence;
+  /** The exact bytes the evidence was issued over. */
+  readonly retained: Uint8Array;
+  readonly currentness: "current" | "historical";
+  /** Live workspace bytes; null for sources that are not workspace files. */
+  readonly current: { readonly bytes: Uint8Array; readonly digest: string } | null;
 };
 
 export function createResourceResolver(options: ResourceResolverOptions): ResourceResolver {
@@ -398,6 +416,43 @@ export function createResourceResolver(options: ResourceResolverOptions): Resour
   };
   return {
     selectArtifact: (id, signal) => adoptArtifact(id, id, signal),
+    async resolveEvidence(reference, signal) {
+      const loaded = await load({ kind: "evidence", reference }, signal);
+      if (!loaded.ok) return loaded;
+      const evidence = resourceEvidenceSchema.safeParse(loaded.value.metadata);
+      if (!evidence.success) return failure("invalid-reference");
+      const { target } = evidence.data;
+      let current: ResolvedResourceEvidence["current"] = null;
+      if (target.kind === "workspace") {
+        if (loaded.value.currentness === "current")
+          current = { bytes: loaded.value.bytes, digest: evidence.data.digest };
+        else {
+          const read = await options.reader.readBytes(
+            options.workspaceRoot,
+            target.path,
+            {
+              maxFileBytes: MAX_RESOURCE_SOURCE_BYTES,
+              maxExpansionBytes: MAX_RESOURCE_SOURCE_BYTES,
+            },
+            signal,
+          );
+          if (!read.ok) return failure(read.error.code);
+          if (read.value.completeness !== "complete") return failure("source-limit");
+          if (read.value.sourceIdentity !== evidence.data.sourceIdentity)
+            return failure("root-rebound");
+          current = { bytes: read.value.bytes, digest: resourceDigest(read.value.bytes) };
+        }
+      }
+      return {
+        ok: true,
+        value: {
+          evidence: evidence.data,
+          retained: loaded.value.bytes,
+          currentness: loaded.value.currentness,
+          current,
+        },
+      };
+    },
     async retainSelection(identity, bytes, mediaType, signal) {
       if (bytes.length > MAX_RESOURCE_SOURCE_BYTES || identity.length > 2048)
         return failure("source-limit");

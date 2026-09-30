@@ -692,6 +692,7 @@ export function createLanguageServerSupervisor(
             expectedGitHead: null,
             limits: DEFAULT_PATCH_LIMITS,
             targets: [],
+            dependencies: [],
           },
           deferredCommands: [],
         });
@@ -750,6 +751,7 @@ export function createLanguageServerSupervisor(
               expectedGitHead: null,
               limits: DEFAULT_PATCH_LIMITS,
               targets: [],
+              dependencies: [],
             },
             deferredCommands: [command],
           })),

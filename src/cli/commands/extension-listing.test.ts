@@ -1,6 +1,7 @@
 import { afterEach, expect, test } from "bun:test";
-import { readdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { CONFIGURATION_FILE_NAME } from "../../config/index.ts";
 import { removeTemporaryRoots, temporaryRoot } from "../../data/fixtures.ts";
 import { curatedDocument, curatedEntry } from "../../domain/extensions/curated-catalog-fixtures.ts";
 
@@ -193,4 +194,82 @@ test("refused documents and requests leave no catalog behind", async () => {
   const invalid = await run({ operation: "fetch", url: "https://catalog.example.test/" });
   expect(invalid.exitCode).not.toBe(0);
   expect(invalid.text).not.toContain("catalog.example.test");
+}, 120_000);
+
+test("an unreachable marketplace changes nothing; inspect shows one version before any install", async () => {
+  const root = await temporaryRoot("falryn-listing-market-");
+  const run = await cli(root);
+  // A loopback marketplace is refused as a private destination before any connection.
+  await mkdir(join(root, "config"), { recursive: true });
+  await writeFile(
+    join(root, "config", CONFIGURATION_FILE_NAME),
+    JSON.stringify({
+      schemaVersion: 1,
+      tools: {
+        marketplaces: {
+          sources: [
+            {
+              id: "local",
+              url: "https://127.0.0.1:9/catalog.json",
+              credentialEnvironment: "MARKET_TOKEN",
+            },
+          ],
+        },
+      },
+    }),
+  );
+  const refreshed = await run({ operation: "refresh" });
+  expect(refreshed.exitCode).not.toBe(0);
+  expect(refreshed.payload).toMatchObject({
+    status: "refreshed",
+    results: [{ sourceId: "local", fetchedAt: null, receipt: { status: "failed" } }],
+  });
+  expect((await run({ operation: "list" })).payload).toMatchObject({ total: 0 });
+  expect((await run({ operation: "refresh", sourceId: "absent" })).payload).toEqual({
+    status: "failed",
+    code: "marketplace-unknown",
+  });
+
+  const file = await catalogFile(
+    root,
+    "catalog.json",
+    curatedDocument([curatedEntry("tools/review", { versions: ["1.0.0", "1.1.0"] })]),
+  );
+  await run({ operation: "import", file });
+  const inspected = await run({
+    operation: "inspect",
+    query: { sourceId: "example", listingId: "tools/review", packageVersion: "1.0.0" },
+  });
+  expect(inspected.exitCode).toBe(0);
+  expect(inspected.payload).toMatchObject({
+    status: "inspected",
+    source: { origin: { kind: "file" }, freshness: { state: "local" } },
+    version: { identity: { packageVersion: "1.0.0" } },
+    executableProfile: "unknown-until-local-inspection",
+    install: {
+      status: "available",
+      download: "https://registry.example.test/tools-review/1.0.0/package.tgz",
+      credential: "none",
+    },
+  });
+  const human = await run(
+    { operation: "inspect", query: { sourceId: "example", listingId: "tools/review" } },
+    "human",
+  );
+  expect(human.text).toContain("Version: 1.1.0");
+  expect(human.text).toContain("imported from a file; no freshness claim");
+  expect(human.text).toContain("Catalog claims (unverified)");
+  expect(human.text).toContain(
+    "Executable profile: unknown until the package is inspected locally.",
+  );
+  expect(human.text).toContain(
+    "Install: available from https://registry.example.test/tools-review/1.1.0/package.tgz;",
+  );
+  const missing = await run({
+    operation: "inspect",
+    query: { sourceId: "example", listingId: "tools/absent" },
+  });
+  expect(missing.exitCode).not.toBe(0);
+  expect(missing.payload).toEqual({ status: "not-found", code: "listing-not-found" });
+  expect(await readdir(join(root, "state"))).not.toContain("packages");
 }, 120_000);

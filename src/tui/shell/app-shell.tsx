@@ -32,7 +32,8 @@ import type { GitDashboard } from "../../application/git/index.ts";
 import type { ModelSettingsService } from "../../application/providers/model-settings.ts";
 import type { Instant } from "../../domain/foundation/index.ts";
 import { ComposerView } from "../composer/composer.tsx";
-import type { ComposerAction } from "../composer/index.ts";
+import type { ComposerAction, ComposerState } from "../composer/index.ts";
+import { suggestionListRows } from "../composer/suggestions.ts";
 import type { ConfirmationChoiceId, ConfirmationView, SecretEdit } from "../confirmation/index.ts";
 import {
   CONTROL_PANEL_TITLES,
@@ -187,7 +188,10 @@ export function AppShell(props: AppShellProps): ReactNode {
 
   // Computed once, here, and handed to both the composer that draws those rows
   // and the transcript that sizes itself against what is left.
-  const reserved = composerRows(props.model.composer.state.text.split("\n").length);
+  const reserved = reservedComposerRows(
+    props.model.composer.state,
+    layout.kind === "layout" ? primaryColumns(viewport, layout.class) : viewport.columns,
+  );
 
   const frame: Frame = {
     theme,
@@ -347,10 +351,7 @@ function ShellFrame(props: {
   // takes are subtracted rather than the transcript being given a proportion,
   // which is how an interface arrives at a permanently tiled control centre.
   const primary = primaryColumns(props.viewport, props.layout.class);
-  const railRows = primaryRows(
-    props.viewport,
-    composerRows(model.composer.state.text.split("\n").length),
-  );
+  const railRows = primaryRows(props.viewport, reservedComposerRows(model.composer.state, primary));
 
   return (
     <box flexDirection="column" width={props.viewport.columns} height={props.viewport.rows}>
@@ -490,6 +491,17 @@ function overlayTitle(
       return exhaustive;
     }
   }
+}
+
+/**
+ * Rows the composer reserves: its draft and chrome, plus the suggestion list while
+ * it shows rows (#1206). One function, so the composer and the transcript agree.
+ */
+function reservedComposerRows(state: ComposerState, columns: number): number {
+  return composerRows(
+    state.text.split("\n").length,
+    suggestionListRows(state.suggestions, columns),
+  );
 }
 
 function overlayBody(

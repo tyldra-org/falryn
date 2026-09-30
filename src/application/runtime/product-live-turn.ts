@@ -32,6 +32,7 @@ import type {
   ModelId,
   TurnId,
 } from "../../domain/foundation/index.ts";
+import { capabilityId } from "../../domain/foundation/index.ts";
 import type { TerminalOutcome } from "../../domain/orchestration/index.ts";
 import {
   type EffectiveExecutionPolicy,
@@ -79,6 +80,29 @@ export type ProductLiveTurnInput = {
   /** Trusted host admission; no prompt or saved agent definition can manufacture this handle. */
   readonly childAdmission?: AdmittedChild;
   readonly prompt: string;
+  /**
+   * Skills the user invoked explicitly (#1179). Set only by a host that parsed admitted
+   * user input (the terminal composer or headless `falryn run`); never by a model,
+   * repository instruction, template expansion, scheduler or delegated agent.
+   */
+  readonly userSkills?: readonly string[];
+  /**
+   * Skills a child agent definition or schedule names (#1180). Set only by the trusted
+   * host that admitted the child or scheduled run, from its captured definition or
+   * binding; never decoded from model or prompt text. A preloaded turn fails when any
+   * named skill cannot load.
+   */
+  readonly skillPreload?: import("../../domain/context/skill-preload.ts").SkillPreload;
+  /**
+   * Capabilities the user picked with `$` mentions (#1206), admitted by the host from
+   * composer tokens. They are preferred for this turn only and grant nothing; the
+   * tokens are recorded on the user message so transcript, export and replay show them.
+   */
+  readonly mentions?: {
+    readonly tokens: readonly import("../../domain/sessions/history.ts").HistoryMentionToken[];
+    readonly preferredCapabilityIds: readonly string[];
+    readonly mcpServers: readonly string[];
+  };
   readonly attachmentSelection?: ResourceAttachmentSelection;
   readonly turnId: TurnId;
   readonly signal?: AbortSignal;
@@ -1005,6 +1029,9 @@ export function createProductLiveTurnExecutor(
                 id: `source-${historyDigest(section.source).slice(8)}`,
                 generation: Number(generation),
               })),
+              ...(input.mentions === undefined || input.mentions.tokens.length === 0
+                ? {}
+                : { tokens: [...input.mentions.tokens] }),
             },
             input.prompt,
             taskResources,
@@ -1062,16 +1089,29 @@ export function createProductLiveTurnExecutor(
                   configurationGeneration: String(generation),
                   resources: taskResources,
                   signal: input.signal ?? new AbortController().signal,
-                  // Main turns route skills automatically; children and workflows do not (#1180).
-                  ...(runtime.instructions.skills !== undefined &&
-                  runtime.instructions.scope.kind === "main"
+                  // Main turns route skills automatically; children and workflows load only
+                  // what their definition or schedule preloads (#1180). Explicit user skills
+                  // ride the same route with user origin, on main turns only.
+                  ...(input.skillPreload !== undefined
                     ? {
                         route: {
                           task: input.prompt,
-                          active: runtime.instructions.skills.active(),
+                          active: [],
+                          preload: input.skillPreload,
                         },
                       }
-                    : {}),
+                    : runtime.instructions.skills !== undefined &&
+                        runtime.instructions.scope.kind === "main"
+                      ? {
+                          route: {
+                            task: input.prompt,
+                            active: runtime.instructions.skills.active(),
+                            ...(input.userSkills === undefined || input.childAdmission !== undefined
+                              ? {}
+                              : { explicit: input.userSkills }),
+                          },
+                        }
+                      : {}),
                 });
           if (instructionPreparation && !instructionPreparation.ok && runtime.instructions) {
             const recorded = await runtime.journal.persist(
@@ -1242,11 +1282,28 @@ export function createProductLiveTurnExecutor(
               executionPolicy,
             );
           }
+          // A loaded skill with files needs its reader in this turn's tool set (#137).
+          const skillResource = instructionBinding?.skillResources
+            ? registry.resolveByName("skill_resource")
+            : null;
           const disclosure = discloseProductTools(capabilityRegistry, registry, {
             executionPolicy,
             consumer: "native-model",
             task: input.prompt,
             intent: input.intent ?? executionPolicy.workIntent,
+            ...(skillResource === null && (input.mentions?.preferredCapabilityIds.length ?? 0) === 0
+              ? {}
+              : {
+                  preferredCapabilityIds: [
+                    ...(skillResource === null ? [] : [skillResource.manifest.capabilityId]),
+                    ...(input.mentions?.preferredCapabilityIds ?? []).map((id) =>
+                      capabilityId.from(id),
+                    ),
+                  ],
+                  userMentionedCapabilityIds: (input.mentions?.preferredCapabilityIds ?? []).map(
+                    (id) => capabilityId.from(id),
+                  ),
+                }),
             healthEvidence: {
               now: options.clock.now(),
               runtime: {
@@ -1454,6 +1511,9 @@ export function createProductLiveTurnExecutor(
             modelInput: {
               ...modelInput,
               ...(instructionBinding || input.authorityCurrent ? { instructionsCurrent } : {}),
+              ...((input.mentions?.mcpServers.length ?? 0) === 0
+                ? {}
+                : { userSelection: { mcpServers: [...(input.mentions?.mcpServers ?? [])] } }),
             },
           });
           let instructionHistoryFailed = false;

@@ -24,7 +24,7 @@ application. The current command surface includes:
 | falryn model | Inspect and revision-safely edit model policy through the shared settings service |
 | falryn package | Inspect, install, activate, update, disable or remove governed packages and inspect their data/health |
 | falryn peer | Inspect authorized peers, exchange messages, and read delivery history |
-| falryn extension inspect / trust / scope / catalog | Inspect local declarations, confirm trust or scoped metadata preferences, and query the inert catalog |
+| falryn extension inspect / trust / notices / scope / catalog | Inspect local declarations, confirm trust or scoped metadata preferences, list or acknowledge package notices, and query the inert catalog |
 | falryn export / import | Preview or write a versioned local export package, or import one after verification |
 | falryn replay | Rebuild one stored session projection without repeating effects |
 | falryn session list / show / resume / fork / rewind / replay | Inspect or navigate durable session history while preserving lineage |
@@ -385,7 +385,7 @@ changes its instruction role. The shared resolver also handles skill and prompt
 metadata: equal-priority skill collisions and ambiguous prompt aliases require
 a choice; an explicit prompt declaration replaces only its exact same-package
 conventional identity. Automatic skill routing uses this resolver (see Skills);
-skill commands and direct invocation are not shipped.
+explicit skill invocation uses it with user origin (see Skills).
 
 `instructions.preferences` is a version-1 object with `choices` and `restrictions`
 arrays. A choice contains `kind`, `name` and `source`. For instructions, `name` is
@@ -449,7 +449,7 @@ and never loaded. Untrusted project skills are listed but never read. The
 frontmatter must carry the Agent Skills `name` (matching the directory) and
 `description`. `disable-model-invocation: true` keeps a skill out of automatic
 selection, and `user-invocable: false` only affects explicit invocation, which is
-not shipped yet (#1179). These must be real booleans; any other value makes the
+refused for that skill. These must be real booleans; any other value makes the
 skill unavailable (`malformed-eligibility`). `model`, `effort`, `context`,
 `agent` and `hooks` are recognized but not yet honored, so a skill declaring one
 is unavailable (`unsupported-control`, #1181). `allowed-tools` is a hint that grants
@@ -468,40 +468,152 @@ that could not load, with the reason. Manual-only skills are never mentioned. Lo
 bodies use the instruction limits above and are complete or refused, never
 truncated. Edits and removals apply from the next turn.
 
+A user invokes a skill explicitly by starting a submitted prompt with
+`/skill:<name>`, in the terminal composer or headless `falryn run`; the rest of the
+prompt is the task. A bare `/<name>` also works when a skill of that name exists.
+Built-in commands always win, so `/skill:<name>` reaches a skill whose name is also a
+built-in. When a prompt template shares the bare name the command is ambiguous and
+must be qualified (`skill.ambiguous-command`); an unknown bare name stays with
+prompt templates. Only text the user submits is parsed: slash text inside a prompt,
+model output, repository instructions, template expansions and scheduled or child
+prompts never invoke a skill. The pick resolves with user origin, so a manual-only
+skill (`disable-model-invocation: true`) loads, while a `user-invocable: false`,
+restricted, missing, conflicting, untrusted or changed skill refuses the turn before
+any provider request, with an `instructions.rejected` fact and no substitute source.
+Headless runs report that failure at stage `skill-failed`. A loaded pick is recorded
+as route reason `explicit-invocation` and is kept out of automatic routing for that
+turn. It carries into later turns only through ordinary automatic eligibility, so a
+manual-only skill is not reloaded without another command.
+
+`/skills [filter] [after N]` lists the skill catalog without reading any body: each
+source's name, origin, path, declared eligibility and either its command or why it
+cannot be invoked (shadowed, excluded, conflicting or not user-invocable). The catalog
+is refreshed when the session opens and for each listing. Pages hold at most 100
+entries or 256 KiB. In the composer, Tab completes a draft that is only a command
+prefix (`/rel`, `/skill:re`) to a skill the user can invoke, using the bare form
+only when nothing else answers to that name; several matches extend to their common
+prefix and are listed in a notice. Otherwise Tab moves focus as before. Completion
+reads the latest catalog, and admission still rechecks the pick. There is no
+completion popup for `/`.
+
+### Composer capability mentions
+
+In the terminal composer, typing `$` at the start of the draft or after whitespace or
+an opening bracket or quote opens a suggestion list above the draft. It lists
+user-invocable skills, activated packages and configured MCP servers from the
+metadata the session already holds; listing reads no skill body or schema and starts
+no server. After a letter, digit or `_`, and for shell-like text (`$5`, `$HOME`,
+`$PATH`, `$?`, `${` and similar), `$` stays an ordinary character and nothing is
+queried. Unavailable rows stay listed with their reason. Up and Down move, Tab or
+Return inserts the selected row as a mention, and Escape closes the list; Tab on a
+plain `$word` reopens it, and otherwise still completes a `/skill` command or moves
+focus. At most 8 rows show (5 below 60 columns, without the source column).
+
+A picked mention is an atomic token bound to the exact identity picked: the cursor
+skips it, Backspace after it removes it whole, undo restores it, and editing inside it
+turns it back into plain text with a notice. Typing an exact label and then a space or
+punctuation while the list shows exactly one exact, available row converts it as if
+picked. Pasted, dictated, enhanced, template, model, scheduled and child text never
+becomes a token. A prompt holds at most 8 capability mentions, of which at most 4
+skills, and 64 tokens in all. Recalled history restores its tokens; prompt
+enhancement keeps them as placeholders and refuses a proposal that drops one.
+
+On submit every token is checked against the current catalog before the turn starts.
+A skill loads exactly like `/skill:<name>`, with reason `explicit-invocation`. A package
+adds its activated bound actions, and an MCP server the MCP tools, to the turn's
+preferred capabilities; a picked server whose catalog is not current is connected
+once as the user's request, and in that turn the model's calls to it count as the
+user's selection, so an explicit-only server can be used. The model sees one section
+naming the picks; nothing else is granted, and the preference ends with the turn. A
+stale, unavailable, untrusted, not-user-invocable or unconnectable pick refuses the
+whole prompt with one reason per token (`mention.*` codes), no turn and no provider
+request, and the draft is kept. While a turn is running a draft with mentions is not
+queued. The user message's history record keeps the tokens, and the transcript shows
+a receipt such as `Using: gmail (package, …) · release-notes (skill)`. Headless
+`falryn run` has no suggestion list: `$` there is plain text.
+
+
 The `instructions.resolved` receipt records routing in `skills`: the number of
 eligible candidates and each route's name, decision (`loaded`, `recommended` or
 `unavailable`) and reason, plus the admitted source, digest and body bytes of a
 loaded skill. It holds no body, so replay and export show these decisions without
-reading a skill. Child agents, workflow steps and scheduled runs do not route
-skills (#1180), and supporting files inside a bundle are not loaded (#137).
-Receipts also record estimated context contributions: a loaded body's tokens, each
+reading a skill; the transcript's instruction notice lists each route with its
+decision and reason. Child agents, workflow steps and scheduled runs never route
+skills automatically. They load only what a child's agent definition or a
+schedule preloads, with route reason `child-preload` or `schedule-preload` (see
+Delegated agents and Durable schedules). A preload uses the automatic column of
+the eligibility table, never user origin, so a manual-only (`disable-model-invocation`)
+or restricted skill is refused. Any named skill that cannot load fails that child
+or model step before its provider request, with an `instructions.rejected` fact and
+no substitute. What a child or workflow step loads never becomes active for the
+session's later main turns. Receipts also record estimated context contributions: a loaded body's tokens, each
 route's own line in the routing section (bytes and tokens) and the whole section.
 Estimates use the prompt composer's four-UTF-16-code-units-per-token rule and name
 it (`utf16-code-units-per-4-v1`); they are not provider-measured. Receipts written
 before these fields existed report their tokens as unestimated, never zero.
 
+A loaded skill's other files (`references/`, `assets/`, `scripts/`, `templates/`,
+`examples/` or anywhere else in its directory) are listed in the routing section
+with path, kind, media type and size, inside that skill's own listing line. The list
+comes from a directory walk that reads no file, skips hidden files, never follows or
+lists a symlink, and names at most 32 files (with a count of the rest). The model
+reads one with the `skill_resource` tool, which is offered whenever a loaded skill has
+files. It takes a skill name, a path relative to that skill's directory and an
+optional `depth`, and follows relative markdown links outside fenced code up to that
+many hops (at most 16). One request resolves at most 64 files and returns at most
+256 KiB of text, and a file over 1 MiB is refused unread. Each file is read at most
+once and returns its digest and size. Every other outcome is reported separately:
+binary (metadata only), already loaded, cycle, escaped (outside the skill directory,
+absolute, or through a symlink), hidden (any path segment starting with a dot, such
+as `.env` or `.git`, is never read), missing, too large, budget exhausted, beyond the
+requested depth (named for a later request), reference limit, and changed during the
+read.
+
+Only skills loaded by the session's latest turn serve files. A skill whose `SKILL.md`
+changed since it was loaded, or that lost its authority, refuses until the next turn
+admits it. File text is evidence, not instructions. Scripts are listed as not
+executable, and nothing in a skill runs during discovery, loading, indexing or
+reading. A standalone skill's script gains no tool or execution authority; the model
+can only use the ordinary run tools under their own authority. Package-admitted
+executable helpers are not available (#901, #902), and package-installed skills are
+not routed.
+
 `falryn extension skills [--input request.json]` reports skill usage from those
-stored receipts only. It never reads a skill, starts a script or MCP server, calls a
-provider or records anything. The optional request selects one `session` of the
-current workspace (default: all of its sessions, at most 256), a `skill` name,
+stored receipts and from the metadata fact each completed `skill_resource` read
+records on its invocation event (the skill, source and body digest it was bound to,
+and each file's path, status, size, digest and estimated tokens; never file text).
+It never reads a skill or resource, starts a script or MCP server, calls a provider
+or records anything. It reads each session's stream and, as separate sessions, the
+child, workflow-step and scheduled streams of the workspace that hold admissions,
+which no session record lists. The optional request selects one `session` of the
+current workspace (default: all of them, at most 256), a `skill` name,
 `since`/`until` timestamps, a `limit` of stored events to scan (default 1,024,
 maximum 4,096), an `after` continuation from the previous page of the same query,
 and `aggregate: "source"` to merge a source's generations while keeping the
 per-generation breakdown. Rows are keyed by source, content digest and configuration
 generation, and count discovered, selected, shadowed, excluded, conflicting,
-recommended, loaded and refused separately, plus reuse of an identical earlier
-admission, load reasons and the admission scope (main, child or workflow). A
+recommended, loaded, refused, invoked (explicit user invocations) and resource-loaded
+(supporting files whose text a read returned) separately, plus reuse of an identical
+earlier admission, load reasons, the admission scope (main, child or workflow) and
+who caused each load: `explicit`, `automatic`, `child` preload, `schedule` preload, or
+`unknown` for a reason this build does not recognise. A
 recommended or refused route belongs to the source that won name resolution, so a
 shadowed same-named source never inherits it. Body and listing contributions, and the
-shared routing-section total, are reported with the estimator's name.
+shared routing-section total, are reported with the estimator's name; resource
+contributions are reported separately from the body. Each fact counts once by its
+producer identity (an admission's workspace, scope, execution, generation and content;
+a resource read's invocation and bound skill), so the same admission delivered by
+another stream, an import or a replay is a duplicate, and a parent never counts a
+child's admission.
 
 Coverage lists each session's scanned sequence range and whether it reached the end.
 Sequence gaps, unreadable events (skipped, with their neighbours still counted),
 events outside the workspace or session, cancellation, and receipts that omitted
 sources are reported as omissions, and only a window with none of these is marked
-complete. A workspace with no admissions reports usage as unavailable, not zero.
-Explicit invocation and supporting-resource loads have no producer yet and are listed
-as not recorded. Provider-reported input totals are not stored per session, so they are
+complete. A workspace with no admissions reports usage as unavailable, not zero. A
+resource read whose skill has no admission in the window is reported unattributed,
+and a read recorded before reads carried a fact is reported without files; either
+makes the window incomplete. Provider-reported input totals are not stored per session, so they are
 reported as unavailable and never attributed to a skill. An unknown session and a
 continuation reused with a different query are refused. There is no Extensions view
 for these results yet (#274).
@@ -1019,7 +1131,8 @@ withdrawal needs a higher sequence and does not restore an old approval.
 installation transactions and explicit health checks. Actions are `inspect`, `data`, `health`, `install`, `update`,
 `rollback`, `disable`, `uninstall`, `recover`, and `enable`. Every request names
 `packageId`, a UUID `operationId`, and `expectedRevision`. Install/update also
-name `sourcePath`; rollback names a previously returned `versionDigest`.
+name `sourcePath` or, exclusively, a marketplace `listing` (see Marketplace package
+acquisition); rollback names a previously returned `versionDigest`.
 Mutations first return a `confirmation` digest. Repeat the same request with
 that digest to apply it. A committed operation ID replays its recorded receipt
 without repeating the mutation; changed intent under that ID is refused.
@@ -1048,10 +1161,52 @@ and unrelated files are never removal targets. Inspection reports the current
 digest, revision, retained count and pending cleanup; save version digests from
 receipts for exact rollback. Human, quiet, JSON and JSONL expose the same facts.
 
+### Marketplace package acquisition
+
+Install and update accept `listing: { sourceId, listingId, packageVersion }` for one
+exact version from an imported or refreshed catalog. The listing is gated when the
+action runs, with the same rules as `extension listing` inspect: a `local` or
+`fresh` catalog and a compatible, unwithdrawn version. Its refusal codes are
+inspect's. A listing on any other action is `unexpected-package-listing`.
+
+Where the bytes come from:
+
+- A `registry` coordinate uses Falryn registry layout v1:
+  `<registry>/<encodeURIComponent(coordinate)>/<encodeURIComponent(packageVersion)>/package.tgz`.
+- An `archive` coordinate downloads exactly its `origin`. The SHA-256 of the received
+  bytes must equal its declared digest (`archive-digest-mismatch`).
+- Both must be `https`. `git`, `local` and `builtin` coordinates are
+  `acquisition-source-unsupported`.
+
+The download is one GET per hop, at most three redirects, 64 MiB and 120 seconds
+in total, admitted by the product resource owner. Every hop must be `https` and is
+re-resolved and pinned to public addresses. Only `200` with identity content
+encoding is accepted. The listing marketplace's credential is sent only to hops on
+that marketplace's own origin; a redirect elsewhere never receives it. Download
+failures are `package-download-*` codes.
+
+The archive is a gzip POSIX ustar/pax tar, read in memory by Falryn:
+
+- Expansion is limited to 64 MiB and 4,096 files.
+- Paths must be safe package-relative paths of at most 1,024 bytes and depth 32.
+- Links, devices and FIFOs are refused, as are duplicate or case-colliding paths
+  and malformed headers.
+- The package root is the archive root when it holds `plugin.json`, otherwise its
+  single top-level directory.
+- Refusals use `archive-*` codes.
+
+The package is prepared with the listed source coordinate. Any identity other than
+the listed one is refused before preview (`acquired-identity-mismatch`), including
+when served bytes change between preview and confirmation. Preview and confirmation
+each download again; the receipt's `acquisition` records the listing, final URL,
+byte count and redirect count. Installed versions keep their source coordinate, so
+rollback reads retained bytes without a download. Pinned Git acquisition is not
+provided.
+
 Installation and trust approval do not create executable bindings. `package enable`
 without a native activation request still returns `activation-owner-unavailable`.
 The explicit native tool and prompt-template paths below publish only their
-selected contribution identities. Remote acquisition, module services, full-user
+selected contribution identities. Pinned Git acquisition, module services, full-user
 execution and other native-kind adapters remain unavailable. Scope controls remain
 metadata preferences.
 Package cache files retain exact source bytes and are not redacted artifacts.
@@ -1284,14 +1439,36 @@ Package descriptors have no native binding and remain unavailable even
 when their scoped preference is enabled. Rehydration does not prepare full
 instructions or schemas, resolve credentials, start code, or contact a model.
 
-### Curated catalog listings
+### Curated catalog listings and marketplaces
 
-`falryn extension listing --input request.json` imports and pages curated catalog
-metadata. The request is `{ "operation": "import", "file": "catalog.json" }` or
-`{ "operation": "list", "query": { ... } }` with optional `sourceId`, `kind`, `text`,
-`offset` and `limit` (1–100, default 50). Import reads one local file; nothing is
-fetched, downloaded, installed, enabled or trusted. There is no remote source or
-search yet.
+`falryn extension listing --input request.json` imports, refreshes, lists and
+inspects curated catalog metadata. The request is one of:
+
+- `{ "operation": "import", "file": "catalog.json" }` reads one local file.
+- `{ "operation": "refresh" }` or `{ "operation": "refresh", "sourceId": "id" }`
+  fetches configured marketplaces.
+- `{ "operation": "list", "query": { ... } }` with optional `sourceId`, `kind`,
+  `provides`, `text`, `installable`, `offset` and `limit` (1–100, default 50).
+- `{ "operation": "inspect", "query": { "sourceId", "listingId", "packageVersion"? } }`.
+
+Only import and refresh write, and only catalog metadata. Nothing downloads, installs,
+enables, starts or trusts a package.
+
+Marketplaces are user-scope configuration: `connections.marketplaces.sources`
+(flat key `tools.marketplaces`), at most 16 entries of `id`, an https `url` without
+credentials, query or fragment, `enabled` (default true), `maxAgeHours` (1–720,
+default 24) and an optional `credential` reference or `credentialEnvironment`.
+Configuring one contacts nothing. Refresh fetches each enabled marketplace in
+order, or one named source, with one GET per source admitted by the product
+resource owner. Every resolved address must be public and the connection is pinned
+to it; redirects, non-200 statuses, compressed or non-`application/json` bodies and
+bodies over 1 MiB are refused, with a 30-second limit. The credential is resolved for
+consumer `marketplace:<id>` and sent only as a bearer token to that URL. The
+document's `source.id` must equal the configured `id`
+(`marketplace-source-mismatch`), and it is then ingested exactly like a local
+import, including the sequence rules below. A failed, refused or cancelled source
+leaves its cached catalog unchanged; other sources still refresh, and the command
+reports each source's result and fails when any source did.
 
 A catalog is a `falryn.curated-catalog` generation-1 JSON document of at most 1 MiB:
 `source` (`id`, `title`), a positive `sequence`, `publishedAt` and up to 512
@@ -1324,8 +1501,40 @@ previously accepted form is kept and listed as retained with the sequence it cam
 from, unless the new catalog lists its package under another entry. Other sources are
 never changed; listing shows which other sources list the same exact package. A stored
 record with an unknown record version or a changed body is reported unavailable and
-is not replaced by a later import. Listing orders by source and listing ID, with
-per-version host compatibility and withdrawal. Human output labels claims as
+is not replaced by a later import. Record version 2 stores the origin: `file`, or
+`marketplace` with the exact URL, fetch time and received-document digest. Version-1
+records read as file imports. Fetching the same catalog again renews only its fetch
+time.
+
+Listing and inspection read only stored records and work offline. Each source
+reports its origin and freshness:
+
+- `local`: a file import, with no freshness claim.
+- `fresh` or `stale`: the fetch time against `maxAgeHours`.
+- `unconfigured`: fetched from a URL no longer configured for that source.
+- `disabled`: listings are withheld while the marketplace is disabled.
+- `unknown`: configuration could not be read.
+
+Withdrawals are shown as of the fetch; a stale catalog never claims they are
+current. Without `text`, listing orders by source and listing ID. With `text`,
+listing ranks by exact ID or title, then prefix, then substring, then tag, then
+summary, and then orders by listing ID and source. `installable` keeps listings with
+a compatible, unwithdrawn version. Editorial rank, labels and featured flags never
+order, filter or trust anything.
+
+Inspect selects the requested version, or else the newest compatible unwithdrawn
+version, or else the newest. It shows the publisher, source URL and freshness,
+sequence, exact package identity and identity digest, compatibility, withdrawal,
+contribution kinds, catalog claims (labelled unverified) and other sources listing
+the same package. The executable profile is `unknown-until-local-inspection`.
+Install is refused for a withdrawn or incompatible version and for a catalog that is
+not `local` or `fresh` (`source-not-current`). Otherwise it is `available`, with the
+download URL and whether the marketplace credential applies (see Marketplace
+package acquisition). `git`, non-`https`, `local` and `builtin` sources are
+`unavailable` with `acquisition-source-unsupported` or `acquisition-insecure-origin`.
+A later catalog that
+withdraws or drops the version changes what inspect shows; earlier results are not
+reused. OpenTUI marketplace views are not provided. Human output labels claims as
 unverified.
 
 Headless runs and new interactive sessions rehydrate before producer composition.
@@ -1363,6 +1572,74 @@ valid and unrevoked. Trust records are local authority, not portable grants in
 session exports. Older binaries refuse the newer database schema; downgrade
 requires a compatible backup. Restoring a whole database can restore its old
 decisions, so inspect and revoke them before continuing.
+
+### Extension notices
+
+`falryn extension notices <path>` lists why a local package is limited or at risk.
+It derives notices on every read from the facts that decide invocation: the
+package's trust projection, host compatibility, dependency resolution and the
+newest package-health attempt per contribution for the same installed identity,
+including an unterminated uncertain attempt that needs recovery. Only
+acknowledgements are stored. A package with no cause has no notice; an unapproved
+package and a missing execution grant are normal states, not notices. Without a product database the command
+answers from empty owners and does not create one.
+
+A notice carries a digest `id`, the package subject, a closed `code`, a `state`
+(`unavailable`, `degraded`, `incompatible`, `quarantined`, `revoked` or `failed`),
+a `severity` (`blocking` when the shared decision denies invocation, `warning`
+otherwise), that `impact`, the `reason`, one `requiredAction`, at most three
+remediation handles, bounded evidence (digests, closed status words, the advisory
+sequence and at most 32 advisory identifiers) and freshness. The `id` binds the
+subject, code and cause, never a timestamp or a health attempt identity, so
+repeated reads, restarts and a flapping probe keep one identity while a newer
+advisory sequence, changed evidence or another health generation is a new notice.
+Notices contain no keys, signatures, paths or catalog display text.
+
+| Code | State | Effect |
+| --- | --- | --- |
+| `advisory-revoked` | `revoked` | blocking |
+| `advisory-quarantined`, `advisory-unverified`, `integrity-mismatch`, `signature-invalid`, `signature-conflicting` | `quarantined` | blocking |
+| `evidence-stale`, `approval-expired`, `approval-changed` | `degraded` | blocking |
+| `host-incompatible` | `incompatible` | blocking |
+| `dependencies-unresolved` | `unavailable` | reported only |
+| `dependencies-degraded`, `health-uncertain` | `degraded` | reported only |
+| `health-failed` | `failed` | reported only |
+
+Dependency and health notices do not change the trust decision. Package launch
+admission is separate and still refuses unresolved dependencies and a contribution
+with three consecutive failed health attempts. There is no
+advisory fetcher, so an advisory arrives through a signed `extension trust` refresh
+with a higher sequence and leaves the same way; a withdrawal does not restore an
+older approval, so the package needs a fresh approval and `approval-changed` says so.
+
+Discovery, diagnostics and a refused invocation now state one reason from the same
+trust projection: `ecosystem-trust-required`, `ecosystem-trust-revoked`,
+`ecosystem-trust-quarantined`, `ecosystem-trust-incompatible`,
+`ecosystem-trust-stale`, `ecosystem-trust-expired`, `ecosystem-trust-changed` or
+`ecosystem-grant-required`. The capability card's availability reason, the health
+diagnostic message and the gateway's `denied` reason are that value. Revoked and
+quarantined trust reports health `quarantined`, incompatible trust reports
+`incompatible` and any other ineligible trust reports `denied`; none is selectable.
+
+`--input <request.json>` accepts one strict request of at most 16,384 bytes:
+`{"action":"acknowledge","noticeId":"sha256:...","expiresAt":<epoch ms>}`. The
+preview returns a `confirmation` bound to the notice, scope, stored revision and
+expiry; repeating the request with it writes one record in migration 0035 for the
+local-user scope. The expiry must be in the future and within 30 days. An
+acknowledgement hides the notice's presentation, leaving one line that says it is
+acknowledged and whether invocation is still denied. It changes no trust,
+provenance, health or eligibility, does not cover a different notice `id`, and
+lapses at its expiry. A cause that recurs with the same identity, such as a health
+failure in the same generation with the same code, stays acknowledged until then. The table keeps at most 1,024 live records and prunes expired
+ones on the next write. Session export does not carry acknowledgements.
+
+A corrupt acknowledgement row is read as unacknowledged and can be replaced by a new
+acknowledgement.
+
+Limits: notices are per package path. No OpenTUI view, export or replay projection
+exists yet, and `falryn doctor` does not report them; the capability doctor reports
+the same reasons through health diagnostics. Package health records carry no
+timestamp, so a health notice's freshness is `unrecorded`.
 
 Migration 0017 adds package evidence (16 KiB per record), exact full-user grant
 records (512 KiB), and append-only redacted metadata receipts for evidence,
@@ -2312,8 +2589,47 @@ browser or notebook host and reports those targets unavailable. Binary,
 extracted-document and sources above the source ceiling are unavailable in this
 text route. Native structured Search has no qualified Hush projection adapter
 and returns bounded structured facts with that reason. Heuristic outlines are
-structural evidence, not exact edit preimages. Revision-bound edit preparation
-is not implemented by this reader.
+structural evidence, not exact edit preimages; see Evidence-bound text replacements.
+
+## Evidence-bound text replacements
+
+Live turns register `prepare_replacements` with `read` and `search`. One call takes a
+version-1 `text-replacements` request: up to 8 `targets`, each an `evidenceRef` from
+Read or Search and up to 32 exact `oldText`/`newText` `replacements`, plus up to 8
+read-only `dependencies`. Every item has a unique `itemId`. Omitted `freshness`
+(`exact-revision`), `replaceAll` (false) and `dependencies` normalize before strict
+validation, but provider schemas require them explicitly. Preparation writes nothing.
+It returns per-target facts, a native `patch` bound to the previewed bytes (with
+`expectedPlanId` and each file's digest), and the native preview. The model applies
+that `patch` unchanged with `apply_patch`.
+
+Each reference is revalidated by the shared resource owner, so wrong-scope,
+fabricated, expired, changed-policy and rebound references refuse with their own
+codes. Only exact-fidelity workspace evidence is accepted, and one file may appear
+only once. `exact-revision` refuses evidence that no longer describes the file.
+`covered-ranges` accepts an unrelated change only when every covered byte range is
+identical at its original offset; a shifted range needs fresh evidence. A
+non-`replaceAll` `oldText` must occur exactly once inside the covered text, and
+`replaceAll` needs evidence covering the whole file. Replacements address the same
+original bytes and may not overlap. Line breaks in either text take the file's own
+single style. Requests are limited to 32 native hunks of at most 256 lines.
+
+Each refusal names its code, request item and one recovery (`read-again`,
+`read-more`, `narrow-old-text`, `split-request`, `fix-request`, `use-write-files` or
+`retry`). Every lowering is replayed through the native hunk applier and refused
+unless the result is exactly the requested text. UTF-8 files keep their BOM, CRLF
+or LF and final newline. Mixed newlines, other encodings, binary text and changes
+the line model cannot express, such as removing a final line break, are refused.
+
+Native patch plans accept optional read-only `dependencies` (path and expected
+digest). Any change refuses preview and apply before a write
+(`dependency-changed`), and a written file cannot also be a dependency. The native
+patcher now refuses UTF-16 targets instead of re-encoding them and keeps a UTF-8
+BOM. After a write, `apply_patch` returns `successors`: a fresh evidence reference
+for each applied file's changed lines, or `changed-after-apply` or `unavailable`. A
+failure to issue one never hides the write. Preflight is not an atomic multi-file
+commit; the existing apply policy, per-file writes and rollback still apply.
+Covered-range relocation, hashline addressing and Todo attachment are not provided.
 
 ## Session scratch resources
 
@@ -2669,6 +2985,20 @@ capability admission, task resources, policy, hooks, provider bindings and
 artifact capture. Workflows with model nodes require an available concrete
 main model route. Missing targets or producers remain unavailable. Grouped Todo
 Named-route and quota-reset scheduling remain a separate integration under #1113.
+
+A definition may name up to 8 `skills` for its model steps to preload. Only a
+`workflow` target with at least one `model` node accepts them; any other target
+reports `schedule-skills-need-model-step`. Validation resolves each name with
+automatic eligibility from source metadata, without reading a body, and the
+binding captured at enable records the exact source and body digest. A name that
+cannot resolve, including a manual-only skill, blocks the schedule as
+`schedule-skill-unavailable:<reason>`. The host re-validates the binding before
+each run and the scheduled gateway re-checks it as its authority, so a skill edited
+after enable blocks the schedule as `authority-changed`, and one removed, disabled
+or restricted blocks it as `schedule-skill-unavailable:<reason>`, before any body
+read or provider call. Each model step then loads exactly the bound bodies; a change
+that lands mid-run refuses that step as `skill-preload-stale`. Agent nodes load
+their own definitions' skills, not the schedule's.
 
 A `task-list` target selects existing Todo work by queue, scope generation and
 stable group and task IDs (at most 256 of each), with `autoCascade` false by
@@ -3077,6 +3407,14 @@ use Big. Shared Subagents settings resolve the model and thinking together,
 independently of Fast, including another configured provider account. Missing
 accounts, unsupported thinking, unavailable native capabilities and undisclosable
 tool schemas return an explicit unstarted result.
+
+A definition may name up to 8 `skills` to preload. The child resolves them at
+admission in its own narrowed instruction scope, with automatic eligibility and
+route reason `child-preload`, and receives their complete bodies before its first
+provider request. It does no automatic skill routing. A manual-only, disabled,
+untrusted, restricted, missing or ambiguous skill fails the child before any
+provider request, tool call or body read, and the parent integrates that failure
+with its reason (for example `selection-unavailable:deploy`).
 
 Each launch supplies an objective through `inputJson`, selected context, exact
 capability IDs, requested effects, resource limits and the existing version-1

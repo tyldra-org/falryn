@@ -955,6 +955,9 @@ test("reopened GC retains semantic references and identifies sealed unpublished 
   ).toBe(true);
 });
 
+/** How long the crash fixture child may take to start and reach its stage boundary. */
+const CRASH_BOUNDARY_MS = 15_000;
+
 test.each(["sealed", "prepared", "mutated", "observed", "settled"])(
   "SIGKILL at %s preserves only committed recovery evidence",
   async (stage) => {
@@ -978,10 +981,20 @@ test.each(["sealed", "prepared", "mutated", "observed", "settled"])(
       const chunk = await Promise.race([
         ready.read(),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error("crash fixture did not reach boundary")), 3000);
+          // A cold Bun child on a loaded hosted runner can take several seconds to start.
+          timer = setTimeout(
+            () => reject(new Error("crash fixture did not reach boundary")),
+            CRASH_BOUNDARY_MS,
+          );
         }),
       ]);
       expect(new TextDecoder().decode(chunk.value)).toContain("READY");
+    } catch (error) {
+      child.kill("SIGKILL");
+      const stderr = await new Response(child.stderr).text();
+      throw new Error(
+        `${error instanceof Error ? error.message : String(error)}: ${stderr.slice(0, 2_000)}`,
+      );
     } finally {
       clearTimeout(timer);
       child.kill("SIGKILL");
@@ -1080,6 +1093,7 @@ test.each(["sealed", "prepared", "mutated", "observed", "settled"])(
       expect(preview.payload?.omissions).toHaveLength(4);
     }
   },
+  CRASH_BOUNDARY_MS + 15_000,
 );
 
 test("multiple checkpoints retain derived identity while expired original evidence stays unavailable after export/import", async () => {

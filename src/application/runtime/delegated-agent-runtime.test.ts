@@ -46,7 +46,12 @@ import {
 import { routeFacts } from "../../providers/routing/named-route.fixtures.ts";
 import { capabilityEntryFromTool } from "../capabilities/product-capability-registry.ts";
 import { createInstructionSourceOwner } from "../context/instruction-source-owner.ts";
-import type { ProductInstructions } from "../context/product-instructions.ts";
+import {
+  narrowInstructionScope,
+  type ProductInstructions,
+} from "../context/product-instructions.ts";
+import { createSkillActivations } from "../context/skill-activations.ts";
+import { querySkillUsage, type SkillUsageReport } from "../extensions/skill-usage.ts";
 import { agentDefinitionSchema } from "../orchestration/agent-definition.ts";
 import { createAgentJoins } from "../orchestration/agent-joins.ts";
 import { createAgentRegistry, starterAgentRegistrations } from "../orchestration/agent-registry.ts";
@@ -155,6 +160,10 @@ async function run(
     prompt?: string;
     processing?: boolean;
     instructions?: ProductInstructions;
+    /** Reads the fixture's durable events before the store closes. */
+    inspect?: (
+      events: Awaited<ReturnType<typeof createProcessTaskFixture>>["events"],
+    ) => Promise<void>;
   } = {},
   nativeEffect: "observation" | "mutation" | "external" = "observation",
   native?: {
@@ -371,6 +380,7 @@ async function run(
       await tasks.drain();
     }
     await options.withTaskLists?.after(taskListContext);
+    await options.inspect?.(f.events);
     return {
       result,
       requests,
@@ -973,6 +983,151 @@ test("a child resolves its declared subtree after a parent edit while the parent
   expect(inputs[2]).not.toContain("ROOT_EDITED");
   expect(result.instructions?.scope.kind).toBe("main");
   expect(snapshots[0]).not.toEqual(snapshots[1]);
+});
+
+/** The General agent with a skill preload, as a registered definition. */
+function preloadingRegistry(skills: readonly string[]) {
+  return createAgentRegistry(
+    starterAgentRegistrations().map((registration) => {
+      const parsed = agentDefinitionSchema.parse(registration.definition);
+      if (parsed.identity.localId !== "general") return registration;
+      const { identity, ...descriptor } = parsed;
+      const replacement = { ...descriptor, skills: [...skills] };
+      return {
+        ...registration,
+        definition: {
+          ...replacement,
+          identity: { ...identity, descriptorDigest: canonicalDigest(replacement) },
+        },
+      };
+    }),
+  );
+}
+
+/** Skill sources whose bodies are "BODY_<name>"; reads are recorded. */
+function skillOwner() {
+  const reads: string[] = [];
+  const skill = (name: string, eligibility = { user: true, automatic: true }) =>
+    sourceFixture(`.agents/skills/${name}/SKILL.md`, {
+      identity: {
+        version: 1,
+        kind: "skill",
+        root: "workspace",
+        path: `.agents/skills/${name}/SKILL.md`,
+        namespace: "skills",
+        localId: name,
+      },
+      digest: bytesDigest(new TextEncoder().encode(`BODY_${name}`)),
+      summary: `Handle ${name}.`,
+      eligibility,
+    });
+  const owner = createInstructionSourceOwner({
+    async scan() {
+      return {
+        configuration: "0",
+        workspace: "workspace",
+        sources: [skill("release-notes"), skill("deploy", { user: true, automatic: false })],
+        preferences: EMPTY_SOURCE_PREFERENCES,
+      };
+    },
+    async read(source) {
+      reads.push(source.identity.localId);
+      return new TextEncoder().encode(`BODY_${source.identity.localId}`);
+    },
+    async current() {
+      return true;
+    },
+  });
+  return {
+    reads,
+    instructions: {
+      owner,
+      scope: { root: "workspace", directory: "", kind: "main" as const },
+      skills: createSkillActivations(),
+    },
+  };
+}
+
+test("a child definition's skill preload reaches only the child's provider request", async () => {
+  const f = skillOwner();
+  let usage: SkillUsageReport | null = null;
+  const { result, requests } = await run(
+    (_request, index) =>
+      index === 0
+        ? launch("general", "Draft the notes", [])
+        : { kind: "text", text: index === 1 ? generalResult : "Parent completed." },
+    {
+      registry: preloadingRegistry(["release-notes"]),
+      instructions: f.instructions,
+      // The usage diagnostic finds the child's stream the way the CLI does (#1192).
+      async inspect(events) {
+        const streams = events.admissionStreams("workspace-fixture", 16);
+        if (!streams.ok) throw new Error(streams.error.code);
+        usage = await querySkillUsage(
+          {
+            workspaceId: "workspace-fixture",
+            events,
+            sessions: () => ({
+              sessions: streams.value.map((stream) => ({
+                sessionId: stream.sessionId,
+                streamId: String(stream.streamId),
+              })),
+              truncated: false,
+            }),
+          },
+          {},
+        );
+      },
+    },
+  );
+  expect(result.terminalOutcome.kind).toBe("completed");
+  expect(requests).toHaveLength(3);
+  const inputs = requests.map((request) => JSON.stringify(request.messages));
+  expect(inputs[1]).toContain("BODY_release-notes");
+  expect(inputs[0]).not.toContain("BODY_release-notes");
+  expect(inputs[2]).not.toContain("BODY_release-notes");
+  expect(f.reads).toEqual(["release-notes"]);
+  // The child's load never becomes active for the parent's later main turns.
+  expect(f.instructions.skills.active()).toEqual([]);
+  // Usage attributes the load to the child's preload and scope, once.
+  const report = usage as SkillUsageReport | null;
+  if (report?.status !== "reported") throw new Error("usage");
+  expect(report.coverage.sessions.length).toBeGreaterThanOrEqual(2);
+  expect(report.duplicates).toBe(0);
+  const row = report.rows.find((item) => item.name === "release-notes" && item.counts.loaded > 0);
+  expect(row).toMatchObject({
+    counts: { loaded: 1, invoked: 0 },
+    initiators: { child: 1, explicit: 0, automatic: 0, schedule: 0, unknown: 0 },
+    reasons: { "loaded:child-preload": 1 },
+  });
+  expect(row?.scopes.child).toBe(1);
+  expect(row?.body.count).toBe(1);
+});
+
+test("a manual-only child preload fails the child before its provider request", async () => {
+  const f = skillOwner();
+  const { requests } = await run(
+    (_request, index) =>
+      index === 0
+        ? launch("general", "Deploy it", [], ["observation"], true)
+        : { kind: "text", text: "Parent completed." },
+    { registry: preloadingRegistry(["deploy"]), instructions: f.instructions },
+  );
+  // Only the parent's launch and its final turn reach the provider; the child makes none.
+  expect(requests).toHaveLength(2);
+  // The parent integrates the child's refusal with its reason.
+  const sealed = childResult(requests[1] as ModelRequest);
+  expect(sealed.outcome).not.toBe("completed");
+  expect(JSON.stringify(sealed)).toContain("selection-unavailable:deploy");
+  expect(JSON.stringify(requests.map((request) => request.messages))).not.toContain("BODY_deploy");
+  expect(f.reads).toEqual([]);
+});
+
+test("a narrowed child or workflow scope never carries the main session's activations", () => {
+  const f = skillOwner();
+  expect(narrowInstructionScope(f.instructions, "child").skills).toBeUndefined();
+  expect(narrowInstructionScope(f.instructions, "workflow").skills).toBeUndefined();
+  expect(narrowInstructionScope(f.instructions, "child").owner).toBe(f.instructions.owner);
 });
 
 test("workflow model steps retain named receipts when preferences change between nodes", async () => {

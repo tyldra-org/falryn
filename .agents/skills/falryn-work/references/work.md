@@ -38,7 +38,7 @@ Known Roadmap membership cannot be ignored when private access is lost.
 | Admitted acceptance not implemented | Use the existing valid branch/PR, or a fresh branch from current default |
 | Candidate implementation | Review the complete diff and prove acceptance at its actual revision |
 | Actionable defect | Repair the owning change when authorized, validate and reassess |
-| Required checks pending | Observe CI and wait while doing independent useful work |
+| Open PR with pending checks, failures or review feedback | [Shepherd the pull request](#shepherd-the-pull-request) while doing independent useful work |
 | Verified delivery with merge authority | Perform the merge preflight below |
 | Already merged | Verify delivered acceptance and finish missing reconciliation |
 
@@ -69,6 +69,21 @@ Inspect what could have been omitted as well as what changed. A helper that work
 in isolation, a mocked integration, green CI, or a closed issue cannot by itself
 prove the promised behavior reaches its consumer.
 
+Before the first push, run that check as a pre-PR pass over the complete diff.
+A gap found after CI costs a full CI cycle and often a second review:
+
+- **Acceptance:** write down, in the working record, each outcome, behavior and
+  completion-proof item with the implementation and test that satisfy it. An
+  item missing either is not done, however complete the rest of the diff looks.
+- **Tests:** each new test proves behavior through its consumer, is safe in the
+  full suite and follows the test rules in `DEVELOPMENT.md`, including explicit
+  timeouts for journeys through real product turns.
+- **Defects and scope:** run `change-review` on the diff, including what static
+  analysis flags, such as no-op operations and unused values. Split out
+  unrelated work.
+
+Repair what the pass finds before pushing.
+
 For related changes within the selected outcome, check interacting contracts at
 identified revisions. Implement uses the current PR candidate with its declared
 base and dependency revisions. A related unmerged PR is neither assumed present
@@ -93,10 +108,16 @@ human decision or unavailable required proof keeps the affected implementation o
 delivery incomplete; name the gap and what resolves it. Use the recovery rules
 below for acceptance discovered incomplete after merge.
 
-During implementation, run focused checks, then the full validation required by
-`DEVELOPMENT.md` before review. Reuse results only when revision, dependencies,
-configuration, toolchain, environment and scope still match. A new command or
-stage alone is not a reason to repeat a successful check.
+During implementation, run focused checks. When the candidate is complete, they
+pass and the pre-PR pass is clean, push it and open the pull request (and any
+companion) as a draft, so CI runs while the full validation required by
+`DEVELOPMENT.md` runs locally. Mark it ready only after both pass and review is
+complete. Run the full local suite once, on the final candidate. A later repair
+gets focused checks, plus a new full local run only when `DEVELOPMENT.md` requires
+one for that repair; CI proves the new head either way. Reuse results only when
+revision, dependencies, configuration, toolchain,
+environment and scope still match. A new command or stage alone is not a reason
+to repeat a successful check.
 
 A new head or base requires review of the complete resulting diff and refreshed
 verification. Contract or dependency changes refresh admission. Documentation
@@ -108,6 +129,33 @@ Batch independent reads with stable inputs. Keep one writer per checkout,
 dependent effects sequential and sibling delivery serial. Use the
 github-operations CI waiter instead of busy polling. Do not create work merely
 to stay active.
+
+## Shepherd the pull request
+
+After opening a PR, keep it moving until it is ready to merge (Deliver) or ready
+for review (Implement), or a blocker needs the user. Wait with the
+github-operations CI waiter. On each wake, read review threads and comments,
+then failing checks, then merge state, for the head SHA you act on.
+
+- **Review feedback first.** A fix pushes a new head, which reruns CI anyway.
+  Fix code-scanning and bot findings in code; the scanner closes its own thread,
+  otherwise resolve it once the fix is on the head. Do not reply to or resolve a
+  human's thread without the user's confirmation.
+- **Classify each failed job from its failed log before acting.** A failure in
+  code or tests the change touches, or in a test it added, is the change's to
+  repair. The test runner already reran any registered known flake; a warning
+  naming its issue needs nothing more than a note in the report. A failure in
+  suites the change does not reach, one whose product code already passed on an
+  earlier head, or runner and network trouble is unrelated: rerun the failed jobs
+  once for that head. A test that then passes is a new flake. Record it with its
+  decisive error in the PR's risks and the report, and recommend an owning issue
+  and registry entry as their own change, not part of this PR. A required check
+  that still fails is a merge blocker to report, not a reason to keep rerunning.
+- **Blocked with green checks:** read the branch rules and fix the actual cause,
+  such as an unresolved thread, a missing required check or the PR metadata
+  check's body format. Never bypass rules or required checks.
+
+Follow the `github-operations` CI guide for logs, reruns and repair limits.
 
 ## Merge and reconcile
 

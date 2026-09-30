@@ -1,4 +1,5 @@
 import { artifactId } from "../../domain/artifacts/index.ts";
+import { describeMentionReceipt } from "../../domain/context/composer-mentions.ts";
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
 import type { HistoryPayload } from "../../domain/sessions/history.ts";
 import { historyReferences } from "../../domain/sessions/history.ts";
@@ -407,7 +408,11 @@ export function blockFor(
           status: history.part === 0 ? "final" : "in-progress",
           kind: history.role === "user" ? "user-input" : "model-text",
           source: history.role === "user" ? "user" : "model",
-          summary: complete(`${history.role} content (${history.completion})`),
+          // A prompt with `$` mentions names what the user selected (#1206).
+          summary: complete(
+            (history.role === "user" ? describeMentionReceipt(history.tokens ?? []) : null) ??
+              `${history.role} content (${history.completion})`,
+          ),
           text,
         };
       return {
@@ -575,7 +580,13 @@ export function blockFor(
         ),
         invocationId: null,
         note: bound(
-          `Generation ${event.payload.generation}.${event.payload.rejection ? ` Rejected ${event.payload.rejectedSource ?? "catalog"}: ${event.payload.rejection}.` : ""} ${event.payload.sources.map((source) => `${source.namespace}/${source.name}: ${source.state} (${source.reason})`).join("; ")}${event.payload.omitted ? `; ${event.payload.omitted} more sources omitted` : ""}`,
+          `Generation ${event.payload.generation}.${event.payload.rejection ? ` Rejected ${event.payload.rejectedSource ?? "catalog"}: ${event.payload.rejection}.` : ""} ${event.payload.sources.map((source) => `${source.namespace}/${source.name}: ${source.state} (${source.reason})`).join("; ")}${event.payload.omitted ? `; ${event.payload.omitted} more sources omitted` : ""}${
+            // Why each skill loaded or did not: routed, explicit or preloaded. Read from the
+            // stored receipt only; replay never loads a skill.
+            event.kind === "instructions.resolved" && event.payload.skills?.routes.length
+              ? `. Skills: ${event.payload.skills.routes.map((route) => `${route.name} ${route.decision} (${route.reason})`).join("; ")}`
+              : ""
+          }`,
         ),
       };
     case "configuration.generation.changed":

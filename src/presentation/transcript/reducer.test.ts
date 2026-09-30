@@ -308,3 +308,40 @@ describe("model attempt generation timing", () => {
     );
   });
 });
+
+test("a resolved instruction notice replays each skill route and why, from the receipt", () => {
+  const base = everyEventKind().find((event) => event.kind === "instructions.resolved");
+  if (base?.kind !== "instructions.resolved") throw new Error("fixture");
+  const digest = `sha256:${"a".repeat(64)}`;
+  const event = {
+    ...base,
+    payload: {
+      ...base.payload,
+      skills: {
+        candidates: 2,
+        routes: [
+          {
+            name: "release-notes",
+            decision: "loaded" as const,
+            reason: "child-preload",
+            source: digest,
+            digest,
+            bytes: 12,
+          },
+          {
+            name: "incident",
+            decision: "recommended" as const,
+            reason: "description-match",
+            source: null,
+            digest: null,
+            bytes: null,
+          },
+        ],
+      },
+    },
+  };
+  const notes = JSON.stringify(reduceTranscript([event]).blocks);
+  expect(notes).toContain(
+    "Skills: release-notes loaded (child-preload); incident recommended (description-match)",
+  );
+});

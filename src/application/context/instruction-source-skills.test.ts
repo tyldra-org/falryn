@@ -3,6 +3,7 @@ import { sourceFixture, sourceScope } from "../../domain/context/instruction-sou
 import {
   EMPTY_SOURCE_PREFERENCES,
   type InstructionSource,
+  instructionSourceKey,
 } from "../../domain/context/instruction-sources.ts";
 import {
   estimatePromptTokens,
@@ -61,9 +62,18 @@ function owner(skills: readonly ReturnType<typeof skill>[]) {
       return true;
     },
   });
-  const prepare = (task: string, active: readonly string[] = [], signal?: AbortSignal) =>
-    prepared.prepare(sourceScope, [], signal, undefined, false, { task, active });
-  return { prepare, reads };
+  const prepare = (
+    task: string,
+    active: readonly string[] = [],
+    signal?: AbortSignal,
+    explicit?: readonly string[],
+  ) =>
+    prepared.prepare(sourceScope, [], signal, undefined, false, {
+      task,
+      active,
+      ...(explicit === undefined ? {} : { explicit }),
+    });
+  return { prepare, reads, bodies, owner: prepared };
 }
 
 test("routing loads only the selected skill's complete body and records its admission", async () => {
@@ -132,6 +142,7 @@ test("an ambiguous or ineligible automatic pick is omitted with its reason, neve
   // Manual-only and restricted skills never reach routing, descriptions or reads.
   const manual = owner([
     skill("deploy", "Deploy the service.", { eligibility: { user: true, automatic: false } }),
+    skill("archive", "Archive old notes.", { enabled: false }),
   ]);
   const refused = await manual.prepare("Use deploy now");
   if (!refused.ok) throw new Error(refused.code);
@@ -177,4 +188,133 @@ test("cancellation before admission reads no skill body", async () => {
   const prepared = await f.prepare("Use release-notes", [], controller.signal);
   expect(prepared).toMatchObject({ ok: false, code: "cancelled" });
   expect(f.reads).toEqual([]);
+});
+
+test("an explicit pick is refused on a tie or a changed body, and nothing else is read", async () => {
+  const tied = owner([
+    skill("release-notes", "Draft release notes."),
+    skill("release-notes", "Draft release notes.", {
+      identity: {
+        version: 1,
+        kind: "skill",
+        root: "workspace",
+        path: ".agents/skills/release-notes-copy/SKILL.md",
+        namespace: "skills",
+        localId: "release-notes",
+      },
+    }),
+    skill("incident", "Write an incident postmortem."),
+  ]);
+  const refused = await tied.prepare("Summarize incident", [], undefined, ["release-notes"]);
+  expect(refused.ok).toBe(false);
+  expect(tied.reads).toEqual([]);
+
+  const changing = skill("release-notes", "Draft release notes.");
+  const changed = owner([changing]);
+  changed.bodies.set(changing.source.digest, new TextEncoder().encode("BODY_tampered"));
+  const stale = await changed.prepare("Anything", [], undefined, ["release-notes"]);
+  expect(stale.ok).toBe(false);
+
+  const manual = owner([
+    skill("deploy", "Deploy the service.", { eligibility: { user: true, automatic: false } }),
+  ]);
+  const loaded = await manual.prepare("Ship it", [], undefined, ["deploy"]);
+  if (!loaded.ok) throw new Error(loaded.code);
+  expect(manual.reads).toEqual(["deploy"]);
+  expect(loaded.binding.receipt.skills?.routes).toEqual([
+    expect.objectContaining({ name: "deploy", decision: "loaded", reason: "explicit-invocation" }),
+  ]);
+});
+
+test("the catalog lists every skill with its state and command, without reading a body", async () => {
+  const f = owner([
+    skill("release-notes", "Draft release notes.", { origin: "user-agents" }),
+    skill("release-notes", "Draft release notes.", { origin: "project-falryn" }),
+    skill("triage", "Triage issues.", { eligibility: { user: false, automatic: true } }),
+  ]);
+  expect(f.owner.skillCatalog(sourceScope)).toBeNull();
+  const prepared = await f.prepare("Fix the build");
+  if (!prepared.ok) throw new Error(prepared.code);
+  const readsBefore = f.reads.length;
+  expect([...f.owner.skillNames()].sort()).toEqual(["release-notes", "triage"]);
+  const page = f.owner.skillCatalog(sourceScope);
+  expect(page?.total).toBe(3);
+  expect(page?.nextOffset).toBeNull();
+  const entries = page?.entries ?? [];
+  expect(entries.find((item) => item.origin === "project-falryn")).toMatchObject({
+    name: "release-notes",
+    state: "selected",
+    command: "/skill:release-notes",
+  });
+  expect(entries.find((item) => item.origin === "user-agents")).toMatchObject({
+    state: "shadowed",
+    command: null,
+  });
+  expect(entries.find((item) => item.name === "triage")).toMatchObject({
+    userInvocable: false,
+    command: null,
+  });
+  expect(
+    f.owner.skillCatalog(sourceScope, { filter: "tri" })?.entries.map((item) => item.name),
+  ).toEqual(["triage"]);
+  expect(() => f.owner.skillCatalog(sourceScope, { offset: -1 })).toThrow("invalid-skill-cursor");
+  expect(f.reads.length).toBe(readsBefore);
+});
+
+test("a child preload loads only its named skills, with automatic eligibility and its own reason", async () => {
+  const f = owner([
+    skill("release-notes", "Draft release notes."),
+    skill("incident", "Write an incident postmortem."),
+    skill("deploy", "Deploy the service.", { eligibility: { user: true, automatic: false } }),
+  ]);
+  const preload = (names: readonly string[]) =>
+    f.owner.prepare(sourceScope, [], undefined, undefined, false, {
+      task: "Write an incident postmortem",
+      active: [],
+      preload: { origin: "child", skills: names.map((name) => ({ name, pin: null })) },
+    });
+  const loaded = await preload(["release-notes"]);
+  if (!loaded.ok) throw new Error(loaded.code);
+  // The task names "incident", but a preload replaces automatic routing.
+  expect(f.reads).toEqual(["release-notes"]);
+  expect(loaded.binding.receipt.skills?.routes).toEqual([
+    expect.objectContaining({ name: "release-notes", decision: "loaded", reason: "child-preload" }),
+  ]);
+  // A manual-only skill cannot be preloaded: preloads never carry user origin.
+  const manual = await preload(["deploy"]);
+  expect(manual).toMatchObject({ ok: false, code: "selection-unavailable:deploy" });
+  const missing = await preload(["absent"]);
+  expect(missing).toMatchObject({ ok: false, code: "selection-unavailable:absent" });
+  const disabled = await preload(["archive"]);
+  expect(disabled).toMatchObject({ ok: false, code: "selection-unavailable:archive" });
+  expect(f.reads).toEqual(["release-notes"]);
+});
+
+test("a pinned schedule preload loads its bound body and refuses a changed one unread", async () => {
+  const bound = skill("release-notes", "Draft release notes.");
+  const f = owner([bound]);
+  const pin = {
+    name: "release-notes",
+    source: instructionSourceKey(bound.source.identity),
+    digest: bound.source.digest ?? "",
+  };
+  const run = (pinned: typeof pin) =>
+    f.owner.prepare(sourceScope, [], undefined, undefined, false, {
+      task: "",
+      active: [],
+      preload: { origin: "schedule", skills: [{ name: "release-notes", pin: pinned }] },
+    });
+  const loaded = await run(pin);
+  if (!loaded.ok) throw new Error(loaded.code);
+  expect(loaded.binding.receipt.skills?.routes).toEqual([
+    expect.objectContaining({
+      name: "release-notes",
+      decision: "loaded",
+      reason: "schedule-preload",
+    }),
+  ]);
+  expect(f.reads).toEqual(["release-notes"]);
+  const stale = await run({ ...pin, digest: `sha256:${"0".repeat(64)}` });
+  expect(stale).toMatchObject({ ok: false, code: "skill-preload-stale" });
+  expect(f.reads).toEqual(["release-notes"]);
 });

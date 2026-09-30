@@ -10,8 +10,9 @@ import { type HttpHookGrant, httpHookContract } from "../../domain/extensions/ho
 import { createSystemClock } from "../../domain/foundation/index.ts";
 import { createInMemoryCredentialStore } from "../../domain/security/credential.ts";
 import type { HookHandlerFacts } from "../../domain/tools/hook-evidence.ts";
+import type { ResolvedAddress } from "../security/pinned-https.ts";
 import { hookTestCertificate } from "./hook-http-fixtures.ts";
-import { createHostHookHttp, type ResolvedAddress } from "./host-hook-http.ts";
+import { createHostHookHttp } from "./host-hook-http.ts";
 
 const tls = hookTestCertificate("hooks.test");
 const suite = tls === null ? describe.skip : describe;

@@ -18,6 +18,12 @@ import type {
   ProductModelSelectionControls,
 } from "../../application/runtime/index.ts";
 import {
+  type CapabilityMentionAdmission,
+  capabilityMentionSection,
+  describeCapabilityMentionFailures,
+} from "../../domain/context/capability-mentions.ts";
+import type { ComposerToken } from "../../domain/context/composer-mentions.ts";
+import {
   type ConfigurationGeneration,
   type SessionId,
   type TurnId,
@@ -42,6 +48,21 @@ export type ProductSubmissionPortOptions = {
   readonly brief?: ProductBriefControls;
   /** Shared Hush/Loom controls for this TUI session. */
   readonly output?: ProductOutputControls;
+  /**
+   * Resolves a skill command in the submitted text (#1179). The composer's own text is
+   * admitted user input, so a match is sent with user origin.
+   */
+  readonly resolveSkill?: (
+    text: string,
+  ) => import("../../domain/context/skill-invocation.ts").SkillCommand | null;
+  /**
+   * Admits the snapshot's `$` mention tokens against the current catalog (#1206). The
+   * host connects a picked MCP server whose catalog is not current before answering.
+   */
+  readonly admitMentions?: (
+    tokens: readonly ComposerToken[],
+    signal: AbortSignal,
+  ) => Promise<CapabilityMentionAdmission>;
 };
 
 export type ProductSubmissionPort = SubmissionPort & {
@@ -96,6 +117,35 @@ export function createProductSubmissionPort(
       }
 
       const id = nextTurnId();
+      const skill = options.resolveSkill?.(snapshot.text) ?? null;
+      if (skill?.kind === "ambiguous")
+        return unavailable(
+          snapshot,
+          `a skill and a prompt template are both named ${skill.name}; use /skill:${skill.name} or the template's /<package>:${skill.name}`,
+        );
+      const capabilityTokens = snapshot.tokens.filter((token) => token.trigger === "$");
+      let mentions: Extract<CapabilityMentionAdmission, { ok: true }> | null = null;
+      if (capabilityTokens.length > 0) {
+        if (options.admitMentions === undefined) {
+          return mentionRefusal(snapshot, "capability mentions are unavailable in this session");
+        }
+        const admitted = await options.admitMentions(
+          capabilityTokens,
+          context?.signal ?? new AbortController().signal,
+        );
+        if (!admitted.ok) {
+          return mentionRefusal(
+            snapshot,
+            `nothing was sent: ${describeCapabilityMentionFailures(admitted.failures)}`,
+          );
+        }
+        mentions = admitted;
+      }
+      const userSkills = [
+        ...(skill?.kind === "skill" ? [skill.name] : []),
+        ...(mentions?.skills ?? []),
+      ];
+      const section = mentions === null ? null : capabilityMentionSection(mentions);
       const briefRequest = brief.requestForTurn({
         turnId: id,
         sessionId: options.sessionId,
@@ -105,6 +155,30 @@ export function createProductSubmissionPort(
       });
       const started = await options.executor.run({
         prompt: snapshot.text,
+        ...(userSkills.length === 0 ? {} : { userSkills: [...new Set(userSkills)] }),
+        ...(snapshot.tokens.length === 0
+          ? {}
+          : {
+              mentions: {
+                tokens: snapshot.tokens.map(({ id: _id, ...token }) => token),
+                preferredCapabilityIds: mentions?.preferredCapabilityIds ?? [],
+                mcpServers: mentions?.mcpServers ?? [],
+              },
+            }),
+        ...(section === null
+          ? {}
+          : {
+              otherSections: [
+                {
+                  id: "capability-mentions",
+                  role: "task" as const,
+                  source: "composer-mentions",
+                  content: section,
+                  required: true,
+                  available: true,
+                },
+              ],
+            }),
         attachmentSelection: {
           attachments: snapshot.attachments,
           mentions: snapshot.mentions,
@@ -130,5 +204,16 @@ function unavailable(snapshot: ComposerSnapshot, reason: string): SubmissionOutc
     reason: `${reason} (${PRODUCT_SUBMISSION_OWNER})`,
     owner: PRODUCT_SUBMISSION_OWNER,
     route: "app.commandPalette",
+  };
+}
+
+/** A refused mention names its token and repair; the draft and its tokens stay (#1206). */
+function mentionRefusal(snapshot: ComposerSnapshot, reason: string): SubmissionOutcome {
+  return {
+    kind: "unavailable",
+    snapshot,
+    reason,
+    owner: "#1206",
+    route: "composer.suggestions.reopen",
   };
 }

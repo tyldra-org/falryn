@@ -22,6 +22,7 @@
  * issue implements, and the one implementation here is the honest refusal.
  */
 
+import type { ComposerToken } from "../../domain/context/composer-mentions.ts";
 import type { AttachmentDescriptor, MentionSpan } from "../../domain/context/index.ts";
 
 /**
@@ -39,6 +40,8 @@ export type ComposerSnapshot = {
   readonly sequence: number;
   readonly attachments: readonly AttachmentDescriptor[];
   readonly mentions: readonly MentionSpan[];
+  /** Picked mentions (#1206), bound to exact identities and checked again on admission. */
+  readonly tokens: readonly ComposerToken[];
 };
 
 export function snapshotOf(
@@ -47,6 +50,7 @@ export function snapshotOf(
   attachments: readonly AttachmentDescriptor[] = [],
   mentions: readonly MentionSpan[] = [],
   binding?: string,
+  tokens: readonly ComposerToken[] = [],
 ): ComposerSnapshot {
   return Object.freeze({
     text,
@@ -54,6 +58,7 @@ export function snapshotOf(
     ...(binding === undefined ? {} : { binding }),
     attachments: Object.freeze(attachments.map((item) => Object.freeze({ ...item }))),
     mentions: Object.freeze(mentions.map((item) => Object.freeze({ ...item }))),
+    tokens: Object.freeze(tokens.map((item) => Object.freeze({ ...item }))),
   });
 }
 
@@ -114,6 +119,24 @@ export type SubmissionPort = {
     signal: AbortSignal,
     entered?: Readonly<Record<string, string>>,
   ) => Promise<import("../../application/extensions/native-prompt-owner.ts").PromptExpansion>;
+  /** Whether submitted text invokes a skill (#1179); built-in commands are checked first. */
+  readonly skillCommand?: (
+    text: string,
+  ) => import("../../domain/context/skill-invocation.ts").SkillCommand | null;
+  /** Human lines for one page of `/skills`; never reads a skill body. */
+  readonly listSkills?: (
+    page: { readonly filter: string | null; readonly offset: number },
+    signal: AbortSignal,
+  ) => Promise<readonly string[]>;
+  /** Skills the user can invoke now, for Tab completion; null when unknown. */
+  readonly skillCandidates?: () =>
+    | import("../../domain/context/skill-invocation.ts").SkillCompletionCatalog
+    | null;
+  /**
+   * Sources for the composer's suggestion list, one per trigger (#1206). A trigger
+   * with no source stays an ordinary character.
+   */
+  readonly mentionSources?: readonly import("./suggestions.ts").ComposerSuggestionSource[];
   submit(
     snapshot: ComposerSnapshot,
     context?: {

@@ -433,11 +433,12 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           group
             .positional("action", {
               type: "string",
-              choices: ["inspect", "trust", "catalog", "scope", "listing", "skills"],
+              choices: ["inspect", "trust", "notices", "catalog", "scope", "listing", "skills"],
             })
             .option("input", {
               type: "string",
-              describe: "bounded trust, scope, catalog, listing or skill usage JSON request file",
+              describe:
+                "bounded trust, notice, scope, catalog, listing or skill usage JSON request file",
             })
             .positional("path", { type: "string", describe: "local package directory path" }),
         () => {},
@@ -967,10 +968,15 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     | import("./commands/extension-catalog.ts").ExtensionCatalogArguments
     | undefined;
   if (
-    (command === "extension.inspect" || command === "extension.trust") &&
+    (command === "extension.inspect" ||
+      command === "extension.trust" ||
+      command === "extension.notices") &&
     parsed.path === undefined
   )
-    return { kind: "invalid", message: "Extension inspection and trust require a local path." };
+    return {
+      kind: "invalid",
+      message: "Extension inspection, trust and notices require a local path.",
+    };
   if (command === "extension.catalog" || command === "extension.scope") {
     if (parsed.path !== undefined)
       return {
@@ -1024,7 +1030,8 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     if (!checked.success)
       return {
         kind: "invalid",
-        message: "The listing request must be an import of a file or a bounded list query.",
+        message:
+          "The listing request must be a file import, a marketplace refresh, a bounded list query or an inspect query.",
       };
     extensionListingArgs = checked.data;
   }
@@ -1162,6 +1169,27 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
       return { kind: "invalid", message: "Invalid trust request JSON." };
     }
   }
+  let extensionNotice:
+    | import("../application/extensions/package-notices.ts").NoticeRequest
+    | undefined;
+  if (command === "extension.notices" && parsed.input !== undefined) {
+    const loaded = await loadTaskInputFile(parsed.input);
+    if (!loaded.ok || Buffer.byteLength(loaded.value) > 16_384)
+      return { kind: "invalid", message: "Invalid notice request file (maximum 16384 bytes)." };
+    const { noticeRequestSchema } = await import("../application/extensions/package-notices.ts");
+    const { parseMetadata } = await import("../domain/extensions/canonical.ts");
+    try {
+      const checked = noticeRequestSchema.safeParse(parseMetadata(loaded.value));
+      if (!checked.success)
+        return {
+          kind: "invalid",
+          message: "The notice request must acknowledge one notice with a bounded expiry.",
+        };
+      extensionNotice = checked.data;
+    } catch {
+      return { kind: "invalid", message: "Invalid notice request JSON." };
+    }
+  }
   let workingConfigurationArgs:
     | import("./commands/profile.ts").WorkingConfigurationArguments
     | undefined;
@@ -1222,12 +1250,15 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     ...(extensionListingArgs === undefined ? {} : { extensionListingArgs }),
     ...(extensionSkillsArgs === undefined ? {} : { extensionSkillsArgs }),
     ...(extensionTrust === undefined ? {} : { extensionTrust }),
+    ...(extensionNotice === undefined ? {} : { extensionNotice }),
     ...(packageArgs === undefined ? {} : { packageArgs }),
     ...(scheduleArgs === undefined ? {} : { scheduleArgs }),
     ...(peerArgs === undefined ? {} : { peerArgs }),
     ...(compactArgs === undefined ? {} : { compactArgs }),
     ...(mcpArgs === undefined ? {} : { mcpArgs }),
-    ...((command === "extension.inspect" || command === "extension.trust") &&
+    ...((command === "extension.inspect" ||
+      command === "extension.trust" ||
+      command === "extension.notices") &&
     parsed.path !== undefined
       ? { extensionPath: parsed.path }
       : {}),

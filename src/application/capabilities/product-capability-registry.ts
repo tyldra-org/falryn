@@ -11,6 +11,7 @@ import {
   defaultCapabilityOperationalState,
 } from "../../domain/capabilities/index.ts";
 import type { CapabilityId, ConfigurationGeneration } from "../../domain/foundation/index.ts";
+import { ecosystemTrustReason } from "../../domain/security/ecosystem-notice.ts";
 import type {
   ToolCapabilityKind,
   ToolRegistry,
@@ -32,6 +33,8 @@ function filesystemFamily(name: string): CapabilityFamily {
     name.startsWith("mutate_") ||
     name.startsWith("apply_") ||
     name.startsWith("preview_patch") ||
+    // Preparing an edit is part of editing even though it writes nothing itself.
+    name.startsWith("prepare_") ||
     name === "scratch_write" ||
     name === "scratch_discard"
   ) {
@@ -89,12 +92,17 @@ export function capabilityEntryFromTool(
   const required = requiresEcosystemTrust(entry.manifest.source);
   const trust = required ? (trustPort?.inspect(String(entry.manifest.capabilityId)) ?? null) : null;
   const eligible = !required || trust?.eligible === true;
+  const trustCause =
+    !eligible &&
+    (trust?.state === "quarantined" ||
+      trust?.state === "revoked" ||
+      trust?.state === "incompatible");
   executable = executable && eligible;
   const executionReason = executable
     ? null
     : eligible
       ? "missing-native-binding"
-      : "ecosystem-trust-required";
+      : (ecosystemTrustReason(trust) ?? "ecosystem-trust-required");
   const platforms = entry.manifest.platforms;
   const created = createCapabilityRegistryEntry(
     {
@@ -140,8 +148,12 @@ export function capabilityEntryFromTool(
         executionReason,
         operational: {
           ...defaultCapabilityOperationalState(),
-          allowed: eligible,
-          denied: !eligible,
+          // A stated cause (quarantine, revocation, incompatibility) is its own health state;
+          // every other ineligible projection is a denial. Neither is selectable.
+          allowed: eligible || trustCause,
+          denied: !eligible && !trustCause,
+          quarantined: trust?.state === "quarantined" || trust?.state === "revoked",
+          incompatible: trust?.state === "incompatible",
         },
       },
       schemas: {

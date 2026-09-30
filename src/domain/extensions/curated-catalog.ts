@@ -533,9 +533,24 @@ export function listingCompatibility(listing: CuratedListing, host: HostFacts) {
   }));
 }
 
-export const CURATED_RECORD_VERSION = 1;
+export const CURATED_RECORD_VERSION = 2;
 export const CURATED_RECORD_BYTES = 4_194_304;
 export const CURATED_SOURCES = 64;
+/**
+ * Where a stored catalog came from. A file import makes no freshness claim; a marketplace
+ * refresh records the exact configured URL, when it was fetched and the digest of the
+ * received document, so freshness is always a dated fact rather than an assumption.
+ */
+export const catalogOriginSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("file") }),
+  z.strictObject({
+    kind: z.literal("marketplace"),
+    url: z.string().max(CURATED_LIMITS.urlLength),
+    fetchedAt: time,
+    bodyDigest: digestSchema,
+  }),
+]);
+export type CatalogOrigin = z.infer<typeof catalogOriginSchema>;
 /**
  * One source's stored catalog. A listing whose newer entry was refused keeps its prior
  * accepted form, marked retained with the sequence it came from, instead of vanishing
@@ -548,13 +563,19 @@ export const curatedCatalogRecordSchema = z.strictObject({
     .array(z.strictObject({ fromSequence: z.int().positive(), listing: listingSchema }))
     .max(CURATED_LIMITS.entries),
   importedAt: time,
+  origin: catalogOriginSchema,
 });
 export type CuratedCatalogRecord = z.infer<typeof curatedCatalogRecordSchema>;
 
 export type CuratedImportDecision =
   | { readonly kind: "stale"; readonly storedSequence: number }
   | { readonly kind: "conflict"; readonly storedSequence: number }
-  | { readonly kind: "unchanged"; readonly record: CuratedCatalogRecord }
+  | {
+      readonly kind: "unchanged";
+      readonly record: CuratedCatalogRecord;
+      /** The same catalog was fetched again; only its origin facts move forward. */
+      readonly refreshed: boolean;
+    }
   | {
       readonly kind: "replace";
       readonly record: CuratedCatalogRecord;
@@ -565,20 +586,28 @@ export type CuratedImportDecision =
 /**
  * Decide how one ingested catalog replaces its source's stored record. Only a higher
  * sequence replaces; the same sequence with a different body is a conflict, never a win.
+ * Receiving the same catalog again from a marketplace renews its fetch facts only.
  */
 export function decideCuratedImport(
   prior: CuratedCatalogRecord | null,
   catalog: CuratedCatalog,
   rejected: readonly string[],
   importedAt: number,
+  origin: CatalogOrigin = { kind: "file" },
 ): CuratedImportDecision {
   if (prior !== null) {
     const stored = prior.catalog.sequence;
     if (catalog.sequence < stored) return { kind: "stale", storedSequence: stored };
-    if (catalog.sequence === stored)
-      return catalog.digest === prior.catalog.digest
-        ? { kind: "unchanged", record: prior }
-        : { kind: "conflict", storedSequence: stored };
+    if (catalog.sequence === stored) {
+      if (catalog.digest !== prior.catalog.digest)
+        return { kind: "conflict", storedSequence: stored };
+      if (origin.kind === "file") return { kind: "unchanged", record: prior, refreshed: false };
+      return {
+        kind: "unchanged",
+        record: freezeMetadata(curatedCatalogRecordSchema.parse({ ...prior, importedAt, origin })),
+        refreshed: true,
+      };
+    }
   }
   const previous = new Map<string, { fromSequence: number; listing: CuratedListing }>();
   for (const item of prior?.retained ?? []) previous.set(item.listing.listingId, item);
@@ -604,13 +633,17 @@ export function decideCuratedImport(
         catalog,
         retained,
         importedAt,
+        origin,
       }),
     ),
     dropped: dropped.sort(),
   };
 }
 
-/** Read one stored record; an unknown record version is reported, never guessed at. */
+/**
+ * Read one stored record; an unknown record version is reported, never guessed at.
+ * Version 1 predates marketplace refresh, so its catalogs were file imports.
+ */
 export function parseCuratedCatalogRecord(
   value: string,
 ):
@@ -624,11 +657,12 @@ export function parseCuratedCatalogRecord(
   } catch {
     return { ok: false, code: "catalog-record-corrupt" };
   }
-  if (
-    raw !== null &&
-    typeof raw === "object" &&
-    (raw as { recordVersion?: unknown }).recordVersion !== CURATED_RECORD_VERSION
-  )
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw))
+    return { ok: false, code: "catalog-record-corrupt" };
+  const version = (raw as { recordVersion?: unknown }).recordVersion;
+  if (version === 1)
+    raw = { ...raw, recordVersion: CURATED_RECORD_VERSION, origin: { kind: "file" } };
+  else if (version !== CURATED_RECORD_VERSION)
     return { ok: false, code: "catalog-record-unsupported" };
   const parsed = curatedCatalogRecordSchema.safeParse(raw);
   if (!parsed.success) return { ok: false, code: "catalog-record-corrupt" };

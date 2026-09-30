@@ -186,7 +186,12 @@ export function composeProductMcpTools(
           return { status: "malformed", reason: "mcp-malformed-input", effect: "none" };
         if (request.signal.aborted) return { status: "cancelled", effect: "none" };
         const context: McpCatalogCall = {
-          origin: "model",
+          // A server the user picked for this turn is their selection, not the model's.
+          origin: request.userSelection?.mcpServers.includes(
+            serverIdOf(parsed.data as Record<string, unknown>),
+          )
+            ? "user"
+            : "model",
           requestId: String(request.invocationId),
           deadline: Math.min(
             Date.now() + timeoutOf(name),
@@ -280,4 +285,11 @@ export function composeProductMcpTools(
         return fromOutcome(await lifecycle.stop(serverId));
     }
   }
+}
+
+/** The server a model MCP call addresses: its `serverId`, or the one an entry names. */
+function serverIdOf(input: Record<string, unknown>): string {
+  if (typeof input.serverId === "string") return input.serverId;
+  const entry = typeof input.entryId === "string" ? input.entryId : "";
+  return /^mcp:([^/]+)\//u.exec(entry)?.[1] ?? "";
 }

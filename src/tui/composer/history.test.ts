@@ -20,7 +20,11 @@ import {
 
 /** A history holding these submissions, oldest first. */
 function holding(...entries: readonly string[]): InputHistory {
-  return entries.reduce(remember, EMPTY_HISTORY);
+  return entries.reduce((history, text) => remember(history, text), EMPTY_HISTORY);
+}
+
+function texts(history: InputHistory): readonly string[] {
+  return history.entries.map((entry) => entry.text);
 }
 
 describe("what is never stored", () => {
@@ -42,22 +46,22 @@ describe("what is never stored", () => {
   });
 
   test("refuses empty and whitespace-only submissions", () => {
-    expect(holding("", "   ", "\n").entries).toEqual([]);
+    expect(texts(holding("", "   ", "\n"))).toEqual([]);
   });
 
   test("refuses an immediate repeat but not a later one", () => {
     // Repeating a command after doing something else is a real thing a person
     // does, and collapsing those would make `up` skip work they did.
-    expect(holding("a", "a").entries).toEqual(["a"]);
-    expect(holding("a", "b", "a").entries).toEqual(["a", "b", "a"]);
+    expect(texts(holding("a", "a"))).toEqual(["a"]);
+    expect(texts(holding("a", "b", "a"))).toEqual(["a", "b", "a"]);
   });
 
   test("keeps only the newest entries", () => {
     const many = Array.from({ length: HISTORY_LIMIT + 10 }, (_unused, index) => `entry ${index}`);
-    const history = many.reduce(remember, EMPTY_HISTORY);
+    const history = holding(...many);
     expect(history.entries.length).toBe(HISTORY_LIMIT);
-    expect(history.entries.at(-1)).toBe(`entry ${HISTORY_LIMIT + 9}`);
-    expect(history.entries.at(0)).toBe("entry 10");
+    expect(history.entries.at(-1)?.text).toBe(`entry ${HISTORY_LIMIT + 9}`);
+    expect(history.entries.at(0)?.text).toBe("entry 10");
   });
 });
 
@@ -132,5 +136,24 @@ describe("walking forward", () => {
   test("returns the empty string when there was no draft to restore", () => {
     const back = recallPrevious(holding("one"), "");
     expect(recallNext(back.history).text).toBe("");
+  });
+
+  test("mention tokens come back with their entry and with the set-aside draft", () => {
+    const token = {
+      id: "t1",
+      trigger: "$" as const,
+      kind: "skill" as const,
+      identity: "skill:notes",
+      label: "$notes",
+      source: "workspace",
+      generation: "g1",
+      start: 4,
+      end: 10,
+    };
+    const draftToken = { ...token, id: "t2", start: 0, end: 6 };
+    const history = remember(EMPTY_HISTORY, "use $notes", [token]);
+    const back = recallPrevious(history, "$notes draft", [draftToken]);
+    expect(back.tokens).toEqual([token]);
+    expect(recallNext(back.history).tokens).toEqual([draftToken]);
   });
 });

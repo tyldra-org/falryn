@@ -2,6 +2,7 @@ import { checkpointMessage } from "../../application/compression/checkpoint-requ
 import { extensionCatalogLines } from "../../application/extensions/catalog-report.ts";
 import { curatedCatalogLines } from "../../application/extensions/curated-catalogs.ts";
 import { packageInspectionLines } from "../../application/extensions/inspection-report.ts";
+import { packageNoticeLines } from "../../application/extensions/package-notices-report.ts";
 import { skillUsageLines } from "../../application/extensions/skill-usage.ts";
 import { modelSettingsLines } from "../../application/providers/model-settings-format.ts";
 /**
@@ -511,6 +512,13 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
                   ? []
                   : [`confirmation: ${result.payload.confirmation}`]),
                 `recovery: ${result.payload.recovery}`,
+                ...(result.payload.acquisition === undefined
+                  ? []
+                  : [
+                      safe(
+                        `acquired ${result.payload.acquisition.listing.sourceId}:${result.payload.acquisition.listing.listingId}@${result.payload.acquisition.listing.packageVersion} from ${result.payload.acquisition.download} (${result.payload.acquisition.bytes} bytes, ${result.payload.acquisition.redirects} redirects)`,
+                      ),
+                    ]),
                 ...(result.payload.data === undefined
                   ? []
                   : [safe(JSON.stringify(result.payload.data))]),
@@ -526,6 +534,11 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
     case "extension.listing":
       return {
         lines: result.payload === null ? [] : curatedCatalogLines(result.payload).map(safe),
+        diagnostics: [],
+      };
+    case "extension.notices":
+      return {
+        lines: result.payload === null ? [] : packageNoticeLines(result.payload).map(safe),
         diagnostics: [],
       };
     case "extension.skills":
@@ -636,6 +649,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "extension.catalog":
     case "extension.scope":
     case "extension.listing":
+    case "extension.notices":
     case "extension.skills":
     case "package":
     case "schedule":

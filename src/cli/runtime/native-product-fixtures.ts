@@ -10,7 +10,7 @@ import {
   streamId,
 } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
-import type { HookEgressOptions } from "../../integrations/extensions/host-hook-http.ts";
+import type { EgressOptions } from "../../integrations/security/pinned-https.ts";
 import { reduceTranscript } from "../../presentation/transcript/reducer.ts";
 import {
   catalogFromAdapterModels,
@@ -38,7 +38,7 @@ const inputSchema = z.object({
 async function productHost(input: {
   home: string;
   environment: Record<string, string>;
-  hookEgress?: HookEgressOptions;
+  egress?: EgressOptions;
 }) {
   const workspace = join(input.home, "workspace");
   await mkdir(workspace, { recursive: true });
@@ -59,7 +59,7 @@ async function productHost(input: {
     home: localPath(input.home),
     currentDirectory: localPath(workspace),
     environment: createStaticEnvironment(input.environment),
-    ...(input.hookEgress === undefined ? {} : { hookEgress: input.hookEgress }),
+    ...(input.egress === undefined ? {} : { egress: input.egress }),
   });
   return { globals, services };
 }
@@ -119,6 +119,8 @@ export async function nativePromptShellJourney(input: {
   environment: Record<string, string>;
   /** Wire the terminal's instruction-source owner, as dispatch does. */
   instructions?: boolean;
+  /** The scripted model; a single text answer by default. */
+  script?: (request: ModelRequest, index: number) => DeterministicProviderScript;
 }) {
   const { globals, services } = await productHost(input);
   const graph = services();
@@ -131,7 +133,7 @@ export async function nativePromptShellJourney(input: {
   const requests: ModelRequest[] = [];
   const adapter = createDeterministicProviderAdapter({
     onRequest: (request) => requests.push(request),
-    script: () => ({ kind: "text", text: "Reviewed." }),
+    script: input.script ?? (() => ({ kind: "text", text: "Reviewed." })),
   });
   const controller = new AbortController();
   const attached = await composeProductShellAttachments({
@@ -209,8 +211,8 @@ export async function nativeProductJourney(
   options: {
     readonly beforeFirstRequest?: () => Promise<void>;
     readonly afterRun?: () => Promise<void>;
-    /** Test egress for package HTTP hooks; the compiled journey never passes one. */
-    readonly hookEgress?: HookEgressOptions;
+    /** Test egress for governed HTTPS clients; the compiled journey never passes one. */
+    readonly egress?: EgressOptions;
     /** The user's answer to focused tool confirmations, such as a hook's MCP call. */
     readonly toolConfirmation?: ProductToolConfirmationPort;
     /**
@@ -220,10 +222,10 @@ export async function nativeProductJourney(
     readonly evaluate?: (request: ModelRequest, index: number) => DeterministicProviderScript;
   } = {},
 ) {
-  const { beforeFirstRequest, afterRun, hookEgress, toolConfirmation, evaluate } = options;
+  const { beforeFirstRequest, afterRun, egress, toolConfirmation, evaluate } = options;
   const { globals, services } = await productHost({
     ...input,
-    ...(hookEgress === undefined ? {} : { hookEgress }),
+    ...(egress === undefined ? {} : { egress }),
   });
   const requests: string[] = [];
   let turns = 0;

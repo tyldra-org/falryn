@@ -94,6 +94,7 @@ export type DispatchOptions = {
   readonly modelRequest?: ModelSettingsRequest;
   readonly extensionPath?: string;
   readonly extensionTrust?: import("../application/extensions/package-trust.ts").TrustRequest;
+  readonly extensionNotice?: import("../application/extensions/package-notices.ts").NoticeRequest;
   readonly argv: readonly string[];
   readonly streams: CliStreams;
   /**
@@ -288,6 +289,9 @@ async function runCommand(
       ...(invocation.extensionTrust === undefined
         ? {}
         : { extensionTrust: invocation.extensionTrust }),
+      ...(invocation.extensionNotice === undefined
+        ? {}
+        : { extensionNotice: invocation.extensionNotice }),
     },
   );
   const rendered = await render(result, globals, streams, services);

@@ -129,6 +129,8 @@ export function createPackageLifecycle(
       request: PackageRequest,
       signal: AbortSignal,
       source?: PackageSource,
+      /** A listing acquisition's exact identity; any other prepared identity is refused. */
+      expectedIdentityDigest?: string,
     ): Promise<PackageReceipt> {
       let state: InstalledPackage = { packageId: request.packageId, revision: 0, current: null };
       let receipt: PackageReceipt = {
@@ -271,6 +273,11 @@ export function createPackageLifecycle(
             signal,
           });
           if (!prepared.ok) return fail(prepared.code);
+          if (
+            expectedIdentityDigest !== undefined &&
+            prepared.package.identityDigest !== expectedIdentityDigest
+          )
+            return fail("acquired-identity-mismatch");
           if (prepared.package.identity.packageId !== request.packageId)
             return fail("package-identity-mismatch");
           if (

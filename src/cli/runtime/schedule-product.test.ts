@@ -149,6 +149,7 @@ test.skipIf(process.platform === "win32")(
     );
     const { openProductArtifactSession } = await import("./product-artifact-session.ts");
     const { composeProductShellAttachments } = await import("./product-shell-attachments.ts");
+    const { composeInstructionSources } = await import("./instruction-sources.ts");
     const { configurationGeneration, streamId } = await import("../../domain/foundation/index.ts");
     const root = await temporaryRoot("schedule-product-");
     const globals: GlobalOptions = {
@@ -205,9 +206,11 @@ test.skipIf(process.platform === "win32")(
     const { catalogFromAdapterModels } = await import("../../providers/index.ts");
     let revokeDuringModel = false;
     let scheduledRequests = 0;
+    const scheduledInputs: string[] = [];
     const scheduledProvider = createDeterministicProviderAdapter({
-      onRequest() {
+      onRequest(request) {
         scheduledRequests++;
+        scheduledInputs.push(JSON.stringify(request.messages));
         if (revokeDuringModel)
           writeFileSync(
             path,
@@ -228,6 +231,7 @@ test.skipIf(process.platform === "win32")(
       capabilities: scheduledProvider.modelCapabilities,
     });
     const attached = await composeProductShellAttachments({
+      instructionSources: (configuration) => composeInstructionSources(graph, configuration),
       modelPreferences: () => ({
         ...EMPTY_MODEL_PREFERENCES,
         roles: { ...EMPTY_MODEL_PREFERENCES.roles, default: route },
@@ -395,7 +399,107 @@ test.skipIf(process.platform === "win32")(
           },
         },
       };
+      /** Scheduled skills (#1180): pinned when bound, loaded into every model step. */
+      const scheduledSkills = async () => {
+        const skillFile = async (name: string, body: string, extra = "") => {
+          await mkdir(join(root, "config", "skills", name), { recursive: true });
+          await writeFile(
+            join(root, "config", "skills", name, "SKILL.md"),
+            `---\nname: ${name}\ndescription: "Handle ${name}."\n${extra}---\n${body}\n`,
+          );
+        };
+        await skillFile("release-notes", "BODY_SCHEDULED_V1");
+        await skillFile("deploy", "BODY_DEPLOY", "disable-model-invocation: true\n");
+        const blocker = async (id: string, skilled: unknown) => {
+          expect(await invoke({ operation: "create", id, definition: skilled })).toMatchObject({
+            ok: true,
+          });
+          const inspected = (await invoke({ operation: "inspect", id })) as
+            | { readonly ok: boolean; readonly value?: { readonly blocker: unknown } }
+            | undefined;
+          return inspected?.value?.blocker;
+        };
+        // A scheduled skill needs a model step to load into, and never carries user origin.
+        expect(await blocker("skills-action", { ...definition, skills: ["release-notes"] })).toBe(
+          "schedule-skills-need-model-step",
+        );
+        expect(await blocker("skills-manual", { ...modelDefinition, skills: ["deploy"] })).toBe(
+          "schedule-skill-unavailable:selection-unavailable:deploy",
+        );
+        const before = scheduledRequests;
+        expect(
+          await invoke({
+            operation: "create",
+            id: "skills-current",
+            definition: { ...modelDefinition, skills: ["release-notes"] },
+          }),
+        ).toMatchObject({ ok: true });
+        expect(
+          await invoke({ operation: "enable", id: "skills-current", expectedRevision: 1 }),
+        ).toMatchObject({ ok: true });
+        await attached.schedules?.wake();
+        for (let i = 0; i < 200 && attached.schedules?.inspect().active; i++)
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(product.schedules.store.latest("root-1", "skills-current")).toMatchObject({
+          ok: true,
+          value: { terminal: { status: "succeeded" } },
+        });
+        // Both model steps carry the complete bound body.
+        const loaded = scheduledInputs.slice(before);
+        expect(loaded).toHaveLength(2);
+        for (const input of loaded) expect(input).toContain("BODY_SCHEDULED_V1");
+        // An edit after binding blocks the schedule: no provider request, no new body.
+        await skillFile("release-notes", "BODY_SCHEDULED_V2");
+        const bound = product.schedules.store.get("root-1", "skills-current");
+        if (!bound.ok) throw new Error(bound.error.code);
+        const stale = scheduledRequests;
+        expect(
+          await invoke({
+            operation: "trigger-now",
+            id: "skills-current",
+            expectedRevision: bound.value.revision,
+            requestId: "skill-edited",
+          }),
+        ).toMatchObject({ ok: false, error: { code: "authority-changed" } });
+        await attached.schedules?.wake();
+        for (let i = 0; i < 200 && attached.schedules?.inspect().active; i++)
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        expect(scheduledRequests).toBe(stale);
+        expect(scheduledInputs.join("")).not.toContain("BODY_SCHEDULED_V2");
+        // Usage attributes both scheduled steps to the schedule's preload in workflow scope,
+        // reading the workflow streams no session record lists (#1192).
+        const { querySkillUsage } = await import("../../application/extensions/skill-usage.ts");
+        const streams = product.eventStore.admissionStreams("root-1", 64);
+        if (!streams.ok) throw new Error(streams.error.code);
+        const usage = await querySkillUsage(
+          {
+            workspaceId: "root-1",
+            events: product.eventStore,
+            sessions: () => ({
+              sessions: streams.value.map((stream) => ({
+                sessionId: stream.sessionId,
+                streamId: String(stream.streamId),
+              })),
+              truncated: false,
+            }),
+          },
+          { skill: "release-notes" },
+        );
+        if (usage.status !== "reported") throw new Error(usage.code);
+        const scheduled = usage.rows.filter((row) => row.initiators.schedule > 0);
+        expect(scheduled.reduce((sum, row) => sum + row.initiators.schedule, 0)).toBe(2);
+        expect(scheduled.reduce((sum, row) => sum + row.scopes.workflow, 0)).toBe(2);
+        expect(usage.duplicates).toBe(0);
+        const after = product.schedules.store.get("root-1", "skills-current");
+        if (after.ok)
+          await invoke({
+            operation: "pause",
+            id: "skills-current",
+            expectedRevision: after.value.revision,
+          });
+      };
       for (const id of ["models-current", "models-revoked"]) {
+        if (id === "models-current") await scheduledSkills();
         revokeDuringModel = id === "models-revoked";
         const before = scheduledRequests;
         expect(
@@ -447,4 +551,6 @@ test.skipIf(process.platform === "win32")(
       await product.close();
     }
   },
+  // Real hosts, durable stores and six scheduled model steps across several schedules.
+  30_000,
 );

@@ -7,108 +7,27 @@
  * verifies the certificate for the hostname. Redirects are refused, the request and
  * response are bounded, and only the approved origin ever receives the credential.
  */
-import { lookup } from "node:dns/promises";
-import https from "node:https";
-import { isIP } from "node:net";
 import type { HookHttpPort } from "../../application/extensions/hook-http-port.ts";
 import { HookExecutionError } from "../../application/tools/tool-hook-invocation.ts";
 import { hookCredentialReference } from "../../domain/extensions/hook-http.ts";
 import { HOOK_LIMITS } from "../../domain/extensions/hook-points.ts";
 import { decodeHookResponse, encodeHookInput } from "../../domain/extensions/hook-protocol.ts";
 import type { SecretResolverPort } from "../../domain/security/credential.ts";
-import { isPublicAddress } from "../../domain/security/network-address.ts";
 import type { HookHandlerFacts } from "../../domain/tools/hook-evidence.ts";
-
-export type ResolvedAddress = { readonly address: string; readonly family: 4 | 6 };
-
-/**
- * In-process composition only. Tests resolve a hostname to a local server, trust its
- * certificate and name the exact addresses that server may use; the CLI, environment
- * and configuration cannot supply any of these.
- */
-export type HookEgressOptions = {
-  readonly resolve?: (hostname: string) => Promise<readonly ResolvedAddress[]>;
-  readonly ca?: string;
-  readonly reachable?: readonly string[];
-};
+import {
+  type EgressOptions,
+  type PinnedResponse,
+  pinnedHttpsRequest,
+  pinPublicDestination,
+  ResponseTooLarge,
+} from "../security/pinned-https.ts";
 
 type Remote = Extract<HookHandlerFacts, { kind: "remote" }>;
-type Received = { readonly status: number; readonly bytes: Uint8Array; readonly size: number };
-
-async function resolveAll(hostname: string): Promise<readonly ResolvedAddress[]> {
-  const found = await lookup(hostname, { all: true, verbatim: true });
-  return found.map((entry) => ({ address: entry.address, family: entry.family === 6 ? 6 : 4 }));
-}
-
-class TooLarge extends Error {}
-
-function post(options: {
-  readonly url: URL;
-  readonly hostname: string;
-  readonly pinned: ResolvedAddress;
-  readonly body: Uint8Array;
-  readonly authorization: string | null;
-  readonly ca: string | undefined;
-  readonly signal: AbortSignal;
-  readonly onSent: () => void;
-}): Promise<Received> {
-  return new Promise((resolve, reject) => {
-    const request = https.request(
-      {
-        host: options.hostname,
-        ...(isIP(options.hostname) === 0 ? { servername: options.hostname } : {}),
-        port: options.url.port === "" ? 443 : Number(options.url.port),
-        path: options.url.pathname,
-        method: "POST",
-        agent: false,
-        ...(options.ca === undefined ? {} : { ca: options.ca }),
-        // Connect only to the address that was checked, never a fresh resolution.
-        lookup: (_hostname, lookupOptions, callback) =>
-          (lookupOptions as { all?: boolean } | undefined)?.all
-            ? (callback as (error: null, addresses: ResolvedAddress[]) => void)(null, [
-                options.pinned,
-              ])
-            : callback(null, options.pinned.address, options.pinned.family),
-        headers: {
-          "content-type": "application/json",
-          accept: "application/json",
-          "content-length": options.body.byteLength,
-          ...(options.authorization === null ? {} : { authorization: options.authorization }),
-        },
-      },
-      (response) => {
-        const chunks: Buffer[] = [];
-        let size = 0;
-        response.on("data", (chunk: Buffer) => {
-          size += chunk.byteLength;
-          if (size > HOOK_LIMITS.responseBytes) {
-            response.destroy();
-            reject(new TooLarge());
-            return;
-          }
-          chunks.push(chunk);
-        });
-        response.on("end", () =>
-          resolve({ status: response.statusCode ?? 0, bytes: Buffer.concat(chunks), size }),
-        );
-        response.on("error", reject);
-      },
-    );
-    const abort = () => request.destroy(new Error("aborted"));
-    if (options.signal.aborted) abort();
-    options.signal.addEventListener("abort", abort, { once: true });
-    request.on("error", reject);
-    request.on("close", () => options.signal.removeEventListener("abort", abort));
-    request.end(options.body, options.onSent);
-  });
-}
 
 export function createHostHookHttp(ports: {
   readonly credentials: SecretResolverPort;
-  readonly egress?: HookEgressOptions;
+  readonly egress?: EgressOptions;
 }): HookHttpPort {
-  const resolve = ports.egress?.resolve ?? resolveAll;
-  const reachable = new Set(ports.egress?.reachable ?? []);
   return {
     async run(input) {
       const { registration, grant, context } = input;
@@ -152,36 +71,28 @@ export function createHostHookHttp(ports: {
               : new HookExecutionError("hook-credential-unavailable");
           authorization = "Bearer " + resolved.value;
         }
-        const hostname = url.hostname.replace(/^\[(.*)\]$/u, "$1");
-        const literal = isIP(hostname);
-        let addresses: readonly ResolvedAddress[];
-        try {
-          addresses =
-            literal === 0
-              ? await resolve(hostname)
-              : [{ address: hostname, family: literal === 6 ? 6 : 4 }];
-        } catch {
+        const destination = await pinPublicDestination(url, ports.egress);
+        if (destination.kind === "unresolved")
           throw signal.aborted ? stopped() : new HookExecutionError("hook-destination-unresolved");
-        }
-        const [pinned] = addresses;
-        if (pinned === undefined) throw new HookExecutionError("hook-destination-unresolved");
-        // Every answer must be public: a mixed answer is how rebinding hides a private one.
-        if (
-          addresses.some(
-            (entry) => !isPublicAddress(entry.address) && !reachable.has(entry.address),
-          )
-        )
+        if (destination.kind === "private")
           throw new HookExecutionError("hook-destination-private");
         if (!(await input.current()) || signal.aborted)
           throw signal.aborted ? stopped() : new HookExecutionError("hook-authority-stale");
-        let received: Received;
+        let received: PinnedResponse;
         try {
-          received = await post({
+          received = await pinnedHttpsRequest({
             url,
-            hostname,
-            pinned,
+            path: url.pathname,
+            destination,
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              accept: "application/json",
+              "content-length": body.byteLength,
+              ...(authorization === null ? {} : { authorization }),
+            },
             body,
-            authorization,
+            responseBytes: HOOK_LIMITS.responseBytes,
             ca: ports.egress?.ca,
             signal,
             onSent: () => {
@@ -195,7 +106,7 @@ export function createHostHookHttp(ports: {
             facts.status = Date.now() >= context.expiresAt ? "timed-out" : "cancelled";
             throw stopped();
           }
-          if (error instanceof TooLarge) {
+          if (error instanceof ResponseTooLarge) {
             facts.status = "failed";
             facts.response = "invalid";
             facts.omittedBytes = HOOK_LIMITS.responseBytes;

@@ -52,6 +52,12 @@ export async function runSchedule(
       },
     );
   const fail = (code: string) => result({ ok: false, error: { code } });
+  /** Name the failure without echoing a value: only short code-shaped text survives. */
+  const failWithCause = (code: string, cause: string) =>
+    result({
+      ok: false,
+      error: { code, cause: /^[a-z0-9][a-z0-9.:_-]{0,95}$/u.test(cause) ? cause : "unexpected" },
+    });
   const graph = services();
   const workspace = await graph.ensureWorkspaceSet(signal);
   if (!workspace.ok) return fail("workspace-unavailable");
@@ -62,11 +68,22 @@ export async function runSchedule(
       productConfigurationLoadRequest(globals),
       signal,
     );
-  } catch {
-    return fail("configuration-unavailable");
+  } catch (error) {
+    return failWithCause(
+      "configuration-unavailable",
+      error instanceof Error ? error.message : "unexpected",
+    );
   }
-  if (!["published", "unchanged"].includes(configuration.outcome.kind))
-    return fail("configuration-unavailable");
+  const outcome = configuration.outcome;
+  if (outcome.kind !== "published" && outcome.kind !== "unchanged")
+    return failWithCause(
+      "configuration-unavailable",
+      outcome.kind === "publish-failed"
+        ? `publish-failed:${outcome.code}`
+        : outcome.kind === "rejected"
+          ? `rejected:${outcome.issues.find((issue) => issue.severity === "error")?.kind ?? "unknown"}`
+          : outcome.kind,
+    );
   const product = await openProductArtifactSession(graph, signal);
   if (!product) return fail("storage-unavailable");
   let watcher: ReturnType<typeof startConfigurationReloadWatcher> | undefined;

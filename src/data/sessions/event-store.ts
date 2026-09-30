@@ -191,6 +191,16 @@ const SELECT_FROM_CURSOR = `SELECT ${EVENT_COLUMNS}
 const SELECT_STREAM_HEADS = `SELECT stream_id AS streamId, MAX(sequence) AS lastSequence
   FROM ${EVENTS_TABLE} GROUP BY stream_id ORDER BY stream_id LIMIT $limit`;
 
+const SELECT_ADMISSION_STREAMS = `SELECT stream_id AS streamId,
+    MIN(json_extract(payload, '$.correlation.sessionId')) AS sessionId
+  FROM ${EVENTS_TABLE}
+  WHERE kind = 'instructions.resolved'
+    AND json_extract(payload, '$.correlation.workspaceId') = $workspaceId
+  GROUP BY stream_id ORDER BY stream_id LIMIT $limit`;
+
+/** A stream holding instruction admissions, and the session its events belong to. */
+export type AdmissionStream = { readonly streamId: StreamId; readonly sessionId: string };
+
 /** The last sequence one stream holds. */
 export type StreamHead = {
   readonly streamId: StreamId;
@@ -212,6 +222,14 @@ export type DurableEventStore = EventStorePort & {
 
   /** Every stream holding at least one event, with the sequence it reached. */
   streamHeads(limit: number): Result<readonly StreamHead[], EventStoreError>;
+  /**
+   * Streams of one workspace that hold instruction admissions (#1192), including child,
+   * workflow and scheduled streams no session record lists. Read-only and bounded.
+   */
+  admissionStreams(
+    workspaceId: string,
+    limit: number,
+  ): Result<readonly AdmissionStream[], EventStoreError>;
 };
 
 export type SqliteEventStoreOptions = {
@@ -617,6 +635,32 @@ export function createSqliteEventStore(
         heads.push({ streamId: stream.value, lastSequence: last.value });
       }
       return ok(heads);
+    },
+
+    admissionStreams(
+      workspaceId: string,
+      limit: number,
+    ): Result<readonly AdmissionStream[], EventStoreError> {
+      if (!Number.isSafeInteger(limit) || limit < 1) {
+        return err({ code: "invalid-read-limit", requestedLimit: limit, maximumLimit: limit });
+      }
+      const rows = store.read(SELECT_ADMISSION_STREAMS, { workspaceId, limit });
+      if (!rows.ok) {
+        return err(eventStoreErrorFor(rows.error));
+      }
+      const streams: AdmissionStream[] = [];
+      for (const row of rows.value) {
+        const stream = streamId.parse(textOf(row.streamId));
+        const session = typeof row.sessionId === "string" ? row.sessionId : null;
+        if (!stream.ok || session === null || session === "") {
+          return err({
+            code: "codec",
+            error: { kind: "invalid-envelope", issues: [{ path: "events", code: "custom" }] },
+          });
+        }
+        streams.push({ streamId: stream.value, sessionId: session });
+      }
+      return ok(streams);
     },
 
     async quiesce(): Promise<void> {

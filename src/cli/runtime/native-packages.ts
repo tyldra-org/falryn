@@ -53,7 +53,7 @@ export function composeNativePackages(options: {
         clock: options.services.clock,
         environment: options.services.environment,
       }).resolver,
-      ...(options.services.hookEgress === undefined ? {} : { egress: options.services.hookEgress }),
+      ...(options.services.egress === undefined ? {} : { egress: options.services.egress }),
     }),
   );
   const stopped = new AbortController();
