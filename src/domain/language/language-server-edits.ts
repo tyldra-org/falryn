@@ -551,6 +551,7 @@ export function workspaceEditToPatchPlan(
         expectedGitHead: null,
         limits: DEFAULT_PATCH_LIMITS,
         targets: [],
+        dependencies: [],
       },
       deferredCommands: [],
     });
@@ -612,6 +613,7 @@ export function workspaceEditToPatchPlan(
       expectedGitHead: null,
       limits: DEFAULT_PATCH_LIMITS,
       targets,
+      dependencies: [],
     },
     deferredCommands: [],
   });
@@ -641,6 +643,7 @@ export function codeActionToPatchPlan(
         expectedGitHead: null,
         limits: DEFAULT_PATCH_LIMITS,
         targets: [],
+        dependencies: [],
       },
       deferredCommands,
     });

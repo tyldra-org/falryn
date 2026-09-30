@@ -250,6 +250,10 @@ async function stageTarget(
   if (!decoded.ok) {
     return { ok: false, error: { code: "unsupported" }, bound: bound.value };
   }
+  // Staged bytes are re-encoded as UTF-8; only UTF-8 files keep their exact encoding.
+  if (decoded.value.encoding !== "utf-8" && decoded.value.encoding !== "utf-8-bom") {
+    return { ok: false, error: { code: "unsupported" }, bound: bound.value };
+  }
   if (isBinaryText(decoded.value.text)) {
     return { ok: false, error: { code: "unsupported" }, bound: bound.value };
   }
@@ -264,7 +268,9 @@ async function stageTarget(
   }
   const mark = newline === "crlf" ? "crlf" : newline === "cr" ? "cr" : "lf";
   const text = joinPatchedLines(applied.value.lines, mark, trailingNewline);
-  const bytes = new TextEncoder().encode(text);
+  const body = new TextEncoder().encode(text);
+  const bytes =
+    decoded.value.encoding === "utf-8-bom" ? new Uint8Array([0xef, 0xbb, 0xbf, ...body]) : body;
   if (bytes.byteLength > maxFileBytes) {
     return {
       ok: false,
@@ -377,6 +383,26 @@ export function createWorkspacePatcher(options: WorkspacePatcherOptions): Worksp
     | { readonly ok: false; readonly error: WorkspacePatchError }
   > {
     const planId = computePatchPlanId(plan);
+    // Read-only dependencies are checked before any target is staged or written.
+    for (const dependency of plan.dependencies) {
+      if (isAborted(signal)) {
+        return { ok: false, error: { code: "cancelled" } };
+      }
+      const bound = await bindExistingFile(fileSystem, root, dependency.path, signal);
+      if (!bound.ok) {
+        return { ok: false, error: { code: "dependency-changed", index: dependency.index } };
+      }
+      const raw = await fileSystem.readBytes(
+        bound.value.resolved,
+        plan.limits.maxFileBytes,
+        signal,
+      );
+      if (!raw.ok || digestOf(raw.value) !== dependency.expectedDigest) {
+        return isAborted(signal)
+          ? { ok: false, error: { code: "cancelled" } }
+          : { ok: false, error: { code: "dependency-changed", index: dependency.index } };
+      }
+    }
     const staged: Array<StagedTarget | WorkspacePatchRejected> = [];
     let aggregate = 0;
     const resolved = new Map<LocalPath, number>();

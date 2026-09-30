@@ -283,10 +283,13 @@ export const FAMILY_TERMS: Readonly<Record<CapabilityFamily, readonly string[]>>
 
 export const BASELINE_ORDER = [
   "read_file",
+  // The evidence-issuing reader: replacements need its references (#996).
+  "read",
   "list_dir",
   "stat_path",
   "read_compact_document",
   "search_text",
+  "search",
   "discover_files",
   "preview_patch",
   "apply_patch",

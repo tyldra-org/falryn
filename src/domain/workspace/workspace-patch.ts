@@ -21,6 +21,7 @@ import {
   MAX_CONFLICT_CONTEXT_LINES,
   NOT_ATTEMPTED_PATCH_ROLLBACK,
   type ParsedPatchChangedRegionRead,
+  type ParsedPatchDependency,
   type ParsedPatchHunk,
   type ParsedPatchPlan,
   type ParsedPatchTarget,
@@ -418,6 +419,10 @@ export function computePatchPlanId(plan: ParsedPatchPlan): string {
         ...hunk.newLines,
       ]),
     ]),
+    // Appended only when present, so plans without dependencies keep their identities.
+    ...(plan.dependencies.length === 0
+      ? []
+      : ["deps", ...plan.dependencies.flatMap((item) => [item.path, item.expectedDigest])]),
   ].join("|");
   let hash = 0x811c9dc5;
   for (let index = 0; index < canonical.length; index += 1) {
@@ -712,6 +717,27 @@ export function parseWorkspacePatchPlan(
   if (overlap !== null) {
     return err({ code: "overlapping-targets", reason: overlap });
   }
+  const dependencies: ParsedPatchDependency[] = [];
+  if (value.dependencies !== undefined) {
+    if (!Array.isArray(value.dependencies) || value.dependencies.length > HARD_MAX_PATCH_TARGETS)
+      return err({ code: "malformed-plan" });
+    const written = new Set(targets.map((target) => logicalKey(target.path)));
+    for (const [index, item] of value.dependencies.entries()) {
+      if (
+        !isRecord(item) ||
+        Object.keys(item).some((key) => key !== "path" && key !== "expectedDigest")
+      )
+        return err({ code: "malformed-plan" });
+      const path = parsePath(item.path);
+      if (!path.ok) return path;
+      const digest = contentDigest.parse(item.expectedDigest);
+      if (!digest.ok) return err({ code: "malformed-digest" });
+      // A dependency is read-only; a file the plan writes cannot also be one.
+      if (written.has(logicalKey(path.value)))
+        return err({ code: "overlapping-targets", reason: "duplicate" });
+      dependencies.push({ index, path: path.value, expectedDigest: digest.value });
+    }
+  }
   let expectedGitHead: string | null = null;
   if (value.expectedGitHead !== undefined) {
     if (
@@ -724,7 +750,7 @@ export function parseWorkspacePatchPlan(
     }
     expectedGitHead = value.expectedGitHead;
   }
-  return ok({ policy, expectedPlanId, expectedGitHead, limits, targets });
+  return ok({ policy, expectedPlanId, expectedGitHead, limits, targets, dependencies });
 }
 
 export function summarizePatchRollback(
@@ -895,6 +921,8 @@ export function describeWorkspacePatchError(error: WorkspacePatchError): string 
       return `overlapping-targets:${error.reason}`;
     case "overlapping-hunks":
       return "overlapping-hunks";
+    case "dependency-changed":
+      return `dependency-changed:${error.index}`;
     case "conflict":
       return `conflict:${error.hunkIndex}`;
     case "malformed-limit":
