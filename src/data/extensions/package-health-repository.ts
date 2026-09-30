@@ -71,6 +71,16 @@ export function createPackageHealthRepository(store: SqliteStorePort): PackageHe
       }
       return ok(failures);
     },
+    latest(packageId, identityDigest) {
+      const found = read(
+        "SELECT * FROM package_health_attempts WHERE package_id=$packageId AND pending=0 ORDER BY rowid DESC LIMIT 8",
+        { packageId },
+      );
+      if (!found.ok) return found;
+      return ok(
+        found.value.find((record) => record.result.binding.package === identityDigest) ?? null,
+      );
+    },
     save(record, expected) {
       try {
         const parsed = packageHealthRecordSchema.parse(record);

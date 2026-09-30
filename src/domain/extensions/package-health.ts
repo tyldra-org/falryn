@@ -98,6 +98,11 @@ export interface PackageHealthStore {
   get(operation: string): Result<PackageHealthRecord | null, { code: string }>;
   pending(contribution: string): Result<PackageHealthRecord | null, { code: string }>;
   failures(contribution: string, generation: string): Result<number, { code: string }>;
+  /** The newest completed attempt recorded against this installed identity, if any. */
+  latest(
+    packageId: string,
+    identityDigest: string,
+  ): Result<PackageHealthRecord | null, { code: string }>;
   save(record: PackageHealthRecord, expected: number): Result<null, { code: string }>;
 }
 

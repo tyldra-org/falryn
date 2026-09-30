@@ -60,7 +60,9 @@ export function commandFrom(
               ? "extension.listing"
               : action === "skills"
                 ? "extension.skills"
-                : null;
+                : action === "notices"
+                  ? "extension.notices"
+                  : null;
   if (group === "provider") {
     return action === null ? null : "provider";
   }

@@ -36,6 +36,7 @@ import type {
   ModelCapabilityBrief,
   TerminalOutcome,
 } from "../../domain/orchestration/index.ts";
+import { ecosystemTrustReason } from "../../domain/security/ecosystem-notice.ts";
 import type { SessionCorrelation, TurnLifecycleFact } from "../../domain/sessions/index.ts";
 import {
   authorizeToolInvocation,
@@ -310,6 +311,22 @@ function correlation(options: ProductToolGatewayOptions) {
   return { ...options.correlation, turnId: options.turnId };
 }
 
+/**
+ * Discovery, diagnostics and this refusal read one reason from the same trust projection, so an
+ * invocation is never denied for a cause the capability card did not state.
+ */
+function trustRefusal(
+  options: ProductToolGatewayOptions,
+  source: string,
+  capabilityId: unknown,
+): string | null {
+  if (!requiresEcosystemTrust(source)) return null;
+  const trust = options.trust?.inspect(String(capabilityId)) ?? null;
+  return trust?.eligible === true
+    ? null
+    : (ecosystemTrustReason(trust) ?? "ecosystem-trust-required");
+}
+
 async function persist(
   options: ProductToolGatewayOptions,
   fact: TurnLifecycleFact,
@@ -412,11 +429,12 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
       invocation.effect,
     );
     if (child) return { status: "denied", reason: child.state, effect: "none", admission: child };
-    if (
-      requiresEcosystemTrust(invocation.entry.manifest.source) &&
-      options.trust?.inspect(String(request.capabilityId))?.eligible !== true
-    )
-      return { status: "denied", reason: "ecosystem-trust-required", effect: "none" };
+    const replayTrust = trustRefusal(
+      options,
+      invocation.entry.manifest.source,
+      request.capabilityId,
+    );
+    if (replayTrust !== null) return { status: "denied", reason: replayTrust, effect: "none" };
     const policy = authorizeToolInvocation({
       invocation,
       ...(options.policy === undefined ? {} : { profile: options.policy }),
@@ -599,11 +617,12 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
     );
     if (scopeRefusal) return { status: "denied", reason: scopeRefusal, effect: "none" };
 
-    if (
-      requiresEcosystemTrust(ready.entry.manifest.source) &&
-      options.trust?.inspect(String(ready.entry.manifest.capabilityId))?.eligible !== true
-    )
-      return { status: "denied", reason: "ecosystem-trust-required", effect: "none" };
+    const trustDenied = trustRefusal(
+      options,
+      ready.entry.manifest.source,
+      ready.entry.manifest.capabilityId,
+    );
+    if (trustDenied !== null) return { status: "denied", reason: trustDenied, effect: "none" };
     const gateSequences = new Map<string, number>();
     const observe = async (
       stage: "validation" | "policy" | "confirmation" | "pre-hook" | "post-hook" | "schedule",
@@ -925,14 +944,12 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
             observedEffect: "none",
           };
         }
-        if (
-          requiresEcosystemTrust(manifest.source) &&
-          options.trust?.inspect(String(manifest.capabilityId))?.eligible !== true
-        ) {
+        const executionTrustDenied = trustRefusal(options, manifest.source, manifest.capabilityId);
+        if (executionTrustDenied !== null) {
           return {
             value: {
               status: "denied",
-              reason: "ecosystem-trust-required",
+              reason: executionTrustDenied,
               effect: "none",
             } as const,
             terminated: true,

@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { z } from "zod";
 import { artifactId } from "../../domain/artifacts/index.ts";
+import {
+  createCapabilityRegistry,
+  inspectCapabilityHealth,
+} from "../../domain/capabilities/index.ts";
 import { hookDecisionBinding } from "../../domain/extensions/hook-protocol.ts";
 import {
   configurationGeneration,
@@ -190,10 +194,26 @@ describe("createProductToolGateway", () => {
       expect(published.trust?.state).toBe("user-approved");
       expect((await run("trust-approved")).status).toBe("completed");
       revokeDuringHook = true;
-      expect((await run("trust-revoked-in-hook")).status).toBe("denied");
+      const denied = await run("trust-revoked-in-hook");
+      expect(denied.status).toBe("denied");
       expect((await run("trust-approved")).status).toBe("denied");
       expect(effects).toBe(1);
-      expect(capabilityEntryFromTool(entry.value, true, trust).trust?.state).toBe("revoked");
+      const revoked = capabilityEntryFromTool(entry.value, true, trust);
+      expect(revoked.trust?.state).toBe("revoked");
+      // Discovery, diagnostics and the refused invocation state one cause.
+      const reason = "ecosystem-trust-revoked";
+      expect(denied).toMatchObject({ reason });
+      expect(revoked.state.availabilityReason).toBe(reason);
+      expect(revoked.state.executionReason).toBe(reason);
+      const catalog = createCapabilityRegistry(generation, [revoked]);
+      if (!catalog.ok) throw new Error(catalog.error.code);
+      const health = inspectCapabilityHealth(catalog.value, "native-model").entries[0];
+      expect(health?.health).toBe("quarantined");
+      expect(health?.selectable).toBe(false);
+      expect(health?.diagnostics.map((diagnostic) => diagnostic.message)).toEqual(
+        expect.arrayContaining([reason]),
+      );
+      expect(health?.diagnostics.filter((diagnostic) => diagnostic.message !== reason)).toEqual([]);
     },
   );
   test("runs observations through hooks, scheduling, projection, and durable facts", async () => {

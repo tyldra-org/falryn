@@ -699,6 +699,7 @@ describe("compatibility", () => {
   async function rollBackToSchema30(store: SqliteStorePort) {
     const written = store.write((sql) => {
       for (const table of [
+        "ecosystem_notice_acknowledgements",
         "curated_catalogs",
         "agent_edit_scopes",
         "peer_route_grant_versions",
@@ -725,7 +726,7 @@ describe("compatibility", () => {
     await f.store.close();
 
     const migrated = await openProductStoreOrThrow(f.root);
-    expect(migrated.report.appliedThisRun).toEqual([31, 32, 33, 34]);
+    expect(migrated.report.appliedThisRun).toEqual([31, 32, 33, 34, 35]);
     const c = client(actionsFor(migrated));
     expect(c.ids(await c.query("children", { parentId: null, after: null, limit: 10 }))).toEqual([
       "alpha",

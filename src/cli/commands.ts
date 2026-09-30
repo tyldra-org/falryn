@@ -49,6 +49,7 @@ import type { ExportCommandPayload, runExport } from "./commands/export.ts";
 import type { runExtensionInspect } from "./commands/extension.ts";
 import type { ExtensionCatalogPayload, runExtensionCatalog } from "./commands/extension-catalog.ts";
 import type { ExtensionListingPayload, runExtensionListing } from "./commands/extension-listing.ts";
+import type { ExtensionNoticesPayload, runExtensionNotices } from "./commands/extension-notices.ts";
 import type { ExtensionSkillsPayload, runExtensionSkills } from "./commands/extension-skills.ts";
 import type { runImport, runReplay } from "./commands/import-replay-commands.ts";
 import type { runModel } from "./commands/model.ts";
@@ -332,6 +333,14 @@ export function stoppedResult(
         outcome,
         effect,
       );
+    case "extension.notices":
+      return resultFor<"extension.notices", ExtensionNoticesPayload>(
+        command,
+        null,
+        [],
+        outcome,
+        effect,
+      );
     case "extension.inspect":
     case "extension.trust":
       return resultFor<"extension.inspect" | "extension.trust", PackageInspectionReport>(
@@ -419,4 +428,5 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runExtensionListing>>
   | Awaited<ReturnType<typeof runExtensionSkills>>
   | Awaited<ReturnType<typeof runExtensionInspect>>
+  | Awaited<ReturnType<typeof runExtensionNotices>>
   | Awaited<ReturnType<typeof runCoding>>;

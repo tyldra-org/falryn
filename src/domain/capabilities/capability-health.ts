@@ -11,6 +11,7 @@ import type { Instant } from "../foundation/clock.ts";
 import type { CapabilityId, ConfigurationGeneration } from "../foundation/identity.ts";
 import { err, ok, type Result } from "../foundation/result.ts";
 import type { EffectClass } from "../orchestration/work.ts";
+import { ECOSYSTEM_TRUST_REASONS } from "../security/ecosystem-notice.ts";
 import type {
   CapabilityAvailability,
   CapabilityFamily,
@@ -301,6 +302,9 @@ function diagnostic(
 function registryDiagnostics(entry: CapabilityRegistryEntry): CapabilityHealthDiagnostic[] {
   const diagnostics: CapabilityHealthDiagnostic[] = [];
   const operational = entry.state.operational;
+  // Ecosystem trust states one reason for discovery, diagnostics and invocation alike.
+  const trustReason =
+    ECOSYSTEM_TRUST_REASONS.find((reason) => reason === entry.state.executionReason) ?? null;
   if (!operational.installed) {
     diagnostics.push(
       diagnostic(
@@ -331,7 +335,7 @@ function registryDiagnostics(entry: CapabilityRegistryEntry): CapabilityHealthDi
         entry,
         "policy-denied",
         "denied",
-        "capability is denied by effective policy",
+        trustReason ?? "capability is denied by effective policy",
         "policy",
         "allow",
       ),
@@ -343,7 +347,7 @@ function registryDiagnostics(entry: CapabilityRegistryEntry): CapabilityHealthDi
         entry,
         "quarantined",
         "quarantined",
-        "capability is quarantined",
+        trustReason ?? "capability is quarantined",
         "registry",
         "inspect",
       ),
@@ -355,7 +359,7 @@ function registryDiagnostics(entry: CapabilityRegistryEntry): CapabilityHealthDi
         entry,
         "platform-incompatible",
         "incompatible",
-        "capability is marked incompatible",
+        trustReason ?? "capability is marked incompatible",
         "registry",
         null,
       ),

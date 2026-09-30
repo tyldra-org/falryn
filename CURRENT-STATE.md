@@ -24,7 +24,7 @@ application. The current command surface includes:
 | falryn model | Inspect and revision-safely edit model policy through the shared settings service |
 | falryn package | Inspect, install, activate, update, disable or remove governed packages and inspect their data/health |
 | falryn peer | Inspect authorized peers, exchange messages, and read delivery history |
-| falryn extension inspect / trust / scope / catalog | Inspect local declarations, confirm trust or scoped metadata preferences, and query the inert catalog |
+| falryn extension inspect / trust / notices / scope / catalog | Inspect local declarations, confirm trust or scoped metadata preferences, list or acknowledge package notices, and query the inert catalog |
 | falryn export / import | Preview or write a versioned local export package, or import one after verification |
 | falryn replay | Rebuild one stored session projection without repeating effects |
 | falryn session list / show / resume / fork / rewind / replay | Inspect or navigate durable session history while preserving lineage |
@@ -1572,6 +1572,67 @@ valid and unrevoked. Trust records are local authority, not portable grants in
 session exports. Older binaries refuse the newer database schema; downgrade
 requires a compatible backup. Restoring a whole database can restore its old
 decisions, so inspect and revoke them before continuing.
+
+### Extension notices
+
+`falryn extension notices <path>` lists why a local package is limited or at risk.
+It derives notices on every read from the facts that decide invocation: the
+package's trust projection, host compatibility, dependency resolution and its
+newest completed package-health attempt for the same installed identity. Only
+acknowledgements are stored. A package with no cause has no notice; an unapproved
+package is a normal state, not a notice. Without a product database the command
+answers from empty owners and does not create one.
+
+A notice carries a digest `id`, the package subject, a closed `code`, a `state`
+(`unavailable`, `degraded`, `incompatible`, `quarantined`, `revoked` or `failed`),
+a `severity` (`blocking` when the shared decision denies invocation, `warning`
+otherwise), that `impact`, the `reason`, one `requiredAction`, at most three
+remediation handles, bounded evidence (digests, closed status words, the advisory
+sequence and at most 32 advisory identifiers) and freshness. The `id` binds the
+subject, code and cause, never a timestamp or a health attempt identity, so
+repeated reads, restarts and a flapping probe keep one identity while a newer
+advisory sequence, changed evidence or another health generation is a new notice.
+Notices contain no keys, signatures, paths or catalog display text.
+
+| Code | State | Effect |
+| --- | --- | --- |
+| `advisory-revoked` | `revoked` | blocking |
+| `advisory-quarantined`, `advisory-unverified`, `integrity-mismatch`, `signature-invalid`, `signature-conflicting` | `quarantined` | blocking |
+| `evidence-stale`, `approval-expired`, `approval-changed` | `degraded` | blocking |
+| `host-incompatible` | `incompatible` | blocking |
+| `dependencies-unresolved` | `unavailable` | reported only |
+| `dependencies-degraded`, `health-uncertain` | `degraded` | reported only |
+| `health-failed` | `failed` | reported only |
+
+Dependency and health notices do not change what the gateway decides. There is no
+advisory fetcher, so an advisory arrives through a signed `extension trust` refresh
+with a higher sequence and leaves the same way; a withdrawal does not restore an
+older approval, so the package needs a fresh approval and `approval-changed` says so.
+
+Discovery, diagnostics and a refused invocation now state one reason from the same
+trust projection: `ecosystem-trust-required`, `ecosystem-trust-revoked`,
+`ecosystem-trust-quarantined`, `ecosystem-trust-incompatible`,
+`ecosystem-trust-stale`, `ecosystem-trust-expired`, `ecosystem-trust-changed` or
+`ecosystem-grant-required`. The capability card's availability reason, the health
+diagnostic message and the gateway's `denied` reason are that value. Revoked and
+quarantined trust reports health `quarantined`, incompatible trust reports
+`incompatible` and any other ineligible trust reports `denied`; none is selectable.
+
+`--input <request.json>` accepts one strict request of at most 16,384 bytes:
+`{"action":"acknowledge","noticeId":"sha256:...","expiresAt":<epoch ms>}`. The
+preview returns a `confirmation` bound to the notice, scope, stored revision and
+expiry; repeating the request with it writes one record in migration 0035 for the
+local-user scope. The expiry must be in the future and within 30 days. An
+acknowledgement hides the notice's presentation, leaving one line that says it is
+acknowledged and whether invocation is still denied. It changes no trust,
+provenance, health or eligibility, does not cover a different notice `id`, and
+lapses at its expiry. The table keeps at most 1,024 live records and prunes expired
+ones on the next write. Session export does not carry acknowledgements.
+
+Limits: notices are per package path. No OpenTUI view, export or replay projection
+exists yet, and `falryn doctor` does not report them; the capability doctor reports
+the same reasons through health diagnostics. Package health records carry no
+timestamp, so a health notice's freshness is `unrecorded`.
 
 Migration 0017 adds package evidence (16 KiB per record), exact full-user grant
 records (512 KiB), and append-only redacted metadata receipts for evidence,
