@@ -209,7 +209,7 @@ Use the smallest command that proves the current edit while iterating.
 | Command | Use |
 | --- | --- |
 | `bun run check:static` | Formatting, lint, types, repository integrity, and model catalogs |
-| `bun run test:changed` | Tests whose imports reach a file changed relative to `main`, in one process; a change to a widely imported module can make it slower than `bun run test` |
+| `bun run test:changed` | Tests whose imports reach a file changed relative to `main`, as the same concurrent shard processes as `bun run test`. A type-only change selects none, so rely on `check:static`; a change to a widely imported module selects most of the suite and takes about as long as `bun run test` |
 | `bun test <path>` | One focused test file |
 | `bun run test:watch` | Re-run tests while files change |
 | `bun run test` | Full source suite as concurrent shard processes (`FALRYN_TEST_SHARDS` overrides the count; `FALRYN_TEST_SHARD=i/N` runs one shard, as CI does) |
