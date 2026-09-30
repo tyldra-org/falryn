@@ -179,7 +179,7 @@ export async function preparePackage(
       version: 1,
       packageId: falryn.packageId ?? manifest.name,
       packageVersion: version.success ? version.data : null,
-      sourceCoordinate: {
+      sourceCoordinate: snapshot.sourceCoordinate ?? {
         kind: "local",
         rootId: snapshot.sourceId,
         path: "plugin.json",

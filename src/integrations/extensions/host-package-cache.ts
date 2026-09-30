@@ -174,6 +174,10 @@ export function createHostPackageCache(directory: string): PackageBytes {
         const snapshot: PackageSnapshot = {
           sourceId: header.sourceId,
           ownership: header.ownership,
+          // An acquired version keeps its recorded source; a local one recomputes it.
+          ...(version.identity.sourceCoordinate.kind === "local"
+            ? {}
+            : { sourceCoordinate: version.identity.sourceCoordinate }),
           files: header.files.map((f) => ({ path: f.path, bytes: bytes(f.length) })),
           diagnostics: [],
           omittedDiagnostics: 0,

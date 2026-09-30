@@ -1131,7 +1131,8 @@ withdrawal needs a higher sequence and does not restore an old approval.
 installation transactions and explicit health checks. Actions are `inspect`, `data`, `health`, `install`, `update`,
 `rollback`, `disable`, `uninstall`, `recover`, and `enable`. Every request names
 `packageId`, a UUID `operationId`, and `expectedRevision`. Install/update also
-name `sourcePath`; rollback names a previously returned `versionDigest`.
+name `sourcePath` or, exclusively, a marketplace `listing` (see Marketplace package
+acquisition); rollback names a previously returned `versionDigest`.
 Mutations first return a `confirmation` digest. Repeat the same request with
 that digest to apply it. A committed operation ID replays its recorded receipt
 without repeating the mutation; changed intent under that ID is refused.
@@ -1160,10 +1161,52 @@ and unrelated files are never removal targets. Inspection reports the current
 digest, revision, retained count and pending cleanup; save version digests from
 receipts for exact rollback. Human, quiet, JSON and JSONL expose the same facts.
 
+### Marketplace package acquisition
+
+Install and update accept `listing: { sourceId, listingId, packageVersion }` for one
+exact version from an imported or refreshed catalog. The listing is gated when the
+action runs, with the same rules as `extension listing` inspect: a `local` or
+`fresh` catalog and a compatible, unwithdrawn version. Its refusal codes are
+inspect's. A listing on any other action is `unexpected-package-listing`.
+
+Where the bytes come from:
+
+- A `registry` coordinate uses Falryn registry layout v1:
+  `<registry>/<encodeURIComponent(coordinate)>/<encodeURIComponent(packageVersion)>/package.tgz`.
+- An `archive` coordinate downloads exactly its `origin`. The SHA-256 of the received
+  bytes must equal its declared digest (`archive-digest-mismatch`).
+- Both must be `https`. `git`, `local` and `builtin` coordinates are
+  `acquisition-source-unsupported`.
+
+The download is one GET per hop, at most three redirects, 64 MiB and 120 seconds
+in total, admitted by the product resource owner. Every hop must be `https` and is
+re-resolved and pinned to public addresses. Only `200` with identity content
+encoding is accepted. The listing marketplace's credential is sent only to hops on
+that marketplace's own origin; a redirect elsewhere never receives it. Download
+failures are `package-download-*` codes.
+
+The archive is a gzip POSIX ustar/pax tar, read in memory by Falryn:
+
+- Expansion is limited to 64 MiB and 4,096 files.
+- Paths must be safe package-relative paths of at most 1,024 bytes and depth 32.
+- Links, devices and FIFOs are refused, as are duplicate or case-colliding paths
+  and malformed headers.
+- The package root is the archive root when it holds `plugin.json`, otherwise its
+  single top-level directory.
+- Refusals use `archive-*` codes.
+
+The package is prepared with the listed source coordinate. Any identity other than
+the listed one is refused before preview (`acquired-identity-mismatch`), including
+when served bytes change between preview and confirmation. Preview and confirmation
+each download again; the receipt's `acquisition` records the listing, final URL,
+byte count and redirect count. Installed versions keep their source coordinate, so
+rollback reads retained bytes without a download. Pinned Git acquisition is not
+provided.
+
 Installation and trust approval do not create executable bindings. `package enable`
 without a native activation request still returns `activation-owner-unavailable`.
 The explicit native tool and prompt-template paths below publish only their
-selected contribution identities. Remote acquisition, module services, full-user
+selected contribution identities. Pinned Git acquisition, module services, full-user
 execution and other native-kind adapters remain unavailable. Scope controls remain
 metadata preferences.
 Package cache files retain exact source bytes and are not redacted artifacts.
@@ -1485,11 +1528,11 @@ sequence, exact package identity and identity digest, compatibility, withdrawal,
 contribution kinds, catalog claims (labelled unverified) and other sources listing
 the same package. The executable profile is `unknown-until-local-inspection`.
 Install is refused for a withdrawn or incompatible version and for a catalog that is
-not `local` or `fresh` (`source-not-current`). Otherwise it is
-`marketplace-acquisition-unavailable`: a marketplace cannot deliver package bytes,
-so the package must be obtained separately and installed with `falryn package
-install`. Install does not check it against a listing; compare the listed package
-and manifest digests with the installed package's own inspection. A later catalog that
+not `local` or `fresh` (`source-not-current`). Otherwise it is `available`, with the
+download URL and whether the marketplace credential applies (see Marketplace
+package acquisition). `git`, non-`https`, `local` and `builtin` sources are
+`unavailable` with `acquisition-source-unsupported` or `acquisition-insecure-origin`.
+A later catalog that
 withdraws or drops the version changes what inspect shows; earlier results are not
 reused. OpenTUI marketplace views are not provided. Human output labels claims as
 unverified.

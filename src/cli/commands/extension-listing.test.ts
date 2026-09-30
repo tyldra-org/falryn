@@ -246,7 +246,11 @@ test("an unreachable marketplace changes nothing; inspect shows one version befo
     source: { origin: { kind: "file" }, freshness: { state: "local" } },
     version: { identity: { packageVersion: "1.0.0" } },
     executableProfile: "unknown-until-local-inspection",
-    install: { status: "unavailable", code: "marketplace-acquisition-unavailable" },
+    install: {
+      status: "available",
+      download: "https://registry.example.test/tools-review/1.0.0/package.tgz",
+      credential: "none",
+    },
   });
   const human = await run(
     { operation: "inspect", query: { sourceId: "example", listingId: "tools/review" } },
@@ -258,7 +262,9 @@ test("an unreachable marketplace changes nothing; inspect shows one version befo
   expect(human.text).toContain(
     "Executable profile: unknown until the package is inspected locally.",
   );
-  expect(human.text).toContain("Install: a marketplace cannot deliver packages yet.");
+  expect(human.text).toContain(
+    "Install: available from https://registry.example.test/tools-review/1.1.0/package.tgz;",
+  );
   const missing = await run({
     operation: "inspect",
     query: { sourceId: "example", listingId: "tools/absent" },
