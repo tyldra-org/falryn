@@ -171,3 +171,4 @@ export async function runExtensionNotices(
     { intent: request === undefined ? "none" : "mutate", observed: effect },
   );
 }
+// probe: a scoped-tier source change
