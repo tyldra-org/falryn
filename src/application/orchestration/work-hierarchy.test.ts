@@ -7,6 +7,7 @@ import {
   openProductStore,
   openProductStoreOrThrow,
   removeTemporaryRoots,
+  temporaryRoot,
 } from "../../data/fixtures.ts";
 import { createSqliteWorkQueueStore } from "../../data/orchestration/work-queue-store.ts";
 import { PRODUCTION_MIGRATIONS } from "../../data/sqlite/sqlite-migrations.ts";
@@ -696,21 +697,33 @@ describe("committed task facts", () => {
 });
 
 describe("compatibility", () => {
+  const SCHEMA_30 = 30;
+
+  /** The tables a schema-30 database holds, read from the migrations rather than listed by hand. */
+  async function tablesAtSchema30(): Promise<ReadonlySet<string>> {
+    const store = await openProductStoreOrThrow(await temporaryRoot("falryn-schema-30-"), {
+      migrations: PRODUCTION_MIGRATIONS.slice(0, SCHEMA_30),
+    });
+    const rows = store.read("SELECT name AS name FROM sqlite_master WHERE type = 'table'");
+    await store.close();
+    if (!rows.ok) throw new Error(`could not read the schema-30 tables: ${rows.error.code}`);
+    return new Set(rows.value.map((row) => String(row.name)));
+  }
+
+  /** Drop every table a later migration created, newest first, and forget those migrations. */
   async function rollBackToSchema30(store: SqliteStorePort) {
+    const kept = await tablesAtSchema30();
+    const current = store.read(
+      "SELECT name AS name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY rowid DESC",
+    );
+    expect(current.ok).toBeTrue();
+    const later = (current.ok ? current.value : [])
+      .map((row) => String(row.name))
+      .filter((name) => !kept.has(name));
+    expect(later.length).toBeGreaterThan(0);
     const written = store.write((sql) => {
-      for (const table of [
-        "ecosystem_notice_acknowledgements",
-        "curated_catalogs",
-        "agent_edit_scopes",
-        "peer_route_grant_versions",
-        "peer_route_grants",
-        "work_placement_versions",
-        "work_placements",
-        "work_group_versions",
-        "work_groups",
-      ])
-        sql.run(`DROP TABLE ${table}`);
-      sql.run(`DELETE FROM ${MIGRATION_TABLE} WHERE version >= 31`);
+      for (const table of later) sql.run(`DROP TABLE ${table}`);
+      sql.run(`DELETE FROM ${MIGRATION_TABLE} WHERE version > ${SCHEMA_30}`);
     });
     expect(written.ok).toBeTrue();
   }
@@ -726,7 +739,9 @@ describe("compatibility", () => {
     await f.store.close();
 
     const migrated = await openProductStoreOrThrow(f.root);
-    expect(migrated.report.appliedThisRun).toEqual([31, 32, 33, 34, 35]);
+    expect(migrated.report.appliedThisRun).toEqual(
+      PRODUCTION_MIGRATIONS.slice(SCHEMA_30).map((migration) => migration.version),
+    );
     const c = client(actionsFor(migrated));
     expect(c.ids(await c.query("children", { parentId: null, after: null, limit: 10 }))).toEqual([
       "alpha",
@@ -743,7 +758,7 @@ describe("compatibility", () => {
     await migrated.close();
 
     const older = await openProductStore(f.root, {
-      migrations: PRODUCTION_MIGRATIONS.slice(0, 30),
+      migrations: PRODUCTION_MIGRATIONS.slice(0, SCHEMA_30),
     });
     expect(older.ok ? null : older.error).toMatchObject({ code: "schema-too-new" });
 

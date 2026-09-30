@@ -109,14 +109,15 @@ describe("latest version", () => {
 });
 
 describe("the production set", () => {
-  test("is migrations 0001 through 0035, and validates", () => {
+  test("is one contiguous run from 0001 that never loses a shipped migration, and validates", () => {
     // A real run creates the database, creates the bookkeeping table, verifies
     // integrity, applies the record, artifact, run, and provenance schemas in
-    // order, and closes at the derived product schema version.
-    expect(PRODUCTION_MIGRATIONS.map((migration) => migration.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-      27, 28, 29, 30, 31, 32, 33, 34, 35,
-    ]);
+    // order, and closes at the derived product schema version. Adding a migration
+    // extends the run and needs no edit here; removing or renumbering one fails.
+    const versions = PRODUCTION_MIGRATIONS.map((migration) => migration.version);
+    expect(versions).toEqual(Array.from({ length: versions.length }, (_, index) => index + 1));
+    // The last migration shipped before this test stopped pinning the list.
+    expect(versions.length).toBeGreaterThanOrEqual(35);
     expect(validateMigrationSet(PRODUCTION_MIGRATIONS).ok).toBe(true);
   });
 

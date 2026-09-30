@@ -3,7 +3,7 @@ import { mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { EXIT_CODES } from "./cli/index.ts";
-import { PRODUCT_SCHEMA_VERSION } from "./data/index.ts";
+import { PRODUCT_SCHEMA_VERSION, PRODUCTION_MIGRATIONS } from "./data/index.ts";
 import { createStaticEnvironment } from "./domain/foundation/index.ts";
 import { DEFAULT_PHASE_GRACE_MS, SHUTDOWN_PHASES } from "./domain/orchestration/index.ts";
 import { type LocalPath, localPath } from "./domain/workspace/index.ts";
@@ -60,10 +60,9 @@ describe("application bootstrap", () => {
     expect(report.storage.ok && report.storage.value.created).toBe(true);
     // The production set includes scoped work queues and their mutation history.
     expect(report.storage.ok && report.storage.value.schemaVersion).toBe(PRODUCT_SCHEMA_VERSION);
-    expect(report.storage.ok && report.storage.value.appliedThisRun).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26,
-      27, 28, 29, 30, 31, 32, 33, 34, 35,
-    ]);
+    expect(report.storage.ok && report.storage.value.appliedThisRun).toEqual(
+      PRODUCTION_MIGRATIONS.map((migration) => migration.version),
+    );
   });
 
   test("registers the persistence phases in the order they have to run", async () => {

@@ -1,13 +1,3 @@
-import { MIGRATION_0034 } from "../extensions/curated-catalog-repository.ts";
-import { MIGRATION_0033 } from "../orchestration/agent-join-schema.ts";
-import { MIGRATION_0032 } from "../orchestration/mailbox-schema.ts";
-import { MIGRATION_0030 } from "../orchestration/schedule-store.ts";
-import { MIGRATION_0031 } from "../orchestration/work-queue-schema.ts";
-import { MIGRATION_0035 } from "../security/notice-repository.ts";
-import { MIGRATION_0027 } from "../sessions/activation-schema.ts";
-import { MIGRATION_0026 } from "../sessions/history-schema.ts";
-import { MIGRATION_0028 } from "../workspace/profile-preferences.ts";
-
 /**
  * Migration `0001`, checked against a real database and against the domain.
  *
@@ -21,26 +11,11 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { EFFECT_CERTAINTIES, TERMINAL_OUTCOME_KINDS } from "../../domain/orchestration/index.ts";
 import { INITIAL_SCHEMA_VERSION } from "../../domain/storage/index.ts";
 import type { LocalPath } from "../../domain/workspace/index.ts";
-import { ARTIFACT_PROVENANCE_SCHEMA_VERSION } from "../artifacts/artifact-provenance-schema.ts";
-import { ARTIFACT_SCHEMA_VERSION } from "../artifacts/artifact-schema.ts";
-import { LOOM_SCHEMA_VERSION } from "../artifacts/loom-schema.ts";
-import { SCRATCH_RESOURCE_SCHEMA_VERSION } from "../artifacts/scratch-resource-schema.ts";
-import { MIGRATION_0029 } from "../extensions/hook-health-repository.ts";
-import { MIGRATION_0014 } from "../extensions/package-lifecycle-repository.ts";
 import {
   temporaryRoot as makeTemporaryRoot,
   openProductStoreOrThrow,
   removeTemporaryRoots,
 } from "../fixtures.ts";
-import { MEMORY_SCHEMA_VERSION } from "../memory/memory-schema.ts";
-import { MIGRATION_0016 } from "../orchestration/agent-join-schema.ts";
-import { MIGRATION_0011 } from "../orchestration/process-task-schema.ts";
-import { MIGRATION_0015 } from "../orchestration/question-store.ts";
-import { MIGRATION_0007, MODEL_CATALOG_SCHEMA_VERSION } from "../providers/model-catalog-schema.ts";
-import { MIGRATION_0012 } from "../security/trust-schema.ts";
-import { MIGRATION_0013 } from "../security/workspace-trust-repository.ts";
-import { PROVIDER_CONTINUATION_SCHEMA_VERSION } from "../sessions/provider-continuation-schema.ts";
-import { RUN_SCHEMA_VERSION } from "../sessions/run-schema.ts";
 import { MIGRATION_0001, RECORD_SCHEMA_VERSION, RECORD_TABLES } from "./schema.ts";
 import {
   PRODUCT_SCHEMA_VERSION,
@@ -90,43 +65,10 @@ describe("a fresh database", () => {
 
     expect(store.report.created).toBe(true);
     expect(store.report.schemaVersion).toBe(PRODUCT_SCHEMA_VERSION);
-    expect(store.report.appliedThisRun).toEqual([
-      RECORD_SCHEMA_VERSION,
-      ARTIFACT_SCHEMA_VERSION,
-      RUN_SCHEMA_VERSION,
-      ARTIFACT_PROVENANCE_SCHEMA_VERSION,
-      MEMORY_SCHEMA_VERSION,
-      LOOM_SCHEMA_VERSION,
-      MIGRATION_0007.version,
-      MODEL_CATALOG_SCHEMA_VERSION,
-      SCRATCH_RESOURCE_SCHEMA_VERSION,
-      PROVIDER_CONTINUATION_SCHEMA_VERSION,
-      MIGRATION_0011.version,
-      MIGRATION_0012.version,
-      MIGRATION_0013.version,
-      MIGRATION_0014.version,
-      MIGRATION_0015.version,
-      MIGRATION_0016.version,
-      17,
-      18,
-      19,
-      20,
-      21,
-      22,
-      23,
-      24,
-      25,
-      MIGRATION_0026.version,
-      MIGRATION_0027.version,
-      MIGRATION_0028.version,
-      MIGRATION_0029.version,
-      MIGRATION_0030.version,
-      MIGRATION_0031.version,
-      MIGRATION_0032.version,
-      MIGRATION_0033.version,
-      MIGRATION_0034.version,
-      MIGRATION_0035.version,
-    ]);
+    // A fresh database applies every production migration, in order.
+    expect(store.report.appliedThisRun).toEqual(
+      PRODUCTION_MIGRATIONS.map((migration) => migration.version),
+    );
     // Nothing to lose: a database at version 0 holds no product row.
     expect(store.report.backupPath).toBeNull();
     await store.close();
@@ -239,36 +181,10 @@ describe("a fresh database", () => {
 
     const upgraded = await openProductStoreOrThrow(root);
     expect(upgraded.report.schemaVersion).toBe(PRODUCT_SCHEMA_VERSION);
-    expect(upgraded.report.appliedThisRun).toEqual([
-      MODEL_CATALOG_SCHEMA_VERSION,
-      SCRATCH_RESOURCE_SCHEMA_VERSION,
-      PROVIDER_CONTINUATION_SCHEMA_VERSION,
-      MIGRATION_0011.version,
-      MIGRATION_0012.version,
-      MIGRATION_0013.version,
-      MIGRATION_0014.version,
-      MIGRATION_0015.version,
-      MIGRATION_0016.version,
-      17,
-      18,
-      19,
-      20,
-      21,
-      22,
-      23,
-      24,
-      25,
-      MIGRATION_0026.version,
-      MIGRATION_0027.version,
-      MIGRATION_0028.version,
-      MIGRATION_0029.version,
-      MIGRATION_0030.version,
-      MIGRATION_0031.version,
-      MIGRATION_0032.version,
-      MIGRATION_0033.version,
-      MIGRATION_0034.version,
-      MIGRATION_0035.version,
-    ]);
+    // The upgrade applies exactly the migrations after the seven the legacy store held.
+    expect(upgraded.report.appliedThisRun).toEqual(
+      PRODUCTION_MIGRATIONS.slice(throughCatalogs.length).map((migration) => migration.version),
+    );
     expect(
       upgraded.read(
         `SELECT profile_id AS profileId FROM model_catalog_generations
