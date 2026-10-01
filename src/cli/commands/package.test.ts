@@ -11,7 +11,8 @@ test("source CLI confirms exact lifecycle generations across separate processes"
     [process.execPath, "run", join(dirname(dirname(dirname(import.meta.path))), "main.ts")],
     root,
   );
-}, 30_000);
+  // Spawns the source CLI many times (4-11 s locally); hosted macOS runs several times slower.
+}, 90_000);
 test("package help needs no request or services; unsupported actions and missing input fail", async () => {
   expect((await parseInvocation(["package", "--help"])).kind).toBe("help");
   expect((await parseInvocation(["package", "install"])).kind).toBe("invalid");

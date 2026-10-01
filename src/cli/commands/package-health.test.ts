@@ -16,5 +16,6 @@ for (const mode of ["healthy", "hostile", "cancel"] as const)
         mode,
       );
     },
-    30_000,
+    // Spawns the source CLI many times (4-11 s locally); hosted macOS runs several times slower.
+    90_000,
   );

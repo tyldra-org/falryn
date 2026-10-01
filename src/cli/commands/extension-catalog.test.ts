@@ -231,7 +231,8 @@ test("CLI scope preview, confirmation, restart pagination and revocation share c
   expect(
     (await invoke(["extension", "catalog"])).page?.entries.every((entry) => !entry.enabled),
   ).toBe(true);
-}, 30_000);
+  // Spawns the source CLI many times (4-11 s locally); hosted macOS runs several times slower.
+}, 90_000);
 
 test("extension catalog/scope parse strictly while help remains inert", async () => {
   expect((await parseInvocation(["extension", "catalog"])).kind).toBe("run");

@@ -14,4 +14,5 @@ test("public product persists inert schedules and exposes the same metadata afte
     [process.execPath, fileURLToPath(new URL("../../main.ts", import.meta.url))],
     await temporaryRoot("schedule-cli-"),
   );
-}, 30000);
+  // Spawns the source CLI many times (4-11 s locally); hosted macOS runs several times slower.
+}, 90_000);
