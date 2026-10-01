@@ -40,6 +40,21 @@ const catalogResults: Readonly<Record<string, (params: Record<string, unknown>) 
     ],
   }),
 };
+/**
+ * Wait for an observable condition instead of sleeping for a guessed time, so a loaded machine
+ * only makes the wait longer, never wrong. The bound is a failure bound, not an expectation.
+ */
+export async function until(
+  condition: () => boolean,
+  what: string,
+  boundMs = 15_000,
+): Promise<void> {
+  const deadline = Date.now() + boundMs;
+  while (!condition()) {
+    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
 export function mcpFixtureReply(message: Record<string, unknown>) {
   const params = (message.params ?? {}) as Record<string, unknown>;
   const catalog = typeof message.method === "string" ? catalogResults[message.method] : undefined;
@@ -286,6 +301,14 @@ if (import.meta.main) {
   if (mode === "oversized") process.stdout.write("x".repeat(1024 * 1024 + 1));
   let pending = "";
   let serverRequestDenied = "not-observed";
+  // `delayed` holds each tool reply until the file named by the third argument exists, and
+  // creates `<file>.received` once the call has reached it. The test changes the connection only
+  // after that, then creates the release file, so the reply is guaranteed to arrive late instead
+  // of racing a wall-clock delay against how long the change takes on a loaded machine.
+  const releaseFile = process.argv[3];
+  // `unsolicited` answers a tool call only once the client's refusal of the server's own request
+  // has been read, so the answer does not depend on how quickly the client replied.
+  const awaitingDenial: Array<() => void> = [];
   // A current-protocol subscription stays open; notifications carry its listen request id.
   let listen: unknown = null;
   const notify = (method: string) =>
@@ -305,7 +328,10 @@ if (import.meta.main) {
       pending = pending.slice(end + 1);
       const message = JSON.parse(line) as Record<string, unknown>;
       if (typeof message.method !== "string") {
-        if (message.id === "server-ask") serverRequestDenied = String(Boolean(message.error));
+        if (message.id === "server-ask") {
+          serverRequestDenied = String(Boolean(message.error));
+          for (const release of awaitingDenial.splice(0)) release();
+        }
         continue;
       }
       if (!("id" in message) || mode === "silent") continue;
@@ -330,11 +356,21 @@ if (import.meta.main) {
       const response = mode?.startsWith("hooks")
         ? hookFixtureReply(message)
         : mcpFixtureReply(message);
-      if (mode === "unsolicited" && message.method === "tools/call")
-        response.result = {
-          resultType: "complete",
-          content: [{ type: "text", text: String(serverRequestDenied) }],
-        };
+      if (mode === "unsolicited" && message.method === "tools/call") {
+        const answer = () =>
+          process.stdout.write(
+            `${JSON.stringify({
+              ...response,
+              result: {
+                resultType: "complete",
+                content: [{ type: "text", text: String(serverRequestDenied) }],
+              },
+            })}\n`,
+          );
+        if (serverRequestDenied === "not-observed") awaitingDenial.push(answer);
+        else answer();
+        continue;
+      }
       if (mode === "environment" && message.method === "tools/call")
         response.result = {
           resultType: "complete",
@@ -348,9 +384,16 @@ if (import.meta.main) {
         process.stdout.write(frame.slice(middle));
         continue;
       }
-      if (mode === "delayed" && message.method === "tools/call")
-        setTimeout(() => process.stdout.write(`${JSON.stringify(response)}\n`), 200);
-      else process.stdout.write(`${JSON.stringify(response)}\n`);
+      if (mode === "delayed" && message.method === "tools/call") {
+        if (releaseFile === undefined) throw new Error("the delayed fixture needs a release file");
+        const frame = `${JSON.stringify(response)}\n`;
+        void (async () => {
+          await Bun.write(`${releaseFile}.received`, "");
+          while (!(await Bun.file(releaseFile).exists()))
+            await new Promise((resolve) => setTimeout(resolve, 5));
+          process.stdout.write(frame);
+        })();
+      } else process.stdout.write(`${JSON.stringify(response)}\n`);
       if (mode === "catalog-change" && message.method === "tools/call")
         notify("notifications/resources/list_changed");
       if (mode === "unsolicited" && message.method === "ping") {

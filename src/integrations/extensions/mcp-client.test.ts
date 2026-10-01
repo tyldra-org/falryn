@@ -1,4 +1,8 @@
 import { afterEach, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createSecretResolver } from "../../application/authentication/credential-resolver.ts";
 import { createMcpLifecycle } from "../../application/extensions/mcp-lifecycle.ts";
@@ -15,13 +19,16 @@ import {
 } from "../../domain/security/credential.ts";
 import { createHostManagedServicePort } from "../process/host-process-sessions/managed-service.ts";
 import { createHostMcpClient } from "./mcp-client.ts";
-import { mcpFixtureReply } from "./mcp-fixtures.ts";
+import { mcpFixtureReply, until } from "./mcp-fixtures.ts";
 
 const posix = process.platform === "win32" ? test.skip : test;
 const cleanup: (() => Promise<unknown> | undefined)[] = [];
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close();
 });
+// These wait out real retry backoff (Retry-After and a 1.2 s no-further-attempt window) before
+// asserting, so they take over a second on any machine and several times that on a loaded runner.
+const BACKOFF_TEST_TIMEOUT_MS = 30_000;
 const fixture = fileURLToPath(new URL("./mcp-fixtures.ts", import.meta.url));
 /** An environment store over a mutable map, so a test can rotate a secret. */
 function rotatingStore(secrets: Record<string, string>): CredentialStorePort {
@@ -95,12 +102,12 @@ function admission(serverId = "fixture", signal = new AbortController().signal):
     signal,
   };
 }
-function stdio(mode = "normal") {
+function stdio(mode = "normal", ...extra: string[]) {
   return mcpConnectionSchema.parse({
     id: "fixture",
     transport: "stdio",
     executable: process.execPath,
-    args: [fixture, mode],
+    args: [fixture, mode, ...extra],
   });
 }
 
@@ -301,7 +308,7 @@ posix("stop settles pending effects, and cancelled startup never publishes readi
     "tools/call",
     { name: "echo" },
   );
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await until(() => s.lifecycle.inspect()[0]?.pending === 1, "the call to be pending");
   const stopped = await s.lifecycle.stop("fixture");
   expect(stopped).toMatchObject({ kind: "completed", snapshot: { pending: 0, state: "stopped" } });
   expect(await pending).toMatchObject({ effect: "uncertain" });
@@ -324,7 +331,7 @@ posix(
         name: "echo",
       }),
     );
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await until(() => active.lifecycle.inspect()[0]?.pending === 32, "32 pending calls");
     expect(active.lifecycle.inspect()[0]?.pending).toBe(32);
     expect(
       await active.lifecycle.request(
@@ -368,7 +375,10 @@ test("a missing executable is unavailable without publishing a usable binding", 
 });
 
 posix("changed command fences the old reply while another server remains usable", async () => {
-  const s = setup(stdio("delayed"));
+  const releaseDirectory = await mkdtemp(join(tmpdir(), "falryn-mcp-release-"));
+  cleanup.push(() => rm(releaseDirectory, { recursive: true, force: true }));
+  const release = join(releaseDirectory, "release");
+  const s = setup(stdio("delayed", release));
   s.add({ ...stdio(), id: "other" });
   const ready = await s.lifecycle.connect({ ...admission(), configurationGeneration: 2 });
   const other = await s.lifecycle.connect({ ...admission("other"), configurationGeneration: 2 });
@@ -381,8 +391,9 @@ posix("changed command fences the old reply while another server remains usable"
     "tools/call",
     { name: "echo" },
   );
-  await new Promise((resolve) => setTimeout(resolve, 10));
+  await until(() => existsSync(`${release}.received`), "the server to receive the call");
   s.replace(stdio());
+  await writeFile(release, "");
   expect(await pending).toMatchObject({ kind: "stale", effect: "uncertain" });
   expect(
     (
@@ -460,7 +471,6 @@ posix(
     expect(
       (await s.lifecycle.request(admission(), ready.snapshot.transportGeneration, "ping", {})).kind,
     ).toBe("completed");
-    await new Promise((resolve) => setTimeout(resolve, 10));
     const result = await s.lifecycle.request(
       admission(),
       ready.snapshot.transportGeneration,
@@ -660,125 +670,137 @@ test("HTTP 403 denies the connection without retrying", async () => {
   expect(hits).toBe(1);
 });
 
-test("safe reads retry refusals within the deadline, honoring Retry-After; calls never retry", async () => {
-  const answers: Response[] = [];
-  let reads = 0;
-  let calls = 0;
-  const url = peer((message) => {
-    if (message.method === "tools/list") {
+test(
+  "safe reads retry refusals within the deadline, honoring Retry-After; calls never retry",
+  async () => {
+    const answers: Response[] = [];
+    let reads = 0;
+    let calls = 0;
+    const url = peer((message) => {
+      if (message.method === "tools/list") {
+        reads += 1;
+        return answers.shift() ?? null;
+      }
+      if (message.method === "tools/call") {
+        calls += 1;
+        return new Response("slow down", { status: 429, headers: { "retry-after": "0" } });
+      }
+      return null;
+    });
+    const s = setup(http(url));
+    const ready = await s.lifecycle.connect({ ...admission(), deadline: Date.now() + 10_000 });
+    expect(ready.kind).toBe("completed");
+    if (ready.kind !== "completed") return;
+    const list = (deadline = 10_000) =>
+      s.lifecycle.request(
+        { ...admission(), deadline: Date.now() + deadline },
+        ready.snapshot.transportGeneration,
+        "tools/list",
+        {},
+      );
+
+    answers.push(
+      new Response("limit", { status: 429, headers: { "retry-after": "0" } }),
+      new Response("gateway", { status: 503 }),
+    );
+    expect((await list()).kind).toBe("completed");
+    expect(reads).toBe(3);
+
+    reads = 0;
+    answers.push(...[1, 2, 3].map(() => new Response("gateway", { status: 502 })));
+    expect(await list()).toMatchObject({
+      kind: "unavailable",
+      code: "mcp-server-unavailable",
+      effect: "none",
+    });
+    expect(reads).toBe(3);
+
+    // A hint that outlasts the deadline is not waited for.
+    reads = 0;
+    answers.push(new Response("later", { status: 429, headers: { "retry-after": "5" } }));
+    const started = Date.now();
+    expect(await list(2_000)).toMatchObject({ kind: "unavailable", code: "mcp-rate-limited" });
+    expect(reads).toBe(1);
+    expect(Date.now() - started).toBeLessThan(1_000);
+
+    // The server refused the call before accepting it: no effect, and no second attempt.
+    expect(
+      await s.lifecycle.request(admission(), ready.snapshot.transportGeneration, "tools/call", {
+        name: "echo",
+      }),
+    ).toMatchObject({ kind: "unavailable", code: "mcp-rate-limited", effect: "none" });
+    expect(calls).toBe(1);
+  },
+  BACKOFF_TEST_TIMEOUT_MS,
+);
+
+test(
+  "cancelling during a backoff makes no further attempt",
+  async () => {
+    let reads = 0;
+    let discovers = 0;
+    let refuseStart = false;
+    const url = peer((message) => {
+      if (message.method === "server/discover" && refuseStart) {
+        discovers += 1;
+        return new Response("later", { status: 429, headers: { "retry-after": "1" } });
+      }
+      if (message.method !== "tools/list") return null;
       reads += 1;
-      return answers.shift() ?? null;
-    }
-    if (message.method === "tools/call") {
-      calls += 1;
-      return new Response("slow down", { status: 429, headers: { "retry-after": "0" } });
-    }
-    return null;
-  });
-  const s = setup(http(url));
-  const ready = await s.lifecycle.connect({ ...admission(), deadline: Date.now() + 10_000 });
-  expect(ready.kind).toBe("completed");
-  if (ready.kind !== "completed") return;
-  const list = (deadline = 10_000) =>
-    s.lifecycle.request(
-      { ...admission(), deadline: Date.now() + deadline },
+      return new Response("later", { status: 429, headers: { "retry-after": "1" } });
+    });
+    const s = setup(http(url));
+    const ready = await s.lifecycle.connect({ ...admission(), deadline: Date.now() + 10_000 });
+    expect(ready.kind).toBe("completed");
+    if (ready.kind !== "completed") return;
+    const abort = new AbortController();
+    setTimeout(() => abort.abort(), 50);
+    const request = await s.lifecycle.request(
+      { ...admission("fixture", abort.signal), deadline: Date.now() + 10_000 },
       ready.snapshot.transportGeneration,
       "tools/list",
       {},
     );
+    expect(request).toMatchObject({
+      kind: "cancelled",
+      code: "mcp-request-cancelled",
+      effect: "none",
+    });
 
-  answers.push(
-    new Response("limit", { status: 429, headers: { "retry-after": "0" } }),
-    new Response("gateway", { status: 503 }),
-  );
-  expect((await list()).kind).toBe("completed");
-  expect(reads).toBe(3);
+    refuseStart = true;
+    await s.lifecycle.stop("fixture");
+    const startAbort = new AbortController();
+    setTimeout(() => startAbort.abort(), 50);
+    expect(
+      await s.lifecycle.connect({
+        ...admission("fixture", startAbort.signal),
+        deadline: Date.now() + 10_000,
+      }),
+    ).toMatchObject({ kind: "cancelled", code: "mcp-startup-cancelled" });
+    expect(s.snapshots.some((snapshot) => snapshot.code === "mcp-retry-wait")).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 1_200));
+    expect({ reads, discovers }).toEqual({ reads: 1, discovers: 1 });
+  },
+  BACKOFF_TEST_TIMEOUT_MS,
+);
 
-  reads = 0;
-  answers.push(...[1, 2, 3].map(() => new Response("gateway", { status: 502 })));
-  expect(await list()).toMatchObject({
-    kind: "unavailable",
-    code: "mcp-server-unavailable",
-    effect: "none",
-  });
-  expect(reads).toBe(3);
-
-  // A hint that outlasts the deadline is not waited for.
-  reads = 0;
-  answers.push(new Response("later", { status: 429, headers: { "retry-after": "5" } }));
-  const started = Date.now();
-  expect(await list(2_000)).toMatchObject({ kind: "unavailable", code: "mcp-rate-limited" });
-  expect(reads).toBe(1);
-  expect(Date.now() - started).toBeLessThan(1_000);
-
-  // The server refused the call before accepting it: no effect, and no second attempt.
-  expect(
-    await s.lifecycle.request(admission(), ready.snapshot.transportGeneration, "tools/call", {
-      name: "echo",
-    }),
-  ).toMatchObject({ kind: "unavailable", code: "mcp-rate-limited", effect: "none" });
-  expect(calls).toBe(1);
-});
-
-test("cancelling during a backoff makes no further attempt", async () => {
-  let reads = 0;
-  let discovers = 0;
-  let refuseStart = false;
-  const url = peer((message) => {
-    if (message.method === "server/discover" && refuseStart) {
+test(
+  "a refused start is retried with backoff until the server is ready",
+  async () => {
+    let discovers = 0;
+    const url = peer((message) => {
+      if (message.method !== "server/discover") return null;
       discovers += 1;
-      return new Response("later", { status: 429, headers: { "retry-after": "1" } });
-    }
-    if (message.method !== "tools/list") return null;
-    reads += 1;
-    return new Response("later", { status: 429, headers: { "retry-after": "1" } });
-  });
-  const s = setup(http(url));
-  const ready = await s.lifecycle.connect({ ...admission(), deadline: Date.now() + 10_000 });
-  expect(ready.kind).toBe("completed");
-  if (ready.kind !== "completed") return;
-  const abort = new AbortController();
-  setTimeout(() => abort.abort(), 50);
-  const request = await s.lifecycle.request(
-    { ...admission("fixture", abort.signal), deadline: Date.now() + 10_000 },
-    ready.snapshot.transportGeneration,
-    "tools/list",
-    {},
-  );
-  expect(request).toMatchObject({
-    kind: "cancelled",
-    code: "mcp-request-cancelled",
-    effect: "none",
-  });
-
-  refuseStart = true;
-  await s.lifecycle.stop("fixture");
-  const startAbort = new AbortController();
-  setTimeout(() => startAbort.abort(), 50);
-  expect(
-    await s.lifecycle.connect({
-      ...admission("fixture", startAbort.signal),
-      deadline: Date.now() + 10_000,
-    }),
-  ).toMatchObject({ kind: "cancelled", code: "mcp-startup-cancelled" });
-  expect(s.snapshots.some((snapshot) => snapshot.code === "mcp-retry-wait")).toBe(true);
-  await new Promise((resolve) => setTimeout(resolve, 1_200));
-  expect({ reads, discovers }).toEqual({ reads: 1, discovers: 1 });
-});
-
-test("a refused start is retried with backoff until the server is ready", async () => {
-  let discovers = 0;
-  const url = peer((message) => {
-    if (message.method !== "server/discover") return null;
-    discovers += 1;
-    return discovers < 3 ? new Response("starting", { status: 503 }) : null;
-  });
-  const s = setup(http(url));
-  const ready = await s.lifecycle.connect({ ...admission(), deadline: Date.now() + 10_000 });
-  expect(ready.kind, JSON.stringify(ready)).toBe("completed");
-  expect(discovers).toBe(3);
-  expect(s.snapshots.filter((snapshot) => snapshot.code === "mcp-retry-wait")).toHaveLength(2);
-});
+      return discovers < 3 ? new Response("starting", { status: 503 }) : null;
+    });
+    const s = setup(http(url));
+    const ready = await s.lifecycle.connect({ ...admission(), deadline: Date.now() + 10_000 });
+    expect(ready.kind, JSON.stringify(ready)).toBe("completed");
+    expect(discovers).toBe(3);
+    expect(s.snapshots.filter((snapshot) => snapshot.code === "mcp-retry-wait")).toHaveLength(2);
+  },
+  BACKOFF_TEST_TIMEOUT_MS,
+);
 
 posix(
   "a stdio crash after acceptance stays uncertain; an explicit reconnect starts fresh",
@@ -795,7 +817,7 @@ posix(
     );
     expect(lost).toMatchObject({ effect: "uncertain" });
     expect(lost.kind).not.toBe("completed");
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await until(() => s.lifecycle.inspect()[0]?.state === "degraded", "the lost server to degrade");
     expect(s.lifecycle.inspect()[0]?.state).toBe("degraded");
     // Nothing reconnects or resends by itself.
     expect(

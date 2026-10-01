@@ -47,6 +47,9 @@ afterEach(async () => {
   for (const home of homes.splice(0)) await rm(home, { recursive: true, force: true });
 });
 const nativeTest = process.platform === "linux" || process.platform === "darwin" ? test : test.skip;
+// Each of these starts a real host with a durable store and a scripted native process task, which
+// takes a few seconds on a loaded hosted runner; the 5 s default fails there first.
+const HOST_JOURNEY_TIMEOUT_MS = 30_000;
 
 async function setup() {
   const home = await mkdtemp(join(tmpdir(), "falryn-task-host-"));
@@ -166,87 +169,94 @@ function scripted(gate: string, attachment: "foreground" | "background", timeout
 }
 
 describe("durable process tasks in product hosts", () => {
-  test("question service survives host close and resumes only its authorized owner", async () => {
-    const f = await setup();
-    const services = f.services();
-    const resources = createProductResources(services.clock);
-    const budget = resources.openTask("question-owner");
-    const presenterBudget = resources.openTask("question-presenter");
-    const stop = new AbortController().signal;
-    const first = await openProductArtifactSession(services);
-    if (!first?.questions) throw new Error("question host unavailable");
-    let second: Awaited<ReturnType<typeof openProductArtifactSession>> = null;
-    try {
-      for (const event of [sessionStarted(1), turnStarted(2), capabilityInvocationStarted(3)])
-        taskValue(await first.eventStore.append(event));
-      const principal = {
-        actorId: "local-user",
-        channel: "local-user" as const,
-        bindingId: "host",
-      };
-      const created = taskValue(
-        await first.questions.create(
-          {
-            ...processTaskChanged().payload.task.owner,
-            resourceTaskId: budget.id,
-            generation: budget.generation,
-          },
-          budget,
-          {
-            version: 1,
-            handle: { version: 1, taskId: "question-host", generation: "first" },
-            items: [{ id: "review", kind: "review", prompt: "Review this result" }],
-            sensitivity: "normal",
-            retention: "answer",
-            presenter: principal,
-          },
-          stop,
-        ),
-      );
-      taskValue(await created.control.publish(stop));
-      expect(await first.close()).toBe(true);
-      budget.close();
-      second = await openProductArtifactSession(services);
-      if (!second?.questions) throw new Error("recovered question host unavailable");
-      const resumed = taskValue(
-        second.questions.resume(
-          created.request.handle,
-          created.ownerToken,
-          resources.openTask("question-owner"),
-        ),
-      );
-      expect(taskValue(resumed.inspect()).state).toBe("waiting");
-      const waiting = resumed.wait(stop);
-      taskValue(
-        await second.questions.presenter(
-          created.request.handle,
-          created.presenterToken,
-          principal,
-          "connect",
-          null,
-          presenterBudget,
-          stop,
-        ),
-      );
-      taskValue(
-        await second.questions.presenter(
-          created.request.handle,
-          created.presenterToken,
-          principal,
-          "answer",
-          [{ itemId: "review", kind: "review", acknowledged: true }],
-          presenterBudget,
-          stop,
-        ),
-      );
-      expect(taskValue(await waiting)).toMatchObject({ kind: "answered", effectAuthority: false });
-      expect(second.taskRecovery).toEqual([]);
-    } finally {
-      await first.close();
-      await second?.close();
-      resources.shutdown();
-    }
-  });
+  test(
+    "question service survives host close and resumes only its authorized owner",
+    async () => {
+      const f = await setup();
+      const services = f.services();
+      const resources = createProductResources(services.clock);
+      const budget = resources.openTask("question-owner");
+      const presenterBudget = resources.openTask("question-presenter");
+      const stop = new AbortController().signal;
+      const first = await openProductArtifactSession(services);
+      if (!first?.questions) throw new Error("question host unavailable");
+      let second: Awaited<ReturnType<typeof openProductArtifactSession>> = null;
+      try {
+        for (const event of [sessionStarted(1), turnStarted(2), capabilityInvocationStarted(3)])
+          taskValue(await first.eventStore.append(event));
+        const principal = {
+          actorId: "local-user",
+          channel: "local-user" as const,
+          bindingId: "host",
+        };
+        const created = taskValue(
+          await first.questions.create(
+            {
+              ...processTaskChanged().payload.task.owner,
+              resourceTaskId: budget.id,
+              generation: budget.generation,
+            },
+            budget,
+            {
+              version: 1,
+              handle: { version: 1, taskId: "question-host", generation: "first" },
+              items: [{ id: "review", kind: "review", prompt: "Review this result" }],
+              sensitivity: "normal",
+              retention: "answer",
+              presenter: principal,
+            },
+            stop,
+          ),
+        );
+        taskValue(await created.control.publish(stop));
+        expect(await first.close()).toBe(true);
+        budget.close();
+        second = await openProductArtifactSession(services);
+        if (!second?.questions) throw new Error("recovered question host unavailable");
+        const resumed = taskValue(
+          second.questions.resume(
+            created.request.handle,
+            created.ownerToken,
+            resources.openTask("question-owner"),
+          ),
+        );
+        expect(taskValue(resumed.inspect()).state).toBe("waiting");
+        const waiting = resumed.wait(stop);
+        taskValue(
+          await second.questions.presenter(
+            created.request.handle,
+            created.presenterToken,
+            principal,
+            "connect",
+            null,
+            presenterBudget,
+            stop,
+          ),
+        );
+        taskValue(
+          await second.questions.presenter(
+            created.request.handle,
+            created.presenterToken,
+            principal,
+            "answer",
+            [{ itemId: "review", kind: "review", acknowledged: true }],
+            presenterBudget,
+            stop,
+          ),
+        );
+        expect(taskValue(await waiting)).toMatchObject({
+          kind: "answered",
+          effectAuthority: false,
+        });
+        expect(second.taskRecovery).toEqual([]);
+      } finally {
+        await first.close();
+        await second?.close();
+        resources.shutdown();
+      }
+    },
+    HOST_JOURNEY_TIMEOUT_MS,
+  );
   nativeTest.each(["run-end", "checkpoint"] as const)(
     "host drain reports failed %s",
     async (failure) => {
@@ -276,7 +286,7 @@ describe("durable process tasks in product hosts", () => {
         await durable.close();
       }
     },
-    20_000,
+    HOST_JOURNEY_TIMEOUT_MS,
   );
   for (const attachment of ["background", "foreground"] as const) {
     nativeTest(
@@ -342,6 +352,7 @@ describe("durable process tasks in product hosts", () => {
           await owned.registry.drain();
         }
       },
+      HOST_JOURNEY_TIMEOUT_MS,
     );
   }
 
@@ -451,60 +462,65 @@ describe("durable process tasks in product hosts", () => {
         await durable.close();
       }
     },
+    HOST_JOURNEY_TIMEOUT_MS,
   );
 
   for (const stop of ["interrupt", "deadline"] as const) {
-    nativeTest(`headless ${stop} seals the real task before store closure`, async () => {
-      const f = await setup();
-      const gate = join(f.home, "release");
-      const scriptedTask = scripted(gate, "background", stop === "deadline" ? 250 : 10_000);
-      const owned = createOwnedProcessRegistry();
-      const controller = new AbortController();
-      try {
-        await runCoding(
-          f.services,
-          { promptParts: ["Run a background shell process."] },
-          {
-            input: createRecordingCliStreams({ stdin: null }).input,
-            globals: f.globals,
-            providerAdapter: scriptedTask.provider,
-            toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
-            ownedProcesses: owned.registry,
-            signal: controller.signal,
-          },
-        );
-        if (stop === "interrupt") controller.abort();
-        expect(await owned.registry.drain()).toBe(true);
-        const reopened = await openProductArtifactSession(f.services());
-        if (reopened === null) throw new Error("reopen unavailable");
+    nativeTest(
+      `headless ${stop} seals the real task before store closure`,
+      async () => {
+        const f = await setup();
+        const gate = join(f.home, "release");
+        const scriptedTask = scripted(gate, "background", stop === "deadline" ? 250 : 10_000);
+        const owned = createOwnedProcessRegistry();
+        const controller = new AbortController();
         try {
-          const events = await reopened.eventStore.readFrom(
+          await runCoding(
+            f.services,
+            { promptParts: ["Run a background shell process."] },
             {
-              streamId: streamId.from(taskStream(scriptedTask.receipt.handle)),
-              afterSequence: null,
+              input: createRecordingCliStreams({ stdin: null }).input,
+              globals: f.globals,
+              providerAdapter: scriptedTask.provider,
+              toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
+              ownedProcesses: owned.registry,
+              signal: controller.signal,
             },
-            10,
           );
-          if (!events.ok) throw new Error("events unavailable");
-          const terminal = events.value.findLast(
-            (event) =>
-              event.kind === "process.task.changed" && event.payload.task.state === "terminal",
-          );
-          expect(terminal?.payload).toMatchObject({
-            task: {
-              state: "terminal",
-              terminal: { outcome: stop === "interrupt" ? "cancelled" : "timed-out" },
-            },
-          });
-          expect(scriptedTask.requests).toHaveLength(2);
+          if (stop === "interrupt") controller.abort();
+          expect(await owned.registry.drain()).toBe(true);
+          const reopened = await openProductArtifactSession(f.services());
+          if (reopened === null) throw new Error("reopen unavailable");
+          try {
+            const events = await reopened.eventStore.readFrom(
+              {
+                streamId: streamId.from(taskStream(scriptedTask.receipt.handle)),
+                afterSequence: null,
+              },
+              10,
+            );
+            if (!events.ok) throw new Error("events unavailable");
+            const terminal = events.value.findLast(
+              (event) =>
+                event.kind === "process.task.changed" && event.payload.task.state === "terminal",
+            );
+            expect(terminal?.payload).toMatchObject({
+              task: {
+                state: "terminal",
+                terminal: { outcome: stop === "interrupt" ? "cancelled" : "timed-out" },
+              },
+            });
+            expect(scriptedTask.requests).toHaveLength(2);
+          } finally {
+            await reopened.close();
+          }
         } finally {
-          await reopened.close();
+          controller.abort();
+          await writeFile(gate, "release");
+          await owned.registry.drain();
         }
-      } finally {
-        controller.abort();
-        await writeFile(gate, "release");
-        await owned.registry.drain();
-      }
-    });
+      },
+      HOST_JOURNEY_TIMEOUT_MS,
+    );
   }
 });
