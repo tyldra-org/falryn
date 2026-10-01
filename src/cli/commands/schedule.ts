@@ -79,7 +79,7 @@ export async function runSchedule(
     return failWithCause(
       "configuration-unavailable",
       outcome.kind === "publish-failed"
-        ? `publish-failed:${outcome.code}`
+        ? `publish-failed:${outcome.code}${outcome.cause === undefined ? "" : `:${outcome.cause}`}`
         : outcome.kind === "rejected"
           ? `rejected:${outcome.issues.find((issue) => issue.severity === "error")?.kind ?? "unknown"}`
           : outcome.kind,

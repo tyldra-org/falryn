@@ -231,6 +231,8 @@ export type ConfigurationLoadOutcome =
   | {
       readonly kind: "publish-failed";
       readonly code: string;
+      /** A short code naming what failed beneath `code`, when the owner knows it. Never a message or value. */
+      readonly cause?: string;
       readonly retained: ConfigurationGenerationRecord | null;
     }
   | { readonly kind: "cancelled" };
