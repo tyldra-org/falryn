@@ -128,6 +128,19 @@ export type AttemptModelInput = {
       readonly schemaBytes: number;
       readonly schemaTokensEstimated: number;
     }[];
+    /**
+     * Operation profiles shown in place of some `tools` (#946). Each lowers to the
+     * native tools it lists, which stay in `tools` and `toolNames`.
+     */
+    readonly profiles?: readonly {
+      readonly name: string;
+      readonly profileId: string;
+      readonly version: number;
+      readonly operations: readonly { readonly operation: string; readonly toolName: string }[];
+      readonly schemaDigest: string;
+      readonly schemaBytes: number;
+      readonly schemaTokensEstimated: number;
+    }[];
     readonly omitted: readonly { readonly name: string; readonly reason: string }[];
     readonly schemaBytes: number;
     readonly schemaTokensEstimated: number;

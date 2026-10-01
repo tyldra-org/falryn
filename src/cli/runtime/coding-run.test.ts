@@ -630,6 +630,129 @@ describe("runCoding", () => {
     // runners have taken over 5 s here while the same test takes about 0.35 s locally.
   }, 20_000);
 
+  /** A Debug run with a real Git repository and a scripted model, for operation profiles. */
+  async function gitProfileRun(
+    calls: (
+      tools: readonly { readonly name: string; readonly parameters: unknown }[],
+    ) => readonly { readonly name: string; readonly arguments: unknown }[],
+    sessionTag: string,
+  ) {
+    const seeded = await seededHome();
+    const locatedGit = Bun.which("git");
+    if (locatedGit !== null) {
+      for (const args of [
+        ["init"],
+        [
+          "-c",
+          "user.name=Falryn",
+          "-c",
+          "user.email=falryn@example.invalid",
+          "commit",
+          "--allow-empty",
+          "-m",
+          "init",
+        ],
+      ]) {
+        await Bun.spawn([locatedGit, ...args], {
+          cwd: seeded.primary,
+          stdout: "pipe",
+          stderr: "pipe",
+          env: { GIT_TERMINAL_PROMPT: "0" },
+        }).exited;
+      }
+    }
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    let planned: ReturnType<typeof calls> | null = null;
+    const adapter = createDeterministicProviderAdapter({
+      onRequest: (request) => requests.push(request),
+      script: (request, requestIndex) => {
+        planned ??= calls(request.tools);
+        const call = planned[requestIndex];
+        return call === undefined
+          ? { kind: "text", text: "Diagnosis: the repository is empty.", finishReason: "stop" }
+          : {
+              kind: "tool",
+              toolCallId: `call-profile-${requestIndex}`,
+              name: call.name,
+              argumentFragments: [JSON.stringify(call.arguments)],
+            };
+      },
+    });
+    const result = await runCoding(
+      services,
+      { promptParts: ["diagnose", "the", "repository", "state"], mode: "debug" },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: adapter,
+        identities: {
+          sessionId: `session-profile-${sessionTag}`,
+          turnId: `turn-profile-${sessionTag}`,
+          traceId: `trace-profile-${sessionTag}`,
+        },
+      },
+    );
+    return { result, requests, gitAvailable: locatedGit !== null };
+  }
+
+  test("a grouped Git operation lowers to its exact native tool through the live turn (#946)", async () => {
+    let second = "";
+    const { result, requests, gitAvailable } = await gitProfileRun((tools) => {
+      const inspect = tools.find((tool) => tool.name === "git_inspect");
+      const operations =
+        (inspect?.parameters as { properties?: { operation?: { enum?: string[] } } } | undefined)
+          ?.properties?.operation?.enum ?? [];
+      second = operations.find((operation) => operation !== "status") ?? "status";
+      return [
+        { name: "git_inspect", arguments: { operation: "status", status: { maxEntries: 5 } } },
+        { name: "git_inspect", arguments: { operation: second } },
+        // A retained or habitual native name still reaches the same single operation.
+        { name: "git_status", arguments: {} },
+      ];
+    }, "lower");
+
+    expect(result.outcome.kind, JSON.stringify(result.errors)).toBe("completed");
+    expect(result.payload?.toolResults).toBe(3);
+    const names = requests[0]?.tools.map((tool) => tool.name) ?? [];
+    expect(names).toContain("git_inspect");
+    expect(names).not.toContain("git_status");
+    expect(second).not.toBe("status");
+
+    for (const index of [0, 1, 2]) {
+      const continuation = requests[index + 1];
+      const toolMessage = continuation?.messages.findLast(
+        (message) => message.role === "tool" && message.toolCallId === `call-profile-${index}`,
+      );
+      const text = toolMessage?.parts.find((part) => part.kind === "text")?.text;
+      expect(text, `tool result ${index}`).toBeDefined();
+      const output = (JSON.parse(text ?? "{}") as { output?: { status?: string } }).output;
+      expect(output?.status).toBe(gitAvailable ? "completed" : "failed");
+    }
+    // The provider history keeps the call exactly as the model made it.
+    const assistant = requests[1]?.messages.findLast((message) => message.role === "assistant");
+    expect(assistant?.toolCalls?.[0]).toMatchObject({
+      toolCallId: "call-profile-0",
+      name: "git_inspect",
+      arguments: { operation: "status", status: { maxEntries: 5 } },
+    });
+    // A real Git repository, Git processes and durable turns; hosted runners are slower.
+  }, 30_000);
+
+  test("a profile call naming an operation it does not offer is refused before any effect (#946)", async () => {
+    const { result, requests } = await gitProfileRun(
+      () => [{ name: "git_inspect", arguments: { operation: "commit", commit: { subject: "x" } } }],
+      "refuse",
+    );
+    // The loop refuses the batch as malformed (its reason is asserted in the loop's
+    // own tests); here the observable facts are a failed turn with no tool effect.
+    expect(result.outcome.kind).toBe("failed");
+    expect(result.payload?.toolResults ?? 0).toBe(0);
+    // Nothing was executed, so no continuation request followed the refused call.
+    expect(requests).toHaveLength(1);
+    // A real Git repository and a durable turn; hosted runners are slower.
+  }, 30_000);
+
   test("uses bounded eager tools when the selected transport is not qualified for native search", async () => {
     const seeded = await seededHome();
     await Bun.write(join(seeded.primary, "notes.txt"), "hello deferred\n");
@@ -1227,7 +1350,17 @@ describe("runCoding", () => {
     const names = requests[0]?.tools.map((tool) => tool.name) ?? [];
     expect(names).toContain("run_process");
     expect(names).toContain("lsp_diagnostics");
-    expect(names).toContain("git_status");
+    // Git observation arrives as one operation profile (#946); Debug denies mutation,
+    // so neither mutating Git profile nor its native tools are offered.
+    expect(names).toContain("git_inspect");
+    expect(names).not.toContain("git_status");
+    expect(names).not.toContain("git_branch");
+    expect(names).not.toContain("git_change");
+    const inspect = requests[0]?.tools.find((tool) => tool.name === "git_inspect");
+    const operations = (
+      inspect?.parameters as { properties?: { operation?: { enum?: string[] } } } | undefined
+    )?.properties?.operation?.enum;
+    expect(operations).toContain("status");
     expect(names).toContain("dap_start");
     expect(names).toContain("dap_set_breakpoints");
     expect(names).not.toContain("apply_patch");

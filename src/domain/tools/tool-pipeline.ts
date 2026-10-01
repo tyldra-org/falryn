@@ -120,7 +120,22 @@ export type ToolBindError =
       readonly code: "invalid-descriptor";
       readonly name: string;
       readonly reason: "empty-name" | "invalid-version" | "invalid-effect";
+    }
+  | {
+      /** A call to an operation profile that names no disclosed operation (#946). */
+      readonly code: "profile-operation-invalid";
+      readonly toolCallId: string;
+      readonly name: string;
+      readonly reason: ProfileOperationRefusal;
     };
+
+/** Why an operation-profile call could not be lowered to its native operation. */
+export type ProfileOperationRefusal =
+  | "arguments-not-object"
+  | "operation-missing"
+  | "operation-unknown"
+  | "operation-not-disclosed"
+  | "operation-arguments-invalid";
 
 /** Internal result facts carried from an adapter into the canonical envelope. */
 export type ToolInvocationResultMetadata = {
