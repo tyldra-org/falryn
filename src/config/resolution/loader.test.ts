@@ -66,6 +66,7 @@ function harness(
     readonly environment?: Readonly<Record<string, string>>;
     readonly declarations?: typeof V0_1_CONFIGURATION_KEYS;
     readonly environmentPort?: EnvironmentPort;
+    readonly prepare?: () => Promise<never>;
   } = {},
 ): Harness {
   const declarations = options.declarations ?? V0_1_CONFIGURATION_KEYS;
@@ -86,6 +87,7 @@ function harness(
     eventStore,
     correlation: CORRELATION,
     streamId: streamId.from("configuration"),
+    ...(options.prepare === undefined ? {} : { prepare: options.prepare }),
   });
   return { loader, registry, eventStore, fileSystem };
 }
@@ -886,6 +888,46 @@ describe("reviewed publication", () => {
         code: "configuration-source-changed",
       });
       expect(f.loader.current()).toBeNull();
+    }
+  });
+});
+
+describe("a failed package preparation", () => {
+  test("records the failure's code, never its message", async () => {
+    const coded = Object.assign(new Error("/home/someone/secret/path"), {
+      code: "package-configuration-store-close-failed",
+    });
+    const { loader } = harness({
+      prepare: async () => {
+        throw coded;
+      },
+    });
+    const outcome = await loader.load(REQUEST);
+    expect(outcome).toEqual({
+      kind: "publish-failed",
+      code: "package-configuration-unavailable",
+      cause: "package-configuration-store-close-failed",
+      retained: null,
+    });
+  });
+
+  test("a failure without a code-shaped code is recorded as unexpected", async () => {
+    for (const thrown of [
+      new Error("/home/someone/secret/path"),
+      Object.assign(new Error("x"), { code: "Not A Code: /home/someone" }),
+      Object.assign(new Error("x"), { code: "a".repeat(65) }),
+      "string",
+    ]) {
+      const { loader } = harness({
+        prepare: async () => {
+          throw thrown;
+        },
+      });
+      expect(await loader.load(REQUEST)).toMatchObject({
+        kind: "publish-failed",
+        code: "package-configuration-unavailable",
+        cause: "unexpected",
+      });
     }
   });
 });
