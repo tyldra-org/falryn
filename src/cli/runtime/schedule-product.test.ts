@@ -399,6 +399,13 @@ test.skipIf(process.platform === "win32")(
           },
         },
       };
+      // A one-second interval can fall due again before the scheduler goes idle on a slow
+      // runner, so a schedule may run more than once here. Count per attempt.
+      const attemptsOf = (id: string) => {
+        const listed = product.schedules.store.attempts("root-1", id);
+        if (!listed.ok) throw new Error(listed.error.code);
+        return listed.value.length;
+      };
       /** Scheduled skills (#1180): pinned when bound, loaded into every model step. */
       const scheduledSkills = async () => {
         const skillFile = async (name: string, body: string, extra = "") => {
@@ -444,9 +451,9 @@ test.skipIf(process.platform === "win32")(
           ok: true,
           value: { terminal: { status: "succeeded" } },
         });
-        // Both model steps carry the complete bound body.
+        // Both model steps of every attempt carry the complete bound body.
         const loaded = scheduledInputs.slice(before);
-        expect(loaded).toHaveLength(2);
+        expect(loaded).toHaveLength(2 * attemptsOf("skills-current"));
         for (const input of loaded) expect(input).toContain("BODY_SCHEDULED_V1");
         // An edit after binding blocks the schedule: no provider request, no new body.
         await skillFile("release-notes", "BODY_SCHEDULED_V2");
@@ -487,8 +494,9 @@ test.skipIf(process.platform === "win32")(
         );
         if (usage.status !== "reported") throw new Error(usage.code);
         const scheduled = usage.rows.filter((row) => row.initiators.schedule > 0);
-        expect(scheduled.reduce((sum, row) => sum + row.initiators.schedule, 0)).toBe(2);
-        expect(scheduled.reduce((sum, row) => sum + row.scopes.workflow, 0)).toBe(2);
+        const steps = 2 * attemptsOf("skills-current");
+        expect(scheduled.reduce((sum, row) => sum + row.initiators.schedule, 0)).toBe(steps);
+        expect(scheduled.reduce((sum, row) => sum + row.scopes.workflow, 0)).toBe(steps);
         expect(usage.duplicates).toBe(0);
         const after = product.schedules.store.get("root-1", "skills-current");
         if (after.ok)
@@ -516,7 +524,8 @@ test.skipIf(process.platform === "win32")(
           ok: true,
           value: { terminal: { status: revokeDuringModel ? "failed" : "succeeded" } },
         });
-        expect(scheduledRequests - before).toBe(revokeDuringModel ? 1 : 2);
+        // A revoked configuration fails the attempt at its second step and blocks the rest.
+        expect(scheduledRequests - before).toBe(revokeDuringModel ? 1 : 2 * attemptsOf(id));
         if (!attempt.ok || !attempt.value?.workflow) throw new Error("missing-model-workflow");
         expect(product.workflows.get(attempt.value.workflow)).toMatchObject({
           ok: true,
