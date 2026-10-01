@@ -36,7 +36,8 @@ test.skipIf(!qualifiedHookPython()).each([false, true])(
     expect(journey.result.payload?.stage).toBe(veto ? "attempt-failed" : "attempt-completed");
     if (!veto) expect(journey.requests[1]).toContain('\\"answer\\":42');
   },
-  30000,
+  // Spawns the source CLI many times (4-11 s locally); hosted macOS runs several times slower.
+  90_000,
 );
 
 test.skipIf(!qualifiedHookPython())(
@@ -75,7 +76,8 @@ test.skipIf(!qualifiedHookPython())(
     expect(gates.some((gate) => gate.hook && gate.decision === "observe")).toBe(false);
     expect(journey.requests).toHaveLength(1);
   },
-  30000,
+  // Spawns the source CLI many times (4-11 s locally); hosted macOS runs several times slower.
+  90_000,
 );
 
 test.skipIf(!qualifiedHookPython()).each([
@@ -113,5 +115,6 @@ test.skipIf(!qualifiedHookPython()).each([
       gates.find((gate) => gate.decision.startsWith("failed:"))?.hook?.execution?.cleanup,
     ).toBe("complete");
   },
-  30000,
+  // Spawns the source CLI many times (4-11 s locally); hosted macOS runs several times slower.
+  90_000,
 );

@@ -74,5 +74,6 @@ test.skipIf(createHostSandbox().probe().status !== "available")(
     expect(staleResult).not.toContain('"answer":42');
     expect(stale.catalog.entries.every((entry) => entry.availability === "unavailable")).toBe(true);
   },
-  30_000,
+  // Spawns the source CLI many times (4-11 s locally); hosted macOS runs several times slower.
+  90_000,
 );
