@@ -232,7 +232,7 @@ the CI compiled-smoke jobs run those suites against a fresh build, so a stale
 
 Before opening a pull request, run `bun run check`, or the focused tests for the change.
 Open the pull request as a draft once they pass: CI runs the selected tier on it, and the
-draft is marked ready for review when `CI required` passes. The complete suite is CI's job.
+draft is marked ready for review when `All CI checks` passes. The complete suite is CI's job.
 Run `bun run check:full` locally only when CI cannot
 answer the question, such as reproducing a failing test job, or when you want the result
 before pushing a change that touches widely imported modules.

@@ -7,20 +7,20 @@
 | [`issue-governance.yml`](issue-governance.yml) | Is the public issue contract complete and are declared labels reconciled? | issue metadata or state changes |
 | [`dependency-pins.yml`](dependency-pins.yml) | Do the reviewed dependency pins match this Dependabot update? | Dependabot `bun` pull requests |
 
-Branch protection on `main` and release branches requires `CI required` and the
+Branch protection on `main` and release branches requires `All CI checks` and the
 CodeQL `Analyze (…)` checks. Adding, renaming or splitting a CI job never needs a
 ruleset change.
 
 ## `ci.yml`
 
-| Job | Runs | What it establishes |
+| Check | Runs | What it establishes |
 | --- | --- | --- |
-| `classify` | always | the tier, from [`tools/quality/ci-profile.ts`](../../tools/quality/ci-profile.ts) |
-| `checks` | always | `bun run check:static` (Biome formatting, lint and imports, `tsc`, repository integrity, model catalogs) and `bun audit` |
-| `test` | `scoped`, `full` | the source suite on Ubuntu x64 (three shard jobs) and macOS arm64 (four) |
-| `windows` | `scoped`, `full` | the Windows platform baseline |
-| `compiled` | `scoped`, `full` | each platform's executable builds and passes its compiled smoke |
-| `required` | always | `CI required`: every job above succeeded, or was skipped because the tier is `docs` |
+| `Choose what to test` | always | the tier, from [`tools/quality/ci-profile.ts`](../../tools/quality/ci-profile.ts) |
+| `Static checks` | always | `bun run check:static` (Biome formatting, lint and imports, `tsc`, repository integrity, model catalogs) and `bun audit` |
+| `Tests (Ubuntu x64, shard i/3)`, `Tests (macOS arm64, shard i/4)` | `scoped`, `full` | the source suite, one shard per job |
+| `Tests (Windows x64, baseline)` | `scoped`, `full` | the Windows platform baseline |
+| `Build and smoke test (…)` | `scoped`, `full` | each platform's executable builds and passes its compiled smoke suites |
+| `All CI checks` | always | every check above succeeded, or was skipped because the tier is `docs`. The only CI check branch protection requires |
 
 Every step runs a `package.json` script, so a local run of the same script is the same check.
 
@@ -78,7 +78,7 @@ intermittent one, because it may be the change under review.
 The compiled smokes stay separate jobs from the source suite. Merged, a host takes
 its suite plus its build rather than the longer of the two, the timing-sensitive
 pseudo-terminal suite once failed after a full suite on the same runner, and
-`Tests (macOS arm64) ✅` beside `Compiled smoke (macOS arm64) ❌` no longer says
+`Tests (macOS arm64, …)` ✅ beside `Build and smoke test (macOS arm64)` ❌ no longer says
 that bundling, not the source, broke. Each smoke names its target, so a missing
 executable or one reporting another platform fails instead of skipping. That
 caught a Windows binary that called itself a `source build`.

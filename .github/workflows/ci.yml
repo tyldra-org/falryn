@@ -20,7 +20,7 @@ jobs:
   # runs the tests that can reach the change, `full` runs everything. The rule is
   # tools/quality/ci-profile.ts. Any doubt, and every push to `main`, selects `full`.
   classify:
-    name: Select CI tier
+    name: Choose what to test
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -73,7 +73,7 @@ jobs:
   # `bun run test:changed` against the pull request's base, exactly as a local
   # `bun run check` does against `main`.
   test:
-    name: Tests (${{ matrix.name }} ${{ matrix.shard }})
+    name: Tests (${{ matrix.name }}, shard ${{ matrix.shard }})
     needs: classify
     if: ${{ needs.classify.outputs.profile != 'docs' }}
     runs-on: ${{ matrix.os }}
@@ -123,7 +123,7 @@ jobs:
   # Windows runs a baseline, not the full suite: parts of it assert POSIX signal and
   # permission behavior Windows does not have. See README.md.
   windows:
-    name: Windows baseline
+    name: Tests (Windows x64, baseline)
     needs: classify
     if: ${{ needs.classify.outputs.profile != 'docs' }}
     runs-on: windows-latest
@@ -142,7 +142,7 @@ jobs:
   # Each target builds and runs its own executable. A smoke that names its target fails,
   # rather than skips, when the executable is missing or reports another platform.
   compiled:
-    name: Compiled smoke (${{ matrix.name }})
+    name: Build and smoke test (${{ matrix.name }})
     needs: classify
     if: ${{ needs.classify.outputs.profile != 'docs' }}
     runs-on: ${{ matrix.os }}
@@ -177,11 +177,11 @@ jobs:
       - name: Run the compiled smoke suites
         run: bun run ${{ matrix.smoke }}
 
-  # The one required check. It always runs and passes only when every job succeeded,
+  # The one CI check branch protection requires. It always runs and passes only when every job succeeded,
   # except the test jobs a documentation-only revision skips. A failed classifier, a
   # cancelled job or an unexpected skip fails it.
   required:
-    name: CI required
+    name: All CI checks
     needs:
       - classify
       - checks
