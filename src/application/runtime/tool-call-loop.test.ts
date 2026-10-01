@@ -642,3 +642,87 @@ describe("tool call loop", () => {
     });
   });
 });
+
+describe("operation profiles in the loop (#946)", () => {
+  const profiles = {
+    disclosed: [
+      {
+        name: "read_profile",
+        profileId: "workspace.read",
+        version: 1,
+        operations: [
+          { operation: "file", toolName: "read_file" },
+          { operation: "backup", toolName: "read_backup" },
+        ],
+      },
+    ],
+    definitions: [],
+  };
+
+  test("a profile call reaches the runner as the exact native tool", async () => {
+    const { coordinator, turnId: id } = startAtHandlingModelEvent();
+    const requests: ToolRunnerRequest[] = [];
+    const loop = createToolCallLoop({
+      coordinator,
+      catalog: createToolCatalog(generation, [readFileDescriptor(), readBackupDescriptor()]),
+      runner: successRunner((request) => {
+        requests.push(request);
+        return { status: "completed", output: { ok: true }, effect: "completed" };
+      }),
+      operationProfiles: profiles,
+    });
+    const outcome = await loop.run({
+      turnId: id,
+      configurationGeneration: generation,
+      proposals: [
+        {
+          toolCallId: "call-1",
+          name: "read_profile",
+          arguments: { operation: "backup", backup: { path: "a.ts" } },
+        },
+      ],
+      signal: new AbortController().signal,
+    });
+    expect(outcome.kind).toBe("completed");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({
+      toolCallId: "call-1",
+      toolName: "read_backup",
+      capabilityId: readBackupDescriptor().id,
+      input: { path: "a.ts" },
+    });
+  });
+
+  test("an operation the profile does not offer is refused as malformed before any runner call", async () => {
+    const { coordinator, turnId: id } = startAtHandlingModelEvent();
+    let calls = 0;
+    const refused: string[] = [];
+    const loop = createToolCallLoop({
+      coordinator,
+      catalog: createToolCatalog(generation, [readFileDescriptor(), readBackupDescriptor()]),
+      runner: successRunner(() => {
+        calls += 1;
+        return { status: "completed", output: {}, effect: "completed" };
+      }),
+      operationProfiles: profiles,
+      async onRefusedProposals(_proposals, reason) {
+        refused.push(reason);
+      },
+    });
+    const outcome = await loop.run({
+      turnId: id,
+      configurationGeneration: generation,
+      proposals: [
+        { toolCallId: "call-1", name: "read_profile", arguments: { operation: "delete" } },
+      ],
+      signal: new AbortController().signal,
+    });
+    expect(calls).toBe(0);
+    expect(refused).toEqual(["profile-operation-invalid"]);
+    expect(outcome).toMatchObject({
+      kind: "malformed",
+      reason: "invalid operation for read_profile: operation-unknown",
+      bindError: { code: "profile-operation-invalid", toolCallId: "call-1" },
+    });
+  });
+});

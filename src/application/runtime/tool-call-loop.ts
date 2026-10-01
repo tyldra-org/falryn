@@ -24,8 +24,10 @@ import type { TurnSnapshot } from "../../domain/sessions/index.ts";
 import {
   type BoundToolInvocation,
   bindToolProposals,
+  type DisclosedOperationProfile,
   effectOfToolOutcome,
   foldToolEffects,
+  lowerProfileProposals,
   MAX_CONCURRENT_TOOLS,
   MAX_TOOL_CALLS_PER_ITERATION,
   MAX_TOOL_LOOP_ITERATIONS,
@@ -128,9 +130,28 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
           seenToolCallIds.add(proposal.toolCallId);
         }
 
+        // A profile call becomes the exact native call it names before binding (#946);
+        // the provider history keeps the call as the model made it.
+        const lowered = lowerProfileProposals(
+          options.operationProfiles?.disclosed ?? [],
+          proposals,
+          options.operationProfiles?.definitions ?? [],
+        );
+        if (!lowered.ok) {
+          await options.onRefusedProposals?.(proposals, lowered.error.code);
+          return settleBindFailure({
+            coordinator,
+            turnId: input.turnId,
+            configurationGeneration: input.configurationGeneration,
+            error: lowered.error,
+            iterations: iteration,
+            results,
+          });
+        }
+
         const bound = bindToolProposals({
           catalog,
-          proposals,
+          proposals: lowered.value,
           maxQueued: limits.maxToolCallsPerIteration,
           nextInvocationId: (proposal) =>
             invocationId.from(
@@ -300,7 +321,9 @@ export function createToolCallLoop(options: ToolCallLoopOptions): ToolCallLoop {
         }
 
         if (fallback?.kind === "available") {
-          const nextNames = continued.proposals.map((proposal) => proposal.name);
+          const nextNames = continued.proposals.map((proposal) =>
+            nativeNameOf(options.operationProfiles?.disclosed ?? [], proposal),
+          );
           const undeclared = nextNames.find((name) => !fallback.allowedToolNames.has(name));
           if (undeclared !== undefined) {
             return settleClassified({
@@ -398,6 +421,15 @@ function clamp(value: number, min: number, max: number): number {
     return min;
   }
   return Math.min(max, Math.max(min, value));
+}
+
+/** The native tool a proposal reaches, lowering a valid profile call. */
+function nativeNameOf(
+  profiles: readonly DisclosedOperationProfile[],
+  proposal: ToolProposal,
+): string {
+  const lowered = lowerProfileProposals(profiles, [proposal]);
+  return lowered.ok ? (lowered.value[0]?.name ?? proposal.name) : proposal.name;
 }
 
 function toProposals(
@@ -655,7 +687,8 @@ function settleBindFailure(input: {
     case "malformed-input":
     case "duplicate-tool-call-id":
     case "invalid-tool-call-id":
-    case "invalid-descriptor": {
+    case "invalid-descriptor":
+    case "profile-operation-invalid": {
       const reason = bindErrorReason(error);
       const failed = applyCommand(
         input.coordinator,
@@ -701,6 +734,8 @@ function bindErrorReason(error: ToolBindError): string {
       return `unknown tool: ${error.name}`;
     case "queue-bound-exceeded":
       return `queue bound exceeded`;
+    case "profile-operation-invalid":
+      return `invalid operation for ${error.name}: ${error.reason}`;
     default:
       return assertNever(error, "unhandled bind error reason");
   }

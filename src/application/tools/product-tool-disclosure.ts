@@ -31,9 +31,18 @@ import type { EffectClass, ModelCapabilityBrief } from "../../domain/orchestrati
 import { isDeferrablePlanCandidate } from "../../domain/orchestration/opportunity-plan.ts";
 import type { EffectiveExecutionPolicy } from "../../domain/sessions/index.ts";
 import { resolveExecutionProfile } from "../../domain/sessions/index.ts";
-import type { ToolCapabilityKind, ToolRegistry } from "../../domain/tools/index.ts";
+import {
+  type OperationProfileMember,
+  planProfileProjection,
+  type ToolCapabilityKind,
+  type ToolRegistry,
+} from "../../domain/tools/index.ts";
 import type { ModelToolDefinition, WorkIntent } from "../../providers/index.ts";
 import { createProductOpportunityPlan } from "../orchestration/product-opportunity-plan.ts";
+import {
+  operationProfileDefinition,
+  PRODUCT_OPERATION_PROFILES,
+} from "./product-operation-profiles.ts";
 import { isClosedProductToolSchema, measureProductToolSchema } from "./product-tool-schema.ts";
 
 export { measureProductToolSchema } from "./product-tool-schema.ts";
@@ -72,6 +81,33 @@ export type DisclosedProductTool = {
   readonly lifecycle: CapabilityLifecycle;
 };
 
+/**
+ * One operation profile disclosed in place of its member tools (#946). The
+ * members stay in `disclosed`, with their exact native identity; this records
+ * how the model sees them and what grouping cost or saved.
+ */
+export type DisclosedOperationProfileReceipt = {
+  readonly name: string;
+  readonly profileId: string;
+  readonly version: number;
+  readonly operations: readonly (OperationProfileMember & {
+    readonly capabilityId: CapabilityId;
+    readonly toolVersion: number;
+    readonly effect: EffectClass;
+  })[];
+  /** Declared operations not disclosed to this attempt, with the reason. */
+  readonly omittedOperations: readonly (OperationProfileMember & { readonly reason: string })[];
+  readonly schemaDigest: string;
+  readonly schemaBytes: number;
+  readonly schemaTokensEstimated: number;
+  /**
+   * Bytes of the whole definition (name, description and parameters) the model
+   * receives, beside what the same operations cost as separate definitions.
+   */
+  readonly definitionBytes: number;
+  readonly memberDefinitionBytes: number;
+};
+
 export type CapabilityDisclosureReceipt = {
   readonly schemaVersion: typeof PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION;
   readonly catalogGeneration: ConfigurationGeneration;
@@ -87,6 +123,8 @@ export type CapabilityDisclosureReceipt = {
   readonly registryTotal: number;
   readonly registryCounts: Readonly<Record<string, number>>;
   readonly disclosed: readonly DisclosedProductTool[];
+  /** Profiles the model sees in place of some `disclosed` tools, in definition order. */
+  readonly profiles: readonly DisclosedOperationProfileReceipt[];
   /**
    * Authorized definitions beyond the eager bound, marked `deferred` in
    * `modelTools` so a supporting transport can serve them through native tool
@@ -94,8 +132,12 @@ export type CapabilityDisclosureReceipt = {
    */
   readonly deferred: readonly DisclosedProductTool[];
   readonly omitted: readonly { readonly name: string; readonly reason: string }[];
+  /** Parameter bytes of every disclosed native tool, profile members included. */
   readonly schemaBytes: number;
   readonly schemaTokensEstimated: number;
+  /** Parameter bytes of the eager definitions the model is actually sent (#946). */
+  readonly emittedSchemaBytes: number;
+  readonly emittedSchemaTokensEstimated: number;
   readonly deferredSchemaBytes: number;
   readonly deferredSchemaTokensEstimated: number;
   readonly discoveryHandle: string;
@@ -129,7 +171,8 @@ export type ProductToolDisclosureOptions = {
 
 const RAW_PROTOCOL_ESCAPES = new Set(["run_process", "run_shell"]);
 
-function jsonSchemaFor(
+/** The provider-facing JSON schema of a native tool's input. */
+export function jsonSchemaFor(
   schema: z.ZodType<Readonly<Record<string, unknown>>>,
 ): Readonly<Record<string, unknown>> {
   return z.toJSONSchema(schema) as Readonly<Record<string, unknown>>;
@@ -330,19 +373,80 @@ export function discloseProductTools(
     omittedNames.add(name);
   }
 
-  const promptTools: PromptToolInput[] = selected.map(({ entry, parameters }) => ({
-    name: entry.manifest.name,
-    description: entry.manifest.description,
-    parameters,
+  // Group disclosed native tools into operation profiles (#946). The members stay
+  // disclosed by their native names; the model sees one definition per profile.
+  const selectedByName = new Map(selected.map((item) => [item.entry.manifest.name, item]));
+  const profiles: DisclosedOperationProfileReceipt[] = [];
+  const eagerDefinitions: ModelToolDefinition[] = projectProfiles(
+    selected.map((item) => item.entry.manifest.name),
+    registry,
+  ).map((item) => {
+    if (item.kind === "native") {
+      const native = selectedByName.get(item.name);
+      if (native === undefined) throw new Error(`projected tool missing: ${item.name}`);
+      return {
+        name: native.entry.manifest.name,
+        description: native.entry.manifest.description,
+        parameters: native.parameters,
+      };
+    }
+    const members = item.operations.map((operation) => {
+      const native = selectedByName.get(operation.toolName);
+      if (native === undefined) throw new Error(`profile member missing: ${operation.toolName}`);
+      return { operation, native };
+    });
+    const definition = operationProfileDefinition(
+      item.definition,
+      members.map(({ operation, native }) => ({
+        ...operation,
+        description: native.entry.manifest.description,
+        parameters: native.parameters,
+      })),
+    );
+    const measured = measureProductToolSchema(definition.parameters);
+    profiles.push({
+      name: definition.name,
+      profileId: item.definition.id,
+      version: item.definition.version,
+      operations: members.map(({ operation, native }) => ({
+        ...operation,
+        capabilityId: native.entry.manifest.capabilityId,
+        toolVersion: native.entry.manifest.version,
+        effect: native.entry.manifest.effect,
+      })),
+      omittedOperations: item.omitted.map((operation) => ({
+        ...operation,
+        reason: deferred.some((entry) => entry.entry.manifest.name === operation.toolName)
+          ? "deferred beyond the eager bound; loadable through native tool search"
+          : (omitted.find((entry) => entry.name === operation.toolName)?.reason ??
+            "not registered in this generation"),
+      })),
+      schemaDigest: measured.digest,
+      schemaBytes: measured.bytes,
+      schemaTokensEstimated: measured.tokensEstimated,
+      definitionBytes: definitionBytes(definition),
+      memberDefinitionBytes: members.reduce(
+        (total, { native }) =>
+          total +
+          definitionBytes({
+            name: native.entry.manifest.name,
+            description: native.entry.manifest.description,
+            parameters: native.parameters,
+          }),
+        0,
+      ),
+    });
+    return definition;
+  });
+  const promptTools: PromptToolInput[] = eagerDefinitions.map((definition) => ({
+    name: definition.name,
+    description: definition.description,
+    parameters: definition.parameters,
     required: false,
     available: true,
   }));
   const modelTools: ModelToolDefinition[] = [
-    ...selected.map(({ entry, parameters }) => ({
-      name: entry.manifest.name,
-      description: entry.manifest.description,
-      parameters,
-    })),
+    ...eagerDefinitions,
     ...deferred.map(({ entry, parameters }) => ({
       name: entry.manifest.name,
       description: entry.manifest.description,
@@ -444,11 +548,21 @@ export function discloseProductTools(
       registryTotal: capabilityRegistry.entries.length,
       registryCounts,
       disclosed,
+      profiles,
       deferred: deferredDescriptors,
       omitted,
       schemaBytes: disclosed.reduce((total, tool) => total + tool.schemaBytes, 0),
       schemaTokensEstimated: disclosed.reduce(
         (total, tool) => total + tool.schemaTokensEstimated,
+        0,
+      ),
+      emittedSchemaBytes: eagerDefinitions.reduce(
+        (total, definition) => total + measureProductToolSchema(definition.parameters).bytes,
+        0,
+      ),
+      emittedSchemaTokensEstimated: eagerDefinitions.reduce(
+        (total, definition) =>
+          total + measureProductToolSchema(definition.parameters).tokensEstimated,
         0,
       ),
       deferredSchemaBytes: deferredDescriptors.reduce((total, tool) => total + tool.schemaBytes, 0),
@@ -460,4 +574,29 @@ export function discloseProductTools(
       userMentioned: [...(options.userMentionedCapabilityIds ?? [])],
     },
   };
+}
+
+/**
+ * The provider definitions for an ordered set of disclosed native tools (#946).
+ * Shared by disclosure and attempt validation so the two cannot disagree. A
+ * profile whose name a registered tool already uses is never emitted, so a name
+ * always means one thing.
+ */
+export function projectProfiles(
+  disclosedNames: readonly string[],
+  registry: Pick<ToolRegistry, "resolveByName">,
+): ReturnType<typeof planProfileProjection> {
+  return planProfileProjection(
+    PRODUCT_OPERATION_PROFILES.filter((profile) => registry.resolveByName(profile.name) === null),
+    disclosedNames,
+  );
+}
+
+/** UTF-8 bytes of one whole provider definition: name, description and parameters. */
+function definitionBytes(definition: {
+  readonly name: string;
+  readonly description: string;
+  readonly parameters: Readonly<Record<string, unknown>>;
+}): number {
+  return new TextEncoder().encode(JSON.stringify(definition)).byteLength;
 }

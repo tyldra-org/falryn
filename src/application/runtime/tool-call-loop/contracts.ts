@@ -10,6 +10,8 @@ import type { EffectCertainty } from "../../../domain/orchestration/index.ts";
 import type { TurnSnapshot } from "../../../domain/sessions/index.ts";
 import type {
   BoundToolInvocation,
+  DisclosedOperationProfile,
+  OperationProfileDefinition,
   ToolBindError,
   ToolCatalog,
   ToolInvocationOutcome,
@@ -128,6 +130,15 @@ export type ToolCallLoopOptions = {
   readonly runner: ToolRunnerPort;
   readonly limits?: Partial<ToolCallLoopLimits>;
   readonly fallbackPolicy?: ToolFallbackPolicy;
+  /**
+   * Operation profiles disclosed to this attempt (#946). A call to one is lowered
+   * to its exact native operation before binding; `definitions` lets a refusal
+   * tell an operation omitted for this attempt from one the profile never had.
+   */
+  readonly operationProfiles?: {
+    readonly disclosed: readonly DisclosedOperationProfile[];
+    readonly definitions: readonly OperationProfileDefinition[];
+  };
 };
 
 export type ContinueModelContext = {

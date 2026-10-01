@@ -40,6 +40,8 @@ import {
   type SessionCorrelation,
 } from "../../domain/sessions/index.ts";
 import {
+  callableName,
+  type DisclosedOperationProfile,
   effectOfToolOutcome,
   foldToolEffects,
   type ToolHookRegistry,
@@ -78,7 +80,15 @@ import {
   createProviderStreamConsumer,
   type ProviderStreamConsumeOutcome,
 } from "../providers/provider-stream-consumer.ts";
-import { measureProductToolSchema } from "../tools/product-tool-disclosure.ts";
+import {
+  operationProfileDefinition,
+  PRODUCT_OPERATION_PROFILES,
+} from "../tools/product-operation-profiles.ts";
+import {
+  jsonSchemaFor,
+  measureProductToolSchema,
+  projectProfiles,
+} from "../tools/product-tool-disclosure.ts";
 import {
   createProductToolGateway,
   type ProductToolConfirmationPort,
@@ -202,6 +212,7 @@ function assistantToolMessage(
 function toolResultMessage(
   record: ToolInvocationRecord,
   plan: ModelCapabilityBrief | undefined,
+  profiles: readonly DisclosedOperationProfile[] = [],
 ): ModelMessage {
   const transitions =
     plan?.degradation.transitions.filter(
@@ -226,7 +237,9 @@ function toolResultMessage(
             decision: transitions.length > 0 ? "fallback-available" : "terminal-unavailable",
             candidates: transitions
               .map((transition) => decisions.get(transition.toCapabilityId)?.name)
-              .filter((name): name is string => name !== undefined),
+              .filter((name): name is string => name !== undefined)
+              // Name a grouped member as the profile call the model can make (#946).
+              .map((name) => callableName(profiles, name)),
             strategy: "model-continuation",
             terminalReason: terminal?.reason ?? "no-declared-fallback",
             recoveryHandles: terminal?.recoveryHandles ?? [],
@@ -607,26 +620,47 @@ function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistr
   ) {
     return "opportunity plan generation or discovery identity is stale";
   }
+  // Profiles (#946) replace some eager definitions; the projection is recomputed
+  // here from the disclosed names so the provider tool set cannot drift from it.
+  const profiles = input.disclosure.profiles ?? [];
+  const projection = projectProfiles(
+    disclosed.map((tool) => tool.name),
+    registry,
+  );
+  const projectedProfiles = projection.flatMap((item) => (item.kind === "profile" ? [item] : []));
   if (
-    input.tools.length !== disclosed.length + deferred.length ||
-    input.disclosure.toolNames.length !== disclosed.length + deferred.length
+    input.tools.length !== projection.length + deferred.length ||
+    input.disclosure.toolNames.length !== disclosed.length + deferred.length ||
+    input.disclosure.toolNames.some(
+      (name, index) => name !== [...disclosed, ...deferred][index]?.name,
+    ) ||
+    profiles.length !== projectedProfiles.length ||
+    projectedProfiles.some((item, index) => {
+      const profile = profiles[index];
+      return (
+        profile === undefined ||
+        profile.name !== item.definition.name ||
+        profile.profileId !== item.definition.id ||
+        profile.version !== item.definition.version ||
+        profile.operations.length !== item.operations.length ||
+        profile.operations.some(
+          (operation, position) =>
+            operation.operation !== item.operations[position]?.operation ||
+            operation.toolName !== item.operations[position]?.toolName,
+        )
+      );
+    })
   ) {
     return "capability disclosure does not match the provider tool set";
   }
+  const receiptByName = new Map(disclosed.map((tool) => [tool.name, tool]));
   const seen = new Set<string>();
-  for (const [index, receipt] of [...disclosed, ...deferred].entries()) {
-    const definition = input.tools[index];
-    const disclosedName = input.disclosure.toolNames[index];
-    const isDeferred = index >= disclosed.length;
-    if (
-      definition === undefined ||
-      definition.name !== receipt.name ||
-      disclosedName !== receipt.name ||
-      seen.has(receipt.name) ||
-      (definition.deferred === true) !== isDeferred
-    ) {
-      return "capability disclosure order or identity is invalid";
-    }
+  const checkNative = (
+    receipt: (typeof disclosed)[number],
+    isDeferred: boolean,
+    definition: { readonly description: string; readonly parameters: unknown } | null,
+  ): string | null => {
+    if (seen.has(receipt.name)) return "capability disclosure order or identity is invalid";
     seen.add(receipt.name);
     if (
       opportunityPlan !== undefined &&
@@ -647,11 +681,16 @@ function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistr
       entry === null ||
       entry.manifest.capabilityId !== receipt.capabilityId ||
       entry.manifest.version !== receipt.version ||
-      entry.manifest.description !== definition.description
+      (definition !== null && entry.manifest.description !== definition.description)
     ) {
       return "capability disclosure descriptor is stale or mismatched";
     }
-    const measured = measureProductToolSchema(definition.parameters);
+    // A profile member's own schema is checked against the registry, not a definition.
+    const measured = measureProductToolSchema(
+      definition === null
+        ? jsonSchemaFor(entry.manifest.inputSchema)
+        : (definition.parameters as Readonly<Record<string, unknown>>),
+    );
     if (
       measured.digest !== receipt.schemaDigest ||
       measured.bytes !== receipt.schemaBytes ||
@@ -659,6 +698,66 @@ function validateDisclosure(request: AttemptRunnerRequest, registry: ToolRegistr
     ) {
       return "capability disclosure schema is mismatched";
     }
+    return null;
+  };
+  for (const [index, item] of projection.entries()) {
+    const definition = input.tools[index];
+    if (definition === undefined || definition.deferred === true) {
+      return "capability disclosure order or identity is invalid";
+    }
+    if (item.kind === "native") {
+      const receipt = receiptByName.get(item.name);
+      if (receipt === undefined || definition.name !== receipt.name) {
+        return "capability disclosure order or identity is invalid";
+      }
+      const refusal = checkNative(receipt, false, definition);
+      if (refusal !== null) return refusal;
+      continue;
+    }
+    const profile = profiles.find((candidate) => candidate.name === item.definition.name);
+    if (profile === undefined || definition.name !== profile.name || seen.has(profile.name)) {
+      return "capability disclosure order or identity is invalid";
+    }
+    seen.add(profile.name);
+    const members = [];
+    for (const operation of item.operations) {
+      const receipt = receiptByName.get(operation.toolName);
+      const entry = registry.resolveByName(operation.toolName);
+      if (receipt === undefined || entry === null) {
+        return "capability disclosure descriptor is stale or mismatched";
+      }
+      const refusal = checkNative(receipt, false, null);
+      if (refusal !== null) return refusal;
+      members.push({
+        ...operation,
+        description: entry.manifest.description,
+        parameters: jsonSchemaFor(entry.manifest.inputSchema),
+      });
+    }
+    const expected = operationProfileDefinition(item.definition, members);
+    const measured = measureProductToolSchema(definition.parameters);
+    const expectedMeasure = measureProductToolSchema(expected.parameters);
+    if (
+      definition.description !== expected.description ||
+      measured.digest !== expectedMeasure.digest ||
+      measured.digest !== profile.schemaDigest ||
+      measured.bytes !== profile.schemaBytes ||
+      measured.tokensEstimated !== profile.schemaTokensEstimated
+    ) {
+      return "operation profile definition is stale or mismatched";
+    }
+  }
+  for (const [offset, receipt] of deferred.entries()) {
+    const definition = input.tools[projection.length + offset];
+    if (
+      definition === undefined ||
+      definition.name !== receipt.name ||
+      definition.deferred !== true
+    ) {
+      return "capability disclosure order or identity is invalid";
+    }
+    const refusal = checkNative(receipt, true, definition);
+    if (refusal !== null) return refusal;
   }
   if (opportunityPlan !== undefined) {
     const selectedOrder = new Map(
@@ -806,7 +905,11 @@ export function createProductAttemptRunner(
         input = {
           ...input,
           tools,
-          disclosure: { ...input.disclosure, toolNames: tools.map((tool) => tool.name) },
+          // The gateway admits native names; a profile's members stay disclosed (#946).
+          disclosure: {
+            ...input.disclosure,
+            toolNames: input.disclosure.tools.map((tool) => tool.name),
+          },
         };
       }
       if (!options.provider.supportedModels.includes(request.receipt.modelId)) {
@@ -1403,6 +1506,10 @@ export function createProductAttemptRunner(
           coordinator: options.coordinator,
           catalog: options.registry.catalog,
           runner: composition.runner,
+          operationProfiles: {
+            disclosed: request.modelInput?.disclosure.profiles ?? [],
+            definitions: PRODUCT_OPERATION_PROFILES,
+          },
           async onRefusedProposals(proposals, reason) {
             for (const [index, proposal] of proposals.entries()) {
               const saved = await history.record(
@@ -1446,7 +1553,11 @@ export function createProductAttemptRunner(
             sentResults = context.results.length;
             messages.push(
               ...nextResults.map((record) =>
-                toolResultMessage(record, input.disclosure.opportunityPlan),
+                toolResultMessage(
+                  record,
+                  input.disclosure.opportunityPlan,
+                  input.disclosure.profiles,
+                ),
               ),
             );
             if (briefRequest !== null && input.brief !== undefined) {

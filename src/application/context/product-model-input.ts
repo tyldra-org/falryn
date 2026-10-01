@@ -3,6 +3,7 @@
 import type { BriefProjection, BriefRequest } from "../../domain/compression/index.ts";
 import type { ComposedPromptRequest, RenderedPromptSection } from "../../domain/context/index.ts";
 import type { EffectiveExecutionPolicy } from "../../domain/sessions/index.ts";
+import { callableName } from "../../domain/tools/index.ts";
 import type { ModelMessage, OutputContract } from "../../providers/index.ts";
 import { promptCacheStablePrefixDigest } from "../providers/provider-prompt-cache.ts";
 import type { AttemptModelInput } from "../runtime/turn-attempt-policy.ts";
@@ -27,6 +28,8 @@ function message(role: "system" | "user", text: string): ModelMessage | null {
 
 function capabilityBrief(disclosure: ProductToolDisclosure): string {
   const plan = disclosure.receipt.opportunityPlan;
+  // Grouped members are named as the profile call the model can make (#946).
+  const callable = (name: string): string => callableName(disclosure.receipt.profiles, name);
   const fallbackSummary = plan.fallbacks
     .slice(0, 5)
     .map((entry) => `${entry.name}(${entry.reasons.join("+")})`)
@@ -43,8 +46,8 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
   const degradationSummary = plan.degradation.transitions
     .slice(0, 5)
     .map((transition) => {
-      const from = decisionById.get(transition.fromCapabilityId)?.name ?? "unknown";
-      const to = decisionById.get(transition.toCapabilityId)?.name ?? "unknown";
+      const from = callable(decisionById.get(transition.fromCapabilityId)?.name ?? "unknown");
+      const to = callable(decisionById.get(transition.toCapabilityId)?.name ?? "unknown");
       return `${from}->${to}(${transition.effectChange};model-continuation)`;
     })
     .join(", ");
@@ -55,7 +58,20 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
         : `${entry.family}=unavailable(${entry.reason ?? "unavailable"})`,
     )
     .join(", ");
-  const tools = disclosure.receipt.disclosed.map((tool) => tool.name).join(", ");
+  // What the model can call: eager definitions, a profile named with its operations (#946).
+  const profileOperations = new Map(
+    disclosure.receipt.profiles.map((profile) => [
+      profile.name,
+      profile.operations.map((operation) => operation.operation).join("|"),
+    ]),
+  );
+  const tools = disclosure.modelTools
+    .filter((tool) => tool.deferred !== true)
+    .map((tool) => {
+      const operations = profileOperations.get(tool.name);
+      return operations === undefined ? tool.name : `${tool.name}(${operations})`;
+    })
+    .join(", ");
   const deferredTools = disclosure.receipt.deferred.map((tool) => tool.name).join(", ");
   const otherCapabilities = disclosure.receipt.capabilityCards
     .filter((entry) => entry.kind !== "tool" && entry.kind !== "mcp-tool")
@@ -73,7 +89,7 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
   return [
     `[capability-disclosure source=${disclosure.receipt.discoveryHandle} plan=${plan.planId}]`,
     `Preferred path: ${plan.primaryFamily}; fallbacks: ${plan.fallbackFamilies.join(", ") || "none"}.`,
-    `Deterministically selected: ${plan.selected.map((entry) => entry.name).join(", ") || "none"}.`,
+    `Deterministically selected: ${plan.selected.map((entry) => callable(entry.name)).join(", ") || "none"}.`,
     `Candidate fallbacks: ${fallbackSummary || "none"}.`,
     `Rejected or unavailable: ${rejectedSummary || "none"}; ${shownRejected} shown, ${hiddenRejected} omitted.`,
     `Automation opportunities: ${plan.opportunities.map((entry) => `${entry.kind}=${entry.decision}`).join(", ")}.`,
@@ -205,6 +221,15 @@ export function attemptModelInputFromPrompt(
         schemaDigest: tool.schemaDigest,
         schemaBytes: tool.schemaBytes,
         schemaTokensEstimated: tool.schemaTokensEstimated,
+      })),
+      profiles: disclosure.receipt.profiles.map((profile) => ({
+        name: profile.name,
+        profileId: profile.profileId,
+        version: profile.version,
+        operations: profile.operations.map(({ operation, toolName }) => ({ operation, toolName })),
+        schemaDigest: profile.schemaDigest,
+        schemaBytes: profile.schemaBytes,
+        schemaTokensEstimated: profile.schemaTokensEstimated,
       })),
       deferred: disclosure.receipt.deferred.map((tool) => ({
         name: tool.name,

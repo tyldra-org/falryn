@@ -2144,6 +2144,29 @@ omission receipt. Either way a deferred call is admitted through the same
 generation-bound gateway validation as a disclosed tool; policy-denied,
 unavailable, or schema-ineligible candidates are never deferred.
 
+Operation profiles (#946) group related native tools into one model-facing
+definition. The Git tools form three: `git_inspect` (discover, status, diff,
+log, blame, list worktrees), `git_branch` (create, switch and delete branches,
+create and remove worktrees) and `git_change` (stage, unstage, commit, sync).
+A profile replaces its members only when at least two of them are selected for
+the attempt, and it offers only those operations; the receipt lists the rest
+with the reason they were not offered, and an execution mode that denies
+mutation never shows the mutating profiles. The model sends
+`{"operation": "status", "status": {…}}`, with each operation's native
+arguments under its own name; `operation` decides, and other operations'
+properties in the call are ignored. Before binding, the call is lowered to the exact
+native tool, so validation, effects, confirmation, admission, events and results
+are the native tool's; the provider history keeps the call as the model made
+it. The members stay disclosed under their native names, so a direct
+`git_status` call still reaches the same single operation. A call naming an
+operation the profile does not offer is refused as malformed before any
+effect. Text shown to the model, such as fallback candidates, names a grouped
+tool as its profile call, for example `git_inspect(status)`. The attempt's
+disclosure receipt records each profile's operations with their native
+identity and its whole-definition size beside what the same operations cost as
+separate definitions; the durable attempt record keeps the native tools only.
+Profiles for other tool families and GitHub operations are not implemented yet.
+
 The opportunity plan also contains an explicit, generation-bound degradation
 graph. A fallback edge names its source and target capability, the unavailable
 condition that permits it, the information and effect difference, and the

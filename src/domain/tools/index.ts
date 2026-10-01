@@ -1,6 +1,21 @@
 /** Public contracts for this capability. Internal modules import their exact dependencies. */
 
 export type {
+  DisclosedOperationProfile,
+  LoweredProposals,
+  OperationProfileDefinition,
+  OperationProfileMember,
+  ProfileProjectionItem,
+  ProfileProposal,
+} from "./operation-profiles.ts";
+export {
+  callableName,
+  lowerProfileProposals,
+  MIN_PROFILE_OPERATIONS,
+  OPERATION_PROFILE_SCHEMA_VERSION,
+  planProfileProjection,
+} from "./operation-profiles.ts";
+export type {
   BoundAnnotation,
   PostHookSettlement,
   PreHookSettlement,
@@ -61,6 +76,7 @@ export type {
   BindToolProposalsOptions,
   BindToolProposalsResult,
   BoundToolInvocation,
+  ProfileOperationRefusal,
   ToolBindError,
   ToolCatalog,
   ToolDescriptor,
