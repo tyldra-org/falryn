@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,7 +9,7 @@ import type { LocalQuestionPresenter } from "../../application/orchestration/que
 import { createTurnEventJournal } from "../../application/runtime/turn-event-journal.ts";
 import { createStaticEnvironment, invocationId } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/index.ts";
-import { mcpFixtureReply } from "../../integrations/extensions/mcp-fixtures.ts";
+import { mcpFixtureReply, until } from "../../integrations/extensions/mcp-fixtures.ts";
 import { createHostManagedServicePort } from "../../integrations/process/host-process-sessions.ts";
 import { createDeterministicProviderAdapter } from "../../providers/index.ts";
 import { snapshotOf } from "../../tui/composer/index.ts";
@@ -21,7 +22,14 @@ import { composeProductShellAttachments } from "./product-shell-attachments.ts";
 import { createServiceProvider } from "./services.ts";
 import { standaloneEnvironment } from "./standalone-environment.ts";
 
-const posix = process.platform === "win32" ? test.skip : test;
+// Every journey here starts a real MCP server process or drives a model turn through one, which
+// takes seconds on a loaded hosted runner; the 5 s default fails there first.
+const JOURNEY_TIMEOUT_MS = 30_000;
+const journey =
+  (run: typeof test) =>
+  (name: string, body: () => Promise<void>): void =>
+    run(name, body, JOURNEY_TIMEOUT_MS);
+const posix = journey(process.platform === "win32" ? test.skip : test);
 const cleanups: (() => unknown)[] = [];
 afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup();
@@ -62,7 +70,8 @@ async function fixture(
             id: "fixture",
             transport: "stdio",
             executable: process.execPath,
-            args: [fixturePath, mode],
+            args:
+              mode === "delayed" ? [fixturePath, mode, join(root, "release")] : [fixturePath, mode],
             environmentNames: ["SELECTED"],
           },
         ],
@@ -92,7 +101,7 @@ async function fixture(
       ...processEnvironment,
     }),
   });
-  return { config, document, services, globals };
+  return { config, document, services, globals, release: join(root, "release") };
 }
 async function open(f: Awaited<ReturnType<typeof fixture>>) {
   const graph = f.services();
@@ -176,10 +185,11 @@ posix(
       "tools/call",
       { name: "echo" },
     );
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await until(() => existsSync(`${f.release}.received`), "the server to receive the call");
     f.document.defaults.execution.environment.set.SELECTED = "replacement-secret";
     await writeFile(join(f.config, "falryn.jsonc"), JSON.stringify(f.document));
     expect((await r.environment.control.execute("reload")).inspection.state).toBe("active");
+    await writeFile(f.release, "");
     expect(await request).toMatchObject({ kind: "stale", effect: "uncertain" });
     const next = await r.mcp.lifecycle.connect(r.admission());
     expect(next.kind).toBe("completed");
@@ -188,7 +198,7 @@ posix(
   },
 );
 
-const zsh = process.platform !== "win32" && Bun.which("zsh") ? test : test.skip;
+const zsh = journey(process.platform !== "win32" && Bun.which("zsh") ? test : test.skip);
 zsh("malformed required setup cannot leak stdout into protocol or start a server", async () => {
   const f = await fixture("normal", {
     interpreter: Bun.which("zsh"),
@@ -242,44 +252,47 @@ posix("CLI inspect stays inert and probe discovers the catalog before closing", 
   ]);
 });
 
-test("CLI probe authenticates through a credential reference and reports a rejection by code", async () => {
-  let valid = "probe-secret";
-  const seen: string[] = [];
-  const server = Bun.serve({
-    port: 0,
-    async fetch(request) {
-      const message = (await request.json()) as Record<string, unknown>;
-      const authorization = request.headers.get("authorization") ?? "";
-      seen.push(authorization);
-      if (authorization !== "Bearer " + valid) return new Response("no", { status: 401 });
-      return Response.json(mcpFixtureReply(message));
-    },
-  });
-  cleanups.push(() => server.stop(true));
-  const f = await fixture("normal", undefined, { MCP_REMOTE_TOKEN: "probe-secret" });
-  f.document.connections.mcp.servers = [
-    {
-      id: "remote",
-      transport: "http",
-      url: "http://127.0.0.1:" + server.port + "/mcp",
-      credential: { storeKind: "environment", locator: "MCP_REMOTE_TOKEN" },
-    } as never,
-  ];
-  await writeFile(join(f.config, "falryn.jsonc"), JSON.stringify(f.document));
-  const probed = await runMcp(f.services, { action: "probe", serverId: "remote" }, f.globals);
-  expect(probed.payload?.probe?.kind, JSON.stringify(probed.payload?.probe)).toBe("completed");
-  expect(new Set(seen)).toEqual(new Set(["Bearer probe-secret"]));
-  expect(JSON.stringify(probed)).not.toContain("probe-secret");
+posix(
+  "CLI probe authenticates through a credential reference and reports a rejection by code",
+  async () => {
+    let valid = "probe-secret";
+    const seen: string[] = [];
+    const server = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        const message = (await request.json()) as Record<string, unknown>;
+        const authorization = request.headers.get("authorization") ?? "";
+        seen.push(authorization);
+        if (authorization !== "Bearer " + valid) return new Response("no", { status: 401 });
+        return Response.json(mcpFixtureReply(message));
+      },
+    });
+    cleanups.push(() => server.stop(true));
+    const f = await fixture("normal", undefined, { MCP_REMOTE_TOKEN: "probe-secret" });
+    f.document.connections.mcp.servers = [
+      {
+        id: "remote",
+        transport: "http",
+        url: "http://127.0.0.1:" + server.port + "/mcp",
+        credential: { storeKind: "environment", locator: "MCP_REMOTE_TOKEN" },
+      } as never,
+    ];
+    await writeFile(join(f.config, "falryn.jsonc"), JSON.stringify(f.document));
+    const probed = await runMcp(f.services, { action: "probe", serverId: "remote" }, f.globals);
+    expect(probed.payload?.probe?.kind, JSON.stringify(probed.payload?.probe)).toBe("completed");
+    expect(new Set(seen)).toEqual(new Set(["Bearer probe-secret"]));
+    expect(JSON.stringify(probed)).not.toContain("probe-secret");
 
-  valid = "rotated-at-the-server";
-  const rejected = await runMcp(f.services, { action: "probe", serverId: "remote" }, f.globals);
-  expect(rejected.payload?.probe).toMatchObject({
-    kind: "denied",
-    code: "mcp-auth-rejected",
-    effect: "none",
-  });
-  expect(JSON.stringify(rejected)).not.toContain("probe-secret");
-});
+    valid = "rotated-at-the-server";
+    const rejected = await runMcp(f.services, { action: "probe", serverId: "remote" }, f.globals);
+    expect(rejected.payload?.probe).toMatchObject({
+      kind: "denied",
+      code: "mcp-auth-rejected",
+      effect: "none",
+    });
+    expect(JSON.stringify(rejected)).not.toContain("probe-secret");
+  },
+);
 
 type ToolStep = { readonly name: string; readonly input: Record<string, unknown> };
 type ToolReply = { readonly status: string; readonly text: string };
