@@ -3,7 +3,6 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
-  FILE_COST_MS,
   failingTestFiles,
   KNOWN_FLAKES_FILE,
   type KnownFlake,
@@ -15,10 +14,10 @@ import {
   retrySummary,
   shardArguments,
   shardSummary,
-  shardWeights,
   testRetries,
   testShardCount,
   testShardSelection,
+  timingsFile,
 } from "./test-shards.ts";
 
 const RUNNER = join(import.meta.dir, "test-shards.ts");
@@ -47,38 +46,23 @@ test("a CI job selects one shard, and retries are on unless explicitly off", () 
   expect(testRetries("2").ok).toBe(false);
 });
 
-test("shards balance by recorded duration plus a fixed cost for every tracked file", () => {
-  const recorded = JSON.stringify({
-    version: 1,
-    files: { "src/a.test.ts": 4000, "src/gone.test.ts": 9 },
-  });
-  expect(shardWeights(recorded, ["src/a.test.ts", "src/new.test.ts"])).toEqual({
-    version: 1,
-    files: { "src/a.test.ts": 4000 + FILE_COST_MS, "src/new.test.ts": FILE_COST_MS },
-  });
-  for (const unreadable of [
-    null,
-    "not json",
-    "{}",
-    JSON.stringify({ files: { "src/a.test.ts": -1 } }),
-  ])
-    expect(shardWeights(unreadable, ["src/a.test.ts"]).files).toEqual({
-      "src/a.test.ts": FILE_COST_MS,
-    });
-});
-
-test("every shard balances by the weights and leaves compiled suites to the smoke runs", () => {
-  expect(shardArguments(2, 4, ["--only-failures"], "/tmp/weights.json")).toEqual([
+test("every shard balances by its host's timings and leaves compiled suites to the smoke runs", () => {
+  expect(timingsFile("darwin")).toBe(".github/test-timings/darwin.json");
+  const timings = { file: timingsFile("linux"), record: false };
+  expect(shardArguments(2, 4, ["--only-failures"], timings)).toEqual([
     "test",
     "--shard=2/4",
-    "--timings=/tmp/weights.json",
+    "--timings=.github/test-timings/linux.json",
     "--path-ignore-patterns=**/*.compiled.test.ts",
     "--only-failures",
   ]);
-  expect(shardArguments(1, 1, [], "/tmp/weights.json")).toEqual([
+  expect(shardArguments(1, 1, [], { file: timingsFile("linux"), record: true })).toEqual([
     "test",
+    "--timings=.github/test-timings/linux.json",
+    "--update-timings",
     "--path-ignore-patterns=**/*.compiled.test.ts",
   ]);
+  expect(shardArguments(1, 1, [], null)).not.toContain("--update-timings");
   // A retry names its file exactly, so a filter cannot widen it to similar names.
   expect(retryArguments("src/a.test.ts", ["--bail"])).toEqual([
     "test",

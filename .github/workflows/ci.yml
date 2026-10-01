@@ -68,7 +68,7 @@ jobs:
 
   # The source suite through `bun run test`, the same runner, shard balance and
   # known-flake retry as a local run, one shard per job and each shard's files run
-  # serially. Shard processes side by side on one runner were slower on macOS (three
+  # serially. Each job records its files' durations for the next rebalance. Shard processes side by side on one runner were slower on macOS (three
   # cores) and failed timing-sensitive tests on Ubuntu. A scoped revision runs
   # `bun run test:changed` against the pull request's base, exactly as a local
   # `bun run check` does against `main`.
@@ -82,15 +82,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: Ubuntu x64, os: ubuntu-latest, shard: 1/3 }
-          - { name: Ubuntu x64, os: ubuntu-latest, shard: 2/3 }
-          - { name: Ubuntu x64, os: ubuntu-latest, shard: 3/3 }
-          - { name: macOS arm64, os: macos-latest, shard: 1/4 }
-          - { name: macOS arm64, os: macos-latest, shard: 2/4 }
-          - { name: macOS arm64, os: macos-latest, shard: 3/4 }
-          - { name: macOS arm64, os: macos-latest, shard: 4/4 }
+          - { name: Ubuntu x64, os: ubuntu-latest, platform: linux, shard: 1/3 }
+          - { name: Ubuntu x64, os: ubuntu-latest, platform: linux, shard: 2/3 }
+          - { name: Ubuntu x64, os: ubuntu-latest, platform: linux, shard: 3/3 }
+          - { name: macOS arm64, os: macos-latest, platform: darwin, shard: 1/4 }
+          - { name: macOS arm64, os: macos-latest, platform: darwin, shard: 2/4 }
+          - { name: macOS arm64, os: macos-latest, platform: darwin, shard: 3/4 }
+          - { name: macOS arm64, os: macos-latest, platform: darwin, shard: 4/4 }
     env:
       FALRYN_TEST_SHARD: ${{ matrix.shard }}
+      FALRYN_RECORD_TIMINGS: "1"
 
     steps:
       - name: Check out the reviewed revision
@@ -107,6 +108,17 @@ jobs:
 
       - name: Run the ${{ needs.classify.outputs.profile }} source suite
         run: bun run ${{ needs.classify.outputs.profile == 'full' && 'test' || 'test:changed' }}
+
+      # This shard's measured per-file durations; `bun run test:timings` merges a `main`
+      # run's shards into .github/test-timings/ to rebalance them.
+      - name: Upload this shard's test timings
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: test-timings-${{ matrix.platform }}-${{ strategy.job-index }}
+          path: .github/test-timings/${{ matrix.platform }}.json
+          retention-days: 14
+          if-no-files-found: ignore
 
   # Windows runs a baseline, not the full suite: parts of it assert POSIX signal and
   # permission behavior Windows does not have. See README.md.

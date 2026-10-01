@@ -17,7 +17,7 @@ ruleset change.
 | --- | --- | --- |
 | `classify` | always | the tier, from [`tools/quality/ci-profile.ts`](../../tools/quality/ci-profile.ts) |
 | `checks` | always | `bun run check:static` (Biome formatting, lint and imports, `tsc`, repository integrity, model catalogs) and `bun audit` |
-| `test` | `scoped`, `full` | the source suite on Ubuntu x64 (one job) and macOS arm64 (four shard jobs) |
+| `test` | `scoped`, `full` | the source suite on Ubuntu x64 (three shard jobs) and macOS arm64 (four) |
 | `windows` | `scoped`, `full` | the Windows platform baseline |
 | `compiled` | `scoped`, `full` | each platform's executable builds and passes its compiled smoke |
 | `required` | always | `CI required`: every job above succeeded, or was skipped because the tier is `docs` |
@@ -42,14 +42,21 @@ in a compiled suite.
 ### Source suite
 
 `bun run test` ([`tools/quality/test-shards.ts`](../../tools/quality/test-shards.ts))
-runs the suite as `bun test --shard` processes, each running its files serially. On
-Ubuntu one job runs four processes side by side (`FALRYN_TEST_SHARDS=4`) on its four
-cores, in about three minutes. macOS runs four jobs of one shard each
-(`FALRYN_TEST_SHARD=i/4`): its runner has three cores, and three processes side by
-side took twelve minutes against under five for the slowest separate shard. Bun
-deals the files out by path, which spreads each directory's heavy files across
-shards. Recorded per-file durations balanced worse, because they leave out the
-cost of loading a file's modules.
+runs the suite as `bun test --shard` processes, each running its files serially. CI
+runs one shard per job (`FALRYN_TEST_SHARD=i/N`): three on Ubuntu and four on macOS,
+whose hosted runners take about twice as long. Shard processes side by side on one
+runner were tried: on macOS's three cores they took twelve minutes against under
+five for the slowest separate shard, and on Ubuntu they failed timing-sensitive
+tests.
+
+Shards are balanced by each file's duration on that host, in
+[`test-timings/`](../test-timings) (`linux.json`, `darwin.json`). Every test job
+records its own files' durations and uploads them as a `test-timings-*` artifact;
+`bun run test:timings` merges the latest successful `main` run's shards into those
+files, to commit when shards drift out of balance. A serial local recording balanced
+CI badly, because a file costs a different share on each host: it once gave one
+Ubuntu shard 510 small files and 302 s while the others ran 68 s and 79 s. A stale
+record only unbalances the shards.
 
 A failing file is retried once, alone, only when
 [`known-flaky-tests.json`](../known-flaky-tests.json) lists it with the open issue

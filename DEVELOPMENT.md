@@ -214,6 +214,7 @@ Use the smallest command that proves the current edit while iterating.
 | `bun test <path>` | One focused test file |
 | `bun run test:watch` | Re-run tests while files change |
 | `bun run test` | Full source suite as concurrent shard processes (`FALRYN_TEST_SHARDS` overrides the count; 1 runs it in one process; `FALRYN_TEST_SHARD=i/N` runs one shard) |
+| `bun run test:timings` | Pull the per-file durations the latest `main` CI run recorded into `.github/test-timings/`, which balance each host's shards (needs `gh`) |
 | `bun run check:full` | `check:static` and the full source suite |
 | `bun run ci` | What a full CI run checks on this host: `check:static`, `bun audit`, the full suite, the build and the compiled suites |
 | `bun run build` | Standalone executable compilation, split into chunks so the provider SDKs, MCP client and terminal UI load on first use (`src/startup-boundaries.test.ts` fails on a static import of one) |
