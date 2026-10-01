@@ -1,7 +1,10 @@
 import { afterEach, expect, test } from "bun:test";
 import { fileURLToPath } from "node:url";
 import { removeTemporaryRoots, temporaryRoot } from "../../data/fixtures.ts";
-import { packageStandingCliJourney } from "./package-standing-fixtures.ts";
+import {
+  packageStandingCliJourney,
+  packageStandingEmptyJourney,
+} from "./package-standing-fixtures.ts";
 
 afterEach(removeTemporaryRoots);
 
@@ -16,3 +19,10 @@ test("revoking a dependency, an offline restart, a rollback and a quarantine kee
   // The journey starts the source CLI about thirty times (0.2 s each locally); hosted macOS runs
   // several times slower.
 }, 90_000);
+
+test("standing with no database is a completed not-installed answer in human and JSON output", async () => {
+  packageStandingEmptyJourney(
+    [process.execPath, fileURLToPath(new URL("../../main.ts", import.meta.url))],
+    await temporaryRoot("falryn-standing-empty-"),
+  );
+}, 30_000);

@@ -78,6 +78,26 @@ export async function packageStandingCliJourney(command: readonly string[], root
     expect(JSON.stringify(read)).not.toContain(root);
     return (read.data as { standing: Standing }).standing;
   }
+  /** The same standing as a person reads it in a terminal. */
+  async function humanStanding(packageId: string) {
+    const file = join(root, "request.json");
+    await writeFile(
+      file,
+      JSON.stringify({ packageId, operationId: randomUUID(), expectedRevision: 0 }),
+    );
+    const child = Bun.spawnSync(
+      [...command, "package", "standing", "--input", file, "--format", "human"],
+      {
+        cwd: root,
+        env: environment,
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+        timeout: 30_000,
+      },
+    );
+    return new TextDecoder().decode(child.stdout);
+  }
   const trustSchema = z.object({ trust: z.object({ status: z.string() }) });
   async function approve(source: string) {
     const request = { action: "approve", expiresAt: Date.now() + 600_000 };
@@ -89,6 +109,16 @@ export async function packageStandingCliJourney(command: readonly string[], root
       trustSchema,
     );
     expect(applied.trust.status).toBe("applied");
+  }
+  /** `extension trust` over a source path with any action; returns the applied trust state. */
+  async function trustAction(source: string, request: Record<string, unknown>) {
+    const preview = await invoke(["extension", "trust", source], request, z.unknown());
+    const confirmation = (preview as { trust: { confirmation: string } }).trust.confirmation;
+    return invoke(
+      ["extension", "trust", source],
+      { ...request, confirmation },
+      z.object({ trust: z.object({ status: z.string(), state: z.string().optional() }) }),
+    );
   }
   async function writeSource(name: string, packageName: string, version: string, extra = {}) {
     const dir = join(root, name);
@@ -124,6 +154,20 @@ export async function packageStandingCliJourney(command: readonly string[], root
     (await apply("install", request("dependent", 0, { sourcePath: dependentSource }))).status,
   ).toBe("completed");
   await approve(dependentSource);
+  // `extension trust` holds a source path too: quarantine, release (which approves nothing), approve.
+  expect(
+    (
+      await trustAction(dependentSource, {
+        action: "quarantine",
+        expiresAt: null,
+        reason: "policy",
+      })
+    ).trust.status,
+  ).toBe("applied");
+  expect(
+    (await trustAction(dependentSource, { action: "release", expiresAt: null })).trust.status,
+  ).toBe("applied");
+  await approve(dependentSource);
   // From here on there is no source and no network: only installed records.
   for (const dir of [baseV1, baseV2, dependentSource]) await rm(dir, { recursive: true });
 
@@ -151,6 +195,10 @@ export async function packageStandingCliJourney(command: readonly string[], root
     reason: "dependency-not-eligible",
     dependencies: [{ id: "fixture", state: "revoked", eligible: false }],
   });
+  const human = await humanStanding("dependent");
+  expect(human).toContain("standing: dependency-blocked (dependency-not-eligible)");
+  expect(human).toContain("dependency fixture: revoked (ecosystem-trust-revoked)");
+  expect(human).toContain("recovery choices: inspect, update, uninstall");
   const revokedStanding = await standing("fixture");
   expect(revokedStanding.state).toBe("revoked");
   expect(revokedStanding.identityDigest).toBe(before.identityDigest);
@@ -222,9 +270,58 @@ export async function packageStandingCliJourney(command: readonly string[], root
     const actions = database
       .query("SELECT DISTINCT action FROM package_trust_receipts ORDER BY action")
       .all() as { action: string }[];
-    expect(actions.map((row) => row.action)).toEqual(["approve", "quarantine", "revoke"]);
+    expect(actions.map((row) => row.action)).toEqual([
+      "approve",
+      "quarantine",
+      "release",
+      "revoke",
+    ]);
   } finally {
     database.close();
   }
   return { revoked, rolled, purged } satisfies Record<string, Receipt>;
+}
+
+/** Standing with no database: human and JSON both say nothing is installed and what can be done. */
+export function packageStandingEmptyJourney(command: readonly string[], root: string) {
+  const run = (format: string) => {
+    const file = join(root, "request.json");
+    Bun.write(
+      file,
+      JSON.stringify({ packageId: "fixture", operationId: randomUUID(), expectedRevision: 0 }),
+    );
+    return Bun.spawnSync([...command, "package", "standing", "--input", file, "--format", format], {
+      cwd: root,
+      env: {
+        PATH: process.env.PATH ?? "",
+        HOME: root,
+        NO_COLOR: "1",
+        FALRYN_CONFIG_DIR: join(root, "config"),
+        FALRYN_STATE_DIR: join(root, "state"),
+        FALRYN_CACHE_DIR: join(root, "cache"),
+        FALRYN_LOG_DIR: join(root, "logs"),
+        FALRYN_TEMP_DIR: join(root, "temporary"),
+        FALRYN_ARTIFACT_DIR: join(root, "artifacts"),
+        FALRYN_EXPORT_DIR: join(root, "exports"),
+      },
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+      timeout: 30_000,
+    });
+  };
+  const human = new TextDecoder().decode(run("human").stdout);
+  expect(human).toContain("fixture: completed (standing)");
+  expect(human).toContain("standing: not-installed");
+  expect(human).toContain("recovery choices: inspect");
+  const json = new TextDecoder().decode(run("json").stdout);
+  const payload = z
+    .object({ payload: z.unknown() })
+    .parse(JSON.parse(json.trim().split("\n").at(-1) ?? "null")).payload;
+  const parsed = packageReceiptSchema.parse(payload);
+  expect(parsed).toMatchObject({
+    status: "completed",
+    code: "standing",
+    data: { standing: { state: "not-installed" } },
+  });
 }

@@ -1188,20 +1188,25 @@ and a restored version stays inert until it is enabled through its own checks.
 
 `quarantine`, `release` and `revoke` use the same preview and `confirmation` flow as
 other mutations and write one revision to the existing trust decision store, so the
-catalog, the tool gateway and every launch check see the change at once and the
-decision, its optional `reason` category (`integrity`, `suspected-compromise`,
+catalog and every launch check read the change at once (the tool gateway's session view
+follows at its next publication, below) and the decision, its optional `reason` category (`integrity`, `suspected-compromise`,
 `unexpected-behavior`, `policy` or `other`) and its receipt are retained. The package
 lifecycle revision does not change; the request's `expectedRevision` must still match it.
 `quarantine` blocks the exact installed identity until a `release`, which leaves it
 unapproved: approval is a separate revision with its own expiry of at most 30 days, and
 `revoke` needs an existing decision for that identity. An approval cannot be recorded over a quarantine,
-and no override of a revocation or quarantine exists. `falryn extension trust` accepts
+and no override of a revocation or quarantine exists. A binary that predates holds reads a
+`quarantine` or `release` record as malformed and denies, never as approval. `falryn extension trust` accepts
 `quarantine` and `release` for a source path as well.
 
-A revocation or quarantine denies new work at every admission path at once. Work already
-running holds an immutable binding and stops at its next protocol boundary, because the
-generation it was admitted under includes the package record, its trust and its dependency
-closure; its process tree is then cleaned up by its owner within that owner's bounds.
+A revocation or quarantine admits no new package process: every start re-reads trust and
+the dependency closure live, so nothing launches after the hold. A long-lived session's
+published catalog view, and so which tools it lists, refreshes at its next publication
+(each turn); a tool can stay listed until then and still ends at the live launch check.
+Work already running holds an immutable binding and stops at its next protocol boundary,
+because the generation it was admitted under includes the package record, its trust and
+its dependency closure; its process tree is then cleaned up by its owner within that
+owner's bounds.
 Retained bytes, decisions and receipts are not removed by the transition. The receipt's
 `data.runningWork` states this policy.
 

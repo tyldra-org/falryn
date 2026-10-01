@@ -10,6 +10,7 @@ import { createPackageProvenanceRepository } from "../../data/security/provenanc
 import { createTrustDecisionRepository } from "../../data/security/trust-repository.ts";
 import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import type { PackageReceipt, PackageRequest } from "../../domain/extensions/lifecycle.ts";
+import { derivePackageStanding } from "../../domain/security/package-standing.ts";
 import type { SqliteStorePort } from "../../domain/storage/index.ts";
 import { createHostPackageCache } from "../../integrations/extensions/host-package-cache.ts";
 import { ed25519PackageVerifier } from "../../integrations/extensions/package-signature.ts";
@@ -125,5 +126,25 @@ export async function runPackageStanding(
         affectedContributions: result.affectedContributions,
       }),
     ),
+  };
+}
+
+/** `package standing` before any database exists: nothing is installed, and that is a normal answer. */
+export function absentPackageStanding(
+  request: PackageRequest,
+  base: PackageReceipt,
+): PackageReceipt {
+  const standing = derivePackageStanding({
+    installed: { packageId: request.packageId, revision: 0, current: null },
+    trust: null,
+    retained: [],
+    dependencies: [],
+  });
+  return {
+    ...base,
+    status: "completed",
+    code: "standing",
+    recovery: "none",
+    data: JSON.parse(JSON.stringify({ standing })),
   };
 }

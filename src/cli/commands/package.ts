@@ -47,6 +47,7 @@ import { inspectPackageConfiguration } from "../runtime/package-configuration-in
 import { runPackageDataControl, runPackageDataImport } from "../runtime/package-data.ts";
 import { runPackageHealth } from "../runtime/package-health.ts";
 import {
+  absentPackageStanding,
   composePackageStanding,
   type PackageStandingAction,
   runPackageStanding,
@@ -266,7 +267,9 @@ export async function runPackage(
       } else if (PACKAGE_STANDING_ACTIONS.has(action)) {
         result =
           standing === null
-            ? failure("not-installed")
+            ? action === "standing"
+              ? absentPackageStanding(request, failure("not-started"))
+              : failure("not-installed")
             : await runPackageStanding(
                 standing,
                 action as PackageStandingAction,

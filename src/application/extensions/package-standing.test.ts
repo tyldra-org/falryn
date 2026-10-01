@@ -9,7 +9,7 @@ import {
 } from "../../data/fixtures.ts";
 import { createPackageProvenanceRepository } from "../../data/security/provenance-repository.ts";
 import { createTrustDecisionRepository } from "../../data/security/trust-repository.ts";
-import { canonicalDigest } from "../../domain/extensions/canonical.ts";
+import { bytesDigest, canonicalDigest } from "../../domain/extensions/canonical.ts";
 import type {
   InstalledVersion,
   PackageAction,
@@ -20,7 +20,13 @@ import { err } from "../../domain/foundation/result.ts";
 import { RUNNING_WORK_POLICY } from "../../domain/security/package-standing.ts";
 import { createHostPackageCache } from "../../integrations/extensions/host-package-cache.ts";
 import { ed25519PackageVerifier } from "../../integrations/extensions/package-signature.ts";
-import { inspectionHost, packageSource, pluginManifest } from "./package-fixtures.ts";
+import { createPackageExecutionAdmission } from "./package-execution-admission.ts";
+import {
+  declaredAuthority,
+  inspectionHost,
+  packageSource,
+  pluginManifest,
+} from "./package-fixtures.ts";
 import { createPackageLifecycle } from "./package-lifecycle.ts";
 import { inspectProvenanceTrust } from "./package-provenance.ts";
 import {
@@ -28,6 +34,7 @@ import {
   installedTrustObservation,
   projectInstalledTrust,
 } from "./package-standing.ts";
+import { preparePackage } from "./prepare-package.ts";
 
 afterEach(removeTemporaryRoots);
 const signal = new AbortController().signal;
@@ -54,6 +61,7 @@ async function setup() {
     (version) => standing.summarize(version),
   );
   return {
+    root,
     store,
     owners,
     packages,
@@ -416,6 +424,92 @@ test("a cancelled hold and an uncertain write change nothing the caller can mist
     expect(
       await uncertain.enforce({ ...base, confirmation: preview.confirmation }, signal),
     ).toMatchObject({ status: "failed", code: "uncertain" });
+  } finally {
+    await context.store.close();
+  }
+});
+
+test("admission follows the standing owner: a revoked dependency or quarantined package admits no new work", async () => {
+  const context = await setup();
+  try {
+    const text = "Review $1\n";
+    const dependent = packageSource(
+      pluginManifest(
+        {
+          version: 1,
+          dependencies: [{ id: "fixture", range: "^1.0.0" }],
+          contributions: [
+            {
+              kind: "prompt",
+              namespace: "fixture",
+              id: "review",
+              path: "review.md",
+              description: "Review one file",
+              authority: declaredAuthority,
+            },
+          ],
+          files: [{ path: "review.md", digest: bytesDigest(text) }],
+        },
+        { name: "dependent" },
+      ),
+      { "review.md": text },
+    );
+    await lifecycleApply(context, "install", request("fixture", 0), packageSource());
+    approve(context, version(context, "fixture"));
+    await lifecycleApply(context, "install", request("dependent", 0), dependent);
+    approve(context, version(context, "dependent"));
+    const prepared = await preparePackage(dependent, inspectionHost);
+    if (!prepared.ok) throw new Error(prepared.code);
+    const contribution = prepared.package.contributions[0]?.identityDigest;
+    if (contribution === undefined) throw new Error("contribution");
+    // The same projection the host's launch authority uses for `trusted`.
+    const admit = createPackageExecutionAdmission({
+      packages: context.packages,
+      bytes: createHostPackageCache(join(context.root, "packages")),
+      host: inspectionHost,
+      declarationKind: "prompt",
+      async authority(installed) {
+        const current = installed.current;
+        const trust =
+          current === null ? null : projectInstalledTrust(context.owners, current, actor, NOW);
+        return {
+          trusted: trust?.eligible === true,
+          enabled: true,
+          strict: true,
+          catalogGeneration: 1,
+          inputs: canonicalDigest(trust?.state ?? null),
+        };
+      },
+    });
+    const installed = context.packages.current("dependent");
+    if (!installed.ok) throw new Error(installed.error.code);
+    const admission = {
+      packageId: "dependent",
+      expectedRevision: installed.value.revision,
+      contribution,
+      requiredControls: [],
+    } as const;
+    const admitted = await admit(admission, signal);
+    expect(admitted.generation).toMatch(/^sha256:/u);
+
+    await hold(context, "revoke", "fixture");
+    // A running attempt re-captures its generation at each boundary; a refusal here stops it.
+    await expect(admit(admission, signal)).rejects.toMatchObject({
+      code: "package-trust-required",
+      packageId: "fixture",
+    });
+    expect(context.standing.standing("dependent")).toMatchObject({
+      ok: true,
+      value: { state: "dependency-blocked" },
+    });
+
+    approve(context, version(context, "fixture"));
+    expect((await admit(admission, signal)).generation).toMatch(/^sha256:/u);
+    await hold(context, "quarantine", "dependent", { reason: "policy" });
+    await expect(admit(admission, signal)).rejects.toMatchObject({
+      code: "package-trust-required",
+      packageId: "dependent",
+    });
   } finally {
     await context.store.close();
   }

@@ -358,8 +358,7 @@ describe.if(built)("the standalone executable", () => {
   }
   test("revocation, rollback and quarantine of installed packages cross the compiled command boundary", async () => {
     await packageStandingCliJourney([EXECUTABLE], await temporaryRoot());
-  }, // About thirty cold compiled-binary starts, 0.2 s each locally and several times slower on
-  // hosted runners.
+  }, // hosted runners. // About thirty cold compiled-binary starts, 0.2 s each locally and several times slower on
   90_000);
   test("named routes save and bind real model requests through compiled composition", async () => {
     const binary = join(bootstrapDirectory, "named-route-controls");
