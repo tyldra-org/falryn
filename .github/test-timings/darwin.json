@@ -747,7 +747,6 @@
     "tools/governance/pull-request-workflow.test.ts": 2,
     "tools/governance/roadmap-governance.test.ts": 47,
     "tools/quality/ci-profile.test.ts": 4,
-    "tools/quality/dependency-pin-sync.test.ts": 8,
     "tools/quality/repository-integrity.test.ts": 4,
     "tools/quality/test-shards.test.ts": 295,
     "tools/quality/test-timings.test.ts": 2
