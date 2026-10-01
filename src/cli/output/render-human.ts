@@ -34,6 +34,7 @@ import { modelSettingsLines } from "../../application/providers/model-settings-f
  * what a result says drift, and then disagree in front of a user.
  */
 
+import { formatCommandReference } from "../../domain/commands/index.ts";
 import { assertNever, type FalrynError, recoveryForEffect } from "../../domain/foundation/index.ts";
 import type {
   EffectCertainty,
@@ -442,6 +443,14 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
       return renderDataGc(session, result.payload);
     case "doctor":
       return renderDoctor(session, result.payload);
+    case "commands":
+      return {
+        lines:
+          result.payload === null
+            ? ["The command reference is unavailable."]
+            : formatCommandReference(result.payload).map(safe),
+        diagnostics: [],
+      };
     case "export":
       return renderExport(session, result.payload);
     case "import":
@@ -659,6 +668,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "peer":
       return [];
     case "compact":
+    case "commands":
       return [];
     default:
       return assertNever(result, "unhandled command result");

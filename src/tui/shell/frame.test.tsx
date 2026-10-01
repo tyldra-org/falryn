@@ -461,6 +461,7 @@ describe("overlays", () => {
           title: "Exit Falryn",
           description: "Close the shell.",
           binding: "ctrl+c",
+          usage: null,
           unavailableReason: null,
         },
       ],

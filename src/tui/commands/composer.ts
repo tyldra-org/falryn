@@ -1,4 +1,4 @@
-import { AVAILABLE, type ShellCommand, unavailable } from "./contracts.ts";
+import { AVAILABLE, SHELL_DEFAULTS, type ShellCommand, unavailable } from "./contracts.ts";
 
 function composerWorkAvailability(
   state: Parameters<ShellCommand["availability"]>[0],
@@ -20,6 +20,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: "return",
     keywords: ["send", "run", "ask", "follow-up"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
@@ -30,6 +33,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["steer", "correct", "mid-turn"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) => composerWorkAvailability(state, "no turn is in flight to steer"),
   },
   {
@@ -39,6 +45,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["follow-up", "queue", "mid-turn"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       composerWorkAvailability(state, "no turn is in flight to queue against"),
   },
@@ -49,6 +58,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: "shift+return",
     keywords: ["newline", "multiline"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
@@ -59,6 +71,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["history", "previous", "recall"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
@@ -69,6 +84,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["history", "next"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
@@ -81,6 +99,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: "tab",
     keywords: ["complete", "suggest", "mention", "skill", "slash", "command"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasComposer ? AVAILABLE : unavailable("the composer is not focused"),
   },
@@ -92,6 +113,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "suggestions",
     defaultBinding: "tab",
     keywords: ["suggestion", "mention", "pick", "use"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasSuggestions ? AVAILABLE : unavailable("no suggestion list is open"),
   },
@@ -102,6 +126,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "suggestions",
     defaultBinding: "down",
     keywords: ["suggestion", "next"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasSuggestions ? AVAILABLE : unavailable("no suggestion list is open"),
   },
@@ -112,6 +139,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "suggestions",
     defaultBinding: "up",
     keywords: ["suggestion", "previous"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasSuggestions ? AVAILABLE : unavailable("no suggestion list is open"),
   },
@@ -122,6 +152,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "suggestions",
     defaultBinding: "escape",
     keywords: ["suggestion", "close", "dismiss"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasSuggestions ? AVAILABLE : unavailable("no suggestion list is open"),
   },
@@ -132,6 +165,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["include", "paste", "attach"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasHeldPaste ? AVAILABLE : unavailable("there is no held-out paste to include"),
   },
@@ -142,6 +178,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["exclude", "paste", "discard"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasHeldPaste ? AVAILABLE : unavailable("there is no held-out paste to discard"),
   },
@@ -152,6 +191,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["attachment", "remove", "detach"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasAttachments ? AVAILABLE : unavailable("there is no attachment to remove"),
   },
@@ -162,6 +204,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["attachment", "reorder"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasAttachments ? AVAILABLE : unavailable("there is no attachment to reorder"),
   },
@@ -172,6 +217,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["attachment", "reorder"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasAttachments ? AVAILABLE : unavailable("there is no attachment to reorder"),
   },
@@ -182,6 +230,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["enhance", "improve", "rewrite", "clarify"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: () => AVAILABLE,
   },
   {
@@ -191,6 +242,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["accept", "apply", "proposal"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasReadyEnhancement
         ? AVAILABLE
@@ -203,6 +257,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "composer",
     defaultBinding: null,
     keywords: ["reject", "discard", "proposal"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasEnhancement || state.hasEnhancementFeedback
         ? AVAILABLE
@@ -215,6 +272,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "confirmation",
     defaultBinding: null,
     keywords: ["yes", "confirm", "ok"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) => {
       if (!state.hasConfirmation) {
         return unavailable("nothing is waiting for confirmation");
@@ -235,6 +295,9 @@ export const COMPOSER_COMMANDS: readonly ShellCommand[] = [
     context: "confirmation",
     defaultBinding: null,
     keywords: ["no", "cancel", "refuse"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasConfirmation ? AVAILABLE : unavailable("nothing is waiting for confirmation"),
   },

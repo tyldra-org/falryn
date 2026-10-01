@@ -30,6 +30,7 @@ import { mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { EXIT_CODES } from "../../cli/index.ts";
+import { SHELL_COMMANDS } from "../commands/commands.ts";
 import { emulateScreen, rowsCarryingMarksFromMultipleGroups } from "./emulated-screen-fixtures.ts";
 
 /** Three levels up: this file is `src/tui/`, and the artifact is `dist/` beside `src/`. */
@@ -707,11 +708,12 @@ describe.if(runnable)("the compiled shell on a real terminal", () => {
       expect(run.exitCode).toBe(EXIT_CODES.COMPLETED);
       expect(opened).toContain("Help");
       expect(opened).toContain("Press Ctrl+C twice");
-      // End reaches the task-intelligence block. OpenTUI may repaint only
-      // changed cells, so assert the resulting terminal rather than a byte chunk.
+      // End reaches the last registry entry. OpenTUI may repaint only changed
+      // cells, so assert the resulting terminal rather than a byte chunk.
       const screen = await emulateScreen(scrolled, { columns: COLUMNS, rows: ROWS });
-      expect(screen.rows.join("\n")).toContain("Commit plan");
-      expect(screen.rows.join("\n")).toContain("Validation advice");
+      const last = SHELL_COMMANDS.at(-1)?.title ?? "";
+      expect(last).not.toBe("");
+      expect(screen.rows.join("\n")).toContain(last);
       // And closing gives the primary view back. Asserted on what the *step*
       // drew, because the transcript keeps every byte the overlay ever wrote.
       //

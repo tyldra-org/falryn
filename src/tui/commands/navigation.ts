@@ -1,4 +1,4 @@
-import { AVAILABLE, type ShellCommand, unavailable } from "./contracts.ts";
+import { AVAILABLE, SHELL_DEFAULTS, type ShellCommand, unavailable } from "./contracts.ts";
 
 /** Session, model, context, workspace, and task-intelligence commands. */
 export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
@@ -9,6 +9,10 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["session", "switch", "resume"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
+    slash: [{ form: "/session" }],
     availability: () => AVAILABLE,
   },
   {
@@ -18,6 +22,10 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["session", "new", "create"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "mutation",
+    slash: [{ form: "/new" }, { form: "/session new" }],
     availability: (state) => {
       if (!state.hasSessionCreation) {
         return unavailable("no durable session factory yet");
@@ -38,6 +46,9 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["model", "provider", "route"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: () => AVAILABLE,
   },
   {
@@ -47,6 +58,26 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["mode", "profile", "ask", "plan", "debug", "agent"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "mutation",
+    slash: [
+      { form: "/mode" },
+      { form: "/ask", fixedArgument: "ask" },
+      { form: "/plan", fixedArgument: "plan" },
+      { form: "/debug", fixedArgument: "debug" },
+      { form: "/agent", fixedArgument: "agent" },
+    ],
+    argument: {
+      kind: "options",
+      hint: "execution mode",
+      options: [
+        { value: "ask", operand: null, timing: "safe-point" },
+        { value: "plan", operand: null, timing: "safe-point" },
+        { value: "debug", operand: null, timing: "safe-point" },
+        { value: "agent", operand: null, timing: "safe-point" },
+      ],
+    },
     availability: () => AVAILABLE,
   },
   {
@@ -56,6 +87,10 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["context", "budget", "tokens"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
+    slash: [{ form: "/context" }, { form: "/savings" }],
     availability: () => AVAILABLE,
   },
   {
@@ -65,6 +100,10 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["resource", "memory", "usage"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
+    slash: [{ form: "/resources" }],
     availability: () => AVAILABLE,
   },
   {
@@ -74,6 +113,11 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["workspace", "add", "root", "directory"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "mutation",
+    slash: [{ form: "/workspace add" }, { form: "/add-dir" }],
+    argument: { kind: "text", hint: "path", maxBytes: 4096, required: false },
     availability: (state) =>
       state.hasWorkspaceSet ? AVAILABLE : unavailable("no workspace set yet"),
   },
@@ -84,6 +128,9 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["workspace", "remove", "root"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "mutation",
     availability: (state) => {
       if (state.hasRemovableWorkspaceRoot) {
         return AVAILABLE;
@@ -100,6 +147,11 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["workspace", "save", "layout"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "mutation",
+    slash: [{ form: "/workspace save" }, { form: "/save-workspace" }],
+    argument: { kind: "text", hint: "layout name", maxBytes: 256, required: false },
     availability: (state) =>
       state.hasWorkspaceSet ? AVAILABLE : unavailable("no workspace set yet"),
   },
@@ -110,6 +162,17 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["workspace", "load", "layout"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "mutation",
+    slash: [{ form: "/workspace load" }, { form: "/load-workspace" }],
+    argument: {
+      kind: "text",
+      hint: "layout name",
+      maxBytes: 256,
+      required: false,
+      timing: "safe-point",
+    },
     availability: (state) =>
       state.hasWorkspaceSet ? AVAILABLE : unavailable("no workspace set yet"),
   },
@@ -120,6 +183,10 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["workspace", "show", "roots"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
+    slash: [{ form: "/workspace show" }],
     availability: (state) =>
       state.hasWorkspaceSet ? AVAILABLE : unavailable("no workspace set yet"),
   },
@@ -130,6 +197,10 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["session", "resume", "continue", "cursor"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
+    slash: [{ form: "/resume" }, { form: "/session resume" }],
     availability: (state) =>
       state.hasSessionNavigation ? AVAILABLE : unavailable("no session store yet"),
   },
@@ -140,6 +211,10 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["session", "fork", "branch", "copy"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
+    slash: [{ form: "/fork" }, { form: "/session fork" }],
     availability: (state) =>
       state.hasSessionNavigation ? AVAILABLE : unavailable("no session store yet"),
   },
@@ -150,6 +225,10 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["session", "rewind", "turn", "history"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
+    slash: [{ form: "/rewind" }, { form: "/session rewind" }],
     availability: (state) =>
       state.hasSessionNavigation ? AVAILABLE : unavailable("no session store yet"),
   },
@@ -160,6 +239,10 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["session", "replay", "cursor", "effect-free"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
+    slash: [{ form: "/replay" }, { form: "/session replay" }],
     availability: (state) =>
       state.hasSessionNavigation ? AVAILABLE : unavailable("no session store yet"),
   },
@@ -170,6 +253,9 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["task", "decompose", "goals", "outcome"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
     availability: () => AVAILABLE,
   },
   {
@@ -179,6 +265,9 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["task", "validate", "criteria", "advice"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
     availability: () => AVAILABLE,
   },
   {
@@ -188,6 +277,9 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["task", "progress", "next", "actions"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
     availability: () => AVAILABLE,
   },
   {
@@ -197,6 +289,9 @@ export const NAVIGATION_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: null,
     keywords: ["task", "commit", "plan", "git"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
     availability: () => AVAILABLE,
   },
 ];

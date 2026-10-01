@@ -22,12 +22,19 @@ export function useShellControls({
   briefControls,
   outputControls,
   submission,
+  admitChange,
 }: {
   readonly dispatch: Dispatch<ShellAction>;
   readonly modelSelection: ProductModelSelectionControls | null;
   readonly briefControls: ProductBriefControls | null;
   readonly outputControls: ProductOutputControls | null;
   readonly submission: ShellRuntimeOptions["submission"];
+  /**
+   * Whether a picker may change the state behind this command now (#790). A picker
+   * applies the same change as the command's argument form, so it obeys the same
+   * timing: refused, with a notice, while a turn is running.
+   */
+  readonly admitChange: (commandId: string) => boolean;
 }): Pick<ShellRuntime, "selectControl" | "selectCompression" | "selectProfile"> {
   const selectControl = useCallback(
     (field: "session" | "model", id: string): void => {
@@ -40,6 +47,7 @@ export function useShellControls({
         dispatch({ kind: "notice", message: "Model selection is not attached." });
         return;
       }
+      if (!admitChange("model.select")) return;
       const parsed = parseProviderModelIdentityKey(id);
       if (!parsed.ok) {
         dispatch({ kind: "close-overlay" });
@@ -69,21 +77,23 @@ export function useShellControls({
         dispatch({ kind: "notice", message: `${selected.message} (${selected.code})` });
       });
     },
-    [modelSelection, dispatch],
+    [modelSelection, dispatch, admitChange],
   );
 
   const selectCompression = useCallback(
     (action: CompressionControlAction): void => {
+      if (!admitChange(compressionCommand(action))) return;
       dispatch({
         kind: "notice",
         message: applyCompressionControl(briefControls, outputControls, action),
       });
     },
-    [briefControls, outputControls, dispatch],
+    [briefControls, outputControls, dispatch, admitChange],
   );
 
   const selectProfile = useCallback(
     (id: string): void => {
+      if (!admitChange("mode.select")) return;
       const executionProfile =
         submission !== undefined && submission !== null && "executionProfile" in submission
           ? (submission as { executionProfile: ProductExecutionProfileControls }).executionProfile
@@ -111,8 +121,16 @@ export function useShellControls({
         });
       });
     },
-    [submission, dispatch],
+    [submission, dispatch, admitChange],
   );
 
   return { selectControl, selectCompression, selectProfile };
+}
+
+/** The command whose state a compression sheet action changes. */
+function compressionCommand(action: CompressionControlAction): string {
+  if (action.startsWith("brief.")) return "brief.set";
+  if (action === "hush.toggle") return "hush.set";
+  if (action === "loom.toggle") return "loom.set";
+  return "compression.show";
 }

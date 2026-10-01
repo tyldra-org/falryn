@@ -1,4 +1,5 @@
-import { AVAILABLE, type ShellCommand, unavailable } from "./contracts.ts";
+import { planned } from "../../domain/commands/index.ts";
+import { AVAILABLE, SHELL_DEFAULTS, type ShellCommand, unavailable } from "./contracts.ts";
 
 /** Transcript, artifact viewer, and Git dashboard commands. */
 export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
@@ -9,7 +10,14 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: "ctrl+f",
     keywords: ["find", "filter"],
-    availability: () => unavailable("there is no transcript search yet"),
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
+    slash: [{ form: "/search" }],
+    argument: { kind: "text", hint: "query", maxBytes: 1024, required: false },
+    // Bound and listed now so its key and alias exist; it runs once #793 delivers it.
+    status: planned("#793", "transcript search is not built yet"),
+    availability: () => unavailable("transcript search is not built yet (#793)"),
   },
   {
     id: "transcript.expand",
@@ -18,6 +26,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: "return",
     keywords: ["inspect", "open", "detail", "collapse"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
   },
@@ -28,6 +39,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: null,
     keywords: ["include", "attach", "pick", "draft", "chip"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
   },
@@ -38,6 +52,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: null,
     keywords: ["copy", "clipboard", "pick", "body"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
   },
@@ -48,6 +65,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: null,
     keywords: ["copy", "clipboard", "path", "command", "identity"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
   },
@@ -58,6 +78,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: null,
     keywords: ["inspect", "detail", "tool", "process", "reasoning", "error"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
     availability: (state) =>
       state.hasInspectableSelection
         ? AVAILABLE
@@ -70,6 +93,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: "up",
     keywords: ["previous", "move", "entry"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
   },
@@ -80,6 +106,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: "down",
     keywords: ["next", "move", "entry"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
   },
@@ -90,6 +119,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: "end",
     keywords: ["latest", "bottom", "follow", "unseen"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasTranscript ? AVAILABLE : unavailable("there is no transcript yet"),
   },
@@ -100,6 +132,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: null,
     keywords: ["artifact", "open", "export"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
     availability: (state) =>
       state.hasOpenableArtifact
         ? AVAILABLE
@@ -112,6 +147,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "overlay",
     defaultBinding: "v",
     keywords: ["diff", "split", "unified", "layout"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasDiffArtifactOverlay ? AVAILABLE : unavailable("no diff viewer is open"),
   },
@@ -122,6 +160,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "overlay",
     defaultBinding: "]",
     keywords: ["diff", "hunk", "next"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasDiffArtifactOverlay ? AVAILABLE : unavailable("no diff viewer is open"),
   },
@@ -132,6 +173,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "overlay",
     defaultBinding: "[",
     keywords: ["diff", "hunk", "previous"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasDiffArtifactOverlay ? AVAILABLE : unavailable("no diff viewer is open"),
   },
@@ -142,6 +186,10 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "global",
     defaultBinding: "ctrl+g",
     keywords: ["git", "changes", "diff", "worktree", "checkpoint", "status"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
+    slash: [{ form: "/changes" }],
     availability: () => AVAILABLE,
   },
   {
@@ -151,6 +199,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "overlay",
     defaultBinding: "t",
     keywords: ["git", "tab", "worktree", "checkpoint"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasChangesOverlay ? AVAILABLE : unavailable("no Git dashboard is open"),
   },
@@ -161,6 +212,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "overlay",
     defaultBinding: "shift+t",
     keywords: ["git", "tab"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasChangesOverlay ? AVAILABLE : unavailable("no Git dashboard is open"),
   },
@@ -171,6 +225,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "overlay",
     defaultBinding: "j",
     keywords: ["git", "next"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasChangesOverlay ? AVAILABLE : unavailable("no Git dashboard is open"),
   },
@@ -181,6 +238,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "overlay",
     defaultBinding: "k",
     keywords: ["git", "previous"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "interactive",
     availability: (state) =>
       state.hasChangesOverlay ? AVAILABLE : unavailable("no Git dashboard is open"),
   },
@@ -191,6 +251,10 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "overlay",
     defaultBinding: "c",
     keywords: ["git", "checkpoint", "save"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "mutation",
+    confirmation: "focused",
     availability: (state) =>
       state.hasChangesOverlay ? AVAILABLE : unavailable("no Git dashboard is open"),
   },
@@ -201,6 +265,10 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "overlay",
     defaultBinding: "r",
     keywords: ["git", "checkpoint", "restore"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "mutation",
+    confirmation: "focused",
     availability: (state) =>
       state.hasChangesOverlay && state.changesTab === "checkpoints"
         ? AVAILABLE
@@ -213,6 +281,9 @@ export const TRANSCRIPT_COMMANDS: readonly ShellCommand[] = [
     context: "transcript",
     defaultBinding: null,
     keywords: ["diagnostics", "failure", "why"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
     availability: (state) =>
       state.hasDiagnosticSelection
         ? AVAILABLE

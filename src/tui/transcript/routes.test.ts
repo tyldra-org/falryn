@@ -96,6 +96,7 @@ describe("a route whose command runs", () => {
           title: "Expand",
           description: "",
           binding: null,
+          usage: null,
           unavailableReason: null,
         },
       ],

@@ -27,20 +27,8 @@ export {
   createProductSubmissionPort,
   PRODUCT_SUBMISSION_OWNER,
 } from "./product-submission.ts";
-export type {
-  ComposerSlashAlias,
-  ParsedComposerSlash,
-  SlashArgumentKind,
-} from "./slash.ts";
-export {
-  isBuiltinComposerSlash,
-  PEER_SLASH,
-  parseComposerSlash,
-  SCHEDULE_SLASH,
-  SLASH_ARGUMENT_KINDS,
-  WORKSPACE_SLASH_ALIASES,
-  workspacePanelForSlashCommand,
-} from "./slash.ts";
+export type { ParsedComposerSlash } from "./slash.ts";
+export { isBuiltinComposerSlash, parseComposerSlash } from "./slash.ts";
 export type { ComposerAction, ComposerEnhancement, ComposerPhase, ComposerState } from "./state.ts";
 export {
   COMPOSER_PHASES,

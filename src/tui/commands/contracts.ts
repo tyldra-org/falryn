@@ -1,5 +1,7 @@
 /** Command identities, contexts, and live capability facts. */
 
+import { type CommandSpec, NO_ARGUMENT, planned, SHIPPED } from "../../domain/commands/index.ts";
+
 export const COMMAND_CONTEXTS = [
   "global",
   "overlay",
@@ -100,15 +102,51 @@ export const EMPTY_COMMAND_STATE: CommandState = {
   hasSessionCreation: false,
 };
 
-export type ShellCommand = {
-  readonly id: string;
-  readonly title: string;
-  readonly description: string;
+/**
+ * A registry entry (#790) plus what the shell adds: the key context, the default
+ * binding and live availability. Identity, slash forms, argument, timing, effect
+ * and callers are the registry's; the shell never keeps a second copy of them.
+ */
+export type ShellCommand = CommandSpec & {
   readonly context: CommandContext;
   readonly defaultBinding: string | null;
-  readonly keywords: readonly string[];
   availability(state: CommandState): CommandAvailability;
 };
+
+/**
+ * Fields most shell commands share: no slash form, no argument, no confirmation,
+ * run by the interactive shell only, shipped. Timing and effect are not here:
+ * every entry declares those itself.
+ */
+export const SHELL_DEFAULTS = {
+  slash: [],
+  argument: NO_ARGUMENT,
+  confirmation: "none",
+  behavior: "execute",
+  callers: ["interactive"],
+  status: SHIPPED,
+} as const satisfies Partial<CommandSpec>;
+
+/**
+ * A command whose owning issue has not delivered its action yet. It is listed,
+ * searchable and completable, and every caller is told who owns it; it can never
+ * run, whatever its availability would otherwise say.
+ */
+export function plannedCommand(
+  spec: Omit<ShellCommand, "status" | "availability" | "context" | "defaultBinding"> & {
+    readonly owner: string;
+    readonly reason: string;
+  },
+): ShellCommand {
+  const { owner, reason, ...rest } = spec;
+  return {
+    ...rest,
+    context: "global",
+    defaultBinding: null,
+    status: planned(owner, reason),
+    availability: () => unavailable(`${reason} (${owner})`),
+  };
+}
 
 export type BindingConflict = {
   readonly context: CommandContext;

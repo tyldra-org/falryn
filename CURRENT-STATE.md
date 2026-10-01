@@ -15,6 +15,7 @@ application. The current command surface includes:
 | falryn --help / --version | Print usage or build identity |
 | falryn run [--mode ask\|plan\|debug\|agent] <prompt> | Run one headless coding turn through the selected execution profile and provider |
 | falryn doctor | Run bounded environment and local-storage diagnostics |
+| falryn commands | Print the interactive shell's command reference, generated from its command registry |
 | falryn config show / validate / path / set / reset / migrate | Inspect, validate, update, or remove a scoped configuration override |
 | falryn profile list / show / default / use | Inspect working profiles, save defaults, or request an exact session target |
 | falryn env inspect / reload | Inspect or explicitly prepare this invocation's scoped child environment |
@@ -38,11 +39,70 @@ to standard output and diagnostics go to standard error.
 In the interactive terminal, press Ctrl+C twice within two seconds to leave. The
 first press only shows "Press Ctrl+C again to exit." and changes nothing else. The
 hint clears if no second press follows, and choosing Exit in the command palette
-asks the same way. Leaving this way exits `0` and restores the terminal. The key
+or typing `/quit` asks the same way. When a turn is running, a confirmation is
+waiting, other work is running or the composer holds an unsent draft, the first
+notice also says what leaving ends, for example "Leaving cancels the running
+turn." Leaving this way exits `0` and restores the terminal. The key
 arrives as input in raw mode, so one shared keymap rule covers macOS, Linux and
 Windows; its tests run on all three, and the real-terminal check runs on macOS.
 An external `SIGINT` (such as `kill -INT` or a supervisor) still cancels
 immediately with exit code `130`.
+
+## Shell commands
+
+One versioned registry (#790) holds every interactive shell command: its stable
+action ID, slash forms, argument, key, effect class and its timing during an
+active turn. Slash text, the command palette, key bindings, help and
+`falryn commands` all read that registry, and slash text, the palette and keys
+dispatch through one function in the shell runtime. Dispatched slash text is
+cleared from the composer, after success for `/mode <mode>` and
+`/workspace load <name>`, and only if the draft has not changed since. The palette ranks matches
+deterministically: exact names, then slash-form prefixes, then name prefixes,
+word prefixes, substrings and in-order characters. Help and palette rows show
+each command's slash usage beside its key.
+
+Slash text is parsed by one grammar. Words split on any Unicode whitespace and
+match case-insensitively, longest form first, so `/model routes` wins over
+`/model`. An argument is either one declared option word with an optional
+operand (`/profile use work`) or the rest of the line, which may be quoted
+whole with `"` or `'` (a backslash escapes the quote or itself) or taken
+literally after `--`. Text arguments have a byte limit per command. A wrong
+argument is refused with a notice that lists the accepted values (for `/mode`,
+`ask|plan|debug|agent`), and the draft stays for editing. Unclaimed slash text, such as `/skill:review`, a skill's bare name or
+a prompt-template alias, still goes to its owner after the built-ins.
+
+Commands owned by open issues are listed, searchable and refused with their
+owner: `/status`, `/doctor`, `/permissions` (#739), `/tools` (#192),
+`/provider` and `/login` (#273), `/quota` (#1027), `/rename` (#794), `/goal`
+and `/loop` (#797), `/tasks` and `/agents` (#276), `/extensions`, `/mcp`,
+`/hooks` and `/plugins` (#274), `/checkpoint` and `/undo` (#792), `/settings`
+(#272), `/search` (#793) and `/advisor` (#1216). None of them runs until its
+owner ships the action. A planned name never hides a skill or prompt template
+of the same name: when one exists, the text goes to it.
+
+Every entry declares `immediate`, `safe-point` or `queued` timing, and an
+option can override it: `/profile use` previews immediately while
+`/profile apply` is a safe-point change. During an active turn, immediate
+commands such as `/help` run at once. Safe-point and queued invocations, such
+as `/plan`, `/fast on`, `/env reload` or `/compact apply`, are refused with a
+notice to run them after the turn; the mid-turn queue that would hold them is
+#954. A bare `/mode` opens the execution-mode picker, as the palette does. The
+execution-mode, model and compression pickers obey the same rule: a change
+picked during a turn is refused with the same notice.
+
+The shell commands are interactive. `falryn run` resolves a prompt that starts
+with a built-in command through the same registry and refuses it with stage
+`command-refused` and no provider request. A shipped command or malformed
+command text is refused before any workspace, trust or provider work, with
+error code `command.caller-unsupported` or the parse error
+(`command.argument-invalid` and similar). A planned command is refused with
+`command.command-planned` after the skill and template catalogs are read, unless
+a skill or template of that name takes it.
+
+`falryn commands` prints the reference: registry generation, then each
+command's usage, aliases, key, timing, effect and owner when planned.
+`--format json` returns the same data as schema version 1, and
+`--format quiet` prints one canonical usage per line.
 
 ## Configuration home and local data
 
@@ -1387,9 +1447,10 @@ and the text is submitted as the ordinary turn. The payload `prompt` is the
 expanded text and `promptTemplate` reports the package, template, content
 digest, argument count, substitutions and rendered bytes without the body. A
 failure returns stage `template-failed` with an error such as
-`template.unknown-template` and makes no provider request. Built-in composer
-commands such as `/mode`, `/model`, `/peer` and `/schedule` always win; headless
-runs send that text unchanged. An alias provided by more than one package or
+`template.unknown-template` and makes no provider request. Built-in shell
+commands such as `/mode`, `/model`, `/peer` and `/schedule` always win. A headless
+run refuses them with stage `command-refused` and makes no provider request (see
+Shell commands). An alias provided by more than one package or
 scope requires the qualified form. Unknown alias-shaped names fail, while text
 such as `/usr/bin` is not a template name.
 

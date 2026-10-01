@@ -20,6 +20,7 @@
  */
 
 import type { ActiveKey, KeymapEvent } from "@opentui/keymap";
+import { commandUsage } from "../../domain/commands/index.ts";
 import type { CommandEntry } from "../shell/view-model.ts";
 import {
   type BindingConflict,
@@ -241,6 +242,7 @@ export function commandRows(
       // binding, and showing it would tell the user to press a key that does
       // something different.
       binding: bound,
+      usage: commandUsage(command)[0] ?? null,
       unavailableReason: availability.kind === "unavailable" ? availability.reason : null,
     };
   });

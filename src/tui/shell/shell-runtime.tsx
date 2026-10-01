@@ -1,4 +1,3 @@
-import { SCHEDULE_OPERATIONS } from "../../application/orchestration/schedule-actions.ts";
 import { modelSettingsLines } from "../../application/providers/model-settings-format.ts";
 import { useSessionOperation } from "./session-operation.ts";
 
@@ -37,6 +36,11 @@ import type {
   ProductModelSelectionControls,
 } from "../../application/runtime/index.ts";
 import {
+  admitCommand,
+  resolveCommandArgument,
+  type SlashInvocation,
+} from "../../domain/commands/index.ts";
+import {
   detectMentionTrigger,
   withTokenPlaceholders,
 } from "../../domain/context/composer-mentions.ts";
@@ -49,16 +53,13 @@ import { completeSkillCommand, parseSkillsCommand } from "../../domain/context/s
 import { isExecutionProfileId } from "../../domain/sessions/index.ts";
 import type { TranscriptBlock } from "../../presentation/index.ts";
 import { providerModelIdentityKey } from "../../providers/index.ts";
-import { type CommandState, commandById } from "../commands/commands.ts";
+import { type CommandState, commandById, type ShellCommand } from "../commands/commands.ts";
 import {
   type ComposerAction,
   isBuiltinComposerSlash,
-  PEER_SLASH,
   parseComposerSlash,
-  SCHEDULE_SLASH,
   type SubmissionPort,
   UNAVAILABLE_SUBMISSION,
-  workspacePanelForSlashCommand,
 } from "../composer/index.ts";
 import { requestFromComposer, submitWhileActive } from "../composer/mid-turn.ts";
 import { classifyPaste, looksSecret } from "../composer/paste.ts";
@@ -148,11 +149,56 @@ export const EXIT_CONFIRMATION = Object.freeze({
   notice: "Press Ctrl+C again to exit.",
 });
 
+/**
+ * The arming notice, naming what leaving would end (#790). `/quit` and Ctrl+C run
+ * the same command, so both say what happens to a running turn, a waiting
+ * confirmation, background work and an unsent draft before the second press.
+ */
+export function exitConfirmationNotice(pending: {
+  readonly turn: boolean;
+  readonly confirmation: boolean;
+  readonly background: boolean;
+  readonly draft: boolean;
+}): string {
+  const effects = [
+    pending.turn ? "cancels the running turn" : null,
+    pending.confirmation ? "declines the waiting confirmation" : null,
+    pending.background && !pending.turn ? "stops waiting for running work" : null,
+    pending.draft ? "discards the unsent draft" : null,
+  ].filter((effect): effect is string => effect !== null);
+  if (effects.length === 0) return EXIT_CONFIRMATION.notice;
+  const listed =
+    effects.length === 1 ? effects[0] : `${effects.slice(0, -1).join(", ")} and ${effects.at(-1)}`;
+  return `${EXIT_CONFIRMATION.notice} Leaving ${listed}.`;
+}
+
+/** Invocations whose result arrives later; their slash text is cleared only on success. */
+function settlesAsynchronously(invocation: SlashInvocation<ShellCommand>): boolean {
+  return (
+    invocation.argument !== null &&
+    (invocation.entry.id === "mode.select" || invocation.entry.id === "workspace.load")
+  );
+}
+
+/** Whether a planned command's name belongs to a skill or prompt template the user can run. */
+function yieldsToSkillOrTemplate(
+  parsed: ReturnType<typeof parseComposerSlash>,
+  submission: ShellRuntimeOptions["submission"],
+): boolean {
+  if (parsed.kind !== "command" && parsed.kind !== "invalid") return false;
+  if (parsed.entry?.status.kind !== "planned") return false;
+  const catalog = submission?.skillCandidates?.() ?? null;
+  const name = parsed.form.split(" ")[0]?.slice(1) ?? "";
+  return catalog !== null && (catalog.invocable.has(name) || catalog.templates.has(name));
+}
+
 export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   const peerAction = useRef<AbortController | null>(null);
   const localControlKind = useRef<"peer" | "schedule">("peer");
   /** Pending disarm of a keyboard exit awaiting its second press (#1184); null when unarmed. */
   const exitArmed = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The notice the armed exit showed, so disarming clears only that notice. */
+  const exitNotice = useRef("");
   useEffect(
     () => () => {
       if (exitArmed.current !== null) clearTimeout(exitArmed.current);
@@ -571,6 +617,12 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     [options.midTurn],
   );
 
+  // The dispatcher is declared after the composer's submit, which it also runs; slash
+  // text reaches it through this ref so both use the one path.
+  const invokeRef = useRef<
+    (invocation: SlashInvocation<ShellCommand>, settle?: () => void) => boolean
+  >(() => false);
+
   const submitComposer = useCallback((): void => {
     const current = stateRef.current.composer;
     // While the suggestion list shows rows, Return picks one and never sends (#1206).
@@ -585,349 +637,26 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     }
     // A value being asked for by a prompt template is taken before any other reading.
     if (answerTemplate(current.text)) return;
-    if (SCHEDULE_SLASH.test(current.text.trim())) {
-      const schedule = options.submission?.schedule;
-      if (!schedule) {
-        dispatch({
-          kind: "notice",
-          message: "Schedule controls are unavailable for this session.",
-        });
-        return;
-      }
-      if (encoder.encode(current.text).byteLength > 65_536) {
-        dispatch({ kind: "notice", message: "Schedule action exceeds 64 KiB." });
-        return;
-      }
-      let action: unknown;
-      try {
-        action = JSON.parse(current.text.trim().slice(9).trim() || '{"operation":"list"}');
-      } catch {
-        dispatch({
-          kind: "notice",
-          message:
-            'Use /schedule followed by a bounded JSON action, for example {"operation":"list"}.',
-        });
-        return;
-      }
-      peerAction.current?.abort();
-      const controller = new AbortController();
-      peerAction.current = controller;
-      setPeerPending(true);
-      localControlKind.current = "schedule";
-      void schedule(action, controller.signal)
-        .then(
-          (result) => {
-            if (controller.signal.aborted) return;
-            const text = JSON.stringify(result);
-            dispatch({
-              kind: "notice",
-              message:
-                encoder.encode(text).byteLength <= 262_144
-                  ? text
-                  : "Schedule result exceeds 256 KiB. Request a smaller history page or inspect one receipt.",
-            });
-          },
-          () => {
-            if (!controller.signal.aborted)
-              dispatch({ kind: "notice", message: "Schedule action unavailable." });
-          },
-        )
-        .finally(() => {
-          if (peerAction.current === controller) {
-            peerAction.current = null;
-            setPeerPending(false);
-          }
-        });
-      return;
-    }
-    if (PEER_SLASH.test(current.text.trim())) {
-      const peer = options.submission?.peer;
-      if (!peer) {
-        dispatch({ kind: "notice", message: "Peer messaging is unavailable for this session." });
-        return;
-      }
-      if (encoder.encode(current.text).byteLength > 65_536) {
-        dispatch({ kind: "notice", message: "Peer action exceeds 64 KiB." });
-        return;
-      }
-      let action: unknown;
-      try {
-        action = JSON.parse(current.text.trim().slice(5).trim() || '{"operation":"endpoint"}');
-      } catch {
-        dispatch({
-          kind: "notice",
-          message:
-            'Use /peer followed by a bounded JSON action, for example {"operation":"discover"}.',
-        });
-        return;
-      }
-      peerAction.current?.abort();
-      const controller = new AbortController();
-      peerAction.current = controller;
-      setPeerPending(true);
-      localControlKind.current = "peer";
-      void peer(action, controller.signal)
-        .then(
-          (result) => {
-            if (controller.signal.aborted) return;
-            const text = JSON.stringify(result);
-            dispatch({
-              kind: "notice",
-              message:
-                encoder.encode(text).byteLength <= 262_144
-                  ? text
-                  : "Peer result exceeds 256 KiB. Request a smaller history page or inspect one receipt.",
-            });
-          },
-          () => {
-            if (!controller.signal.aborted)
-              dispatch({ kind: "notice", message: "Peer action unavailable." });
-          },
-        )
-        .finally(() => {
-          if (peerAction.current === controller) {
-            peerAction.current = null;
-            setPeerPending(false);
-          }
-        });
-      return;
-    }
+    // Built-in commands win (#790): one registry parse, then the one dispatcher the
+    // palette and keys use. A refused command keeps the draft so it can be fixed.
     const slash = parseComposerSlash(current.text);
-    if (slash !== null) {
-      if (slash.kind === "unresolved") {
-        dispatch({ kind: "notice", message: slash.reason });
-        return;
-      }
-
-      const command = commandById(slash.commandId);
-      if (command === undefined) {
-        dispatch({ kind: "notice", message: `No command named ${slash.commandId}.` });
-        return;
-      }
-      const availability = command.availability(commandStateRef.current);
-      if (availability.kind === "unavailable") {
-        dispatch({
-          kind: "notice",
-          message: `${command.title} is unavailable: ${availability.reason}.`,
-        });
-        return;
-      }
-
-      if (slash.commandId === "workspace.load" && slash.argument !== null) {
-        const layoutName = slash.argument;
-        const controller = options.workspaceController ?? null;
-        if (controller === null) {
-          dispatch({
-            kind: "notice",
-            message: `${command.title} is unavailable: no workspace set yet.`,
-          });
-          return;
-        }
-        void (async () => {
-          const result = await controller.load(layoutName);
-          if (!result.ok) {
-            dispatch({
-              kind: "notice",
-              message: describeWorkspaceControllerError(result.error),
-            });
-            return;
-          }
-          dispatch({ kind: "workspace-set", workspace: result.value });
-          dispatch({
-            kind: "notice",
-            message: `Loaded layout “${layoutName.trim()}”.`,
-          });
-          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
-        })();
-        return;
-      }
-
-      if (slash.commandId === "profile.inspect") {
-        if (slash.argument === "cancel") cancelProfile();
-        else profile.run(slash.argument);
-        return;
-      }
-      if (slash.commandId === "environment.inspect") {
-        if (slash.argument === "cancel") cancelEnvironment();
-        else environment.run(slash.argument);
-        return;
-      }
-      if (slash.commandId === "session.export") {
-        sessionExport.run(slash.argument);
-        return;
-      }
-      if (slash.commandId === "compact.preview") {
-        compact.run(slash.argument);
-        return;
-      }
-      if (slash.commandId === "brief.set") {
-        const brief = briefControls;
-        if (brief === null) {
-          dispatch({
-            kind: "notice",
-            message: "Brief controls are not attached to this shell.",
-          });
-          return;
-        }
-        const mode = slash.argument?.trim() ?? "";
-        if (mode === "") {
-          dispatch({
-            kind: "notice",
-            message: `Brief is ${brief.getFrontendMode()} (use /brief compact|balanced|detailed|auto|on|off).`,
-          });
-          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
-          return;
-        }
-        const set = brief.setFrontendMode(mode);
-        if (!set.ok) {
-          dispatch({
-            kind: "notice",
-            message: `Unsupported Brief mode “${mode}”. Use compact|balanced|detailed|auto|on|off.`,
-          });
-          return;
-        }
-        dispatch({
-          kind: "notice",
-          message: `Brief set to ${brief.getFrontendMode()}.`,
-        });
-        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
-        return;
-      }
-
-      if (slash.commandId === "hush.set" || slash.commandId === "loom.set") {
-        const output = outputControls;
-        const engine = slash.commandId === "hush.set" ? "Hush" : "Loom";
-        if (output === null) {
-          dispatch({
-            kind: "notice",
-            message: `${engine} controls are not attached to this shell.`,
-          });
-          return;
-        }
-        const state = slash.argument?.trim().toLowerCase() ?? "";
-        const current =
-          slash.commandId === "hush.set" ? output.getHushState() : output.getLoomState();
-        if (state === "") {
-          dispatch({
-            kind: "notice",
-            message: `${engine} is ${current} (use /${engine.toLowerCase()} on|off).`,
-          });
-          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
-          return;
-        }
-        const set =
-          slash.commandId === "hush.set" ? output.setHushState(state) : output.setLoomState(state);
-        if (!set.ok) {
-          dispatch({
-            kind: "notice",
-            message: `Unsupported ${engine} state “${state}”. Use on|off.`,
-          });
-          return;
-        }
-        dispatch({ kind: "notice", message: `${engine} set to ${set.value}.` });
-        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
-        return;
-      }
-
-      if (slash.commandId === "mode.select") {
-        const executionProfile =
-          options.submission !== undefined &&
-          options.submission !== null &&
-          "executionProfile" in options.submission
-            ? (options.submission as { executionProfile: ProductExecutionProfileControls })
-                .executionProfile
-            : null;
-        if (executionProfile === null) {
-          dispatch({
-            kind: "notice",
-            message: "Execution profile controls are not attached to this shell.",
-          });
-          return;
-        }
-        const profileId = slash.argument?.trim().toLowerCase() ?? "";
-        if (profileId === "") {
-          dispatch({
-            kind: "notice",
-            message: `Execution mode is ${executionProfile.get()} (use /mode ask|plan|debug|agent).`,
-          });
-          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
-          return;
-        }
-        if (!isExecutionProfileId(profileId)) {
-          dispatch({
-            kind: "notice",
-            message: `Unsupported execution mode “${profileId}”. Use ask|plan|debug|agent.`,
-          });
-          return;
-        }
-        void (async () => {
-          const selected = await executionProfile.select(profileId);
-          if (!selected.ok) {
-            dispatch({ kind: "notice", message: selected.message });
-            return;
-          }
-          dispatch({
-            kind: "notice",
-            message: selected.changed
-              ? `Execution mode set to ${selected.profileId}; active work keeps its bound policy.`
-              : `Execution mode is already ${selected.profileId}.`,
-          });
-          dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
-        })();
-        return;
-      }
-
-      if (slash.commandId.startsWith("model.processing.")) {
-        absorbDraftEcho.current = true;
-        runProcessing(slash.commandId.slice("model.processing.".length));
-        setTimeout(() => {
-          absorbDraftEcho.current = false;
-        }, 0);
-        return;
-      }
-      if (slash.commandId === "model.settings" || slash.commandId === "model.routes") {
-        dispatch({
-          kind: "open-overlay",
-          route: { kind: "model-settings", routes: slash.commandId === "model.routes" },
-        });
-        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
-        return;
-      }
-      if (slash.commandId === "compression.show") {
-        dispatch({ kind: "open-overlay", route: { kind: "compression" } });
-        dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
-        return;
-      }
-
-      const panel = workspacePanelForSlashCommand(slash.commandId);
-      if (panel === null) {
-        dispatch({ kind: "notice", message: `No workspace panel for ${slash.commandId}.` });
-        return;
-      }
-      const draft = panel === "add" || panel === "save" ? (slash.argument ?? "") : "";
-      dispatch({
-        kind: "open-overlay",
-        route: workspaceOverlayRoute(panel, draft),
-      });
-      dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
+    // A planned command never hides a skill or prompt template of the same name; it
+    // yields to them and is refused only when nothing else answers.
+    const yields = yieldsToSkillOrTemplate(slash, options.submission);
+    if (slash.kind === "invalid" && !yields) {
+      dispatch({ kind: "notice", message: slash.message });
+      return;
+    }
+    if (slash.kind === "command" && !yields) {
+      // Clear the command text once it has done its work, and only if the user has
+      // not typed something else meanwhile. Asynchronous actions settle on success.
+      const settle = (): void => {
+        if (stateRef.current.composer.text === current.text) replaceDraft("");
+      };
+      if (invokeRef.current(slash, settle) && !settlesAsynchronously(slash)) settle();
       return;
     }
 
-    // `/skills` lists the skill catalog; it never reads a skill body or sends anything.
-    const skillsPage = parseSkillsCommand(current.text);
-    if (skillsPage !== null) {
-      const listSkills = options.submission?.listSkills;
-      dispatch({ kind: "composer", action: { kind: "draft", text: "" } });
-      if (!listSkills) {
-        dispatch({ kind: "notice", message: "Skills are unavailable in this session." });
-        return;
-      }
-      void listSkills(skillsPage, new AbortController().signal).then(
-        (lines) => dispatch({ kind: "notice", message: lines.join("\n") }),
-        () => dispatch({ kind: "notice", message: "The skill catalog is unavailable." }),
-      );
-      return;
-    }
     // A skill command is sent as a turn with the skill loaded; a name that is both a
     // skill and a template must be qualified, and the draft stays for editing.
     const skill = options.submission?.skillCommand?.(current.text) ?? null;
@@ -976,29 +705,260 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     })();
   }, [
     fileProbe,
-    environment.run,
-    cancelEnvironment,
-    sessionExport.run,
-    compact.run,
-    profile.run,
-    cancelProfile,
-    briefControls,
     options.midTurn,
-    outputControls,
     options.submission,
-    runProcessing,
-    options.workspaceController,
+    replaceDraft,
     submitMidTurn,
     answerTemplate,
     expandTemplate,
   ]);
 
-  const run = useCallback(
-    (id: string): boolean => {
+  /** One bounded JSON action at a time for `/schedule` and `/peer`; Escape abandons the wait. */
+  const runJsonAction = useCallback(
+    (kind: "schedule" | "peer", argument: string | null): boolean => {
+      const port = kind === "schedule" ? options.submission?.schedule : options.submission?.peer;
+      const label = kind === "schedule" ? "Schedule" : "Peer";
+      if (!port) {
+        dispatch({
+          kind: "notice",
+          message:
+            kind === "schedule"
+              ? "Schedule controls are unavailable for this session."
+              : "Peer messaging is unavailable for this session.",
+        });
+        return false;
+      }
+      const fallback = kind === "schedule" ? '{"operation":"list"}' : '{"operation":"endpoint"}';
+      let action: unknown;
+      try {
+        action = JSON.parse(argument ?? fallback);
+      } catch {
+        dispatch({
+          kind: "notice",
+          message:
+            kind === "schedule"
+              ? 'Use /schedule followed by a bounded JSON action, for example {"operation":"list"}.'
+              : 'Use /peer followed by a bounded JSON action, for example {"operation":"discover"}.',
+        });
+        return false;
+      }
+      peerAction.current?.abort();
+      const controller = new AbortController();
+      peerAction.current = controller;
+      setPeerPending(true);
+      localControlKind.current = kind;
+      dispatch({ kind: "close-overlay" });
+      void port(action, controller.signal)
+        .then(
+          (result) => {
+            if (controller.signal.aborted) return;
+            const text = JSON.stringify(result);
+            dispatch({
+              kind: "notice",
+              message:
+                encoder.encode(text).byteLength <= 262_144
+                  ? text
+                  : `${label} result exceeds 256 KiB. Request a smaller history page or inspect one receipt.`,
+            });
+          },
+          () => {
+            if (!controller.signal.aborted)
+              dispatch({ kind: "notice", message: `${label} action unavailable.` });
+          },
+        )
+        .finally(() => {
+          if (peerAction.current === controller) {
+            peerAction.current = null;
+            setPeerPending(false);
+          }
+        });
+      return true;
+    },
+    [options.submission?.schedule, options.submission?.peer],
+  );
+
+  /** `/skills [filter] [after N]` lists the catalog; it never reads a skill body or sends anything. */
+  const listSkills = useCallback(
+    (argument: string | null): boolean => {
+      const page = parseSkillsCommand(argument === null ? "/skills" : `/skills ${argument}`) ?? {
+        filter: null,
+        offset: 0,
+      };
+      const list = options.submission?.listSkills;
+      dispatch({ kind: "close-overlay" });
+      if (!list) {
+        dispatch({ kind: "notice", message: "Skills are unavailable in this session." });
+        return false;
+      }
+      void list(page, new AbortController().signal).then(
+        (lines) => dispatch({ kind: "notice", message: lines.join("\n") }),
+        () => dispatch({ kind: "notice", message: "The skill catalog is unavailable." }),
+      );
+      return true;
+    },
+    [options.submission?.listSkills],
+  );
+
+  /** Bare reports the current Brief mode; a mode sets it for upcoming turns. */
+  const setBrief = useCallback(
+    (argument: string | null): boolean => {
+      const brief = briefControls;
+      if (brief === null) {
+        dispatch({ kind: "notice", message: "Brief controls are not attached to this shell." });
+        return false;
+      }
+      dispatch({ kind: "close-overlay" });
+      if (argument === null) {
+        dispatch({
+          kind: "notice",
+          message: `Brief is ${brief.getFrontendMode()} (use /brief compact|balanced|detailed|auto|on|off).`,
+        });
+        return true;
+      }
+      const set = brief.setFrontendMode(argument);
+      if (!set.ok) {
+        dispatch({
+          kind: "notice",
+          message: `Unsupported Brief mode “${argument}”. Use compact|balanced|detailed|auto|on|off.`,
+        });
+        return false;
+      }
+      dispatch({ kind: "notice", message: `Brief set to ${brief.getFrontendMode()}.` });
+      return true;
+    },
+    [briefControls],
+  );
+
+  /** Bare reports Hush or Loom; `on|off` sets it for upcoming tool calls. */
+  const setOutputEngine = useCallback(
+    (engine: "Hush" | "Loom", argument: string | null): boolean => {
+      const output = outputControls;
+      if (output === null) {
+        dispatch({
+          kind: "notice",
+          message: `${engine} controls are not attached to this shell.`,
+        });
+        return false;
+      }
+      dispatch({ kind: "close-overlay" });
+      const current = engine === "Hush" ? output.getHushState() : output.getLoomState();
+      if (argument === null) {
+        dispatch({
+          kind: "notice",
+          message: `${engine} is ${current} (use /${engine.toLowerCase()} on|off).`,
+        });
+        return true;
+      }
+      const set = engine === "Hush" ? output.setHushState(argument) : output.setLoomState(argument);
+      if (!set.ok) {
+        dispatch({
+          kind: "notice",
+          message: `Unsupported ${engine} state “${argument}”. Use on|off.`,
+        });
+        return false;
+      }
+      dispatch({ kind: "notice", message: `${engine} set to ${set.value}.` });
+      return true;
+    },
+    [outputControls],
+  );
+
+  /** Bare opens the mode picker; a mode changes it for the next turn. */
+  const selectMode = useCallback(
+    (argument: string | null, settle?: () => void): boolean => {
+      if (argument === null) {
+        // Bare opens the picker from slash text and palette alike; the status line
+        // already names the current mode.
+        dispatch({ kind: "open-overlay", route: { kind: "controls", panel: "profile" } });
+        return true;
+      }
+      const executionProfile =
+        options.submission !== undefined &&
+        options.submission !== null &&
+        "executionProfile" in options.submission
+          ? (options.submission as { executionProfile: ProductExecutionProfileControls })
+              .executionProfile
+          : null;
+      if (executionProfile === null) {
+        dispatch({
+          kind: "notice",
+          message: "Execution profile controls are not attached to this shell.",
+        });
+        return false;
+      }
+      dispatch({ kind: "close-overlay" });
+      if (!isExecutionProfileId(argument)) {
+        dispatch({
+          kind: "notice",
+          message: `Unsupported execution mode “${argument}”. Use ask|plan|debug|agent.`,
+        });
+        return false;
+      }
+      void (async () => {
+        const selected = await executionProfile.select(argument);
+        if (!selected.ok) {
+          dispatch({ kind: "notice", message: selected.message });
+          return;
+        }
+        dispatch({
+          kind: "notice",
+          message: selected.changed
+            ? `Execution mode set to ${selected.profileId}; active work keeps its bound policy.`
+            : `Execution mode is already ${selected.profileId}.`,
+        });
+        settle?.();
+      })();
+      return true;
+    },
+    [options.submission],
+  );
+
+  /** Load a named layout; the panel is the bare form. */
+  const loadWorkspace = useCallback(
+    (layoutName: string, settle?: () => void): boolean => {
+      const controller = options.workspaceController ?? null;
+      if (controller === null) {
+        dispatch({
+          kind: "notice",
+          message: "Load workspace layout is unavailable: no workspace set yet.",
+        });
+        return false;
+      }
+      dispatch({ kind: "close-overlay" });
+      void (async () => {
+        const result = await controller.load(layoutName);
+        if (!result.ok) {
+          dispatch({ kind: "notice", message: describeWorkspaceControllerError(result.error) });
+          return;
+        }
+        dispatch({ kind: "workspace-set", workspace: result.value });
+        dispatch({ kind: "notice", message: `Loaded layout “${layoutName.trim()}”.` });
+        settle?.();
+      })();
+      return true;
+    },
+    [options.workspaceController],
+  );
+
+  /**
+   * The one command dispatcher (#790). Slash text, the palette and keys all arrive
+   * here with a resolved invocation, so admission, availability, timing and the
+   * action itself cannot differ between them.
+   */
+  const runInvocation = useCallback(
+    (invocation: SlashInvocation<ShellCommand>, settle?: () => void): boolean => {
       gate.note("input");
-      const command = commandById(id);
-      if (command === undefined) {
-        dispatch({ kind: "notice", message: `No command named ${id}.` });
+      const command = invocation.entry;
+      const id = command.id;
+      const argument = invocation.argument;
+      const activeTurn = options.midTurn?.view().active ?? null;
+      const admission = admitCommand(command, {
+        caller: "interactive",
+        timing: invocation.timing,
+        turnActive: activeTurn !== null || commandStateRef.current.hasInFlightSubmission,
+      });
+      if (!admission.ok) {
+        dispatch({ kind: "notice", message: admission.message });
         return false;
       }
 
@@ -1014,6 +974,32 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       if (id.startsWith("model.processing."))
         return runProcessing(id.slice("model.processing.".length));
       switch (id) {
+        case "schedule.controls":
+        case "peer.action":
+          return runJsonAction(id === "schedule.controls" ? "schedule" : "peer", argument);
+        case "skills.list":
+          return listSkills(argument);
+        case "brief.set":
+          return setBrief(argument);
+        case "hush.set":
+        case "loom.set":
+          return setOutputEngine(id === "hush.set" ? "Hush" : "Loom", argument);
+        case "mode.select":
+          return selectMode(argument, settle);
+        case "workspace.load":
+          if (argument !== null) return loadWorkspace(argument, settle);
+          break;
+        case "workspace.addRoot":
+        case "workspace.save":
+          // An argument prefills the panel; adding or saving still happens there.
+          if (argument !== null) {
+            dispatch({
+              kind: "open-overlay",
+              route: workspaceOverlayRoute(id === "workspace.addRoot" ? "add" : "save", argument),
+            });
+            return true;
+          }
+          break;
         case "composer.suggestions.reopen": {
           const composer = stateRef.current.composer;
           if (
@@ -1054,22 +1040,13 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           dispatch({ kind: "composer", action: { kind: "suggestion-dismiss" } });
           return true;
         case "environment.inspect":
-          return environment.run(null);
+          return argument === "cancel" ? cancelEnvironment() : environment.run(argument);
         case "profile.inspect":
-          return profile.run(null);
-        case "schedule.controls":
-          dispatch({ kind: "close-overlay" });
-          dispatch({
-            kind: "notice",
-            message: options.submission?.schedule
-              ? `Use /schedule {"operation":"list"}. Available operations: ${SCHEDULE_OPERATIONS.join(", ")}.`
-              : "Schedule controls are unavailable for this session.",
-          });
-          return true;
+          return argument === "cancel" ? cancelProfile() : profile.run(argument);
         case "session.export":
-          return sessionExport.run(null);
+          return sessionExport.run(argument);
         case "compact.preview":
-          return compact.run(null);
+          return compact.run(argument);
         case "compact.apply":
           return compact.run("apply");
         case "confirmation.accept":
@@ -1080,10 +1057,23 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           // One stray Ctrl+C must not end the session: the first press arms and a second
           // within the window leaves (#1184). An external SIGINT is a separate path.
           if (exitArmed.current === null) {
-            dispatch({ kind: "notice", message: EXIT_CONFIRMATION.notice });
+            const state = commandStateRef.current;
+            const draft = stateRef.current.composer.text;
+            const draftResolved = parseComposerSlash(draft);
+            const notice = exitConfirmationNotice({
+              turn: activeTurn !== null || state.hasInFlightSubmission,
+              confirmation: state.hasConfirmation,
+              background: state.hasRunningWork,
+              // The `/quit` being run is not a draft worth warning about.
+              draft:
+                draft.trim() !== "" &&
+                !(draftResolved.kind === "command" && draftResolved.entry.id === "app.exit"),
+            });
+            exitNotice.current = notice;
+            dispatch({ kind: "notice", message: notice });
             exitArmed.current = setTimeout(() => {
               exitArmed.current = null;
-              if (stateRef.current.notice === EXIT_CONFIRMATION.notice)
+              if (stateRef.current.notice === exitNotice.current)
                 dispatch({ kind: "notice", message: "" });
             }, EXIT_CONFIRMATION.windowMs);
             return true;
@@ -1246,7 +1236,6 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       cancelCompact,
       cancelSessionExport,
       options.onExit,
-      options.submission?.schedule,
       options.submission?.skillCandidates,
       options.transcriptKeys,
       options.midTurn,
@@ -1261,7 +1250,34 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       confirm,
       leaveQuestion,
       reopenQuestion,
+      runJsonAction,
+      listSkills,
+      setBrief,
+      setOutputEngine,
+      selectMode,
+      loadWorkspace,
     ],
+  );
+  invokeRef.current = runInvocation;
+
+  /** Palette and key entry: the bare invocation of a command, through the same dispatcher. */
+  const run = useCallback(
+    (id: string): boolean => {
+      const command = commandById(id);
+      if (command === undefined) {
+        gate.note("input");
+        dispatch({ kind: "notice", message: `No command named ${id}.` });
+        return false;
+      }
+      const invocation = resolveCommandArgument(command, null);
+      if (invocation.kind === "invalid") {
+        gate.note("input");
+        dispatch({ kind: "notice", message: invocation.message });
+        return false;
+      }
+      return runInvocation(invocation);
+    },
+    [gate, runInvocation],
   );
 
   const reseat = useCallback((regions: readonly FocusRegion[]): void => {
@@ -1376,12 +1392,33 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     });
   }, [midTurn]);
 
+  // A picker's change is a safe-point invocation of its command (#790).
+  const admitPickerChange = useCallback(
+    (commandId: string): boolean => {
+      const entry = commandById(commandId);
+      if (entry === undefined) return true;
+      const admission = admitCommand(entry, {
+        caller: "interactive",
+        timing: "safe-point",
+        turnActive:
+          (options.midTurn?.view().active ?? null) !== null ||
+          commandStateRef.current.hasInFlightSubmission,
+      });
+      if (admission.ok) return true;
+      dispatch({ kind: "close-overlay" });
+      dispatch({ kind: "notice", message: admission.message });
+      return false;
+    },
+    [options.midTurn],
+  );
+
   const { selectControl, selectCompression, selectProfile } = useShellControls({
     dispatch,
     modelSelection,
     briefControls,
     outputControls,
     submission: options.submission,
+    admitChange: admitPickerChange,
   });
 
   const settleChanges = useCallback((notice: string): void => {

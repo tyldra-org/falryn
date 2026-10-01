@@ -971,6 +971,7 @@ describe("the rendered test harness", () => {
         // The harness's own checks, which are what prove it cleans up.
         "runtime/harness.test.tsx",
         "runtime/runtime-feed.test.tsx",
+        "shell/command-dispatch.test.tsx",
       ].toSorted(),
     );
   });

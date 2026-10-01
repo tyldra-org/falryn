@@ -151,7 +151,7 @@ export function CommandPalette(props: CommandPaletteProps): ReactNode {
 
 function optionOf(command: CommandEntry): SelectOption {
   return {
-    name: `${command.binding ?? "—"}  ${command.title}`,
+    name: `${command.binding ?? "—"}  ${command.title}${command.usage === null ? "" : `  ${command.usage}`}`,
     description:
       command.unavailableReason === null
         ? command.description
@@ -184,7 +184,8 @@ function CommandRow(props: { readonly command: CommandEntry; readonly width: num
         typography={unavailable ? "muted" : "body"}
         maxColumns={Math.max(8, props.width - KEY_COLUMN)}
       >
-        {unavailable ? `${command.title} — ${command.unavailableReason}` : command.title}
+        {/* The reason comes before the usage: a narrow row truncates from the end. */}
+        {`${command.title}${unavailable ? ` — ${command.unavailableReason}` : ""}${command.usage === null ? "" : ` · ${command.usage}`}`}
       </Line>
     </box>
   );

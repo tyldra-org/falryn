@@ -68,6 +68,8 @@ export const COMMAND_IDS = [
   "data.retention",
   "data.gc",
   "doctor",
+  /** The interactive shell's generated command reference (#790). */
+  "commands",
   "export",
   "import",
   "replay",

@@ -229,6 +229,11 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
       )
       .command("doctor", "Run bounded environment and storage diagnostics.", (group) => group)
       .command(
+        "commands",
+        "List the interactive shell's commands, slash forms, keys and timing.",
+        (group) => group,
+      )
+      .command(
         "run [prompt..]",
         "Execute a coding task headlessly with text or structured output.",
         (group) =>
