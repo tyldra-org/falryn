@@ -3,68 +3,49 @@
 # the release it names has been superseded, so an update has to be scheduled
 # rather than noticed.
 #
-# Bun package updates (`package-ecosystem: bun`) watch `package.json` +
-# `bun.lock`. Every direct dependency listed there — present or added later —
-# is eligible; new packages do not need a Dependabot.yml edit. Groups only
-# control how many PRs open, not which packages are eligible.
+# Once a week, one pull request for every action pin (including the composite
+# action under .github/actions) and one each for production and development
+# packages. A release must be three days old before it is proposed, so a
+# compromised or withdrawn release has time to be caught. Security updates
+# ignore both the schedule and the wait.
 #
-# Landing a bump still needs a human when Falryn policy applies:
-# - update `DIRECT_DEPENDENCY_POLICY` in `tools/quality/repository-integrity.ts`
-#
-# Bun itself (`packageManager` / `engines.bun`) is not a package Dependabot
-# updates; bump that pin when adopting a new Bun runtime.
-# Check at 06:00, 14:00, and 22:00 Pacific each day, with no release-age cooldown.
-# Scheduling and PR limits still apply; this does not enable automatic merging.
+# `package.json` owns every package version. A version update needs no other
+# edit; a new license, repository, install hook or dependency group fails
+# `bun run verify:repository` until `tools/quality/repository-integrity.ts`
+# admits it. Dependabot does not bump the Bun runtime (`packageManager` /
+# `engines.bun`); change that pin when adopting a new Bun.
 version: 2
 
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - /
+      - /.github/actions/*
     schedule:
-      interval: cron
-      cronjob: "0 6,14,22 * * *"
-      timezone: America/Los_Angeles
+      interval: weekly
     cooldown:
-      exclude:
-        - "*"
+      default-days: 3
     commit-message:
       prefix: ci
     labels:
       - "type: infrastructure"
-
-  # Also covers `.github/actions/setup-bun`: Dependabot treats a composite
-  # action as its own manifest, so the pin owned there is updated too.
-  - package-ecosystem: github-actions
-    directory: /.github/actions/setup-bun
-    schedule:
-      interval: cron
-      cronjob: "0 6,14,22 * * *"
-      timezone: America/Los_Angeles
-    cooldown:
-      exclude:
-        - "*"
-    commit-message:
-      prefix: ci
-    labels:
-      - "type: infrastructure"
+    groups:
+      actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: bun
     directory: /
     schedule:
-      interval: cron
-      cronjob: "0 6,14,22 * * *"
-      timezone: America/Los_Angeles
+      interval: weekly
     cooldown:
-      exclude:
-        - "*"
+      default-days: 3
     open-pull-requests-limit: 10
     commit-message:
       prefix: build
       include: scope
     labels:
       - "type: infrastructure"
-    # One PR for production pins, one for dev pins. Everything in
-    # package.json is included; the "*" patterns are intentional.
     groups:
       production-dependencies:
         dependency-type: production

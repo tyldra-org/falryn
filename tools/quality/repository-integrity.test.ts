@@ -6,16 +6,19 @@ import {
   type RepositoryIntegrityInput,
 } from "./repository-integrity.ts";
 
+/** Every fixture dependency is declared, locked and installed at this version. */
+const VERSION = "1.2.3";
+
 function validInput(): RepositoryIntegrityInput {
   const dependencies = Object.fromEntries(
     DIRECT_DEPENDENCY_POLICY.filter((policy) => policy.group === "dependencies").map((policy) => [
       policy.name,
-      policy.version,
+      VERSION,
     ]),
   );
   const devDependencies = Object.fromEntries(
     DIRECT_DEPENDENCY_POLICY.filter((policy) => policy.group === "devDependencies").map(
-      (policy) => [policy.name, policy.version],
+      (policy) => [policy.name, VERSION],
     ),
   );
   const installedPackages = new Map(
@@ -23,7 +26,7 @@ function validInput(): RepositoryIntegrityInput {
       policy.name,
       {
         name: policy.name,
-        version: policy.version,
+        version: VERSION,
         license: policy.license,
         repository: { url: `${policy.repository}.git` },
         scripts: { ...policy.installLifecycleHooks },
@@ -33,7 +36,7 @@ function validInput(): RepositoryIntegrityInput {
   const packages = Object.fromEntries(
     DIRECT_DEPENDENCY_POLICY.map((policy) => [
       policy.name,
-      [`${policy.name}@${policy.version}`, "", {}, "sha512-policy-fixture"],
+      [`${policy.name}@${VERSION}`, "", {}, "sha512-policy-fixture"],
     ]),
   );
 
@@ -79,16 +82,31 @@ describe("repository integrity", () => {
       expect.arrayContaining([
         "dependency-missing",
         "dependency-category-mismatch",
-        "dependency-version-mismatch",
+        "dependency-version-inexact",
         "dependency-unapproved",
       ]),
     );
   });
 
+  test("a version bump agreed by the manifest, lockfile and installed package needs no policy edit", () => {
+    const input = validInput();
+    const manifest = input.manifest as { dependencies: Record<string, string> };
+    const lockfile = input.lockfile as { packages: Record<string, unknown[]> };
+    const zod = input.installedPackages.get("zod") as { version: string };
+    manifest.dependencies.zod = "9.0.0";
+    lockfile.packages.zod = ["zod@9.0.0", "", {}, "sha512-bumped"];
+    zod.version = "9.0.0";
+    expect(auditRepository(input)).toEqual([]);
+
+    lockfile.packages.zod = ["zod@8.0.0", "", {}, "sha512-stale"];
+    zod.version = "8.0.0";
+    expect(codes(input)).toEqual(["lock-version-mismatch", "package-metadata-mismatch"]);
+  });
+
   test("refuses a missing lock integrity, mismatched package metadata, and install hook", () => {
     const input = validInput();
     const lockfile = input.lockfile as { packages: Record<string, unknown[]> };
-    lockfile.packages.zod = ["zod@4.4.3", "", {}];
+    lockfile.packages.zod = [`zod@${VERSION}`, "", {}];
     const zod = input.installedPackages.get("zod") as {
       license: string;
       scripts: Record<string, string>;
@@ -109,7 +127,7 @@ describe("repository integrity", () => {
     const input = validInput();
     const manifest = input.manifest as { patchedDependencies: Record<string, string> };
     manifest.patchedDependencies["unreviewed-package@1.0.0"] = "patches/unreviewed.patch";
-    manifest.patchedDependencies["@opentui/react@0.5.6"] = "../outside.patch";
+    manifest.patchedDependencies[`@opentui/react@${VERSION}`] = "../outside.patch";
 
     expect(codes(input)).toEqual(
       expect.arrayContaining(["patch-unapproved", "patch-path-invalid", "patch-missing"]),

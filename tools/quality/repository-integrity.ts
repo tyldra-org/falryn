@@ -3,7 +3,10 @@
  *
  * This is repository maintenance tooling, not a product import. The frozen
  * lockfile owns the resolved transitive graph; this policy makes the smaller
- * direct-admission boundary deliberate and reviewable.
+ * direct-admission boundary deliberate and reviewable. `package.json` owns each
+ * version: it must be exact, and the lockfile and installed package must match it.
+ * A new version needs no edit here; a new license, repository, install hook or
+ * dependency group does.
  */
 
 import { readFile } from "node:fs/promises";
@@ -17,7 +20,6 @@ type InstallLifecycleHook = (typeof INSTALL_LIFECYCLE_HOOKS)[number];
 export type DirectDependencyPolicy = Readonly<{
   name: string;
   group: DependencyGroup;
-  version: string;
   license: string;
   repository: string;
   installLifecycleHooks?: Readonly<Partial<Record<InstallLifecycleHook, string>>>;
@@ -27,21 +29,18 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "@modelcontextprotocol/client",
     group: "dependencies",
-    version: "2.1.0",
     license: "MIT",
     repository: "https://github.com/modelcontextprotocol/typescript-sdk",
   },
   {
     name: "@anthropic-ai/sdk",
     group: "dependencies",
-    version: "0.128.0",
     license: "MIT",
     repository: "github:anthropics/anthropic-sdk-typescript",
   },
   {
     name: "@google/genai",
     group: "dependencies",
-    version: "2.24.0",
     license: "Apache-2.0",
     repository: "https://github.com/googleapis/js-genai",
     installLifecycleHooks: { preinstall: "echo 'preinstall: no-op'" },
@@ -49,126 +48,108 @@ export const DIRECT_DEPENDENCY_POLICY: readonly DirectDependencyPolicy[] = [
   {
     name: "@opentui/core",
     group: "dependencies",
-    version: "0.5.12",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
   {
     name: "@opentui/keymap",
     group: "dependencies",
-    version: "0.5.12",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
   {
     name: "@opentui/react",
     group: "dependencies",
-    version: "0.5.12",
     license: "MIT",
     repository: "https://github.com/anomalyco/opentui",
   },
   {
     name: "jsonc-parser",
     group: "dependencies",
-    version: "3.3.1",
     license: "MIT",
     repository: "https://github.com/microsoft/node-jsonc-parser",
   },
   {
     name: "openai",
     group: "dependencies",
-    version: "7.23.0",
     license: "Apache-2.0",
     repository: "github:openai/openai-node",
   },
   {
     name: "react",
     group: "dependencies",
-    version: "19.3.0",
     license: "MIT",
     repository: "https://github.com/react/react",
   },
   {
     name: "yargs",
     group: "dependencies",
-    version: "18.2.0",
     license: "MIT",
     repository: "https://github.com/yargs/yargs",
   },
   {
     name: "semver",
     group: "dependencies",
-    version: "7.8.5",
     license: "ISC",
     repository: "https://github.com/npm/node-semver",
   },
   {
     name: "yaml",
     group: "dependencies",
-    version: "2.9.1",
     license: "ISC",
     repository: "github:eemeli/yaml",
   },
   {
     name: "@types/semver",
     group: "devDependencies",
-    version: "7.8.0",
     license: "MIT",
     repository: "https://github.com/DefinitelyTyped/DefinitelyTyped",
   },
   {
     name: "zod",
     group: "dependencies",
-    version: "4.6.5",
     license: "MIT",
     repository: "https://github.com/colinhacks/zod",
   },
   {
     name: "@biomejs/biome",
     group: "devDependencies",
-    version: "2.5.14",
     license: "MIT OR Apache-2.0",
     repository: "https://github.com/biomejs/biome",
   },
   {
     name: "@xterm/headless",
     group: "devDependencies",
-    version: "6.0.0",
     license: "MIT",
     repository: "https://github.com/xtermjs/xterm.js",
   },
   {
     name: "@types/bun",
     group: "devDependencies",
-    version: "1.4.2",
     license: "MIT",
     repository: "https://github.com/DefinitelyTyped/DefinitelyTyped",
   },
   {
     name: "@types/react",
     group: "devDependencies",
-    version: "19.3.0",
     license: "MIT",
     repository: "https://github.com/DefinitelyTyped/DefinitelyTyped",
   },
   {
     name: "@types/react-reconciler",
     group: "devDependencies",
-    version: "0.33.0",
     license: "MIT",
     repository: "https://github.com/DefinitelyTyped/DefinitelyTyped",
   },
   {
     name: "@types/yargs",
     group: "devDependencies",
-    version: "17.0.35",
     license: "MIT",
     repository: "https://github.com/DefinitelyTyped/DefinitelyTyped",
   },
   {
     name: "typescript",
     group: "devDependencies",
-    version: "7.0.2",
     license: "Apache-2.0",
     repository: "https://github.com/microsoft/TypeScript",
   },
@@ -186,7 +167,7 @@ export const REPOSITORY_INTEGRITY_CODES = [
   "dependency-missing",
   "dependency-unapproved",
   "dependency-category-mismatch",
-  "dependency-version-mismatch",
+  "dependency-version-inexact",
   "lock-missing",
   "lock-version-mismatch",
   "lock-integrity-missing",
@@ -291,10 +272,18 @@ function manifestGroups(
   ]);
 }
 
-function checkDirectDependencies(manifest: JsonRecord, issues: RepositoryIntegrityIssue[]): void {
+/** An exact version, never a range, tag or path: what Dependabot and a reviewer both see. */
+const EXACT_VERSION = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+
+/** Checks the declared direct dependencies and returns each approved one's declared version. */
+function checkDirectDependencies(
+  manifest: JsonRecord,
+  issues: RepositoryIntegrityIssue[],
+): ReadonlyMap<string, string> {
+  const declared = new Map<string, string>();
   const groups = manifestGroups(manifest, issues);
   if (groups === null) {
-    return;
+    return declared;
   }
 
   const policiesByName = new Map<string, DirectDependencyPolicy>(
@@ -316,8 +305,10 @@ function checkDirectDependencies(manifest: JsonRecord, issues: RepositoryIntegri
       );
       continue;
     }
-    if (declaredVersion !== policy.version) {
-      add(issues, "dependency-version-mismatch", policy.name);
+    if (EXACT_VERSION.test(declaredVersion)) {
+      declared.set(policy.name, declaredVersion);
+    } else {
+      add(issues, "dependency-version-inexact", policy.name);
     }
   }
 
@@ -328,9 +319,14 @@ function checkDirectDependencies(manifest: JsonRecord, issues: RepositoryIntegri
       }
     }
   }
+  return declared;
 }
 
-function checkLockfile(lockfile: unknown, issues: RepositoryIntegrityIssue[]): void {
+function checkLockfile(
+  lockfile: unknown,
+  declared: ReadonlyMap<string, string>,
+  issues: RepositoryIntegrityIssue[],
+): void {
   const packages = asRecord(asRecord(lockfile)?.packages);
   if (packages === null) {
     add(issues, "manifest-invalid", "lockfile packages");
@@ -344,7 +340,8 @@ function checkLockfile(lockfile: unknown, issues: RepositoryIntegrityIssue[]): v
       continue;
     }
 
-    if (entry[0] !== `${policy.name}@${policy.version}`) {
+    const version = declared.get(policy.name);
+    if (version !== undefined && entry[0] !== `${policy.name}@${version}`) {
       add(issues, "lock-version-mismatch", policy.name);
     }
     const integrity = entry.at(-1);
@@ -356,6 +353,7 @@ function checkLockfile(lockfile: unknown, issues: RepositoryIntegrityIssue[]): v
 
 function checkInstalledPackages(
   installedPackages: ReadonlyMap<string, unknown>,
+  declared: ReadonlyMap<string, string>,
   issues: RepositoryIntegrityIssue[],
 ): void {
   for (const policy of DIRECT_DEPENDENCY_POLICY) {
@@ -367,7 +365,8 @@ function checkInstalledPackages(
 
     if (
       stringAt(packageManifest, "name") !== policy.name ||
-      stringAt(packageManifest, "version") !== policy.version ||
+      (declared.has(policy.name) &&
+        stringAt(packageManifest, "version") !== declared.get(policy.name)) ||
       stringAt(packageManifest, "license") !== policy.license ||
       normalizedRepository(packageManifest.repository) !== policy.repository
     ) {
@@ -387,6 +386,7 @@ function checkInstalledPackages(
 
 function checkPatches(
   manifest: JsonRecord,
+  declared: ReadonlyMap<string, string>,
   sourcePaths: ReadonlySet<string>,
   issues: RepositoryIntegrityIssue[],
 ): void {
@@ -402,7 +402,7 @@ function checkPatches(
   }
 
   const policyReferences = new Set<string>(
-    DIRECT_DEPENDENCY_POLICY.map((policy) => `${policy.name}@${policy.version}`),
+    [...declared].map(([name, version]) => `${name}@${version}`),
   );
   for (const [reference, patchPath] of patches) {
     if (!policyReferences.has(reference)) {
@@ -463,10 +463,10 @@ export function auditRepository(
     return issues;
   }
 
-  checkDirectDependencies(manifest, issues);
-  checkLockfile(input.lockfile, issues);
-  checkInstalledPackages(input.installedPackages, issues);
-  checkPatches(manifest, input.sourcePaths, issues);
+  const declared = checkDirectDependencies(manifest, issues);
+  checkLockfile(input.lockfile, declared, issues);
+  checkInstalledPackages(input.installedPackages, declared, issues);
+  checkPatches(manifest, declared, input.sourcePaths, issues);
   checkGeneratedOutput(manifest, input.sourcePaths, input.gitignore, input.trackedPaths, issues);
   return issues;
 }

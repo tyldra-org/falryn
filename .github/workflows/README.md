@@ -6,7 +6,6 @@
 | [`pr-checks.yml`](pr-checks.yml) | Do the PR description and its owning issue meet the contribution contract? | PR updates |
 | [`pr-labels.yml`](pr-labels.yml) | Which area, size and author-trust labels apply? | PR opened or updated, a `/recheck-vouch` comment, and trust-list changes |
 | [`issue-governance.yml`](issue-governance.yml) | Is the public issue contract complete and are declared labels reconciled? | issue opened, edited, reopened, closed or relabeled |
-| [`dependency-pins.yml`](dependency-pins.yml) | Do the reviewed dependency pins match this Dependabot update? | Dependabot `bun` pull requests |
 
 Branch protection on `main` and release branches requires `All CI checks` and the
 CodeQL `Analyze (…)` checks. Adding, renaming or splitting a CI job never needs a
@@ -118,13 +117,12 @@ Organization-only Roadmap fields are checked by `bun run audit:issues` and
 version `package.json` names and the frozen dependency set for every job. It
 restores the download cache everywhere and saves it only from `main`.
 
-Dependabot keeps action SHAs and every direct `package.json` dependency current.
-`dependency-pins.yml` then rewrites the reviewed version pins in
-`tools/quality/repository-integrity.ts` and Biome's schema URL on Dependabot `bun`
-branches, without installing dependencies. A new license, repository or install
-hook still fails the integrity check for human review. Pushing with `GITHUB_TOKEN`
-leaves the follow-up CI run waiting for approval; a Dependabot secret named
-`PIN_SYNC_TOKEN` (contents write on this repository) avoids that.
+Dependabot opens one weekly pull request for every action pin and one each for
+production and development packages, proposing a release only once it is three
+days old; security updates come at once. `package.json` owns every package
+version, so a version update passes `bun run verify:repository` unchanged. A new
+license, repository, install hook or dependency group fails it until
+`tools/quality/repository-integrity.ts` admits that dependency.
 
 CodeQL runs through GitHub default setup, not a workflow file here. Do not add a
 `codeql.yml` while default setup is on.
