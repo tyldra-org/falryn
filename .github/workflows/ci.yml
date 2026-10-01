@@ -66,10 +66,12 @@ jobs:
       - name: Audit installed dependencies for known vulnerabilities
         run: bun audit
 
-  # The source suite, as `bun run test` runs it locally: concurrent shard processes on
-  # one runner, with the known-flake retry. A scoped revision runs `bun run test:changed`
-  # against the pull request's base, exactly as a local `bun run check` does against
-  # `main`.
+  # The source suite through `bun run test`, the same runner and known-flake retry as a
+  # local run. Ubuntu runs four shard processes on one 4-core runner. macOS runs four
+  # shard jobs instead: its runner has three cores, and three processes side by side
+  # took 12 minutes against under 5 for the slowest separate shard. A scoped revision
+  # runs `bun run test:changed` against the pull request's base, exactly as a local
+  # `bun run check` does against `main`.
   test:
     name: Tests (${{ matrix.name }})
     needs: classify
@@ -83,11 +85,21 @@ jobs:
           - name: Ubuntu x64
             os: ubuntu-latest
             shards: 4
-          - name: macOS arm64
+          - name: macOS arm64, 1/4
             os: macos-latest
-            shards: 3
+            shard: 1/4
+          - name: macOS arm64, 2/4
+            os: macos-latest
+            shard: 2/4
+          - name: macOS arm64, 3/4
+            os: macos-latest
+            shard: 3/4
+          - name: macOS arm64, 4/4
+            os: macos-latest
+            shard: 4/4
     env:
       FALRYN_TEST_SHARDS: ${{ matrix.shards }}
+      FALRYN_TEST_SHARD: ${{ matrix.shard }}
 
     steps:
       - name: Check out the reviewed revision
