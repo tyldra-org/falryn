@@ -2,7 +2,12 @@
 import { z } from "zod";
 import type { WorkspaceSet } from "../workspace/index.ts";
 import { canonicalDigest, freezeMetadata } from "./canonical.ts";
-import { catalogEntrySchema, catalogSourceSchema, type ExtensionCatalog } from "./catalog.ts";
+import {
+  CATALOG_TRUST_STATES,
+  catalogEntrySchema,
+  catalogSourceSchema,
+  type ExtensionCatalog,
+} from "./catalog.ts";
 import {
   BEHAVIOR_FAMILIES,
   contributionIdentityV1Schema,
@@ -23,7 +28,7 @@ const historicalEntrySchema = z
     preferred: z.boolean(),
     explicitOnly: z.boolean(),
     compatibility: z.enum(["compatible", "incompatible", "unknown"]),
-    trust: z.enum(["accepted", "required", "revoked", "expired", "unknown"]),
+    trust: z.enum(CATALOG_TRUST_STATES),
     reason: identityText,
   })
   .refine(

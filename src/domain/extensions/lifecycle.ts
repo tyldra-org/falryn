@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { Result } from "../foundation/result.ts";
+import { HOLD_REASONS } from "../security/ecosystem-trust.ts";
 import { dependencyCandidateSchema } from "./dependencies.ts";
 import { digestSchema, identityText, packageIdentityV1Schema } from "./identity.ts";
 import { nativeActivationRequestSchema } from "./native-activation.ts";
@@ -20,6 +21,11 @@ export const PACKAGE_ACTIONS = [
   "recover",
   "enable",
   "health",
+  /** The installed package's standing, hold decisions and recovery choices (#167). */
+  "standing",
+  "quarantine",
+  "release",
+  "revoke",
 ] as const;
 export const packageRequestSchema = z
   .strictObject({
@@ -31,6 +37,10 @@ export const packageRequestSchema = z
     listing: packageListingRequestSchema.optional(),
     versionDigest: digestSchema.optional(),
     retention: z.enum(["retain", "remove"]).default("retain"),
+    /** Removing a quarantined package's retained bytes is an explicit choice, never a side effect. */
+    purgeQuarantined: z.literal(true).optional(),
+    /** Why a package is quarantined or revoked: a category only. */
+    reason: z.enum(HOLD_REASONS).optional(),
     dataCleanup: z
       .strictObject({
         configuration: z.enum(["retain", "remove"]),
@@ -113,6 +123,8 @@ export interface PackageLifecycleStore {
   data?(packageId: string): Result<PackageDataDocument | null, LifecycleError>;
   current(packageId: string): Result<InstalledPackage, LifecycleError>;
   version(packageId: string, digest: string): Result<InstalledVersion | null, LifecycleError>;
+  /** Retained versions, newest first and bounded; the current version is one of them. */
+  versions(packageId: string): Result<readonly InstalledVersion[], LifecycleError>;
   operation(id: string): Result<PackageOperation | null, LifecycleError>;
   /** Persist ownership before the first byte write; duplicate identities cannot overwrite bytes. */
   stage(version: InstalledVersion): Result<number, LifecycleError>;

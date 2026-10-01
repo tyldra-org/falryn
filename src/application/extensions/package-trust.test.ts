@@ -207,3 +207,105 @@ test("a changed source can revoke its prior exact decision; another actor cannot
     trust: { state: "revoked" },
   });
 });
+
+function applyTrust(
+  store: ReturnType<typeof memoryTrustStore>,
+  observation: TrustObservation,
+  request: Parameters<typeof inspectPackageTrust>[3] & object,
+) {
+  const preview = inspectPackageTrust(store, observation, ["sha256:" + "1".repeat(64)], request);
+  if (preview.status !== "preview" || preview.confirmation === null)
+    throw new Error(JSON.stringify(preview));
+  return inspectPackageTrust(store, observation, ["sha256:" + "1".repeat(64)], {
+    ...request,
+    confirmation: preview.confirmation,
+  });
+}
+
+test("quarantine blocks until released, release grants nothing and reapproval is a separate revision", async () => {
+  const { observation } = await trustFixture();
+  const store = memoryTrustStore();
+  expect(applyTrust(store, observation, { action: "approve", expiresAt: 10_000 })).toMatchObject({
+    status: "applied",
+    trust: { eligible: true },
+  });
+  const held = applyTrust(store, observation, {
+    action: "quarantine",
+    expiresAt: null,
+    reason: "unexpected-behavior",
+  });
+  expect(held).toMatchObject({
+    status: "applied",
+    trust: { state: "quarantined", eligible: false, decisionStatus: "quarantined" },
+  });
+  const key = held.status === "failed" ? "" : held.trust.decisionKey;
+  expect(store.get(key)).toMatchObject({
+    value: { action: "quarantine", reason: "unexpected-behavior" },
+  });
+  // A hold cannot be approved over, quarantined twice, or released as if it were not one.
+  expect(
+    inspectPackageTrust(store, observation, [], { action: "approve", expiresAt: 10_000 }),
+  ).toMatchObject({ status: "failed", code: "trust-evidence-denied" });
+  expect(
+    inspectPackageTrust(store, observation, [], { action: "quarantine", expiresAt: null }),
+  ).toMatchObject({ status: "failed", code: "already-quarantined" });
+  const released = applyTrust(store, observation, { action: "release", expiresAt: null });
+  expect(released).toMatchObject({
+    status: "applied",
+    trust: { eligible: false, decisionStatus: "released" },
+  });
+  if (released.status === "failed") throw new Error(released.code);
+  expect(released.trust.state).not.toBe("quarantined");
+  expect(released.trust.state).not.toBe("user-approved");
+  expect(
+    inspectPackageTrust(store, observation, [], { action: "release", expiresAt: null }),
+  ).toMatchObject({ status: "failed", code: "not-quarantined" });
+  expect(applyTrust(store, observation, { action: "approve", expiresAt: 10_000 })).toMatchObject({
+    status: "applied",
+    trust: { state: "user-approved", eligible: true, decision: { revision: 4 } },
+  });
+});
+
+test("a hold needs no prior approval, takes no expiry and says why only by category", async () => {
+  const { observation } = await trustFixture();
+  const store = memoryTrustStore();
+  expect(
+    inspectPackageTrust(store, observation, [], { action: "quarantine", expiresAt: 5_000 }),
+  ).toMatchObject({ status: "failed", code: "invalid-decision-expiry" });
+  expect(
+    inspectPackageTrust(store, observation, [], {
+      action: "approve",
+      expiresAt: 10_000,
+      reason: "policy",
+    }),
+  ).toMatchObject({ status: "failed", code: "malformed" });
+  expect(
+    inspectPackageTrust(store, observation, [], { action: "release", expiresAt: null }),
+  ).toMatchObject({ status: "failed", code: "not-quarantined" });
+  expect(applyTrust(store, observation, { action: "quarantine", expiresAt: null })).toMatchObject({
+    status: "applied",
+    trust: { state: "quarantined" },
+  });
+});
+
+test("revocation outranks a quarantine record and a stale hold confirmation applies nothing", async () => {
+  const { observation } = await trustFixture();
+  const store = memoryTrustStore();
+  applyTrust(store, observation, { action: "approve", expiresAt: 10_000 });
+  const stale = inspectPackageTrust(store, observation, [], {
+    action: "quarantine",
+    expiresAt: null,
+  });
+  if (stale.status !== "preview" || stale.confirmation === null) throw new Error("preview");
+  applyTrust(store, observation, { action: "revoke", expiresAt: null });
+  expect(
+    inspectPackageTrust(store, observation, [], {
+      action: "quarantine",
+      expiresAt: null,
+      confirmation: stale.confirmation,
+    }),
+  ).toMatchObject({ status: "failed", code: "stale-trust-confirmation" });
+  expect(inspectPackageTrust(store, observation, [])).toMatchObject({
+    trust: { state: "revoked", eligible: false },
+  });
+});

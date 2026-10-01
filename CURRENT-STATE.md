@@ -22,7 +22,7 @@ application. The current command surface includes:
 | falryn data backup / inspect / restore / diagnostics / retention / gc / reset / uninstall | Inspect, preserve, repair, retain, collect, or preview/apply confirmed removal of Falryn-owned local data |
 | falryn workspace list / show / save / load | Inspect or persist named workspace sets |
 | falryn model | Inspect and revision-safely edit model policy through the shared settings service |
-| falryn package | Inspect, install, activate, update, disable or remove governed packages and inspect their data/health |
+| falryn package | Inspect, install, activate, update, disable or remove governed packages, inspect their data/health/standing, and quarantine or revoke one |
 | falryn peer | Inspect authorized peers, exchange messages, and read delivery history |
 | falryn extension inspect / trust / notices / scope / catalog | Inspect local declarations, confirm trust or scoped metadata preferences, list or acknowledge package notices, and query the inert catalog |
 | falryn export / import | Preview or write a versioned local export package, or import one after verification |
@@ -1089,7 +1089,7 @@ Invalid portable components leave valid siblings inspectable; malformed core
 or Falryn metadata rejects the package.
 
 `falryn extension trust <path> --input <request.json>` previews an `approve`,
-`revoke`, or evidence `refresh` decision. The JSON request is bounded to 65,536
+`revoke`, `quarantine`, `release`, or evidence `refresh` decision. The JSON request is bounded to 65,536
 UTF-8 bytes and contains `action`, `expiresAt`
 (epoch milliseconds for approval, null for revocation), and optionally the exact
 `confirmation` returned by the preview. Approval expires within 30 days. A
@@ -1128,8 +1128,8 @@ leave prior evidence intact; inspect the failure before retrying. A signed
 withdrawal needs a higher sequence and does not restore an old approval.
 
 `falryn package <action> --input <request.json>` implements local package
-installation transactions and explicit health checks. Actions are `inspect`, `data`, `health`, `install`, `update`,
-`rollback`, `disable`, `uninstall`, `recover`, and `enable`. Every request names
+installation transactions, explicit health checks and package standing. Actions are `inspect`, `data`, `health`, `install`, `update`,
+`rollback`, `disable`, `uninstall`, `recover`, `enable`, `standing`, `quarantine`, `release`, and `revoke`. Every request names
 `packageId`, a UUID `operationId`, and `expectedRevision`. Install/update also
 name `sourcePath` or, exclusively, a marketplace `listing` (see Marketplace package
 acquisition); rollback names a previously returned `versionDigest`.
@@ -1160,6 +1160,65 @@ uncommitted candidates while preserving retained versions. Source directories
 and unrelated files are never removal targets. Inspection reports the current
 digest, revision, retained count and pending cleanup; save version digests from
 receipts for exact rollback. Human, quiet, JSON and JSONL expose the same facts.
+
+### Package standing, quarantine, revocation and recovery
+
+`falryn package standing --input request.json` reports what an installed package
+may do now and what the user can do about it, from the installed record alone, so
+it works with the source directory gone and the network down. The request names
+`packageId` and a UUID `operationId`; `expectedRevision` is required by the request
+shape and ignored. The receipt's `data.standing` carries `state`, one of
+`not-installed`, `eligible`, `unapproved`, `expired`, `changed`, `stale`, `quarantined`,
+`revoked`, `incompatible` or `dependency-blocked`; the `reason` (the same
+`ecosystem-trust-*` value the catalog and gateway report, or
+`dependency-not-eligible`); the current `identityDigest` and `packageVersion`; the
+trust `decision` status and `advisory`; the locked `dependencies` (at most 256) with
+their own states; up to 64 retained `versions` each with its own state; the
+`lastKnownGood` digest; `truncated`; and `recovery` choices.
+
+Standing is derived on every read and stored nowhere. It combines the lifecycle record,
+the shared trust projection of each installed version (local user scope) and the
+installed dependency closure. A locked dependency that is missing, is not the locked
+digest, or is not eligible blocks its dependents. `lastKnownGood` is the newest retained
+non-current version whose own approval is still current. Recovery choices are `inspect`,
+`refresh-evidence`, `approve`, `release`, `rollback` (with the `versionDigest` it
+would restore), `update` and `uninstall`. They are offered and never taken: no version
+is substituted for a revoked or quarantined one, nothing downloads in the background
+and a restored version stays inert until it is enabled through its own checks.
+
+`quarantine`, `release` and `revoke` use the same preview and `confirmation` flow as
+other mutations and write one revision to the existing trust decision store, so the
+catalog, the tool gateway and every launch check see the change at once and the
+decision, its optional `reason` category (`integrity`, `suspected-compromise`,
+`unexpected-behavior`, `policy` or `other`) and its receipt are retained. The package
+lifecycle revision does not change; the request's `expectedRevision` must still match it.
+`quarantine` blocks the exact installed identity until a `release`, which leaves it
+unapproved: approval is a separate revision with its own expiry of at most 30 days, and
+`revoke` needs an existing decision for that identity. An approval cannot be recorded over a quarantine,
+and no override of a revocation or quarantine exists. `falryn extension trust` accepts
+`quarantine` and `release` for a source path as well.
+
+A revocation or quarantine denies new work at every admission path at once. Work already
+running holds an immutable binding and stops at its next protocol boundary, because the
+generation it was admitted under includes the package record, its trust and its dependency
+closure; its process tree is then cleaned up by its owner within that owner's bounds.
+Retained bytes, decisions and receipts are not removed by the transition. The receipt's
+`data.runningWork` states this policy.
+
+Rollback receipts preview `data.rollback.target` with the target version's standing and
+`restoresApproval: false`. Rollback restores bytes only, offline; a revoked or
+quarantined target stays so. It is still refused while an installed dependent locks the
+current digest. Uninstall with `retention: remove` refuses with
+`quarantined-evidence-retained` while a retained version stands quarantined (or its
+standing cannot be read), returning `data.quarantinedEvidence` with the versions, files
+and bytes removing it would delete; `purgeQuarantined: true` is the explicit choice that
+allows it. `falryn extension catalog` entries report `quarantined` and
+`dependency-blocked` as their own trust labels.
+
+Unavailable: fetching advisories, an OpenTUI view, export and replay projections of
+standing, and any `doctor` package section (diagnostics do not open the database).
+Package-contributed MCP servers have no connection path, so MCP clients remain
+configured by the user.
 
 ### Marketplace package acquisition
 

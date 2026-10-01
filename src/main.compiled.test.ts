@@ -26,6 +26,7 @@ import { pluginManifest } from "./application/extensions/package-fixtures.ts";
 import { skillUsageCliJourney } from "./cli/commands/extension-skills-fixtures.ts";
 import { packageCliJourney } from "./cli/commands/package-fixtures.ts";
 import { packageHealthCliJourney } from "./cli/commands/package-health-fixtures.ts";
+import { packageStandingCliJourney } from "./cli/commands/package-standing-fixtures.ts";
 import { peerCliJourney } from "./cli/commands/peer-fixtures.ts";
 import { scheduleCliJourney } from "./cli/commands/schedule-fixtures.ts";
 import { CLI_SCHEMA_FAMILY, EXIT_CODES, FALRYN_VERSION, readCliStream } from "./cli/index.ts";
@@ -355,6 +356,11 @@ describe.if(built)("the standalone executable", () => {
       30_000,
     );
   }
+  test("revocation, rollback and quarantine of installed packages cross the compiled command boundary", async () => {
+    await packageStandingCliJourney([EXECUTABLE], await temporaryRoot());
+  }, // About thirty cold compiled-binary starts, 0.2 s each locally and several times slower on
+  // hosted runners.
+  90_000);
   test("named routes save and bind real model requests through compiled composition", async () => {
     const binary = join(bootstrapDirectory, "named-route-controls");
     const built = Bun.spawnSync(

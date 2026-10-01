@@ -3,6 +3,7 @@ import { canonicalDigest, freezeMetadata } from "../../domain/extensions/canonic
 import { digestSchema } from "../../domain/extensions/identity.ts";
 import {
   evaluateTrust,
+  HOLD_REASONS,
   type TrustDecisionStore,
   type TrustObservation,
   type TrustProjection,
@@ -19,8 +20,9 @@ export const TRUST_POLICY_GENERATION = 1;
 export const MAX_TRUST_APPROVAL_MS = 30 * 24 * 60 * 60 * 1_000;
 export const trustRequestSchema = z
   .strictObject({
-    action: z.enum(["approve", "revoke", "refresh"]),
+    action: z.enum(["approve", "revoke", "quarantine", "release", "refresh"]),
     expiresAt: z.int().nonnegative().nullable(),
+    reason: z.enum(HOLD_REASONS).optional(),
     confirmation: digestSchema.optional(),
     decisionKey: digestSchema.optional(),
     verification: packageVerificationSchema.optional(),
@@ -31,6 +33,10 @@ export const trustRequestSchema = z
         value.expiresAt === null &&
         value.decisionKey === undefined
       : value.verification === undefined,
+  )
+  .refine(
+    (value) =>
+      value.reason === undefined || value.action === "revoke" || value.action === "quarantine",
   );
 export type TrustRequest = z.infer<typeof trustRequestSchema>;
 export type PackageTrustResult =
@@ -120,6 +126,15 @@ export function inspectPackageTrust(
     return { status: "failed", code: "invalid-approval-expiry" };
   if (request.action === "revoke" && request.expiresAt !== null)
     return { status: "failed", code: "invalid-revocation-expiry" };
+  if (
+    (request.action === "quarantine" || request.action === "release") &&
+    request.expiresAt !== null
+  )
+    return { status: "failed", code: "invalid-decision-expiry" };
+  if (request.action === "quarantine" && stored.value?.action === "quarantine")
+    return { status: "failed", code: "already-quarantined" };
+  if (request.action === "release" && stored.value?.action !== "quarantine")
+    return { status: "failed", code: "not-quarantined" };
   if (request.action === "approve" && ["quarantined", "incompatible"].includes(trust.state))
     return { status: "failed", code: "trust-evidence-denied" };
   if (request.action === "approve" && observation.evidence.advisory === "revoked")
@@ -137,6 +152,7 @@ export function inspectPackageTrust(
     policyGeneration: observation.policyGeneration,
     action: request.action,
     expiresAt: request.expiresAt,
+    reason: request.reason ?? null,
     affectedContributions,
   });
   if (request.confirmation === undefined)
@@ -152,6 +168,7 @@ export function inspectPackageTrust(
     scope: observation.scope,
     contributions: [...affectedContributions],
     action: request.action,
+    ...(request.reason === undefined ? {} : { reason: request.reason }),
     decidedAt: observation.now,
     expiresAt: request.expiresAt,
     revision: revision + 1,

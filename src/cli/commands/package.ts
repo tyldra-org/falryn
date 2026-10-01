@@ -47,6 +47,11 @@ import { inspectPackageConfiguration } from "../runtime/package-configuration-in
 import { runPackageDataControl, runPackageDataImport } from "../runtime/package-data.ts";
 import { runPackageHealth } from "../runtime/package-health.ts";
 import {
+  composePackageStanding,
+  type PackageStandingAction,
+  runPackageStanding,
+} from "../runtime/package-standing.ts";
+import {
   loadProductConfiguration,
   productConfigurationLoadRequest,
 } from "../runtime/product-configuration.ts";
@@ -71,10 +76,13 @@ const DEFAULT_PACKAGE_GLOBALS: GlobalOptions = {
   help: false,
   version: false,
 };
+const HOLD_ACTIONS: ReadonlySet<PackageAction> = new Set(["quarantine", "release", "revoke"]);
+const PACKAGE_STANDING_ACTIONS: ReadonlySet<PackageAction> = new Set(["standing", ...HOLD_ACTIONS]);
 const absent: PackageLifecycleStore = {
   data: () => ok(null),
   current: (packageId) => ok({ packageId, revision: 0, current: null }),
   version: () => ok(null),
+  versions: () => ok([]),
   operation: () => ok(null),
   counts: () => ok({ retained: 0, pending: 0, epoch: 0 }),
   stage: () => err({ code: "store-absent" }),
@@ -152,6 +160,8 @@ export async function runPackage(
       : receipt.status === "partial"
         ? "partial"
         : receipt.dataEffect === "completed" ||
+            // A hold changes the trust owner's record, not the lifecycle revision.
+            (HOLD_ACTIONS.has(action) && receipt.status === "completed") ||
             receipt.revision > receipt.priorRevision ||
             (healthResult?.success && healthResult.data.pid !== null)
           ? "completed"
@@ -195,6 +205,8 @@ export async function runPackage(
       request.confirmation !== undefined &&
       action !== "inspect" &&
       action !== "health" &&
+      action !== "standing" &&
+      !PACKAGE_STANDING_ACTIONS.has(action) &&
       action !== "enable"
     ) {
       const roots = await resolved.localData.prepareRoots(["state"], operationSignal);
@@ -215,11 +227,14 @@ export async function runPackage(
     }
     let result: PackageReceipt;
     try {
+      const standing =
+        opened.kind === "absent" ? null : composePackageStanding(resolved, stateRoot, opened.store);
       const lifecycle = createPackageLifecycle(
         opened.kind === "absent" ? absent : createPackageLifecycleRepository(opened.store),
         createHostPackageCache(join(stateRoot, "packages")),
         { falryn: FALRYN_VERSION, bun: Bun.version, os: process.platform, arch: process.arch },
         (document, signal) => validatePackageConfigurationCandidate(resolved, document, signal),
+        standing === null ? undefined : (version) => standing.summarize(version),
       );
       if (
         (action === "enable" && request.nativeActivation) ||
@@ -246,6 +261,17 @@ export async function runPackage(
             ? failure("package-store-absent")
             : await (action === "enable" ? native.activate : native.recover)(
                 request,
+                operationSignal,
+              );
+      } else if (PACKAGE_STANDING_ACTIONS.has(action)) {
+        result =
+          standing === null
+            ? failure("not-installed")
+            : await runPackageStanding(
+                standing,
+                action as PackageStandingAction,
+                request,
+                failure("not-started"),
                 operationSignal,
               );
       } else if (action === "health") {

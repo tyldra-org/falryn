@@ -15,6 +15,7 @@ import type { PackageDataDocument } from "../../domain/extensions/package-data-s
 import type { PackageSnapshot, PackageSource } from "../../domain/extensions/package-source.ts";
 import { planPackageDataCleanup } from "./package-data-cleanup.ts";
 import { packageDeclarations, preparePackageDataPublication } from "./package-data-policy.ts";
+import type { StandingSummary } from "./package-standing.ts";
 import { type InspectionHost, type PreparedPackage, preparePackage } from "./prepare-package.ts";
 
 export type PackageLifecycle = ReturnType<typeof createPackageLifecycle>;
@@ -25,6 +26,11 @@ export function createPackageLifecycle(
   bytes: PackageBytes,
   host: InspectionHost,
   validateConfiguration?: (document: PackageDataDocument, signal: AbortSignal) => Promise<string>,
+  /**
+   * The standing of one exact installed version, from the shared trust evaluator. The lifecycle owner
+   * only reports it and keeps quarantined bytes; it neither decides eligibility nor changes it.
+   */
+  standing?: (version: InstalledVersion) => StandingSummary | null,
 ) {
   function counted(receipt: PackageReceipt): PackageReceipt {
     const counts = store.counts(receipt.packageId);
@@ -95,6 +101,31 @@ export function createPackageLifecycle(
       pending.push(...dependency.falryn.dependencies);
     }
     return [...found.values()];
+  }
+  /**
+   * Retained versions that stand quarantined, with the files and bytes removing them would delete.
+   * A version whose standing cannot be read is treated as quarantined: evidence is kept when unsure.
+   */
+  function quarantinedEvidence(packageId: string) {
+    const listed = store.versions(packageId);
+    if (!listed.ok) throw new ExtensionInputError(listed.error.code);
+    const held = standing
+      ? listed.value.filter(
+          (version) => (standing(version)?.state ?? "quarantined") === "quarantined",
+        )
+      : [];
+    return {
+      versions: held.length,
+      files: held.reduce((sum, version) => sum + version.fileCount, 0),
+      bytes: held.reduce((sum, version) => sum + version.byteLength, 0),
+    };
+  }
+  function withData(receipt: PackageReceipt, extra: Record<string, unknown>): PackageReceipt {
+    const prior =
+      receipt.data !== null && typeof receipt.data === "object" && !Array.isArray(receipt.data)
+        ? receipt.data
+        : {};
+    return { ...receipt, data: { ...prior, ...extra } as PackageReceipt["data"] };
   }
   async function cleanup(
     receipt: PackageReceipt,
@@ -233,6 +264,8 @@ export function createPackageLifecycle(
               : {}),
           });
         }
+        if (["standing", "quarantine", "release", "revoke"].includes(action))
+          return fail("package-standing-owner-required");
         if (action === "enable") return fail("activation-owner-unavailable");
         if (action === "health") return fail("package-health-owner-required");
         if (request.health !== undefined) return fail("unexpected-package-health-request");
@@ -243,6 +276,9 @@ export function createPackageLifecycle(
           return fail("unexpected-version-digest");
         if (action !== "uninstall" && request.retention !== "retain")
           return fail("unexpected-retention-choice");
+        if (request.reason !== undefined) return fail("unexpected-hold-reason");
+        if (action !== "uninstall" && request.purgeQuarantined !== undefined)
+          return fail("unexpected-purge-choice");
         if (action !== "uninstall" && request.dataCleanup !== undefined)
           return fail("unexpected-data-cleanup-choice");
         if (!["install", "update"].includes(action) && source !== undefined)
@@ -332,6 +368,18 @@ export function createPackageLifecycle(
               ),
             };
           candidate = retained.value;
+          const target = standing?.(retained.value) ?? null;
+          // Rolling back restores bytes only. A revoked, quarantined or unapproved target stays so,
+          // and the package stays inert until it is enabled through its own checks.
+          receipt = withData(receipt, {
+            rollback: {
+              target:
+                target === null
+                  ? { state: "unavailable", reason: null, eligible: false }
+                  : { state: target.state, reason: target.reason, eligible: target.eligible },
+              restoresApproval: false,
+            },
+          });
         } else if (action === "uninstall") {
           candidate = null;
           if (dataBefore?.ok && dataBefore.value) {
@@ -342,6 +390,20 @@ export function createPackageLifecycle(
             };
             receipt = { ...receipt, data: cleanup.summary };
           }
+          const evidence =
+            request.retention === "remove"
+              ? quarantinedEvidence(request.packageId)
+              : { versions: 0, files: 0, bytes: 0 };
+          if (evidence.versions > 0) {
+            receipt = withData(receipt, { quarantinedEvidence: evidence });
+            if (request.purgeQuarantined !== true)
+              return counted({
+                ...receipt,
+                status: "failed",
+                code: "quarantined-evidence-retained",
+                recovery: "fresh-preview",
+              });
+          } else if (request.purgeQuarantined !== undefined) return fail("unexpected-purge-choice");
         } else if (action === "disable" && dataBefore?.ok && dataBefore.value) {
           receipt = {
             ...receipt,
@@ -367,6 +429,8 @@ export function createPackageLifecycle(
           candidate: candidate?.identityDigest ?? null,
           counts: counts.value,
           dataRevision: dataBefore?.ok ? (dataBefore.value?.revision ?? 0) : 0,
+          // What the preview told the user about the target's standing or the evidence to be removed.
+          observed: receipt.data ?? null,
           ...(configurationSource === undefined ? {} : { configurationSource }),
         });
         if (request.confirmation === undefined)

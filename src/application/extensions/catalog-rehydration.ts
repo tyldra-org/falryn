@@ -3,6 +3,7 @@ import { z } from "zod";
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import {
   CATALOG_LIMITS,
+  CATALOG_TRUST_STATES,
   type CatalogEntry,
   catalogEntrySchema,
   createExtensionCatalog,
@@ -41,7 +42,7 @@ export const catalogContextSchema = z.strictObject({
 });
 export type CatalogContext = z.infer<typeof catalogContextSchema>;
 export const catalogTrustSchema = z.strictObject({
-  trust: z.enum(["accepted", "required", "revoked", "expired", "unknown"]),
+  trust: z.enum(CATALOG_TRUST_STATES),
   inputs: digestSchema,
 });
 export type CatalogTrust = z.infer<typeof catalogTrustSchema>;
