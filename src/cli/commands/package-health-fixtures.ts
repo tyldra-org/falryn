@@ -8,7 +8,12 @@ import { CONFIGURATION_FILE_NAME } from "../../config/index.ts";
 import { bytesDigest, canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
 import { packageHealthResultSchema } from "../../domain/extensions/package-health.ts";
+import { createStaticEnvironment } from "../../domain/foundation/index.ts";
+import { localPath } from "../../domain/workspace/index.ts";
 import { nativeHealthFixture } from "../../integrations/extensions/package-health-fixtures.ts";
+import { dispatch } from "../dispatch.ts";
+import { createRecordingCliStreams } from "../output/streams.ts";
+import { createServiceProvider } from "../runtime/services.ts";
 
 export type ExtraPackageFixture = {
   declarations: readonly import("zod").infer<
@@ -20,8 +25,54 @@ export type ExtraPackageFixture = {
     requirement: import("../../domain/extensions/hook-grants.ts").HookGrantRequirement,
   ) => import("../../domain/extensions/hook-grants.ts").HookGrant;
 };
+/**
+ * How a fixture runs its CLI commands. `"in-process"` dispatches each one in this process
+ * over the fixture's roots, which skips a source-mode process start per command: most of
+ * these suites' time on hosted runners. A command (the compiled executable) spawns each
+ * one, so the compiled smoke still crosses the real process boundary.
+ */
+export type FixtureCli = readonly string[] | "in-process";
+
+async function runFixtureCommand(
+  cli: FixtureCli,
+  argv: readonly string[],
+  root: string,
+  environment: Readonly<Record<string, string>>,
+): Promise<{ readonly stdout: string; readonly failure: string }> {
+  if (cli === "in-process") {
+    const streams = createRecordingCliStreams();
+    const code = await dispatch({
+      argv,
+      streams,
+      services: (globals) =>
+        createServiceProvider(globals, {
+          home: localPath(root),
+          currentDirectory: localPath(root),
+          environment: createStaticEnvironment(environment),
+        }),
+    });
+    return {
+      stdout: streams.resultWrites().join(""),
+      failure: `exit ${code}: ${streams.diagnosticWrites().join("").slice(0, 2_000)}`,
+    };
+  }
+  const child = Bun.spawnSync([...cli, ...argv], {
+    cwd: root,
+    env: environment,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+    timeout: 30_000,
+  });
+  // A child killed by its timeout or a signal prints nothing; say so instead of a parse error.
+  return {
+    stdout: new TextDecoder().decode(child.stdout),
+    failure: `exit ${child.exitCode}, signal ${child.signalCode ?? "none"}, timed out ${child.exitedDueToTimeout === true}: ${new TextDecoder().decode(child.stderr).slice(0, 2_000)}`,
+  };
+}
+
 export async function preparePackageCliFixture(
-  command: readonly string[],
+  command: FixtureCli,
   root: string,
   mode = "healthy",
   tool = false,
@@ -91,25 +142,18 @@ export async function preparePackageCliFixture(
   async function invoke<T>(args: string[], input: unknown, schema: z.ZodType<T>, format = "json") {
     const file = join(root, "request.json");
     await writeFile(file, JSON.stringify(input));
-    const child = Bun.spawnSync([...command, ...args, "--input", file, "--format", format], {
-      cwd: root,
-      env: environment,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-      timeout: 30_000,
-    });
-    const stdout = new TextDecoder().decode(child.stdout);
-    // A child killed by its timeout or a signal prints nothing; say so instead of a parse error.
+    const { stdout, failure } = await runFixtureCommand(
+      command,
+      [...args, "--input", file, "--format", format],
+      root,
+      environment,
+    );
     if (stdout.trim() === "")
-      throw new Error(
-        `health command ${args.join(" ")} produced no output (exit ${child.exitCode}, signal ${child.signalCode ?? "none"}, timed out ${child.exitedDueToTimeout === true}): ${new TextDecoder().decode(child.stderr).slice(0, 2_000)}`,
-      );
+      throw new Error(`health command ${args.join(" ")} produced no output (${failure})`);
     const decoded = z
       .object({ payload: z.unknown() })
       .safeParse(JSON.parse(stdout.trim().split("\n").at(-1) ?? "null"));
-    if (!decoded.success)
-      throw new Error(`health command failed: ${stdout} ${new TextDecoder().decode(child.stderr)}`);
+    if (!decoded.success) throw new Error(`health command failed: ${stdout} ${failure}`);
     expect(stdout).not.toContain("HEALTH-SECRET-NEVER-IN-CHILD");
     const parsed = schema.safeParse(decoded.data.payload);
     if (!parsed.success)
@@ -227,11 +271,7 @@ export async function preparePackageCliFixture(
   };
 }
 
-export async function packageHealthCliJourney(
-  command: readonly string[],
-  root: string,
-  mode = "healthy",
-) {
+export async function packageHealthCliJourney(command: FixtureCli, root: string, mode = "healthy") {
   const { invoke, contribution, catalogMs, warmCatalogMs } = await preparePackageCliFixture(
     command,
     root,

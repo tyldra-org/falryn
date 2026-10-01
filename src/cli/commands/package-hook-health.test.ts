@@ -29,18 +29,12 @@ test.skipIf(!qualifiedHookPython()).each(["pre", "post"])(
   async (point) => {
     const root = await temporaryRoot("falryn-hook-health-");
     const extra = pythonHookFixture();
-    const fixture = await prepareNativeCliFixture(
-      [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname],
-      root,
-      {
-        declarations: extra.declarations.filter(
-          (d) => d.id === (point === "pre" ? "first" : "post"),
-        ),
-        files: {
-          "hook.py": `import sys\nsys.stderr.write(${JSON.stringify(canary)})\nprint(${JSON.stringify(canary)})`,
-        },
+    const fixture = await prepareNativeCliFixture("in-process", root, {
+      declarations: extra.declarations.filter((d) => d.id === (point === "pre" ? "first" : "post")),
+      files: {
+        "hook.py": `import sys\nsys.stderr.write(${JSON.stringify(canary)})\nprint(${JSON.stringify(canary)})`,
       },
-    );
+    });
     const inspect = async () =>
       (
         await fixture.invoke(["extension", "catalog"], { action: "catalog" }, catalogSchema)

@@ -12,11 +12,7 @@ test.skipIf(!qualifiedHookPython()).each([false, true])(
   "installed Python hooks run through the live gateway, veto=%s",
   async (veto) => {
     const root = await temporaryRoot("falryn-hook-cli-");
-    const fixture = await prepareNativeCliFixture(
-      [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname],
-      root,
-      pythonHookFixture(veto),
-    );
+    const fixture = await prepareNativeCliFixture("in-process", root, pythonHookFixture(veto));
     const journey = await nativeProductJourney({
       home: root,
       environment: fixture.environment,
@@ -44,11 +40,7 @@ test.skipIf(!qualifiedHookPython())(
   "a changed installed package is refused after catalog capture and before any external hook or native tool",
   async () => {
     const root = await temporaryRoot("falryn-hook-stale-");
-    const fixture = await prepareNativeCliFixture(
-      [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname],
-      root,
-      pythonHookFixture(),
-    );
+    const fixture = await prepareNativeCliFixture("in-process", root, pythonHookFixture());
     const directory = join(fixture.environment.FALRYN_STATE_DIR, "packages");
     const name = (await readdir(directory)).find((name) => name.endsWith(".package"));
     if (!name) throw new Error("missing installed fixture");
@@ -90,11 +82,10 @@ test.skipIf(!qualifiedHookPython()).each([
   async (_name, script) => {
     const root = await temporaryRoot("falryn-hook-refusal-");
     const control = pythonHookFixture();
-    const fixture = await prepareNativeCliFixture(
-      [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname],
-      root,
-      { ...control, files: { "hook.py": script } },
-    );
+    const fixture = await prepareNativeCliFixture("in-process", root, {
+      ...control,
+      files: { "hook.py": script },
+    });
     const journey = await nativeProductJourney({
       home: root,
       environment: fixture.environment,

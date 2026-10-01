@@ -12,10 +12,7 @@ test.skipIf(createHostSandbox().probe().status !== "available")(
   "native activation is explicit and publishes one real native tool after restart",
   async () => {
     const root = await temporaryRoot("falryn-native-cli-");
-    const fixture = await prepareNativeCliFixture(
-      [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname],
-      root,
-    );
+    const fixture = await prepareNativeCliFixture("in-process", root);
     const { name } = fixture;
     const model = await nativeProductJourney({
       home: root,

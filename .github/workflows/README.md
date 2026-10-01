@@ -17,7 +17,7 @@ ruleset change.
 | --- | --- | --- |
 | `Choose what to test` | always | the tier, from [`tools/quality/ci-profile.ts`](../../tools/quality/ci-profile.ts) |
 | `Static checks` | always | `bun run check:static` (Biome formatting, lint and imports, `tsc`, repository integrity, model catalogs) and `bun audit` |
-| `Tests (Ubuntu x64, shard i/3)`, `Tests (macOS arm64, shard i/4)` | `scoped`, `full` | the source suite, one shard per job |
+| `Tests (Ubuntu x64, shard i/3)`, `Tests (macOS arm64, shard i/3)` | `scoped`, `full` | the source suite, one shard per job |
 | `Tests (Windows x64, baseline)` | `scoped`, `full` | the Windows platform baseline |
 | `Build and smoke test (…)` | `scoped`, `full` | each platform's executable builds and passes its compiled smoke suites |
 | `All CI checks` | always | every check above succeeded, or was skipped because the tier is `docs`. The only CI check branch protection requires |
@@ -43,8 +43,10 @@ in a compiled suite.
 
 `bun run test` ([`tools/quality/test-shards.ts`](../../tools/quality/test-shards.ts))
 runs the suite as `bun test --shard` processes, each running its files serially. CI
-runs one shard per job (`FALRYN_TEST_SHARD=i/N`): three on Ubuntu and four on macOS,
-whose hosted runners take about twice as long. Shard processes side by side on one
+runs one shard per job (`FALRYN_TEST_SHARD=i/N`): three on Ubuntu and three on macOS.
+Three macOS shards plus the macOS smoke leave room in GitHub's five concurrent macOS
+jobs for a second run, so a pull request and `main` do not wait for each other.
+Shard processes side by side on one
 runner were tried: on macOS's three cores they took twelve minutes against under
 five for the slowest separate shard, and on Ubuntu they failed timing-sensitive
 tests.
