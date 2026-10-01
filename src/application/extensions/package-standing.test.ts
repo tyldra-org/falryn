@@ -16,6 +16,7 @@ import type {
   PackageRequest,
 } from "../../domain/extensions/lifecycle.ts";
 import type { PackageSource } from "../../domain/extensions/package-source.ts";
+import { err } from "../../domain/foundation/result.ts";
 import { RUNNING_WORK_POLICY } from "../../domain/security/package-standing.ts";
 import { createHostPackageCache } from "../../integrations/extensions/host-package-cache.ts";
 import { ed25519PackageVerifier } from "../../integrations/extensions/package-signature.ts";
@@ -375,6 +376,46 @@ test("an expired approval stays expired after a rollback and offline", async () 
       ok: true,
       value: { state: "expired", reason: "ecosystem-trust-expired" },
     });
+  } finally {
+    await context.store.close();
+  }
+});
+
+test("a cancelled hold and an uncertain write change nothing the caller can mistake for success", async () => {
+  const context = await setup();
+  try {
+    await lifecycleApply(context, "install", request("fixture", 0), packageSource());
+    approve(context, version(context, "fixture"));
+    const base = { action: "quarantine" as const, packageId: "fixture", expectedRevision: 1 };
+    const preview = await context.standing.enforce(base, signal);
+    if (preview.status !== "preview" || preview.confirmation === null) throw new Error("preview");
+    const aborted = new AbortController();
+    aborted.abort();
+    expect(
+      await context.standing.enforce(
+        { ...base, confirmation: preview.confirmation },
+        aborted.signal,
+      ),
+    ).toMatchObject({ status: "failed", code: "cancelled" });
+    expect(context.standing.standing("fixture")).toMatchObject({
+      ok: true,
+      value: { state: "eligible" },
+    });
+    // A store that cannot say whether the write landed reports uncertainty and applies nothing here.
+    const uncertain = createPackageStanding({
+      owners: {
+        ...context.owners,
+        decisions: {
+          get: context.owners.decisions.get,
+          replace: () => err({ code: "uncertain" }),
+        },
+      },
+      actor,
+      now: () => NOW,
+    });
+    expect(
+      await uncertain.enforce({ ...base, confirmation: preview.confirmation }, signal),
+    ).toMatchObject({ status: "failed", code: "uncertain" });
   } finally {
     await context.store.close();
   }
