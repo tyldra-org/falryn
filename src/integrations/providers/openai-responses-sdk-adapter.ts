@@ -2,7 +2,7 @@ import { supportsNativeToolSearch } from "../../providers/configuration/transpor
 import { openAiProcessing } from "./openai-processing.ts";
 /** Official OpenAI SDK adapter for the Responses transport. */
 
-import OpenAI from "openai";
+import type OpenAI from "openai";
 import type {
   Response,
   ResponseCreateParamsStreaming,
@@ -50,14 +50,19 @@ import {
   resolveProviderTransportCompatibilityPlan,
   resolveProviderTransportCompatibilityPlanSet,
 } from "./provider-transport-compatibility.ts";
+import { openAiSdk } from "./sdk-runtime.ts";
 
 export type {
   OpenAiResponsesSdkAdapterOptions,
   OpenAiResponsesSdkFetch,
 } from "./openai-responses-sdk-adapter/contracts.ts";
 
-function clientFor(options: OpenAiResponsesSdkAdapterOptions, apiKey: string): OpenAI {
-  return new OpenAI({
+async function clientFor(
+  options: OpenAiResponsesSdkAdapterOptions,
+  apiKey: string,
+): Promise<OpenAI> {
+  const { default: Client } = await openAiSdk.load();
+  return new Client({
     apiKey,
     baseURL: options.baseUrl.replace(/\/+$/u, ""),
     organization: options.organization ?? null,
@@ -380,7 +385,7 @@ export function createOpenAiResponsesSdkAdapter(
       };
 
       try {
-        const stream = await clientFor(options, apiKey).responses.create(body, {
+        const stream = await (await clientFor(options, apiKey)).responses.create(body, {
           signal: streamOptions.signal,
         });
         for await (const event of stream) {

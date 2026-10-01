@@ -1,9 +1,7 @@
 /** Official-SDK model discovery translated into Falryn's provider-neutral catalog. */
 
-import Anthropic from "@anthropic-ai/sdk";
 import type { ModelInfo as AnthropicModelInfo } from "@anthropic-ai/sdk/resources/models";
-import { GoogleGenAI, type Model as GoogleModel } from "@google/genai";
-import OpenAI from "openai";
+import type { Model as GoogleModel } from "@google/genai";
 import type { Model as OpenAiModel } from "openai/resources/models";
 
 import { type Instant, instant } from "../../domain/foundation/clock.ts";
@@ -23,6 +21,7 @@ import {
 import type { ProviderProfile } from "../../providers/configuration/profile.ts";
 import { COMMAND_CODE_OPENAI_BASE_URL } from "../../providers/protocol/command-code.ts";
 import { MAX_PROVIDER_METADATA_ENTRY_LENGTH } from "../../providers/protocol/limits.ts";
+import { anthropicSdk, googleGenAiSdk, openAiSdk } from "./sdk-runtime.ts";
 
 export type CommandCodeModelInfo = OpenAiModel & {
   readonly name?: unknown;
@@ -236,6 +235,7 @@ async function loadOpenAiModels(
   apiKey: string,
   signal: AbortSignal,
 ): Promise<readonly OpenAiModel[]> {
+  const { default: OpenAI } = await openAiSdk.load();
   const client = new OpenAI({
     apiKey,
     baseURL: profile.endpoint ?? undefined,
@@ -261,6 +261,7 @@ async function loadCommandCodeModels(
   apiKey: string,
   signal: AbortSignal,
 ): Promise<readonly CommandCodeModelInfo[]> {
+  const { default: OpenAI } = await openAiSdk.load();
   const client = new OpenAI({
     apiKey,
     baseURL: profile.endpoint ?? COMMAND_CODE_OPENAI_BASE_URL,
@@ -292,6 +293,7 @@ async function loadAnthropicModels(
   apiKey: string,
   signal: AbortSignal,
 ): Promise<readonly AnthropicModelInfo[]> {
+  const { default: Anthropic } = await anthropicSdk.load();
   const client = new Anthropic({
     apiKey,
     baseURL: profile.endpoint,
@@ -315,6 +317,7 @@ async function loadGoogleModels(
   apiKey: string,
   signal: AbortSignal,
 ): Promise<readonly GoogleModel[]> {
+  const { GoogleGenAI } = await googleGenAiSdk.load();
   const client = new GoogleGenAI({
     apiKey,
     httpOptions: {

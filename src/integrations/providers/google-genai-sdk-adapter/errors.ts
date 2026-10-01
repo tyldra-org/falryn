@@ -1,5 +1,5 @@
-import { ApiError } from "@google/genai";
 import type { ProviderFailure, ProviderFailureKind } from "../../../providers/protocol/errors.ts";
+import { googleGenAiSdk } from "../sdk-runtime.ts";
 
 export class GoogleInputError extends Error {
   readonly failureKind: ProviderFailureKind;
@@ -20,6 +20,7 @@ export function failure(
 }
 
 export function classifySdkError(error: unknown, signal: AbortSignal): ProviderFailure {
+  const sdk = googleGenAiSdk.loaded();
   if (
     signal.aborted ||
     (error instanceof DOMException &&
@@ -32,7 +33,7 @@ export function classifySdkError(error: unknown, signal: AbortSignal): ProviderF
   if (error instanceof GoogleInputError) {
     return failure(error.failureKind, error.message, false);
   }
-  if (error instanceof ApiError) {
+  if (sdk !== undefined && error instanceof sdk.ApiError) {
     if (error.status === 400 || error.status === 409 || error.status === 422) {
       return failure("invalid-request", "The provider rejected the request shape.", false);
     }

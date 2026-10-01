@@ -6,12 +6,7 @@
  * endpoint transport inside this leaf adapter.
  */
 
-import {
-  type GenerateContentParameters,
-  type GenerateContentResponse,
-  GoogleGenAI,
-  type Tool,
-} from "@google/genai";
+import type { GenerateContentParameters, GenerateContentResponse, Tool } from "@google/genai";
 import {
   type ModelId,
   modelAttemptId,
@@ -55,6 +50,7 @@ import {
 import { usageDoesNotRegress, usageFrom } from "./google-genai-sdk-adapter/usage.ts";
 import { providerDestinationId } from "./provider-destination.ts";
 import { resolveProviderTransportCompatibilityPlanSet } from "./provider-transport-compatibility.ts";
+import { googleGenAiSdk } from "./sdk-runtime.ts";
 
 export type {
   GoogleCachedContentBinding,
@@ -63,7 +59,7 @@ export type {
   GoogleGenAiStreamFactory,
 } from "./google-genai-sdk-adapter/contracts.ts";
 
-function streamFor(
+async function streamFor(
   options: GoogleGenAiSdkAdapterOptions,
   apiKey: string,
   request: GenerateContentParameters,
@@ -71,6 +67,7 @@ function streamFor(
   if (options.createStream !== undefined) {
     return options.createStream(apiKey, request);
   }
+  const { GoogleGenAI } = await googleGenAiSdk.load();
   const client = new GoogleGenAI({
     apiKey,
     httpOptions: {
