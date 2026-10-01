@@ -45,11 +45,10 @@ test("a CI job selects one shard, and retries are on unless explicitly off", () 
   expect(testRetries("2").ok).toBe(false);
 });
 
-test("every shard balances by the recorded timings and leaves compiled suites to the smoke runs", () => {
+test("every shard takes Bun's split by path and leaves compiled suites to the smoke runs", () => {
   expect(shardArguments(2, 4, ["--only-failures"])).toEqual([
     "test",
     "--shard=2/4",
-    "--timings=.github/test-timings.json",
     "--path-ignore-patterns=**/*.compiled.test.ts",
     "--only-failures",
   ]);

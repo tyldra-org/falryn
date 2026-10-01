@@ -1,11 +1,12 @@
 /**
  * Which CI tier a pull request needs.
  *
- * A scoped change touches source that only the tests reaching it can break, and few of
- * them. It runs those tests, not the whole suite, on Linux and macOS. The compiled
- * smoke suites and the Windows baseline run for every pull request either way. Every
- * other change runs the full matrix, and so does every push to `main`, so a wrong
- * "scoped" verdict costs a red `main`, never an unchecked release.
+ * A documentation change touches nothing a test or a build reads, so it runs the static
+ * checks only. A scoped change touches source that only the tests reaching it can break,
+ * and few of them. It runs those tests, not the whole suite, on Linux and macOS. The
+ * compiled smoke suites and the Windows baseline run for every pull request that is not
+ * documentation only. Every other change runs the full suite, and so does every push to
+ * `main`, so a wrong verdict costs a red `main`, never an unchecked release.
  *
  * Scoping is by test, not by platform: four of the last 120 pull-request runs failed
  * only on macOS or Windows, and each failure was in a test that imports the code it
@@ -23,7 +24,7 @@
  */
 import { appendFileSync } from "node:fs";
 
-export const CI_PROFILES = ["scoped", "full"] as const;
+export const CI_PROFILES = ["docs", "scoped", "full"] as const;
 export type CiProfile = (typeof CI_PROFILES)[number];
 
 /** More reachable test files than this and scoping saves too little to be worth the risk. */
@@ -101,7 +102,7 @@ export function classifyChange(evidence: ChangeEvidence): Classification {
   if (byPath !== null) return byPath;
   const paths = evidence.changedPaths ?? [];
   if (paths.every(isDocumentation))
-    return { profile: "scoped", reason: "documentation only: no test reads it" };
+    return { profile: "docs", reason: "documentation only: no test or build reads it" };
   const { selection } = evidence;
   if (selection === null) return full("the reachable tests could not be counted");
   if (selection.selected > SCOPED_MAX_TEST_FILES)

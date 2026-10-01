@@ -31,10 +31,20 @@ test("a few source modules that only a few tests reach are a scoped change", () 
   expect(result.reason).toContain("25 of 743");
 });
 
-test("documentation alone is scoped and needs no test count", () => {
-  const paths = ["README.md", "CURRENT-STATE.md", "DEVELOPMENT.md"];
+test("documentation alone is its own tier and needs no test count", () => {
+  const paths = ["README.md", "CURRENT-STATE.md", "DEVELOPMENT.md", "docs/guide.md"];
   expect(needsSelection("pull_request", paths)).toBe(false);
-  expect(change(paths, null)).toMatchObject({ profile: "scoped" });
+  expect(change(paths, null)).toMatchObject({ profile: "docs" });
+});
+
+test("documentation beside source is scoped, never the documentation tier", () => {
+  const paths = ["README.md", "src/application/extensions/package-notices.ts"];
+  expect(needsSelection("pull_request", paths)).toBe(true);
+  expect(change(paths).profile).toBe("scoped");
+});
+
+test("a Markdown file inside the source tree is not documentation", () => {
+  expect(change(["src/cli/README.md"], null).profile).toBe("full");
 });
 
 test("anything that is not a pull request runs the full matrix", () => {
@@ -63,7 +73,7 @@ test("an unmeasured or large reachable test set runs the full matrix", () => {
 
 test.each([
   ".github/workflows/ci.yml",
-  ".github/test-timings.json",
+  ".github/known-flaky-tests.json",
   "tools/quality/test-shards.ts",
   "package.json",
   "bun.lock",
@@ -111,7 +121,7 @@ test("the entrypoint, and a hub whose reach is large, still run the full matrix"
 });
 
 test("vendored skill documentation is documentation, but workflow policy beside it is not", () => {
-  expect(change([".agents/skills/falryn-work/references/work.md"], null).profile).toBe("scoped");
+  expect(change([".agents/skills/falryn-work/references/work.md"], null).profile).toBe("docs");
   expect(change([".github/workflows/README.md"], null).profile).toBe("full");
   expect(change([".github/PULL_REQUEST_TEMPLATE.md"], null).profile).toBe("full");
   expect(change([".agents/skills/falryn-work/scripts/select_next.py"], null).profile).toBe("full");

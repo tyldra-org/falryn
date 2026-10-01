@@ -61,7 +61,7 @@ read that file through `.github/actions/setup-bun`; do not add another version
 pin to individual workflows. Updating `@types/bun` changes TypeScript definitions,
 not the installed runtime or an already compiled executable.
 
-Use the candidate runtime for frozen installation, `bun run check`,
+Use the candidate runtime for frozen installation, `bun run check:full`,
 `bun run build`, and the applicable compiled smoke command. Check the executable's
 reported runtime with `./dist/falryn --version`. Preserve historical benchmark
 fixtures and qualify other platforms through their existing CI lanes.
@@ -208,33 +208,32 @@ Use the smallest command that proves the current edit while iterating.
 
 | Command | Use |
 | --- | --- |
+| `bun run check` | `check:static` and `test:changed`: what a scoped CI run checks. Run it before pushing; `bun run hooks:install` makes it a pre-push hook |
 | `bun run check:static` | Formatting, lint, types, repository integrity, and model catalogs |
-| `bun run test:changed` | Tests whose imports reach a file changed relative to `main`, as the same concurrent shard processes as `bun run test`. A type-only change selects none, so rely on `check:static`; a change to a widely imported module selects most of the suite and takes about as long as `bun run test` |
+| `bun run test:changed` | Tests whose imports reach a file changed relative to `main`, as the same concurrent shard processes as `bun run test`, plus the whole-tree suites at the `src/` root (`bun run test:whole-tree`). A type-only change selects none, so rely on `check:static`; a change to a widely imported module selects most of the suite and takes about as long as `bun run test` |
 | `bun test <path>` | One focused test file |
 | `bun run test:watch` | Re-run tests while files change |
-| `bun run test` | Full source suite as concurrent shard processes (`FALRYN_TEST_SHARDS` overrides the count; `FALRYN_TEST_SHARD=i/N` runs one shard, as CI does) |
-| `bun run test:serial` | Full source suite in one process |
-| `bun run test:timings` | Refresh, serially, the per-file durations that balance local and CI shards |
-| `bun run check` | Canonical static checks and full source suite |
-| `bun run check:fast` | The same, reporting only failures |
+| `bun run test` | Full source suite as concurrent shard processes (`FALRYN_TEST_SHARDS` overrides the count; 1 runs it in one process; `FALRYN_TEST_SHARD=i/N` runs one shard) |
+| `bun run check:full` | `check:static` and the full source suite |
+| `bun run ci` | What a full CI run checks on this host: `check:static`, `bun audit`, the full suite, the build and the compiled suites |
 | `bun run build` | Standalone executable compilation, split into chunks so the provider SDKs, MCP client and terminal UI load on first use (`src/startup-boundaries.test.ts` fails on a static import of one) |
 | `bun run test:compiled` | Compiled suites against the current `dist/falryn` |
 
-CI does not always run the whole source suite on a pull request. A change confined to TypeScript
-under `src/` (other than `src/main.ts`) or to documentation, that at most 200 test files can reach,
-runs only those tests on Ubuntu and macOS. Anything else runs the full matrix, as does every push to
-`main`. Local `bun run test:changed` selects tests the same way. See
+CI does not always run the whole source suite on a pull request. A documentation-only change runs
+the static checks only. A change confined to TypeScript under `src/` (other than `src/main.ts`) or to
+documentation, that at most 200 test files can reach, runs `bun run test:changed` on Ubuntu and
+macOS. Anything else runs the full suite, as does every push to `main`. See
 [`.github/workflows/README.md`](.github/workflows/README.md#ci-tiers).
 
 The source suite excludes `*.compiled.test.ts`. The compiled smoke scripts and
 the CI compiled-smoke jobs run those suites against a fresh build, so a stale
-`dist/falryn` never affects `bun run check`.
+`dist/falryn` never affects `bun run check` or `bun run check:full`.
 
-Before opening a pull request, run `bun run check:static` and `bun run test:changed`,
-or the focused tests for the change. Open the pull request as a draft once they pass:
-CI runs the full matrix on it, and the draft is marked ready for review when its checks
-pass. The complete suite is CI's job. Run `bun run check` locally only when CI cannot
-answer the question, such as reproducing a failing shard, or when you want the result
+Before opening a pull request, run `bun run check`, or the focused tests for the change.
+Open the pull request as a draft once they pass: CI runs the selected tier on it, and the
+draft is marked ready for review when `CI required` passes. The complete suite is CI's job.
+Run `bun run check:full` locally only when CI cannot
+answer the question, such as reproducing a failing test job, or when you want the result
 before pushing a change that touches widely imported modules.
 After a review or CI repair, rerun its focused checks; CI proves the new head. Packaging,
 entrypoint, terminal, or compiled-runtime changes also need `bun run build` and the
@@ -245,7 +244,7 @@ unavailable checks instead of treating them as passes.
 
 A test that fails intermittently is a defect with an owner.
 `.github/known-flaky-tests.json` lists each known flaky test file with the open
-issue that owns its fix and its symptom. `bun run test` and the CI shards rerun a
+issue that owns its fix and its symptom. `bun run test` and the CI test jobs rerun a
 failing file once, alone, only when it is listed there and at most three files
 failed; a pass then keeps the run green with a warning naming that issue. Any
 other failure fails the run, even one that would pass on a second try. Add an

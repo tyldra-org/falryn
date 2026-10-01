@@ -1,6 +1,10 @@
 /**
  * The source suite as concurrent `bun test --shard` processes (#1196).
  *
+ * Bun deals the files out by path, which spreads each directory's heavy files across
+ * shards. Recorded per-file durations (`--timings`) balanced worse: they leave out the
+ * cost of loading a file's modules, so one shard received hundreds of small files.
+ *
  * One `bun test` process runs every file in turn, so the suite takes as long as
  * all files together. Separate processes each run a balanced share of files, and
  * each process keeps its own globals, which Bun's in-process `--parallel` does not
@@ -23,7 +27,6 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { z } from "zod";
 
-export const TIMINGS_FILE = ".github/test-timings.json";
 export const KNOWN_FLAKES_FILE = ".github/known-flaky-tests.json";
 export const COMPILED_SUITES = "**/*.compiled.test.ts";
 export const MAX_TEST_SHARDS = 16;
@@ -140,7 +143,6 @@ export function shardArguments(
   return [
     "test",
     ...(shards > 1 ? [`--shard=${shard}/${shards}`] : []),
-    `--timings=${TIMINGS_FILE}`,
     `--path-ignore-patterns=${COMPILED_SUITES}`,
     ...passthrough,
   ];
