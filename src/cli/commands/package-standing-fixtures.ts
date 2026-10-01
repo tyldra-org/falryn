@@ -1,11 +1,12 @@
-import { Database } from "bun:sqlite";
 import { expect } from "bun:test";
 import { randomUUID } from "node:crypto";
-import { mkdir, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { z } from "zod";
 import { pluginManifest } from "../../application/extensions/package-fixtures.ts";
+import { openProductStoreOrThrow } from "../../data/fixtures.ts";
 import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
+import { localPath } from "../../domain/workspace/index.ts";
 
 type Receipt = z.infer<typeof packageReceiptSchema>;
 type Standing = {
@@ -263,21 +264,18 @@ export async function packageStandingCliJourney(command: readonly string[], root
   });
 
   // The decisions and their receipts outlive the removed bytes.
-  const files = (await readdir(join(root, "state"))).filter((name) => name.endsWith(".sqlite"));
-  expect(files.length).toBeGreaterThan(0);
-  const database = new Database(join(root, "state", files[0] ?? ""));
+  const store = await openProductStoreOrThrow(localPath(join(root, "state")));
   try {
-    const actions = database
-      .query("SELECT DISTINCT action FROM package_trust_receipts ORDER BY action")
-      .all() as { action: string }[];
-    expect(actions.map((row) => row.action)).toEqual([
+    const rows = store.read("SELECT DISTINCT action FROM package_trust_receipts ORDER BY action");
+    if (!rows.ok) throw new Error(rows.error.code);
+    expect(rows.value.map((row) => row.action)).toEqual([
       "approve",
       "quarantine",
       "release",
       "revoke",
     ]);
   } finally {
-    database.close();
+    await store.close();
   }
   return { revoked, rolled, purged } satisfies Record<string, Receipt>;
 }

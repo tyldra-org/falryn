@@ -11,7 +11,6 @@ import { createTrustDecisionRepository } from "../../data/security/trust-reposit
 import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import type { PackageReceipt, PackageRequest } from "../../domain/extensions/lifecycle.ts";
 import { derivePackageStanding } from "../../domain/security/package-standing.ts";
-import type { SqliteStorePort } from "../../domain/storage/index.ts";
 import { createHostPackageCache } from "../../integrations/extensions/host-package-cache.ts";
 import { ed25519PackageVerifier } from "../../integrations/extensions/package-signature.ts";
 import { FALRYN_VERSION } from "../version.ts";
@@ -34,7 +33,7 @@ export function localUserActor(): string {
 export function composePackageStanding(
   services: Services,
   stateRoot: string,
-  store: SqliteStorePort,
+  store: Parameters<typeof createPackageLifecycleRepository>[0],
 ): PackageStandingOwner {
   const bytes = createHostPackageCache(join(stateRoot, "packages"));
   const host = {
