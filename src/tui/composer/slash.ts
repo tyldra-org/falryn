@@ -1,206 +1,31 @@
 /**
- * Optional composer slash text that aliases palette command ids (#609).
+ * Composer slash text, resolved through the command registry (#790).
  *
- * `/workspace add|save|load|show` (and the doc forms `/add-dir`,
- * `/save-workspace`, `/load-workspace`) resolve to the same registry ids the
- * palette uses. This is not a second command language and not a completion
- * popup — unknown `/` text is left alone, and general `composer.completion`
- * stays reported as missing.
+ * There is no slash table here. `/mode plan`, `/workspace add`, `/schedule {…}`
+ * and every other built-in are forms of registry entries, parsed by the one
+ * grammar in `domain/commands`. Text no entry claims is left alone, so skill and
+ * prompt-template commands still reach their owners after the built-ins.
  *
  * Pure. No renderer, no shell state.
  */
 
-export const SLASH_ARGUMENT_KINDS = ["none", "path", "layout-name", "profile"] as const;
-export type SlashArgumentKind = (typeof SLASH_ARGUMENT_KINDS)[number];
+import { parseSlashCommand, type SlashParse } from "../../domain/commands/index.ts";
+import type { ShellCommand } from "../commands/contracts.ts";
+import { SHELL_REGISTRY } from "../commands/registry.ts";
 
-export type ComposerSlashAlias = {
-  /** Slash forms that mean this alias, longest match first in the table. */
-  readonly forms: readonly string[];
-  /** Palette / registry command id. */
-  readonly commandId: string;
-  readonly argument: SlashArgumentKind;
-  /** Fixed argument supplied by a direct convenience alias. */
-  readonly fixedArgument?: string;
-};
+export type ParsedComposerSlash = SlashParse<ShellCommand>;
+
+/** Parse composer text against the built-in registry generation. */
+export function parseComposerSlash(text: string): ParsedComposerSlash {
+  return parseSlashCommand(SHELL_REGISTRY, text);
+}
 
 /**
- * Workspace slash aliases of palette ids.
- *
- * Argument schema is declared here so a later completion producer can read it
- * without inventing a parallel catalog.
- */
-export const WORKSPACE_SLASH_ALIASES: readonly ComposerSlashAlias[] = [
-  { forms: ["/model routes", "/route"], commandId: "model.routes", argument: "none" },
-  { forms: ["/fast on"], commandId: "model.processing.fast", argument: "none" },
-  { forms: ["/fast off"], commandId: "model.processing.standard", argument: "none" },
-  { forms: ["/fast reset"], commandId: "model.processing.reset", argument: "none" },
-  { forms: ["/fast"], commandId: "model.processing.inspect", argument: "none" },
-  { forms: ["/env"], commandId: "environment.inspect", argument: "profile" },
-  { forms: ["/profile"], commandId: "profile.inspect", argument: "profile" },
-  { forms: ["/export"], commandId: "session.export", argument: "layout-name" },
-  { forms: ["/compact"], commandId: "compact.preview", argument: "layout-name" },
-  {
-    forms: ["/model roles", "/model configure", "/settings models", "/model"],
-    commandId: "model.settings",
-    argument: "none",
-  },
-  {
-    forms: ["/workspace add", "/add-dir"],
-    commandId: "workspace.addRoot",
-    argument: "path",
-  },
-  {
-    forms: ["/workspace save", "/save-workspace"],
-    commandId: "workspace.save",
-    argument: "layout-name",
-  },
-  {
-    forms: ["/workspace load", "/load-workspace"],
-    commandId: "workspace.load",
-    argument: "layout-name",
-  },
-  {
-    forms: ["/workspace show"],
-    commandId: "workspace.show",
-    argument: "none",
-  },
-  {
-    forms: ["/compression"],
-    commandId: "compression.show",
-    argument: "none",
-  },
-  {
-    forms: ["/brief"],
-    commandId: "brief.set",
-    argument: "layout-name",
-  },
-  {
-    forms: ["/hush"],
-    commandId: "hush.set",
-    argument: "layout-name",
-  },
-  {
-    forms: ["/loom"],
-    commandId: "loom.set",
-    argument: "layout-name",
-  },
-  {
-    forms: ["/mode"],
-    commandId: "mode.select",
-    argument: "profile",
-  },
-  { forms: ["/ask"], commandId: "mode.select", argument: "none", fixedArgument: "ask" },
-  { forms: ["/plan"], commandId: "mode.select", argument: "none", fixedArgument: "plan" },
-  { forms: ["/debug"], commandId: "mode.select", argument: "none", fixedArgument: "debug" },
-  { forms: ["/agent"], commandId: "mode.select", argument: "none", fixedArgument: "agent" },
-];
-
-export type ParsedComposerSlash =
-  | {
-      readonly kind: "match";
-      readonly commandId: string;
-      /** Trimmed argument text, or `null` when omitted. */
-      readonly argument: string | null;
-      readonly form: string;
-    }
-  | {
-      readonly kind: "unresolved";
-      readonly reason: string;
-    };
-
-/** Slash commands the composer handles before its alias table. */
-export const SCHEDULE_SLASH = /^\/schedule(?:\s|$)/u;
-export const PEER_SLASH = /^\/peer(?:\s|$)/u;
-export { SKILLS_COMMAND as SKILLS_SLASH } from "../../domain/context/skill-invocation.ts";
-
-import { SKILLS_COMMAND } from "../../domain/context/skill-invocation.ts";
-
-/**
- * Whether a built-in composer action owns this slash text. Built-ins always win
- * over package prompt templates in every interface.
+ * Whether a built-in command owns this slash text, including text it refuses.
+ * Built-ins always win over skills and package prompt templates in every
+ * interface.
  */
 export function isBuiltinComposerSlash(text: string): boolean {
-  const trimmed = text.trim();
-  return (
-    SCHEDULE_SLASH.test(trimmed) ||
-    PEER_SLASH.test(trimmed) ||
-    SKILLS_COMMAND.test(trimmed) ||
-    parseComposerSlash(trimmed) !== null
-  );
-}
-
-/**
- * Parse composer draft text as an optional slash alias.
- *
- * Returns `null` when the text is not slash-shaped for this table — including
- * other `/…` prompts — so ordinary submit still owns them.
- */
-export function parseComposerSlash(text: string): ParsedComposerSlash | null {
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("/")) {
-    return null;
-  }
-
-  const lower = trimmed.toLowerCase();
-  for (const alias of WORKSPACE_SLASH_ALIASES) {
-    for (const form of alias.forms) {
-      const formLower = form.toLowerCase();
-      if (lower === formLower) {
-        return {
-          kind: "match",
-          commandId: alias.commandId,
-          argument: alias.fixedArgument ?? null,
-          form,
-        };
-      }
-      if (lower.startsWith(`${formLower} `) || lower.startsWith(`${formLower}\t`)) {
-        const rest = trimmed.slice(formLower.length).trim();
-        if (alias.argument === "none" && rest !== "") {
-          return {
-            kind: "unresolved",
-            reason: `${form} takes no argument`,
-          };
-        }
-        return {
-          kind: "match",
-          commandId: alias.commandId,
-          argument: rest === "" ? null : rest,
-          form,
-        };
-      }
-    }
-  }
-
-  if (/^\/workspace(\s|$)/i.test(trimmed)) {
-    return {
-      kind: "unresolved",
-      reason: "/workspace expects add, save, load, or show",
-    };
-  }
-  if (/^\/mode(\s|$)/i.test(trimmed)) {
-    return {
-      kind: "unresolved",
-      reason: "/mode expects ask, plan, debug, or agent",
-    };
-  }
-
-  return null;
-}
-
-/** Overlay panel for a matched workspace slash command id, or `null`. */
-export function workspacePanelForSlashCommand(
-  commandId: string,
-): "add" | "save" | "load" | "show" | null {
-  switch (commandId) {
-    case "workspace.addRoot":
-      return "add";
-    case "workspace.save":
-      return "save";
-    case "workspace.load":
-      return "load";
-    case "workspace.show":
-      return "show";
-    default:
-      return null;
-  }
+  const parsed = parseComposerSlash(text);
+  return parsed.kind === "command" || parsed.kind === "invalid";
 }

@@ -16,6 +16,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { SHELL_COMMANDS } from "../commands/commands.ts";
 import { mount, type Rendered } from "../runtime/harness.tsx";
 import { ShellApp } from "../shell/shell-app.tsx";
 import { EXIT_CONFIRMATION } from "../shell/shell-runtime.tsx";
@@ -135,11 +136,13 @@ describe("help", () => {
     using shell = await open(14);
     const opening = await shell.press("?");
     expect(opening).toContain("Help");
-    // Task-intelligence advice sits at the end of the registry; End must reach it.
-    expect(opening).not.toContain("Commit plan");
+    // The registry's last entry is far below the fold; End must reach it.
+    const last = SHELL_COMMANDS.at(-1)?.title ?? "";
+    expect(last).not.toBe("");
+    expect(opening).not.toContain(last);
 
     await shell.press("\u001b[F");
-    expect(await shell.frame()).toContain("Commit plan");
+    expect(await shell.frame()).toContain(last);
   });
 
   test("closes on escape and gives the frame back", async () => {

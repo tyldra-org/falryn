@@ -123,6 +123,8 @@ export type CommandEntry = {
   readonly description: string;
   /** The key that runs it right now, or `null` when it has no default. */
   readonly binding: string | null;
+  /** How to type it, such as `/mode [ask|plan|debug|agent]`; `null` without a slash form. */
+  readonly usage: string | null;
   readonly unavailableReason: string | null;
 };
 

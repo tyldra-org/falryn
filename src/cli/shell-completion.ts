@@ -25,6 +25,7 @@ export const DECLARED_TOP_LEVEL_GROUPS = [
   "config",
   "data",
   "doctor",
+  "commands",
   "run",
   "export",
   "import",

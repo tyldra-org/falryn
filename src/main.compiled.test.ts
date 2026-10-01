@@ -687,6 +687,26 @@ describe.if(built)("the standalone executable", () => {
   );
 
   test(
+    "prints the shell command reference from the bundled registry (#790)",
+    async () => {
+      // The registry is built at load; a bundling or validation fault surfaces here.
+      const root = await temporaryRoot();
+      const finished = spawnCompiled(root, ["commands", "--format", "json"]);
+
+      expect(finished.exitCode).toBe(EXIT_CODES.COMPLETED);
+      const reading = readCliStream(finished.stdout.split("\n"));
+      expect(reading.terminal?.kind).toBe("result");
+      const payload = (
+        reading.terminal as { payload?: { generation?: string; commands?: unknown[] } }
+      ).payload;
+      expect(payload?.generation).toMatch(/^commands-v1:[0-9a-f]{16}$/);
+      expect(payload?.commands?.length).toBeGreaterThan(0);
+      expect(finished.stderr).toBe("");
+    },
+    COMPILED_RUN_TIMEOUT_MS,
+  );
+
+  test(
     "emits a whole JSON Lines stream from a standalone executable",
     async () => {
       const root = await temporaryRoot();

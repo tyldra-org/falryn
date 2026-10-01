@@ -184,6 +184,8 @@ export function stoppedResult(
       return resultFor("data.gc", null, [], outcome, effect);
     case "doctor":
       return resultFor<"doctor", DoctorPayload>("doctor", null, [], outcome, effect);
+    case "commands":
+      return resultFor("commands", null, [], outcome, effect);
     case "export":
       return resultFor<"export", ExportCommandPayload>("export", null, [], outcome, effect);
     case "import":
@@ -385,6 +387,7 @@ export type RunCommandResult =
       import("./commands/profile.ts").WorkingConfigurationPayload
     >
   | CommandResultOf<"compact", CheckpointOutcome>
+  | CommandResultOf<"commands", import("../domain/commands/index.ts").CommandReference>
   | CommandResultOf<"peer", PeerPayload>
   | CommandResultOf<"schedule", SchedulePayload>
   | CommandResultOf<"mcp", import("./commands/mcp.ts").McpPayload>

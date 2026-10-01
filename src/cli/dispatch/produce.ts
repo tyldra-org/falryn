@@ -22,6 +22,7 @@ import { runModel } from "../commands/model.ts";
 import { type PackageArguments, runPackage } from "../commands/package.ts";
 import { type PeerArguments, runPeer } from "../commands/peer.ts";
 import { runSchedule, type ScheduleArguments } from "../commands/schedule.ts";
+import { runShellCommands } from "../commands/shell-commands.ts";
 import { runTaskCommitPlan } from "../commands/task-commit-plan-commands.ts";
 import {
   runTaskDecompose,
@@ -252,6 +253,8 @@ export async function produce(
       return runDataGc(services, dataLifecycleArgs, signal, onMutationStart);
     case "doctor":
       return runDoctor(services, globals);
+    case "commands":
+      return runShellCommands();
     case "export":
       if (exportArgs === null) {
         throw new Error("Missing parsed export arguments.");

@@ -213,6 +213,38 @@ test(
 );
 
 test(
+  "a headless run refuses built-in shell commands with the registry's reason and sends nothing (#790)",
+  async () => {
+    const f = await product();
+    const cases = [
+      ["/plan", "command.caller-unsupported", "/mode needs the interactive shell"],
+      ["/MODE plan", "command.caller-unsupported", "/mode needs the interactive shell"],
+      ["/tools", "command.command-planned", "/tools is not available yet"],
+      ["/mode fast", "command.argument-invalid", "Unsupported value “fast” for /mode"],
+      ["/workspace nope", "command.form-incomplete", "/workspace expects add, save, load or show."],
+    ] as const;
+    for (const [prompt, code, message] of cases) {
+      const run = await f.run({ prompt });
+      expect(run.result.payload?.stage, prompt).toBe("command-refused");
+      expect(run.result.outcome.kind, prompt).toBe("failed");
+      expect(run.result.errors[0]?.code, prompt).toBe(code);
+      expect(run.result.errors[0]?.message, prompt).toContain(message);
+      expect(run.requests, prompt).toHaveLength(0);
+    }
+    // A planned command yields to a skill of the same name instead of hiding it.
+    await mkdir(join(f.workspace, ".agents/skills/goal"), { recursive: true });
+    await writeFile(
+      join(f.workspace, ".agents/skills/goal/SKILL.md"),
+      '---\nname: "goal"\ndescription: "Goal."\n---\nBODY_goal\n',
+    );
+    const skill = await f.run({ prompt: "/goal ship it" });
+    expect(skill.result.outcome.kind, JSON.stringify(skill.result.errors)).toBe("completed");
+    expect(sent(skill)).toContain("BODY_goal");
+  },
+  JOURNEY,
+);
+
+test(
   "an explicit skill stays active like a routed one; a manual-only one loads only when invoked",
   async () => {
     const f = await product();

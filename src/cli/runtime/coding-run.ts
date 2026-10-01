@@ -7,6 +7,7 @@ import {
 } from "../../application/sessions/session-activation.ts";
 import { composeModelRouteTool } from "../../application/tools/model-route-tool.ts";
 import { settleHookObservers } from "../../application/tools/tool-hook-observers.ts";
+import { admitCommand } from "../../domain/commands/index.ts";
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
 import { createEnvironmentProcessContext } from "./environment-process-context.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
@@ -112,7 +113,7 @@ import {
   type UsageUnits,
 } from "../../providers/index.ts";
 import type { ProviderAdapterPort } from "../../providers/protocol/port.ts";
-import { isBuiltinComposerSlash } from "../../tui/composer/slash.ts";
+import { parseComposerSlash } from "../../tui/composer/slash.ts";
 import type { GlobalOptions } from "../options.ts";
 import {
   COMMAND_RESULT_SCHEMA_FAMILY,
@@ -178,6 +179,7 @@ export type CodingRunPayload = {
   /** How far the product graph progressed before the result was formed. */
   readonly stage:
     | "prompt-missing"
+    | "command-refused"
     | "template-failed"
     | "skill-failed"
     | "workspace-refused"
@@ -375,6 +377,35 @@ export async function runCoding(
           },
           { operation: "resolve coding prompt" },
         ),
+      ],
+    );
+  }
+
+  // A built-in shell command is an action, not a prompt (#790). It resolves through
+  // the same registry as the shell and is refused with that action's reason before
+  // any workspace, trust or provider work, instead of reaching the model as text.
+  // A planned command yields to a skill or template of the same name; it is refused
+  // below, after those catalogs are read, only when nothing else answers.
+  const builtin = parseComposerSlash(resolved.prompt);
+  const plannedCommand =
+    (builtin.kind === "command" || builtin.kind === "invalid") &&
+    builtin.entry?.status.kind === "planned"
+      ? builtin
+      : null;
+  if ((builtin.kind === "invalid" || builtin.kind === "command") && plannedCommand === null) {
+    return codingResult(
+      {
+        prompt: resolved.prompt,
+        sessionId: "",
+        turnId: null,
+        workspaceId: "",
+        stage: "command-refused",
+        eventCount: 0,
+      },
+      [
+        adoptForeignError(headlessCommandRefusal(builtin), {
+          operation: "resolve shell command",
+        }),
       ],
     );
   }
@@ -865,12 +896,12 @@ export async function runCoding(
       selection ? String(sessionId) : undefined,
       { mcp, evaluator: evaluator.session },
     );
-    // Built-in composer commands win. A skill command is resolved next against the
-    // current catalog; otherwise a template expands before any turn state exists.
+    // Built-in commands were refused above. A skill command is resolved next against
+    // the current catalog; otherwise a template expands before any turn state exists.
     let prompt = resolved.prompt;
     let promptTemplate: PromptExpansionFact | undefined;
     let userSkills: readonly string[] | undefined;
-    if (!isBuiltinComposerSlash(prompt) && prompt.trimStart().startsWith("/")) {
+    if (prompt.trimStart().startsWith("/")) {
       // A bare name resolves against the sources as they are now, not a previous turn's.
       await instructionOwner
         .prepare(
@@ -881,10 +912,29 @@ export async function runCoding(
           true,
         )
         .catch(() => undefined);
+      const templates = new Set(extensions.prompts.templates.map((template) => template.localId));
       const command = resolveSkillCommand(prompt, {
         skills: instructionOwner.skillNames(),
-        templates: new Set(extensions.prompts.templates.map((template) => template.localId)),
+        templates,
       });
+      const plannedName = plannedCommand?.form.split(" ")[0]?.slice(1) ?? "";
+      if (plannedCommand !== null && command === null && !templates.has(plannedName)) {
+        return codingResult(
+          {
+            prompt: resolved.prompt,
+            sessionId: ids.sessionId,
+            turnId: null,
+            workspaceId: String(workspaceId),
+            stage: "command-refused",
+            eventCount: 0,
+          },
+          [
+            adoptForeignError(headlessCommandRefusal(plannedCommand), {
+              operation: "resolve shell command",
+            }),
+          ],
+        );
+      }
       if (command?.kind === "ambiguous")
         return codingResult(
           {
@@ -908,7 +958,7 @@ export async function runCoding(
         );
       if (command?.kind === "skill") userSkills = [command.name];
     }
-    if (userSkills === undefined && !isBuiltinComposerSlash(prompt)) {
+    if (userSkills === undefined) {
       const expansion = await extensions.prompts.expand(
         prompt,
         options.signal ?? new AbortController().signal,
@@ -1313,6 +1363,32 @@ export async function runCoding(
     if (options.ownedProcesses === undefined) await productArtifactSession?.close();
     configReload?.dispose();
   }
+}
+
+/**
+ * Why a headless run refuses built-in command text: the parse error, or the
+ * registry's admission refusal for the headless caller (#790).
+ */
+function headlessCommandRefusal(
+  parsed: Extract<ReturnType<typeof parseComposerSlash>, { kind: "command" | "invalid" }>,
+): { readonly code: string; readonly category: "context"; readonly message: string } {
+  if (parsed.kind === "invalid") {
+    return { code: `command.${parsed.code}`, category: "context", message: parsed.message };
+  }
+  const admission = admitCommand(parsed.entry, {
+    caller: "headless",
+    timing: parsed.timing,
+    turnActive: false,
+  });
+  if (!admission.ok) {
+    return { code: `command.${admission.code}`, category: "context", message: admission.message };
+  }
+  // No entry declares a headless action yet; the registry would admit one here.
+  return {
+    code: "command.caller-unsupported",
+    category: "context",
+    message: `${parsed.form} has no headless action yet.`,
+  };
 }
 
 function codingResult(

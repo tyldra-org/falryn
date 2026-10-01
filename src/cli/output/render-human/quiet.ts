@@ -65,6 +65,16 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
     case "config.validate":
     case "doctor":
       return [];
+    case "commands":
+      // One canonical usage per line, so a script can grep for a slash form; a planned
+      // command says so and names its owner.
+      return (result.payload?.commands ?? []).flatMap((command) =>
+        command.usage
+          .slice(0, 1)
+          .map((usage) =>
+            command.status.kind === "planned" ? `${usage}\tplanned ${command.status.owner}` : usage,
+          ),
+      );
     case "export":
       return quietExportLines(result.payload);
     case "import":

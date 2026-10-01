@@ -504,8 +504,12 @@ export function paletteRows(
   rows: readonly ReturnType<typeof commandRows>[number][],
   query: string,
 ) {
-  const matching = new Set(searchCommands(query).map((command) => command.id));
-  return rows.filter((row) => matching.has(row.id));
+  // Rows follow the registry ranking (#790): exact and prefix matches first.
+  const byId = new Map(rows.map((row) => [row.id, row] as const));
+  return searchCommands(query).flatMap((command) => {
+    const row = byId.get(command.id);
+    return row === undefined ? [] : [row];
+  });
 }
 
 function selectableBodyOf(

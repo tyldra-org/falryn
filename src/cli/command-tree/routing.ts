@@ -28,6 +28,9 @@ export function commandFrom(
   if (group === "doctor") {
     return action === null ? "doctor" : null;
   }
+  if (group === "commands") {
+    return action === null ? "commands" : null;
+  }
   if (group === "completion") {
     if (action !== null) {
       return null;

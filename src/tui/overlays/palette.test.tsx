@@ -249,6 +249,7 @@ const EVERY_COMMAND: readonly CommandEntry[] = SHELL_COMMANDS.map((command) => (
   title: command.title,
   description: command.description,
   binding: command.defaultBinding,
+  usage: null,
   unavailableReason: null,
 }));
 
