@@ -306,10 +306,51 @@ function validateTargetIssue(issue, relations) {
   return errors;
 }
 
+const RELATIONS_QUERY = `query($owner:String!,$repo:String!,$number:Int!) {
+  repository(owner:$owner,name:$repo) {
+    issue(number:$number) {
+      subIssues(first:1) { totalCount }
+      blockedBy(first:100) {
+        totalCount
+        nodes { number state repository { nameWithOwner } }
+      }
+    }
+  }
+}`;
+
+/**
+ * Every contract error for a pull request, reading its owning issue and that issue's
+ * native hierarchy and blockers through `github`. Dependabot pull requests have none.
+ */
+async function pullRequestErrors(github, { owner, repo }, pullRequest) {
+  if (pullRequest.user?.login === "dependabot[bot]") return [];
+  const result = validatePullRequest(pullRequest);
+  const errors = [...result.errors];
+  if (result.owningIssue !== null) {
+    const number = result.owningIssue.number;
+    const { data: issue } = await github.rest.issues.get({ owner, repo, issue_number: number });
+    const data = await github.graphql(RELATIONS_QUERY, { owner, repo, number });
+    const relations = data.repository?.issue;
+    if (relations === null || relations === undefined) {
+      errors.push("read the owning issue's native hierarchy and blockers");
+    } else {
+      errors.push(
+        ...validateIssueContract(issue).map((error) => `owning issue contract: ${error}`),
+        ...validateIssueClassification(issue).map(
+          (error) => `owning issue repository classification: ${error}`,
+        ),
+        ...validateTargetIssue(issue, relations),
+      );
+    }
+  }
+  return [...new Set(errors)];
+}
+
 module.exports = {
   checkboxCounts,
   isMaintainerIssue,
   parseOwningIssue,
+  pullRequestErrors,
   requestedArea,
   requestedWorkType,
   section,

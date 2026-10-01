@@ -1,0 +1,156 @@
+name: Pull request labels
+
+# Area, size and author-trust labels. Label jobs receive a label-write token, so none
+# of them checks out or executes pull-request code: the area job reads changed-file
+# metadata only, and the others load .github/scripts/pr-labels.cjs from the trusted
+# base revision. `pull_request_target` lets fork pull requests receive labels.
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+  issue_comment:
+    types: [created]
+  push:
+    branches: [main]
+    paths:
+      - .github/VOUCHED.td
+      - .github/workflows/pr-labels.yml
+
+permissions:
+  contents: read
+
+jobs:
+  area:
+    if: github.event_name == 'pull_request_target'
+    name: Apply area labels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: pr-labels-area-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Apply changed-file area labels
+        uses: actions/labeler@bf12e9b00b37c5c0ca2b87b79b2daf7891dbda13 # v7.0.0
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          configuration-path: .github/labeler.yml
+
+  size:
+    if: github.event_name == 'pull_request_target'
+    name: Apply size label
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    concurrency:
+      group: pr-labels-size-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      # `pull_request_target` checks out the base branch, never the pull request head.
+      - name: Check out the trusted label rules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Classify changed lines
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const labels = require("./.github/scripts/pr-labels.cjs");
+            const target = { ...context.repo, issue_number: context.payload.pull_request.number };
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              ...context.repo,
+              pull_number: target.issue_number,
+              per_page: 100,
+            });
+            const size = labels.sizeLabel(files);
+            await labels.setExclusiveLabel(github, target, labels.SIZE_LABELS, size.label);
+            core.info(`PR #${target.issue_number}: ${size.nonTest} non-test of ${size.total} changed lines -> ${size.label}`);
+
+  # Which pull requests need a vouch label: the one opened, the one whose comment asks
+  # `/recheck-vouch`, or every open one after the trust list changes. A comment without
+  # the command skips this job, so it costs no runner.
+  collect:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request && contains(github.event.comment.body, '/recheck-vouch'))
+    name: Select pull requests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      targets: ${{ steps.targets.outputs.value }}
+    steps:
+      - id: targets
+        name: Resolve affected pull requests
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        with:
+          script: |
+            const one = (number, author) => JSON.stringify([{ number, author }]);
+            if (context.eventName === "pull_request_target") {
+              const pullRequest = context.payload.pull_request;
+              core.setOutput("value", one(pullRequest.number, pullRequest.user.login));
+            } else if (context.eventName === "issue_comment") {
+              core.setOutput("value", one(context.payload.issue.number, context.payload.issue.user.login));
+            } else {
+              const pulls = await github.paginate(github.rest.pulls.list, {
+                ...context.repo,
+                state: "open",
+                per_page: 100,
+              });
+              core.setOutput("value", JSON.stringify(pulls.map((pull) => ({ number: pull.number, author: pull.user.login }))));
+            }
+
+  vouch:
+    needs: collect
+    if: needs.collect.outputs.targets != '[]'
+    name: Label pull request
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target: ${{ fromJson(needs.collect.outputs.targets) }}
+    concurrency:
+      group: pr-vouch-${{ matrix.target.number }}
+      cancel-in-progress: true
+    steps:
+      - id: vouch
+        name: Classify author trust
+        uses: mitchellh/vouch/action/check-user@d66fa29a64600490892131ad87597c30c91fcac4 # v1
+        with:
+          user: ${{ matrix.target.author }}
+          allow-fail: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # The default branch, never the pull request head.
+      - name: Check out the trusted label rules
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Apply one vouch label
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          PR_NUMBER: ${{ matrix.target.number }}
+          VOUCH_STATUS: ${{ steps.vouch.outputs.status }}
+        with:
+          script: |
+            const labels = require("./.github/scripts/pr-labels.cjs");
+            const target = { ...context.repo, issue_number: Number(process.env.PR_NUMBER) };
+            const next = labels.vouchLabel(process.env.VOUCH_STATUS);
+            await labels.setExclusiveLabel(github, target, labels.VOUCH_LABELS, next);
+            core.info(`PR #${target.issue_number}: ${process.env.VOUCH_STATUS} -> ${next}`);

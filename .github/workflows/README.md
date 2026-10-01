@@ -3,8 +3,9 @@
 | Workflow | Question | Trigger |
 | --- | --- | --- |
 | [`ci.yml`](ci.yml) | Is this revision safe to merge? | every pull request, and every push to `main` |
-| [`pr-checks.yml`](pr-checks.yml) | Does the PR meet contribution requirements, and which area, size, and author-trust labels apply? | PR updates, `/recheck-vouch`, and trust-list or workflow changes |
-| [`issue-governance.yml`](issue-governance.yml) | Is the public issue contract complete and are declared labels reconciled? | issue metadata or state changes |
+| [`pr-checks.yml`](pr-checks.yml) | Do the PR description and its owning issue meet the contribution contract? | PR updates |
+| [`pr-labels.yml`](pr-labels.yml) | Which area, size and author-trust labels apply? | PR opened or updated, a `/recheck-vouch` comment, and trust-list changes |
+| [`issue-governance.yml`](issue-governance.yml) | Is the public issue contract complete and are declared labels reconciled? | issue opened, edited, reopened, closed or relabeled |
 | [`dependency-pins.yml`](dependency-pins.yml) | Do the reviewed dependency pins match this Dependabot update? | Dependabot `bun` pull requests |
 
 Branch protection on `main` and release branches requires `All CI checks` and the
@@ -88,14 +89,21 @@ local-only: shared-runner variance made a CI gate expensive without earning it.
 
 ## Contribution metadata and labels
 
-`Validate contribution metadata` runs on every `pull_request` with read-only permissions.
-It loads [`contribution-policy.cjs`](../scripts/contribution-policy.cjs) from the
-trusted base revision and checks the PR template and its owning issue: open,
-unblocked, a PR-sized leaf with a complete checklist. The maintainer `roadmap`
-label selects the issue format, not Roadmap membership or readiness. Area, size and
-vouch labels run on `pull_request_target` with label-write tokens and never check
-out or execute pull-request code. The vouch labels come from
-[`VOUCHED.td`](../VOUCHED.td) and never grant merge permission.
+`Validate contribution metadata` runs on every `pull_request` with read-only
+permissions. It loads [`contribution-policy.cjs`](../scripts/contribution-policy.cjs)
+from the trusted base revision and checks the PR template and its owning issue:
+open, unblocked, a PR-sized leaf with a complete checklist. The maintainer `roadmap`
+label selects the issue format, not Roadmap membership or readiness. A base
+revision without that policy has nothing trusted to run, so the check passes with a
+notice.
+
+`pr-labels.yml` runs on `pull_request_target`, so fork pull requests receive labels,
+with label-write tokens. No label job checks out or executes pull-request code: the
+area job reads changed-file metadata, and the size and vouch jobs load
+[`pr-labels.cjs`](../scripts/pr-labels.cjs) from the base or default branch. The
+vouch labels come from [`VOUCHED.td`](../VOUCHED.td) and never grant merge
+permission. A comment starts a runner only when it is `/recheck-vouch` on a pull
+request.
 
 `issue-governance.yml` maps an issue form's declared work type and primary area to
 labels and comments on missing evidence, removing its comment once the issue passes.

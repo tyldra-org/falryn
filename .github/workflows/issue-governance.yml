@@ -2,8 +2,9 @@ name: Issue governance
 
 on:
   issues:
-    types:
-      [opened, edited, reopened, closed, assigned, unassigned, labeled, unlabeled]
+    # Assignment is not part of the public contract, so it does not trigger a check.
+    # Closing does: a closed issue passes, which removes an open reminder.
+    types: [opened, edited, reopened, closed, labeled, unlabeled]
 
 concurrency:
   group: issue-governance-${{ github.event.issue.number }}
