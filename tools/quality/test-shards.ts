@@ -1,6 +1,12 @@
 /**
  * The source suite as concurrent `bun test --shard` processes (#1196).
  *
+ * Shards are balanced by each file's duration in `.github/test-timings/<platform>.json`,
+ * recorded by the CI test jobs themselves (`FALRYN_RECORD_TIMINGS=1`) and pulled with
+ * `bun run test:timings`. A serial local recording balanced CI badly, because a file
+ * costs a different share on each host: it once gave one Ubuntu shard 510 small files
+ * and 302 s while the others ran 68 s and 79 s. A stale record only unbalances shards.
+ *
  * One `bun test` process runs every file in turn, so the suite takes as long as
  * all files together. Separate processes each run a balanced share of files, and
  * each process keeps its own globals, which Bun's in-process `--parallel` does not
@@ -23,8 +29,11 @@ import { appendFileSync, existsSync, readFileSync } from "node:fs";
 import { availableParallelism } from "node:os";
 import { z } from "zod";
 
-export const TIMINGS_FILE = ".github/test-timings.json";
 export const KNOWN_FLAKES_FILE = ".github/known-flaky-tests.json";
+/** This host's recorded per-file durations; macOS and Linux CI each keep their own. */
+export function timingsFile(platform: string = process.platform): string {
+  return `.github/test-timings/${platform}.json`;
+}
 export const COMPILED_SUITES = "**/*.compiled.test.ts";
 export const MAX_TEST_SHARDS = 16;
 /** More failing files than this is breakage, not flakiness, and nothing is retried. */
@@ -136,11 +145,13 @@ export function shardArguments(
   shard: number,
   shards: number,
   passthrough: readonly string[],
+  timings: { readonly file: string; readonly record: boolean } | null = null,
 ): string[] {
   return [
     "test",
     ...(shards > 1 ? [`--shard=${shard}/${shards}`] : []),
-    `--timings=${TIMINGS_FILE}`,
+    ...(timings === null ? [] : [`--timings=${timings.file}`]),
+    ...(timings?.record === true ? ["--update-timings"] : []),
     `--path-ignore-patterns=${COMPILED_SUITES}`,
     ...passthrough,
   ];
@@ -372,6 +383,13 @@ async function main(passthrough: readonly string[]): Promise<number> {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
+  // Recording writes one shard's measured durations into the host's file, which the CI
+  // job uploads; a local run only reads it, so the checkout stays clean. Concurrent
+  // shards would overwrite each other's writes, so only a single-shard run records.
+  const record = process.env.FALRYN_RECORD_TIMINGS === "1" && selected.length === 1;
+  const file = timingsFile();
+  const timings = record || existsSync(file) ? { file, record } : null;
+
   const started = performance.now();
   const live = selected.length === 1;
   if (!live) process.stderr.write(`running the source suite in ${shards} shards\n`);
@@ -380,7 +398,7 @@ async function main(passthrough: readonly string[]): Promise<number> {
     selected.map(async (shard) => ({
       shard,
       ...(await runBunTest(
-        shardArguments(shard, shards, passthrough),
+        shardArguments(shard, shards, passthrough, timings),
         live,
         `shard ${shard}/${shards}`,
       )),

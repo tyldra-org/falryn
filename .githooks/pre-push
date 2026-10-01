@@ -1,0 +1,4 @@
+#!/bin/sh
+# Installed by `bun run hooks:install`. The same static checks and changed-file
+# tests a scoped CI run performs; `git push --no-verify` skips it.
+exec bun run check

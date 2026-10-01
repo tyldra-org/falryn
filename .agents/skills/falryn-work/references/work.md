@@ -110,7 +110,7 @@ below for acceptance discovered incomplete after merge.
 
 During implementation, run focused checks. When the candidate is complete, they
 pass and the pre-PR pass is clean, push it and open the pull request (and any
-companion) as a draft, so CI runs the full matrix while review proceeds. Mark it
+companion) as a draft, so CI runs while review proceeds. Mark it
 ready only after its checks pass and review is complete. The complete suite is CI's
 job; run it locally only where `DEVELOPMENT.md` requires it. A later repair gets
 focused checks, and CI proves the new head. Reuse results only when

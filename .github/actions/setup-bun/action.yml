@@ -5,8 +5,8 @@ description: >-
   Every job in this repository needs the same three steps, and they must stay
   identical: a job that resolved a different Bun version or an unfrozen
   dependency set would report a result the other jobs cannot be compared with.
-  Owning them here makes that one edit rather than nine, and gives a
-  per-platform install flag somewhere to live.
+  Owning them here makes that one edit, and gives a per-platform install flag
+  somewhere to live.
 inputs:
   install:
     description: >-
@@ -38,9 +38,12 @@ runs:
         # Composite actions cannot rely on hashFiles(); hash the lock in-tree.
         echo "hash=$(git hash-object bun.lock)" >> "$GITHUB_OUTPUT"
 
-    - name: Cache Bun package downloads
+    # Every job restores the download cache, but only a push to `main` saves it, so
+    # pull-request branches cannot evict or replace the entry `main` relies on.
+    - name: Restore Bun package downloads
       if: inputs.install == 'true'
-      uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      id: bun_cache
+      uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
       with:
         path: ~/.bun/install/cache
         key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun_lock.outputs.hash }}
@@ -52,3 +55,12 @@ runs:
       shell: bash
       working-directory: ${{ inputs.working-directory }}
       run: bun install --frozen-lockfile
+
+    - name: Save Bun package downloads
+      if: >-
+        inputs.install == 'true' && steps.bun_cache.outputs.cache-hit != 'true' &&
+        github.event_name == 'push' && github.ref == 'refs/heads/main'
+      uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+      with:
+        path: ~/.bun/install/cache
+        key: bun-${{ runner.os }}-${{ runner.arch }}-${{ steps.bun_lock.outputs.hash }}

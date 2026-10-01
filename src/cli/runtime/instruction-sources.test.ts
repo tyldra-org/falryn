@@ -41,6 +41,8 @@ async function fixture() {
   await product.setting("instructions.sources", { version: 1, entries });
   return { ...product, home, root, entries };
 }
+// Three complete product runs with a restart between them: about a second locally, and
+// past Bun's 5 s default on a loaded hosted runner, so it gets an explicit budget.
 test("real headless input retains ordered instructions and native provenance across save, restart and reset", async () => {
   const f = await fixture();
   const first = await f.run();
@@ -101,7 +103,7 @@ test("real headless input retains ordered instructions and native provenance acr
   const reset = await restarted.run();
   expect(reset.result.outcome.kind).toBe("completed");
   expect(JSON.stringify(reset.requests[0]?.messages)).toContain("ROOT_FALRYN_RULE");
-});
+}, 30_000);
 test("configured references cannot follow a symlink outside an admitted root", async () => {
   const f = await fixture();
   await mkdir(join(f.home, "outside"));

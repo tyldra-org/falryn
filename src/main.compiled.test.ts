@@ -55,6 +55,7 @@ const EXECUTABLE = join(dirname(dirname(import.meta.path)), "dist", EXECUTABLE_N
  * built for the wrong target fails here instead of passing quietly.
  */
 const SMOKE_TARGETS = {
+  "linux-x64": "linux x64",
   "darwin-arm64": "darwin arm64",
   "win32-x64": "win32 x64",
 } as const;

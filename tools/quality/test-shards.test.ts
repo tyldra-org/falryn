@@ -17,6 +17,7 @@ import {
   testRetries,
   testShardCount,
   testShardSelection,
+  timingsFile,
 } from "./test-shards.ts";
 
 const RUNNER = join(import.meta.dir, "test-shards.ts");
@@ -45,15 +46,23 @@ test("a CI job selects one shard, and retries are on unless explicitly off", () 
   expect(testRetries("2").ok).toBe(false);
 });
 
-test("every shard balances by the recorded timings and leaves compiled suites to the smoke runs", () => {
-  expect(shardArguments(2, 4, ["--only-failures"])).toEqual([
+test("every shard balances by its host's timings and leaves compiled suites to the smoke runs", () => {
+  expect(timingsFile("darwin")).toBe(".github/test-timings/darwin.json");
+  const timings = { file: timingsFile("linux"), record: false };
+  expect(shardArguments(2, 4, ["--only-failures"], timings)).toEqual([
     "test",
     "--shard=2/4",
-    "--timings=.github/test-timings.json",
+    "--timings=.github/test-timings/linux.json",
     "--path-ignore-patterns=**/*.compiled.test.ts",
     "--only-failures",
   ]);
-  expect(shardArguments(1, 1, [])).not.toContain("--shard=1/1");
+  expect(shardArguments(1, 1, [], { file: timingsFile("linux"), record: true })).toEqual([
+    "test",
+    "--timings=.github/test-timings/linux.json",
+    "--update-timings",
+    "--path-ignore-patterns=**/*.compiled.test.ts",
+  ]);
+  expect(shardArguments(1, 1, [], null)).not.toContain("--update-timings");
   // A retry names its file exactly, so a filter cannot widen it to similar names.
   expect(retryArguments("src/a.test.ts", ["--bail"])).toEqual([
     "test",
