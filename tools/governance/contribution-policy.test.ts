@@ -12,6 +12,11 @@ type Policy = {
     readonly errors: readonly string[];
     readonly owningIssue: { readonly number: number } | null;
   };
+  readonly pullRequestErrors: (
+    github: unknown,
+    repo: { readonly owner: string; readonly repo: string },
+    pullRequest: Record<string, unknown>,
+  ) => Promise<readonly string[]>;
   readonly validateTargetIssue: (
     issue: Record<string, unknown>,
     relations: Record<string, unknown>,
@@ -176,9 +181,56 @@ describe("contribution policy", () => {
     ).text();
 
     expect(workflow).toContain(["ref: $", "{{ github.event.pull_request.base.sha }}"].join(""));
-    expect(workflow).toContain("id: trusted_policy");
-    expect(workflow).toContain("if: steps.trusted_policy.outputs.available != 'true'");
-    expect(workflow).toContain("if: steps.trusted_policy.outputs.available == 'true'");
+    expect(workflow).toContain('typeof policy?.pullRequestErrors !== "function"');
+  });
+
+  test("reads the owning issue and its relations, and reports each error once", async () => {
+    const owning = issue({
+      body: readyIssueBody.replace("- [x] The contract", "- [ ] The contract"),
+    });
+    const calls: string[] = [];
+    const github = {
+      rest: {
+        issues: {
+          get: async (request: { issue_number: number }) => {
+            calls.push(`get #${request.issue_number}`);
+            return { data: owning };
+          },
+        },
+      },
+      graphql: async (_query: string, variables: { number: number }) => {
+        calls.push(`relations #${variables.number}`);
+        return {
+          repository: {
+            issue: {
+              subIssues: { totalCount: 0 },
+              blockedBy: {
+                totalCount: 1,
+                nodes: [{ number: 9, state: "OPEN", repository: { nameWithOwner: "o/r" } }],
+              },
+            },
+          },
+        };
+      },
+    };
+    const repo = { owner: "o", repo: "r" };
+    const errors = await policy.pullRequestErrors(github, repo, pullRequest());
+    expect(calls).toEqual(["get #123", "relations #123"]);
+    expect(errors).toEqual([
+      "the owning issue must have a non-empty, fully checked Contribution checklist",
+      "the owning issue has open blocker(s): o/r#9",
+    ]);
+    const missing = { ...github, graphql: async () => ({ repository: { issue: null } }) };
+    expect(await policy.pullRequestErrors(missing, repo, pullRequest())).toEqual([
+      "read the owning issue's native hierarchy and blockers",
+    ]);
+    expect(
+      await policy.pullRequestErrors(
+        github,
+        repo,
+        pullRequest({ user: { login: "dependabot[bot]" }, title: "x" }),
+      ),
+    ).toEqual([]);
   });
 
   test("accepts a complete contribution issue without private planning metadata", () => {
