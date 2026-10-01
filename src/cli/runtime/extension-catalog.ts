@@ -8,7 +8,10 @@ import {
   type CatalogTrust,
   createExtensionCatalogRehydrator,
 } from "../../application/extensions/catalog-rehydration.ts";
-import { inspectProvenanceTrust } from "../../application/extensions/package-provenance.ts";
+import {
+  createPackageStanding,
+  projectInstalledTrust,
+} from "../../application/extensions/package-standing.ts";
 import { TRUST_POLICY_GENERATION } from "../../application/extensions/package-trust.ts";
 import {
   createExtensionScopeControls,
@@ -27,6 +30,7 @@ import { sessionId } from "../../domain/foundation/index.ts";
 import { ok } from "../../domain/foundation/result.ts";
 import { conflictKey, NO_RETRY, workUnitId } from "../../domain/orchestration/work.ts";
 import { trustEvidenceBinding } from "../../domain/security/ecosystem-trust.ts";
+import { derivePackageStanding } from "../../domain/security/package-standing.ts";
 import { createHostPackageCache } from "../../integrations/extensions/host-package-cache.ts";
 import { ed25519PackageVerifier } from "../../integrations/extensions/package-signature.ts";
 import { FALRYN_VERSION } from "../version.ts";
@@ -109,57 +113,75 @@ export function composeExtensionCatalog(options: {
       }),
     };
   }
+  /** The same standing owner `falryn package standing` reads, so the catalog and it never disagree. */
+  const standingOwner =
+    records === null
+      ? null
+      : createPackageStanding({
+          owners: {
+            packages: records.packages,
+            decisions: records.decisions,
+            provenance: records.provenance,
+            verifier: ed25519PackageVerifier,
+          },
+          actor,
+          now: () => Number(services.clock.now()),
+        });
+  /** The trust projection of the installed version, or `null` before any record store is open. */
   async function trustProjection(installed: InstalledPackage) {
     if (records === null || installed.current === null) return null;
-    const version = installed.current;
-    const result = inspectProvenanceTrust(
+    const projection = projectInstalledTrust(
       {
         decisions: records.decisions,
         provenance: records.provenance,
         verifier: ed25519PackageVerifier,
       },
-      {
-        subject: { identity: version.identity, ownership: version.ownership },
-        evidence: {
-          integrity: "computed",
-          signature: "unavailable",
-          curation: "unavailable",
-          advisory: "unavailable",
-          observedAt: Number(services.clock.now()),
-          expiresAt: null,
-          reference: version.identity.packageDigest,
-        },
-        policyGeneration: TRUST_POLICY_GENERATION,
-        actor,
-        scope: { kind: "user", authority: actor },
-        now: Number(services.clock.now()),
-        compatibility: "compatible",
-        health: "unknown",
-        availability: "unavailable",
-        online: false,
-      },
-      [],
+      installed.current,
+      actor,
+      Number(services.clock.now()),
     );
-    if (result.status === "failed") throw new ExtensionInputError(`trust-${result.code}`);
-    return result.trust;
+    if (projection === null) throw new ExtensionInputError("trust-unavailable");
+    return projection;
   }
   async function trust(installed: InstalledPackage): Promise<CatalogTrust> {
+    const version = installed.current;
     const projection = await trustProjection(installed);
-    if (projection === null) return { trust: "unknown", inputs: canonicalDigest({ installed }) };
+    if (standingOwner === null || version === null || projection === null)
+      return { trust: "unknown", inputs: canonicalDigest({ installed }) };
+    const dependencies = standingOwner.dependencies(version);
+    const standing = derivePackageStanding({
+      installed,
+      trust: projection,
+      retained: [],
+      dependencies,
+    });
     return {
-      trust: projection.eligible
-        ? "accepted"
-        : projection.state === "revoked"
-          ? "revoked"
-          : projection.decisionStatus === "expired"
-            ? "expired"
-            : "required",
+      trust:
+        standing.state === "eligible"
+          ? "accepted"
+          : standing.state === "revoked"
+            ? "revoked"
+            : standing.state === "quarantined"
+              ? "quarantined"
+              : standing.state === "dependency-blocked"
+                ? "dependency-blocked"
+                : standing.state === "expired"
+                  ? "expired"
+                  : "required",
       inputs: canonicalDigest({
         decision: projection.decision,
         evidence: trustEvidenceBinding(projection.evidence),
         freshness: projection.freshness,
         eligible: projection.eligible,
         policy: projection.policyGeneration,
+        // A dependency that loses its approval changes this package's catalog generation too.
+        dependencies: dependencies.map((entry) => [
+          entry.id,
+          entry.digest,
+          entry.trust?.state ?? null,
+          entry.trust?.eligible ?? false,
+          entry.trust?.decision?.revision ?? 0,
+        ]),
       }),
     };
   }

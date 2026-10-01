@@ -49,6 +49,19 @@ export const catalogSourceSchema = z.discriminatedUnion("kind", [
     activation: extensionActivationIdentityV1Schema,
   }),
 ]);
+/**
+ * What a catalog entry says about its package's trust. `quarantined` and `dependency-blocked` are
+ * kept apart from `required` so an entry never invites an approval that would not lift them.
+ */
+export const CATALOG_TRUST_STATES = [
+  "accepted",
+  "required",
+  "revoked",
+  "expired",
+  "quarantined",
+  "dependency-blocked",
+  "unknown",
+] as const;
 const catalogEntryFields = z.strictObject({
   source: catalogSourceSchema,
   contribution: contributionIdentityV1Schema,
@@ -62,7 +75,7 @@ const catalogEntryFields = z.strictObject({
   explicitOnly: z.boolean(),
   health: z.enum(["healthy", "degraded", "unknown"]),
   hookHealth: hookHealthSnapshotSchema.optional(),
-  trust: z.enum(["accepted", "required", "revoked", "expired", "unknown"]),
+  trust: z.enum(CATALOG_TRUST_STATES),
   availability: z.enum(["available", "unavailable"]),
   reason: identityText,
   binding: capabilityBindingV1Schema.nullable(),

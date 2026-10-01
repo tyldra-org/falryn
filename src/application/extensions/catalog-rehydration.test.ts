@@ -203,25 +203,29 @@ test.each(["workspace", "process", "development"] as const)(
   },
 );
 
-test.each(["required", "revoked", "expired", "unknown"] as const)(
-  "current %s trust never restores a previous enabled projection",
-  async (trust) => {
-    const fixture = await setup();
-    try {
-      const owner = createExtensionCatalogRehydrator(fixture.options());
-      expect((await owner.refresh(signal)).status).toBe("rehydrated");
-      fixture.setTrust({ trust, inputs: bytesDigest(trust) });
-      const result = await owner.refresh(signal);
-      expect(result.status === "rehydrated" && result.catalog.entries[0]).toMatchObject({
-        enabled: false,
-        trust,
-        reason: `trust-${trust}`,
-      });
-    } finally {
-      await fixture.close();
-    }
-  },
-);
+test.each([
+  "required",
+  "revoked",
+  "expired",
+  "quarantined",
+  "dependency-blocked",
+  "unknown",
+] as const)("current %s trust never restores a previous enabled projection", async (trust) => {
+  const fixture = await setup();
+  try {
+    const owner = createExtensionCatalogRehydrator(fixture.options());
+    expect((await owner.refresh(signal)).status).toBe("rehydrated");
+    fixture.setTrust({ trust, inputs: bytesDigest(trust) });
+    const result = await owner.refresh(signal);
+    expect(result.status === "rehydrated" && result.catalog.entries[0]).toMatchObject({
+      enabled: false,
+      trust,
+      reason: `trust-${trust}`,
+    });
+  } finally {
+    await fixture.close();
+  }
+});
 
 test.each(["disable", "uninstall", "update"] as const)(
   "lifecycle %s invalidates the exact saved choice without losing diagnostic identity",

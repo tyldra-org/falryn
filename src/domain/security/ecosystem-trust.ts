@@ -15,6 +15,21 @@ export const TRUST_STATES = [
   "revoked",
   "incompatible",
 ] as const;
+/**
+ * `revoke` and `quarantine` each block the exact subject until a new confirmed revision. `release`
+ * ends a quarantine and leaves the subject unapproved: it grants nothing, so approval is a separate
+ * revision with its own expiry.
+ */
+export const TRUST_ACTIONS = ["approve", "revoke", "quarantine", "release"] as const;
+/** Why a package was held back; a category only, never free text, so it is safe to retain and export. */
+export const HOLD_REASONS = [
+  "integrity",
+  "suspected-compromise",
+  "unexpected-behavior",
+  "policy",
+  "other",
+] as const;
+export type HoldReason = (typeof HOLD_REASONS)[number];
 const timestamp = z.int().nonnegative();
 export const trustScopeSchema = z.strictObject({
   kind: z.enum(["user", "workspace", "session"]),
@@ -46,14 +61,20 @@ export const trustDecisionSchema = z
     scope: trustScopeSchema,
     contributions: z.array(digestSchema).max(1_024),
     revision: z.int().positive(),
-    action: z.enum(["approve", "revoke"]),
+    action: z.enum(TRUST_ACTIONS),
+    /** Only a revocation or quarantine says why. */
+    reason: z.enum(HOLD_REASONS).optional(),
     decidedAt: timestamp,
     expiresAt: timestamp.nullable(),
   })
   .refine((value) =>
-    value.action === "revoke"
-      ? value.expiresAt === null
-      : value.expiresAt !== null && value.expiresAt > value.decidedAt,
+    value.action === "approve"
+      ? value.expiresAt !== null && value.expiresAt > value.decidedAt
+      : value.expiresAt === null,
+  )
+  .refine(
+    (value) =>
+      value.reason === undefined || value.action === "revoke" || value.action === "quarantine",
   );
 export type TrustSubject = z.infer<typeof trustSubjectSchema>;
 export type TrustEvidence = z.infer<typeof trustEvidenceSchema>;
@@ -80,7 +101,14 @@ export type TrustProjection = {
   readonly freshness: "current" | "stale" | "unavailable";
   readonly online: boolean;
   readonly decision: TrustDecision | null;
-  readonly decisionStatus: "absent" | "matching" | "expired" | "stale" | "revoked";
+  readonly decisionStatus:
+    | "absent"
+    | "matching"
+    | "expired"
+    | "stale"
+    | "revoked"
+    | "quarantined"
+    | "released";
   readonly scope: TrustScope;
   readonly policyGeneration: number;
   readonly compatibility: TrustObservation["compatibility"];
@@ -119,26 +147,34 @@ export function evaluateTrust(
     trustDecisionKey(decision.subject, decision.scope, decision.actor) ===
       trustDecisionKey(observation.subject, observation.scope, observation.actor);
   const revoked = sameSubject && decision.action === "revoke";
+  const heldBack = sameSubject && decision.action === "quarantine";
+  const released = sameSubject && decision.action === "release";
   const bindingMatches =
     sameSubject &&
+    decision.action === "approve" &&
     decision.policyGeneration === observation.policyGeneration &&
     decision.decidedAt <= now &&
     trustEvidenceBinding(decision.evidence) === trustEvidenceBinding(evidence);
   const expired = bindingMatches && decision.expiresAt !== null && decision.expiresAt <= now;
-  const matching = bindingMatches && !expired && !revoked;
+  const matching = bindingMatches && !expired;
   const decisionStatus =
     decision === null
       ? "absent"
       : revoked
         ? "revoked"
-        : expired
-          ? "expired"
-          : matching
-            ? "matching"
-            : "stale";
+        : heldBack
+          ? "quarantined"
+          : released
+            ? "released"
+            : expired
+              ? "expired"
+              : matching
+                ? "matching"
+                : "stale";
   let state: TrustProjection["state"];
   if (revoked || evidence.advisory === "revoked") state = "revoked";
   else if (
+    heldBack ||
     evidence.integrity === "mismatch" ||
     evidence.signature === "invalid" ||
     evidence.signature === "conflicting" ||
@@ -146,7 +182,8 @@ export function evaluateTrust(
   )
     state = "quarantined";
   else if (observation.compatibility === "incompatible") state = "incompatible";
-  else if (freshness === "stale" || expired || (decision !== null && !matching)) state = "degraded";
+  else if (freshness === "stale" || expired || (decision !== null && !released && !matching))
+    state = "degraded";
   else if (matching) state = "user-approved";
   else if (evidence.integrity === "verified" && evidence.signature === "verified")
     state = evidence.curation === "verified" ? "curated" : "verified";

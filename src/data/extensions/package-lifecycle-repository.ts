@@ -35,6 +35,9 @@ export const MIGRATION_0014: Migration = {
   ],
 };
 
+/** Upper bound on retained versions one read lists; cleanup keeps far fewer. */
+const MAX_LISTED_VERSIONS = 64;
+
 function decode(row: Record<string, unknown> | undefined): InstalledVersion | null {
   if (row === undefined || typeof row.metadata !== "string" || row.metadata.length > 2_097_152)
     return null;
@@ -89,6 +92,17 @@ export function createPackageLifecycleRepository(store: SqliteStorePort): Packag
             { id: packageId, digest },
           )[0],
         ),
+      );
+    },
+    versions(packageId) {
+      return safely(() =>
+        read(
+          `SELECT * FROM package_versions WHERE package_id = $id AND state = 'retained' ORDER BY sequence DESC LIMIT ${MAX_LISTED_VERSIONS}`,
+          { id: packageId },
+        ).flatMap((row) => {
+          const version = decode(row);
+          return version === null ? [] : [version];
+        }),
       );
     },
     operation(id) {
