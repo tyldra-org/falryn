@@ -73,7 +73,7 @@ test("an unmeasured or large reachable test set runs the full matrix", () => {
 
 test.each([
   ".github/workflows/ci.yml",
-  ".github/known-flaky-tests.json",
+  ".github/test-timings.json",
   "tools/quality/test-shards.ts",
   "package.json",
   "bun.lock",

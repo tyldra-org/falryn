@@ -1,9 +1,12 @@
 /**
  * The source suite as concurrent `bun test --shard` processes (#1196).
  *
- * Bun deals the files out by path, which spreads each directory's heavy files across
- * shards. Recorded per-file durations (`--timings`) balanced worse: they leave out the
- * cost of loading a file's modules, so one shard received hundreds of small files.
+ * Shards are balanced by duration. `.github/test-timings.json` records each file's
+ * duration in a single serial run, which leaves out what a file costs in a shard of its
+ * own: about half a second on hosted runners, whatever its tests take. Bun balancing by
+ * the record alone gave one CI shard 510 small files and 302 s while the others ran
+ * 68 s and 79 s. Each run therefore hands Bun the record plus `FILE_COST_MS` for every
+ * tracked test file, recorded or not. A stale record only unbalances the shards.
  *
  * One `bun test` process runs every file in turn, so the suite takes as long as
  * all files together. Separate processes each run a balanced share of files, and
@@ -23,11 +26,15 @@
  * shard count (1 runs the plain serial suite). `FALRYN_TEST_SHARD=i/N` runs only
  * shard i of N, as a CI job does. `FALRYN_TEST_RETRIES=0` disables the retry.
  */
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
-import { availableParallelism } from "node:os";
+import { appendFileSync, existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { availableParallelism, tmpdir } from "node:os";
+import { join } from "node:path";
 import { z } from "zod";
 
 export const KNOWN_FLAKES_FILE = ".github/known-flaky-tests.json";
+export const TIMINGS_FILE = ".github/test-timings.json";
+/** What a test file costs in a shard beyond its recorded duration, measured on CI. */
+export const FILE_COST_MS = 500;
 export const COMPILED_SUITES = "**/*.compiled.test.ts";
 export const MAX_TEST_SHARDS = 16;
 /** More failing files than this is breakage, not flakiness, and nothing is retried. */
@@ -135,14 +142,42 @@ export function testRetries(value: string | undefined): Parsed<0 | 1> {
     : { ok: false, reason: "FALRYN_TEST_RETRIES must be 0 or 1" };
 }
 
+/**
+ * The durations Bun balances shards by: each file's recorded duration, or none, plus
+ * `FILE_COST_MS`. An unreadable record weighs every file the same.
+ */
+export function shardWeights(
+  recorded: string | null,
+  files: readonly string[],
+): { readonly version: 1; readonly files: Readonly<Record<string, number>> } {
+  let durations: Record<string, unknown> = {};
+  try {
+    const parsed: unknown = recorded === null ? null : JSON.parse(recorded);
+    const inner = (parsed as { files?: unknown } | null)?.files;
+    if (typeof inner === "object" && inner !== null) durations = inner as Record<string, unknown>;
+  } catch {
+    durations = {};
+  }
+  const weights: Record<string, number> = {};
+  for (const file of files) {
+    const duration = durations[file];
+    weights[file] =
+      (typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? duration : 0) +
+      FILE_COST_MS;
+  }
+  return { version: 1, files: weights };
+}
+
 export function shardArguments(
   shard: number,
   shards: number,
   passthrough: readonly string[],
+  weightsFile: string | null = null,
 ): string[] {
   return [
     "test",
     ...(shards > 1 ? [`--shard=${shard}/${shards}`] : []),
+    ...(shards > 1 && weightsFile !== null ? [`--timings=${weightsFile}`] : []),
     `--path-ignore-patterns=${COMPILED_SUITES}`,
     ...passthrough,
   ];
@@ -374,6 +409,25 @@ async function main(passthrough: readonly string[]): Promise<number> {
   process.once("SIGINT", stop);
   process.once("SIGTERM", stop);
 
+  // Every shard process of this run reads the same weights, so they agree on the split.
+  const weightsFile = join(tmpdir(), `falryn-test-weights-${process.pid}.json`);
+  if (shards > 1) {
+    const tracked = Bun.spawnSync(["git", "ls-files", "*.test.ts", "*.test.tsx"], {
+      stdout: "pipe",
+      stderr: "ignore",
+    });
+    const files = tracked.success
+      ? new TextDecoder().decode(tracked.stdout).split("\n").filter(Boolean)
+      : [];
+    writeFileSync(
+      weightsFile,
+      JSON.stringify(
+        shardWeights(existsSync(TIMINGS_FILE) ? readFileSync(TIMINGS_FILE, "utf8") : null, files),
+      ),
+    );
+  }
+  process.once("exit", () => rmSync(weightsFile, { force: true }));
+
   const started = performance.now();
   const live = selected.length === 1;
   if (!live) process.stderr.write(`running the source suite in ${shards} shards\n`);
@@ -382,7 +436,7 @@ async function main(passthrough: readonly string[]): Promise<number> {
     selected.map(async (shard) => ({
       shard,
       ...(await runBunTest(
-        shardArguments(shard, shards, passthrough),
+        shardArguments(shard, shards, passthrough, weightsFile),
         live,
         `shard ${shard}/${shards}`,
       )),
