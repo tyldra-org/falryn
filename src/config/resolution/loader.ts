@@ -116,6 +116,20 @@ export type ConfigurationLoaderOptions = {
   }>;
 };
 
+const PREPARE_CAUSE = /^[a-z][a-z0-9-]{0,63}$/u;
+
+/**
+ * The code of the failure a `prepare` step threw, or `unexpected`. Only a short
+ * code-shaped string is kept, so no message, path or value reaches the outcome.
+ */
+function boundedPrepareCause(thrown: unknown): string {
+  const code =
+    typeof thrown === "object" && thrown !== null && "code" in thrown
+      ? (thrown as { readonly code?: unknown }).code
+      : undefined;
+  return typeof code === "string" && PREPARE_CAUSE.test(code) ? code : "unexpected";
+}
+
 export type LoadRequest = {
   /** Admitted user preparation only. Bootstrap discovery always uses the original host port. */
   readonly preparedEnvironment?: EnvironmentPort;
@@ -287,10 +301,11 @@ export function createConfigurationLoader(
           },
           signal,
         );
-      } catch {
+      } catch (thrown) {
         return {
           kind: "publish-failed",
           code: "package-configuration-unavailable",
+          cause: boundedPrepareCause(thrown),
           retained: current,
         };
       }
