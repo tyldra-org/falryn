@@ -16,7 +16,6 @@ import type { ConfigurationIssue } from "../../domain/configuration/index.ts";
 import { canonicalDigest, ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import { catalogWorkspaceBinding } from "../../domain/extensions/catalog-history.ts";
 import type { PackageDataDocument } from "../../domain/extensions/package-data-store.ts";
-import { isCleanClose } from "../../domain/storage/index.ts";
 import { openSessionStore } from "../commands/storage.ts";
 import type { Services } from "./services.ts";
 
@@ -61,7 +60,11 @@ export async function loadPackageConfiguration(
           ...retained,
         );
       } finally {
-        closed = isCleanClose(await opened.store.close());
+        // This read commits nothing, so it does not wait for another process's readers: a
+        // running schedule host or terminal holding a snapshot would otherwise make the
+        // truncating checkpoint fail and the whole configuration unavailable. The next close
+        // finishes the checkpoint. Only a connection that did not close is a failure.
+        closed = (await opened.store.close(signal, { waitForReaders: false })).closed;
       }
       if (!closed) throw new ExtensionInputError("package-configuration-store-close-failed");
     }
