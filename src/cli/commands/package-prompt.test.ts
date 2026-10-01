@@ -23,38 +23,34 @@ test.skipIf(createHostSandbox().probe().status !== "available")(
   "falryn run expands an admitted package prompt template before the ordinary submission",
   async () => {
     const root = await temporaryRoot("falryn-native-prompt-");
-    const fixture = await prepareNativeCliFixture(
-      [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname],
-      root,
-      {
-        declarations: [
-          {
-            kind: "prompt",
-            namespace: "fixture",
-            id: "review",
-            path: "review.md",
-            description: "Review one file",
-            authority: declaredAuthority,
+    const fixture = await prepareNativeCliFixture("in-process", root, {
+      declarations: [
+        {
+          kind: "prompt",
+          namespace: "fixture",
+          id: "review",
+          path: "review.md",
+          description: "Review one file",
+          authority: declaredAuthority,
+        },
+        {
+          kind: "prompt",
+          namespace: "fixture",
+          id: "outline",
+          path: "outline.md",
+          description: "Outline one topic",
+          authority: declaredAuthority,
+          variables: {
+            version: 1,
+            entries: [
+              { name: "topic", type: { kind: "string" }, required: true },
+              { name: "depth", type: { kind: "number", integer: true, maximum: 3 }, default: 1 },
+            ],
           },
-          {
-            kind: "prompt",
-            namespace: "fixture",
-            id: "outline",
-            path: "outline.md",
-            description: "Outline one topic",
-            authority: declaredAuthority,
-            variables: {
-              version: 1,
-              entries: [
-                { name: "topic", type: { kind: "string" }, required: true },
-                { name: "depth", type: { kind: "number", integer: true, maximum: 3 }, default: 1 },
-              ],
-            },
-          },
-        ] as never,
-        files: { "review.md": TEMPLATE, "outline.md": "Brief ${topic} at depth ${depth}." },
-      },
-    );
+        },
+      ] as never,
+      files: { "review.md": TEMPLATE, "outline.md": "Brief ${topic} at depth ${depth}." },
+    });
     const run = (prompt: string) =>
       nativePromptJourney({ home: root, environment: fixture.environment, prompt });
 
@@ -152,35 +148,31 @@ test.skipIf(createHostSandbox().probe().status !== "available")(
   "the renderer, slash invocation and typed variables work together through both product paths",
   async () => {
     const root = await temporaryRoot("falryn-native-prompt-integrated-");
-    const fixture = await prepareNativeCliFixture(
-      [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname],
-      root,
-      {
-        declarations: [
-          {
-            kind: "prompt",
-            namespace: "fixture",
-            id: "combined",
-            path: "combined.md",
-            description: "Combined contract",
-            authority: declaredAuthority,
-            variables: {
-              version: 1,
-              entries: [
-                { name: "target", type: { kind: "string" }, required: true },
-                {
-                  name: "mode",
-                  type: { kind: "enum", values: ["quick", "deep"] },
-                  default: "quick",
-                },
-                { name: "note", type: { kind: "string" } },
-              ],
-            },
+    const fixture = await prepareNativeCliFixture("in-process", root, {
+      declarations: [
+        {
+          kind: "prompt",
+          namespace: "fixture",
+          id: "combined",
+          path: "combined.md",
+          description: "Combined contract",
+          authority: declaredAuthority,
+          variables: {
+            version: 1,
+            entries: [
+              { name: "target", type: { kind: "string" }, required: true },
+              {
+                name: "mode",
+                type: { kind: "enum", values: ["quick", "deep"] },
+                default: "quick",
+              },
+              { name: "note", type: { kind: "string" } },
+            ],
           },
-        ] as never,
-        files: { "combined.md": COMBINED },
-      },
-    );
+        },
+      ] as never,
+      files: { "combined.md": COMBINED },
+    });
     const run = (prompt: string, session?: string) =>
       nativePromptJourney({
         home: root,

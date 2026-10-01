@@ -3,10 +3,14 @@ import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import type { HookGrantRequirement } from "../../domain/extensions/hook-grants.ts";
 import { packageReceiptSchema } from "../../domain/extensions/lifecycle.ts";
-import { type ExtraPackageFixture, preparePackageCliFixture } from "./package-health-fixtures.ts";
+import {
+  type ExtraPackageFixture,
+  type FixtureCli,
+  preparePackageCliFixture,
+} from "./package-health-fixtures.ts";
 
 export async function prepareNativeCliFixture(
-  command: readonly string[],
+  command: FixtureCli,
   root: string,
   extra?: ExtraPackageFixture,
 ) {

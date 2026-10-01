@@ -19,7 +19,6 @@ import { prepareNativeCliFixture } from "./package-native-fixtures.ts";
 afterEach(removeTemporaryRoots);
 const unavailable =
   process.platform === "win32" || createHostSandbox().probe().status !== "available";
-const COMMAND = [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname];
 const MODEL = {
   providerProfileId: "deterministic",
   providerId: "falryn-deterministic",
@@ -64,7 +63,7 @@ async function journey(
   for (const [path, text] of Object.entries(options.workspace ?? {}))
     await writeFile(join(root, "workspace", path), text);
   const fixture = await prepareNativeCliFixture(
-    COMMAND,
+    "in-process",
     root,
     evaluate === null
       ? undefined
@@ -102,7 +101,7 @@ test.skipIf(unavailable)(
   "enabling lists the evaluator's binding and refuses a missing or different grant",
   async () => {
     const root = await temporaryRoot("falryn-hook-evaluator-grant-");
-    const fixture = await preparePackageCliFixture(COMMAND, root, "healthy", true, {
+    const fixture = await preparePackageCliFixture("in-process", root, "healthy", true, {
       declarations: [evaluatorHookDeclaration()],
       files: { "judge.md": EVALUATOR_FIXTURE_INSTRUCTIONS },
     });

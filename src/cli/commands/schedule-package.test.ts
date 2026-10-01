@@ -16,7 +16,7 @@ for (const change of ["disable", "revoke", "uninstall", "update"] as const)
     async () => {
       const root = await temporaryRoot("schedule-package-");
       const command = [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname];
-      const fixture = await prepareNativeCliFixture(command, root, {
+      const fixture = await prepareNativeCliFixture("in-process", root, {
         files: {},
         declarations: [
           contributionDeclarationSchema.parse({

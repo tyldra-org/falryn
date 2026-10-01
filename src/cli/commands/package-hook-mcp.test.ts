@@ -14,7 +14,6 @@ import { prepareNativeCliFixture } from "./package-native-fixtures.ts";
 afterEach(removeTemporaryRoots);
 const unavailable =
   process.platform === "win32" || createHostSandbox().probe().status !== "available";
-const COMMAND = [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname];
 const SERVER = fileURLToPath(
   new URL("../../integrations/extensions/mcp-fixtures.ts", import.meta.url),
 );
@@ -46,7 +45,7 @@ async function journey(
   } = {},
 ) {
   const root = await temporaryRoot("falryn-hook-mcp-");
-  const fixture = await prepareNativeCliFixture(COMMAND, root, {
+  const fixture = await prepareNativeCliFixture("in-process", root, {
     declarations: [
       mcpHookDeclaration(
         toolId,

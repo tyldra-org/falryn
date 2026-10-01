@@ -15,7 +15,6 @@ import { prepareNativeCliFixture } from "./package-native-fixtures.ts";
 afterEach(removeTemporaryRoots);
 const tls = hookTestCertificate("hooks.test");
 const unavailable = tls === null || createHostSandbox().probe().status !== "available";
-const COMMAND = [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname];
 const CREDENTIAL = { storeKind: "environment" as const, locator: "HOOK_TOKEN", accountLabel: null };
 /** Answer an HTTP hook's approval requirement with its exact URL and this credential. */
 const httpGrant = (credential: typeof CREDENTIAL | null) => (requirement: HookGrantRequirement) => {
@@ -68,7 +67,7 @@ test.skipIf(unavailable).each([
     const service = decisionService(veto);
     try {
       const root = await temporaryRoot("falryn-hook-http-");
-      const fixture = await prepareNativeCliFixture(COMMAND, root, {
+      const fixture = await prepareNativeCliFixture("in-process", root, {
         declarations: [httpHookDeclaration(service.url, { credential: "hook_token" })],
         files: {},
         grant: httpGrant(CREDENTIAL),
@@ -104,7 +103,7 @@ test.skipIf(unavailable)(
     const service = decisionService(false);
     try {
       const root = await temporaryRoot("falryn-hook-http-private-");
-      const fixture = await prepareNativeCliFixture(COMMAND, root, {
+      const fixture = await prepareNativeCliFixture("in-process", root, {
         declarations: [httpHookDeclaration(service.url)],
         files: {},
         grant: httpGrant(null),
@@ -129,7 +128,7 @@ test.skipIf(unavailable)(
     const service = decisionService(false);
     try {
       const root = await temporaryRoot("falryn-hook-http-async-");
-      const fixture = await prepareNativeCliFixture(COMMAND, root, {
+      const fixture = await prepareNativeCliFixture("in-process", root, {
         declarations: [
           httpHookDeclaration(service.url, { point: "after-capability-invocation", mode: "async" }),
         ],
@@ -169,7 +168,7 @@ test.skipIf(unavailable)(
   async () => {
     const root = await temporaryRoot("falryn-hook-http-grant-");
     const url = "https://hooks.example.com/decide";
-    const fixture = await preparePackageCliFixture(COMMAND, root, "healthy", true, {
+    const fixture = await preparePackageCliFixture("in-process", root, "healthy", true, {
       declarations: [httpHookDeclaration(url, { credential: "hook_token" })],
       files: {},
     });

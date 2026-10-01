@@ -4,18 +4,17 @@ import { createHostSandbox } from "../../integrations/security/host-sandbox.ts";
 import { packageHealthCliJourney } from "./package-health-fixtures.ts";
 
 afterEach(removeTemporaryRoots);
-const sourceCommand = [process.execPath, "run", new URL("../../main.ts", import.meta.url).pathname];
-// Each journey spawns several source-mode CLI processes, so each owns its time budget.
+// Each journey runs several CLI commands and governed children, so each owns its time budget.
 for (const mode of ["healthy", "hostile", "cancel"] as const)
   test.skipIf(createHostSandbox().probe().status !== "available")(
     `source package health starts an exact governed child and replays without execution (${mode})`,
     async () => {
       await packageHealthCliJourney(
-        sourceCommand,
+        "in-process",
         await temporaryRoot(`falryn-health-cli-${mode}-`),
         mode,
       );
     },
-    // Spawns the source CLI many times (4-11 s locally); hosted macOS runs several times slower.
+    // Hosted macOS runs governed children several times slower than a local machine.
     90_000,
   );
