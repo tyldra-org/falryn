@@ -43,11 +43,21 @@ function expanded(name: string, text: string): PromptExpansion {
   };
 }
 
+/**
+ * `settle` is how long an expansion takes. A number is a delay, which suits a test that only needs
+ * the draft painted before the result lands. A test about an expansion still in flight passes a
+ * gate it releases itself instead: a delay races the harness, because each key waits for a settled
+ * frame and a slow runner can outlast any fixed window.
+ */
 async function shellWith(
   expand: (text: string, entered?: Readonly<Record<string, string>>) => PromptExpansion,
-  settleMs = 20,
+  settle: number | Promise<void> = 20,
 ) {
   const submitted: string[] = [];
+  let returned: () => void = () => {};
+  const finished = new Promise<void>((resolve) => {
+    returned = resolve;
+  });
   const requested: string[] = [];
   const shell = await mount(
     <ShellApp
@@ -62,8 +72,12 @@ async function shellWith(
         async expandTemplate(text, _signal, entered) {
           requested.push(text);
           // Settle after a render, as package I/O does, so draft checks see painted state.
-          await new Promise((resolve) => setTimeout(resolve, settleMs));
-          return expand(text, entered);
+          if (typeof settle === "number")
+            await new Promise((resolve) => setTimeout(resolve, settle));
+          else await settle;
+          const result = expand(text, entered);
+          returned();
+          return result;
         },
       }}
     />,
@@ -72,7 +86,7 @@ async function shellWith(
   await shell.frame();
   await shell.press("\t");
   await shell.press("\t");
-  return { shell, submitted, requested };
+  return { shell, submitted, requested, finished };
 }
 
 test("a package prompt template replaces the draft for review and sends nothing", async () => {
@@ -179,9 +193,10 @@ test("cancelling a variable prompt restores the invocation and sends nothing", a
 });
 
 test("escape cancels an expansion still in flight, and its late result is never applied", async () => {
-  const { shell, submitted, requested } = await shellWith(
+  const gate = Promise.withResolvers<void>();
+  const { shell, submitted, requested, finished } = await shellWith(
     () => expanded("review", "Too late to apply."),
-    400,
+    gate.promise,
   );
   using _ = shell;
   await shell.type("/review a");
@@ -189,7 +204,8 @@ test("escape cancels an expansion still in flight, and its late result is never 
   await shell.pressEscape();
   let frame = await shell.frame();
   expect(frame).toContain("Prompt template cancelled. Nothing was sent; your draft is restored.");
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  gate.resolve();
+  await finished;
   frame = await shell.frame();
   expect(requested).toEqual(["/review a"]);
   expect(frame).toContain("/review a");
@@ -198,17 +214,19 @@ test("escape cancels an expansion still in flight, and its late result is never 
 });
 
 test("a second invocation while one is expanding is refused and the first still applies", async () => {
-  const { shell, submitted, requested } = await shellWith(
+  const gate = Promise.withResolvers<void>();
+  const { shell, submitted, requested, finished } = await shellWith(
     () => expanded("review", "Applied once."),
-    300,
+    gate.promise,
   );
   using _ = shell;
   await shell.type("/review a");
   await shell.press("\r");
   await shell.press("\r");
   expect(await shell.frame()).toContain("A prompt template is already expanding.");
-  await new Promise((resolve) => setTimeout(resolve, 400));
-  const frame = await shell.frame();
+  gate.resolve();
+  await finished;
+  const frame = await shell.frame("Applied once.");
   expect(requested).toEqual(["/review a"]);
   expect(frame).toContain("Applied once.");
   expect(submitted).toEqual([]);
