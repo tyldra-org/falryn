@@ -1,11 +1,10 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import {
   ApiError,
   type CreateCachedContentParameters,
   type GenerateContentParameters,
   type GenerateContentResponse,
 } from "@google/genai";
-
 import { modelId, providerId } from "../../domain/foundation/index.ts";
 import { modelRequestId } from "../../providers/configuration/identity.ts";
 import type {
@@ -18,6 +17,7 @@ import {
   createGoogleGenAiSdkAdapter,
   type GoogleGenAiSdkAdapterOptions,
 } from "./google-genai-sdk-adapter.ts";
+import { googleGenAiSdk } from "./sdk-runtime.ts";
 
 function request(overrides: Partial<ModelRequest> = {}): ModelRequest {
   return {
@@ -120,6 +120,10 @@ function continuationStore(): {
     },
   };
 }
+
+// The adapter classifies SDK errors only once the SDK has loaded; these tests inject a stream
+// factory that throws SDK errors, so they load it up front as a real request would.
+beforeAll(() => googleGenAiSdk.load());
 
 describe("createGoogleGenAiSdkAdapter", () => {
   test("sends the routed reasoning control", async () => {

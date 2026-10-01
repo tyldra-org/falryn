@@ -217,7 +217,7 @@ Use the smallest command that proves the current edit while iterating.
 | `bun run test:timings` | Refresh, serially, the per-file durations that balance local and CI shards |
 | `bun run check` | Canonical static checks and full source suite |
 | `bun run check:fast` | The same, reporting only failures |
-| `bun run build` | Standalone executable compilation |
+| `bun run build` | Standalone executable compilation, split into chunks so the provider SDKs, MCP client and terminal UI load on first use (`src/startup-boundaries.test.ts` fails on a static import of one) |
 | `bun run test:compiled` | Compiled suites against the current `dist/falryn` |
 
 CI does not always run the whole source suite on a pull request. A change confined to TypeScript

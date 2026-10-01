@@ -1,10 +1,9 @@
-import { describe, expect, test } from "bun:test";
+import { beforeAll, describe, expect, test } from "bun:test";
 import { APIConnectionTimeoutError, APIUserAbortError, RateLimitError } from "@anthropic-ai/sdk";
 import type {
   MessageCreateParamsStreaming,
   RawMessageStreamEvent,
 } from "@anthropic-ai/sdk/resources/messages/messages";
-
 import { modelId, providerId } from "../../domain/foundation/index.ts";
 import { modelRequestId } from "../../providers/configuration/identity.ts";
 import { ANTHROPIC_MESSAGES_TRANSPORT_DEFAULT } from "../../providers/configuration/transport-compatibility.ts";
@@ -18,6 +17,7 @@ import {
   type AnthropicSdkAdapterOptions,
   createAnthropicSdkAdapter,
 } from "./anthropic-sdk-adapter.ts";
+import { anthropicSdk } from "./sdk-runtime.ts";
 
 function request(overrides: Partial<ModelRequest> = {}): ModelRequest {
   return {
@@ -103,6 +103,10 @@ function continuationStore(): {
     },
   };
 }
+
+// The adapter classifies SDK errors only once the SDK has loaded; these tests inject a stream
+// factory that throws SDK errors, so they load it up front as a real request would.
+beforeAll(() => anthropicSdk.load());
 
 describe("createAnthropicSdkAdapter", () => {
   test("sends the routed reasoning control", async () => {

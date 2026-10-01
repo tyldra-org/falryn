@@ -7,20 +7,8 @@ import { openAiProcessing } from "./openai-processing.ts";
  * and endpoint transport inside this leaf adapter.
  */
 
-import OpenAI, {
-  APIConnectionError,
-  APIConnectionTimeoutError,
-  APIError,
-  APIUserAbortError,
-  AuthenticationError,
-  BadRequestError,
-  type ClientOptions,
-  InternalServerError,
-  PermissionDeniedError,
-  RateLimitError,
-  UnprocessableEntityError,
-} from "openai";
-
+import type OpenAI from "openai";
+import type { ClientOptions } from "openai";
 import {
   type ModelId,
   modelAttemptId,
@@ -43,6 +31,7 @@ import {
   resolveProviderTransportCompatibilityPlan,
   resolveProviderTransportCompatibilityPlanSet,
 } from "./provider-transport-compatibility.ts";
+import { openAiSdk } from "./sdk-runtime.ts";
 
 export type OpenAiSdkFetch = NonNullable<ClientOptions["fetch"]>;
 
@@ -226,44 +215,49 @@ function toTools(
 }
 
 function classifySdkError(error: unknown, signal: AbortSignal): ProviderFailure {
-  if (signal.aborted || error instanceof APIUserAbortError) {
+  const sdk = openAiSdk.loaded();
+  if (signal.aborted || (sdk !== undefined && error instanceof sdk.APIUserAbortError)) {
     return failure("cancellation", "The provider request was cancelled.", false);
   }
   if (error instanceof OpenAiInputError) {
     return failure(error.failureKind, error.message, false);
   }
-  if (error instanceof APIConnectionTimeoutError) {
+  if (sdk !== undefined && error instanceof sdk.APIConnectionTimeoutError) {
     return failure("timeout", "The provider request timed out.", true);
   }
-  if (error instanceof AuthenticationError) {
+  if (sdk !== undefined && error instanceof sdk.AuthenticationError) {
     return failure("authentication", "The provider rejected the credentials.", false);
   }
-  if (error instanceof PermissionDeniedError) {
+  if (sdk !== undefined && error instanceof sdk.PermissionDeniedError) {
     return failure("authorization", "The provider denied this request.", false);
   }
-  if (error instanceof RateLimitError) {
+  if (sdk !== undefined && error instanceof sdk.RateLimitError) {
     return failure("rate-limit", "The provider rate-limited this request.", true);
   }
-  if (error instanceof BadRequestError || error instanceof UnprocessableEntityError) {
+  if (
+    sdk !== undefined &&
+    (error instanceof sdk.BadRequestError || error instanceof sdk.UnprocessableEntityError)
+  ) {
     return failure("invalid-request", "The provider rejected the request shape.", false);
   }
-  if (error instanceof InternalServerError) {
+  if (sdk !== undefined && error instanceof sdk.InternalServerError) {
     return failure("server-failure", "The provider returned a server failure.", true);
   }
-  if (error instanceof APIConnectionError) {
+  if (sdk !== undefined && error instanceof sdk.APIConnectionError) {
     return failure("network", "The provider network request failed.", true);
   }
   if (error instanceof SyntaxError) {
     return failure("malformed-stream", "The provider stream contained invalid JSON.", false);
   }
-  if (error instanceof APIError) {
+  if (sdk !== undefined && error instanceof sdk.APIError) {
     return failure("server-failure", "The provider returned an unexpected failure.", true);
   }
   return failure("adapter-defect", "The OpenAI SDK adapter failed unexpectedly.", false);
 }
 
-function clientFor(options: OpenAiSdkAdapterOptions, apiKey: string): OpenAI {
-  return new OpenAI({
+async function clientFor(options: OpenAiSdkAdapterOptions, apiKey: string): Promise<OpenAI> {
+  const { default: Client } = await openAiSdk.load();
+  return new Client({
     apiKey,
     baseURL: options.baseUrl.replace(/\/+$/u, ""),
     organization: options.organization ?? null,
@@ -530,7 +524,7 @@ export function createOpenAiSdkAdapter(options: OpenAiSdkAdapterOptions): Provid
       const reportedTiers = new Map<string, ReturnType<typeof processing.observe>>();
 
       try {
-        const stream = await clientFor(options, apiKey).chat.completions.create(body, {
+        const stream = await (await clientFor(options, apiKey)).chat.completions.create(body, {
           signal: streamOptions.signal,
         });
         for await (const chunk of stream) {

@@ -1,23 +1,24 @@
-import { type Content, type Part, ThinkingLevel, type Tool } from "@google/genai";
+import type { Content, Part, ThinkingLevel, Tool } from "@google/genai";
 import type { ModelMessage, ModelToolDefinition } from "../../../providers/protocol/messages.ts";
 import type { RetainedContinuation, SignedThoughtPart } from "./contracts.ts";
 import { GoogleInputError } from "./errors.ts";
 
+/** The SDK enum is imported as a type only so it stays off the startup path; its values are its names. */
 export function thinkingLevel(control: string | null | undefined): ThinkingLevel | undefined {
   switch (control) {
     case undefined:
     case null:
       return undefined;
     case "minimal":
-      return ThinkingLevel.MINIMAL;
+      return "MINIMAL" as ThinkingLevel;
     case "low":
-      return ThinkingLevel.LOW;
+      return "LOW" as ThinkingLevel;
     case "medium":
     case "balanced":
-      return ThinkingLevel.MEDIUM;
+      return "MEDIUM" as ThinkingLevel;
     case "high":
     case "deep":
-      return ThinkingLevel.HIGH;
+      return "HIGH" as ThinkingLevel;
     default:
       throw new GoogleInputError(
         "unsupported-capability",

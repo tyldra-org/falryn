@@ -9,7 +9,6 @@ import type {
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type { ManagedServicePort } from "../../domain/process/index.ts";
 import type { SecretResolverPort } from "../../domain/security/credential.ts";
-import { createHostMcpClient } from "../../integrations/extensions/mcp-client.ts";
 import type { EnvironmentProcessContext } from "./environment-process-context.ts";
 import { mcpConfiguration } from "./mcp-configuration.ts";
 
@@ -36,15 +35,19 @@ export function composeProductMcp(options: {
   const lifecycle = createMcpLifecycle({
     configuration,
     authorize: (admission) => options.authorize(admission.signal),
-    clients: createHostMcpClient({
-      identity: options.identity,
-      credentials: options.credentials,
-      environmentGeneration: options.context.generation,
-      currentEnvironmentGeneration: options.context.currentGeneration,
-      environmentValues: options.context.values,
-      services: (names) =>
-        options.context.services(options.services, (name) => names.includes(name)),
-    }),
+    // The MCP SDK loads when the first server connects, not at process start.
+    clients: async (request) => {
+      const { createHostMcpClient } = await import("../../integrations/extensions/mcp-client.ts");
+      return createHostMcpClient({
+        identity: options.identity,
+        credentials: options.credentials,
+        environmentGeneration: options.context.generation,
+        currentEnvironmentGeneration: options.context.currentGeneration,
+        environmentValues: options.context.values,
+        services: (names) =>
+          options.context.services(options.services, (name) => names.includes(name)),
+      })(request);
+    },
   });
   const catalog = createMcpCatalog({ lifecycle, configuration });
   return {

@@ -8,7 +8,7 @@ import { MAX_TOOL_ARGUMENT_FRAGMENT_LENGTH } from "../../providers/protocol/limi
  * and endpoint transport inside this leaf adapter.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
+import type Anthropic from "@anthropic-ai/sdk";
 import type {
   MessageCreateParamsStreaming,
   RawMessageStreamEvent,
@@ -49,6 +49,7 @@ import {
 } from "./anthropic-sdk-adapter/requests.ts";
 import { providerDestinationId } from "./provider-destination.ts";
 import { resolveProviderTransportCompatibilityPlanSet } from "./provider-transport-compatibility.ts";
+import { anthropicSdk } from "./sdk-runtime.ts";
 
 export type {
   AnthropicSdkAdapterOptions,
@@ -56,8 +57,9 @@ export type {
   AnthropicSdkStreamFactory,
 } from "./anthropic-sdk-adapter/contracts.ts";
 
-function clientFor(options: AnthropicSdkAdapterOptions, apiKey: string): Anthropic {
-  return new Anthropic({
+async function clientFor(options: AnthropicSdkAdapterOptions, apiKey: string): Promise<Anthropic> {
+  const { default: Client } = await anthropicSdk.load();
+  return new Client({
     apiKey,
     baseURL: options.baseUrl?.replace(/\/+$/u, "") ?? null,
     maxRetries: 0,
@@ -67,7 +69,7 @@ function clientFor(options: AnthropicSdkAdapterOptions, apiKey: string): Anthrop
   });
 }
 
-function streamFor(
+async function streamFor(
   options: AnthropicSdkAdapterOptions,
   apiKey: string,
   body: MessageCreateParamsStreaming,
@@ -76,7 +78,7 @@ function streamFor(
   if (options.createStream !== undefined) {
     return options.createStream(apiKey, body, signal);
   }
-  return clientFor(options, apiKey).messages.create(body, { signal });
+  return (await clientFor(options, apiKey)).messages.create(body, { signal });
 }
 
 function usageFrom(
