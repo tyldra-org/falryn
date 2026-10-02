@@ -14,8 +14,9 @@ resource limits, real consumers, validation and documentation impact.
 
 Public Falryn issues must be implementable without private documents. For private
 docs work, use its canonical owners and source evidence. Resolve conflicting
-contracts at their owners. Split independently reviewable work into native
-children rather than hiding it in a large checklist or PR.
+contracts at their owners. Size the work and complete any missing contract with
+[issue contracts](issues.md) before writing code; a split discovered halfway
+through implementation costs far more than one made up front.
 
 Plan may repair derivable contract facts and planning records. A human-owned
 choice must be named; do not guess it. An open prerequisite prevents dependent
@@ -128,6 +129,22 @@ Batch independent reads with stable inputs. Keep one writer per checkout,
 dependent effects sequential and sibling delivery serial. Use the
 github-operations CI waiter instead of busy polling. Do not create work merely
 to stay active.
+
+## Keep delivery fast
+
+Speed comes from removing repeated and idle work, never from skipping proof.
+
+- Read the issue, its owners and their tests once, in batched reads, and keep
+  the findings in the working record instead of re-reading them.
+- Iterate with focused tests. Run `bun run check` once on the complete
+  candidate, plus the build and compiled smoke only where `DEVELOPMENT.md`
+  requires them.
+- Overlap waiting with writing. Start long local checks in the background when
+  the candidate is complete, and write `CURRENT-STATE.md`, the docs companion
+  and pull-request bodies while they run. While CI runs, prepare reconciliation.
+- Run unattended commands non-interactively, with standard input closed, so a
+  test can never wait on a terminal, and poll them with a bounded waiter.
+- Group related edits to a file into one change and verify them with one diff.
 
 ## Shepherd the pull request
 

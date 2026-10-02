@@ -40,7 +40,9 @@ only Falryn coordination; it does not repeat those skills' procedures.
 
 Use [work](references/work.md) for the contract, delivery state, proof, merge and
 recovery. Use [documentation](references/documentation.md) for canonical owners,
-private access and companions. Load [falryn-roadmap](../falryn-roadmap/SKILL.md)
+private access and companions. Use [issue contracts](references/issues.md)
+whenever creating or changing an issue, including Plan, splits and follow-ups.
+Load [falryn-roadmap](../falryn-roadmap/SKILL.md)
 only for Roadmap admission, planning-field changes, selection or parent ordering.
 Ordinary public contributions do not require private planning access.
 

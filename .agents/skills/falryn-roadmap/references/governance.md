@@ -33,7 +33,7 @@ check; Roadmap Ready still requires the auditor's fully checked Ready checklist.
 | Missing derivable contract facts | Needs Planning |
 | Required human choice | Needs Decision with `Decision required: @owner — question` |
 | Decision recorded | Needs Planning until the remaining contract is verified |
-| Current complete leaf contract | Ready; open blockers still prevent implementation |
+| Current complete leaf contract under [issue contracts](../../falryn-work/references/issues.md) | Ready; open blockers still prevent implementation |
 | Implementation admitted | Ready, authenticated sole assignee; opening the closing pull request makes it In Progress |
 | Open parent | Parent readiness; no parent implementation or closing pull request |
 | Fully proven issue closes | Historical readiness; retain real priority |
@@ -86,4 +86,3 @@ Bound bulk work and report partial results per object. Follow [audit refresh](au
 
 Planning fields stay organization-only. Never change their visibility or copy
 their values into public issues, PRs, labels, fixtures or logs.
-
