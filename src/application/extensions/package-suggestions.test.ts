@@ -13,11 +13,13 @@ import {
   marketplaceSourceSchema,
 } from "../../domain/extensions/marketplace.ts";
 import type { PackageSuggestionPreferences } from "../../domain/extensions/package-suggestion.ts";
+import { suggestionReasonText } from "../../domain/extensions/package-suggestion.ts";
 import { err, ok } from "../../domain/foundation/result.ts";
 import { createCuratedCatalogs } from "./curated-catalogs.ts";
 import {
   createPackageSuggestionResolver,
   createPackageSuggestionSession,
+  packageSuggestionLines,
 } from "./package-suggestions.ts";
 
 const HOUR = 3_600_000;
@@ -314,4 +316,73 @@ test("a session keeps a bounded number of observations and counts the rest", () 
   h.session.observePaths(["/etc/passwd", ""]);
   expect(h.session.observations()).toHaveLength(128);
   expect(h.session.omitted()).toBe(72);
+});
+
+test("a capability kind a completed call used matches a capability relevance declaration", async () => {
+  const h = harness();
+  await h.publish("market", [
+    lintEntry({ relevance: { capabilities: ["lsp"] } }),
+    { ...curatedEntry("tools/debug"), relevance: { capabilities: ["dap"] } },
+  ]);
+  h.session.observeCapability("lsp");
+  h.session.observeCapability("lsp");
+  expect(h.session.observations()).toHaveLength(1);
+
+  const page = h.session.list();
+  if (page.status !== "resolved") throw new Error("expected resolution");
+  expect(page.suggestions.map((item) => [item.listingId, item.reasons])).toEqual([
+    ["tools/lint", [{ kind: "relevance", signal: "capability", rule: "lsp" }]],
+  ]);
+  expect(suggestionReasonText({ kind: "relevance", signal: "capability", rule: "lsp" })).toBe(
+    "the catalog marks it relevant to lsp capabilities this session used",
+  );
+  expect(h.session.settleRootTurn()).toMatchObject({ surfaced: { listingId: "tools/lint" } });
+});
+
+test("a catalog replaced between admission and presentation is refused, never shown under the old reason", async () => {
+  const h = harness();
+  await h.publish("market", [lintEntry()]);
+  // The same listing, republished by the catalog to name a different package.
+  const replaced = harness();
+  await replaced.publish("market", [
+    {
+      ...curatedEntry("tools/evil", { versions: ["1.1.0"] }),
+      listingId: "tools/lint",
+      title: "Lint rules",
+    },
+  ]);
+  let reads = 0;
+  const resolver = createPackageSuggestionResolver({
+    catalogs: {
+      list: h.catalogs.list,
+      // Admission reads the original; every later read sees the replacement.
+      inspect: (query) => (reads++ === 0 ? h.catalogs : replaced.catalogs).inspect(query),
+    },
+    preferences: () => ({ sources: ["market"], dismissed: [] }),
+    marketplaces: () => [market("market")],
+  });
+  const page = resolver.resolve([
+    {
+      kind: "hint",
+      hint: { ...LINT_HINT, packageVersion: null },
+      executable: null,
+      invocationId: "call-1",
+    },
+  ]);
+  expect(reads).toBe(2);
+  expect(page).toEqual({
+    status: "resolved",
+    suggestions: [],
+    refusals: [
+      {
+        code: "suggestion-identity-mismatch",
+        sourceId: "market",
+        listingId: "tools/lint",
+        origin: "call-1",
+      },
+    ],
+  });
+  expect(packageSuggestionLines(page)).toContain(
+    "Refused market:tools/lint from call-1: suggestion-identity-mismatch.",
+  );
 });

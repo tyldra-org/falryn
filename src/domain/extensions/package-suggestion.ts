@@ -5,10 +5,12 @@
  * hint names a source and a package; it carries no command, URL, credential or prompt,
  * and it means nothing until the named catalog lists that exact package. Relevance
  * declarations only compare facts Falryn already observed: an admitted executable's
- * name and workspace-relative paths. Nothing here reads content, contacts a
- * marketplace, calls a model, installs or enables anything.
+ * name, workspace-relative paths and the kind of a capability a completed call used.
+ * Nothing here reads content, contacts a marketplace, calls a model, installs or
+ * enables anything.
  */
 import { z } from "zod";
+import { TOOL_CAPABILITY_KINDS, type ToolCapabilityKind } from "../tools/tool-registry.ts";
 import { compileGlobPattern, matchGlob } from "../workspace/workspace-glob.ts";
 import { canonicalDigest } from "./canonical.ts";
 import { exactVersionSchema, identityText } from "./identity.ts";
@@ -26,6 +28,7 @@ export const PACKAGE_SUGGESTION_LIMITS = Object.freeze({
   sessionObservations: 128,
   relevanceExecutables: 16,
   relevanceFiles: 16,
+  relevanceCapabilities: TOOL_CAPABILITY_KINDS.length,
   dismissed: 256,
   sources: 16,
   reasons: 4,
@@ -126,7 +129,8 @@ function decodeHint(text: string): PackageHint | null {
 /**
  * A catalog entry's opt-in relevance declaration. Executables match an admitted
  * command's file name exactly; files are bounded workspace globs compiled by the
- * discovery codec. There is no regex, script or content matcher.
+ * discovery codec; capabilities name the kinds of the tool vocabulary a completed call
+ * used. There is no regex, script or content matcher.
  */
 export const relevanceDeclarationSchema = z
   .strictObject({
@@ -147,9 +151,20 @@ export const relevanceDeclarationSchema = z
       )
       .max(PACKAGE_SUGGESTION_LIMITS.relevanceFiles)
       .default([]),
+    capabilities: z
+      .array(z.enum(TOOL_CAPABILITY_KINDS))
+      .max(PACKAGE_SUGGESTION_LIMITS.relevanceCapabilities)
+      .default([]),
   })
-  .refine((value) => value.executables.length + value.files.length > 0, "relevance-empty");
-export type RelevanceDeclaration = { readonly executables: string[]; readonly files: string[] };
+  .refine(
+    (value) => value.executables.length + value.files.length + value.capabilities.length > 0,
+    "relevance-empty",
+  );
+export type RelevanceDeclaration = {
+  readonly executables: string[];
+  readonly files: string[];
+  readonly capabilities: ToolCapabilityKind[];
+};
 
 /** The stored, normalized form: sorted and deduplicated, so equal content digests equally. */
 export function normalizeRelevance(
@@ -158,17 +173,20 @@ export function normalizeRelevance(
   return {
     executables: [...new Set(value.executables)].sort(),
     files: [...new Set(value.files)].sort(),
+    capabilities: [...new Set(value.capabilities)].sort(),
   };
 }
 export const storedRelevanceSchema = z.strictObject({
   executables: z.array(z.string()),
   files: z.array(z.string()),
+  capabilities: z.array(z.enum(TOOL_CAPABILITY_KINDS)),
 });
 
 /** A fact Falryn already observed; never content, never a home-directory path. */
 export type SuggestionSignal =
   | { readonly kind: "executable"; readonly name: string }
-  | { readonly kind: "file"; readonly path: string };
+  | { readonly kind: "file"; readonly path: string }
+  | { readonly kind: "capability"; readonly capability: ToolCapabilityKind };
 
 /** The first declared rule an observed signal satisfies, or null. */
 export function relevanceMatch(
@@ -177,6 +195,8 @@ export function relevanceMatch(
 ): string | null {
   if (signal.kind === "executable")
     return declaration.executables.includes(signal.name) ? signal.name : null;
+  if (signal.kind === "capability")
+    return declaration.capabilities.includes(signal.capability) ? signal.capability : null;
   for (const pattern of declaration.files) {
     const compiled = compileGlobPattern(pattern);
     if (compiled.ok && matchGlob(signal.path, compiled.value, "file")) return pattern;
@@ -246,8 +266,8 @@ export const suggestionReasonSchema = z.discriminatedUnion("kind", [
   }),
   z.strictObject({
     kind: z.literal("relevance"),
-    signal: z.enum(["executable", "file"]),
-    /** The declared rule that matched: an executable name or a workspace glob. */
+    signal: z.enum(["executable", "file", "capability"]),
+    /** The declared rule that matched: an executable name, a workspace glob or a capability kind. */
     rule: z.string().min(1).max(256),
   }),
 ]);
@@ -283,7 +303,8 @@ export function suggestionReasonText(reason: SuggestionReason): string {
     return reason.executable === null
       ? `a command's hint (${reason.invocationId})`
       : `${reason.executable}'s hint (${reason.invocationId})`;
-  return reason.signal === "executable"
-    ? `the catalog marks it relevant to ${reason.rule}`
-    : `the catalog marks it relevant to files matching ${reason.rule}`;
+  if (reason.signal === "executable") return `the catalog marks it relevant to ${reason.rule}`;
+  if (reason.signal === "capability")
+    return `the catalog marks it relevant to ${reason.rule} capabilities this session used`;
+  return `the catalog marks it relevant to files matching ${reason.rule}`;
 }

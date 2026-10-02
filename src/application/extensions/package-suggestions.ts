@@ -23,6 +23,7 @@ import {
   scanPackageHints,
   suggestionReasonText,
 } from "../../domain/extensions/package-suggestion.ts";
+import type { ToolCapabilityKind } from "../../domain/tools/tool-registry.ts";
 import {
   type CuratedInspection,
   type CuratedListingView,
@@ -177,7 +178,11 @@ export function createPackageSuggestionResolver(options: PackageSuggestionResolv
     /** Where the name came from: an invocation, a recorded turn or `inspect`. */
     readonly origin: string;
   };
-  type Entry = Omit<Named, "packageId" | "origin" | "reasons"> & { reasons: SuggestionReason[] };
+  type Entry = Omit<Named, "origin" | "reasons"> & {
+    reasons: SuggestionReason[];
+    /** The first name that admitted this entry, for a refusal if its facts change. */
+    origin: string;
+  };
 
   function begin() {
     const preferences = options.preferences();
@@ -189,12 +194,8 @@ export function createPackageSuggestionResolver(options: PackageSuggestionResolv
     );
     const found = new Map<string, Entry>();
     const refusals: SuggestionRefusal[] = [];
-    const note = (
-      key: Omit<Entry, "reasons">,
-      packageId: string,
-      reasons: readonly SuggestionReason[],
-    ) => {
-      const id = packageSuggestionId(key.sourceId, packageId);
+    const note = (key: Omit<Entry, "reasons">, reasons: readonly SuggestionReason[]) => {
+      const id = packageSuggestionId(key.sourceId, key.packageId);
       const entry = found.get(id) ?? { ...key, reasons: [] };
       found.set(id, entry);
       for (const reason of reasons)
@@ -208,8 +209,9 @@ export function createPackageSuggestionResolver(options: PackageSuggestionResolv
      * Admit a named package only from an opted-in, authenticated catalog that lists that
      * exact package. The namer is untrusted: it may name a real listing but another package.
      */
-    const admit = (named: Named): string | null => {
-      const refuse = (code: SuggestionRefusalCode) => {
+    const refuseFor =
+      (named: Pick<Named, "sourceId" | "listingId" | "origin">) =>
+      (code: SuggestionRefusalCode) => {
         refusals.push({
           code,
           sourceId: named.sourceId,
@@ -218,6 +220,8 @@ export function createPackageSuggestionResolver(options: PackageSuggestionResolv
         });
         return null;
       };
+    const admit = (named: Named): string | null => {
+      const refuse = refuseFor(named);
       if (!enabled.includes(named.sourceId)) return refuse("suggestion-source-not-enabled");
       const inspected = options.catalogs.inspect({
         sourceId: named.sourceId,
@@ -234,14 +238,20 @@ export function createPackageSuggestionResolver(options: PackageSuggestionResolv
         {
           sourceId: named.sourceId,
           listingId: named.listingId,
+          packageId: named.packageId,
           packageVersion: named.packageVersion,
+          origin: named.origin,
         },
-        named.packageId,
         named.reasons,
       );
       return null;
     };
-    /** Present every admitted entry from facts read now: a withdrawal, removal or disabled source wins. */
+    /**
+     * Present every admitted entry from facts read now: a withdrawal, removal or disabled
+     * source wins. The catalog may have been replaced since admission, so identity and
+     * authentication are checked again on the facts actually presented; a listing that
+     * now names another package, or became a file import, is refused rather than shown.
+     */
     const finish = (): PackageSuggestionPage => {
       const suggestions: PackageSuggestionView[] = [];
       for (const entry of found.values()) {
@@ -252,6 +262,15 @@ export function createPackageSuggestionResolver(options: PackageSuggestionResolv
         });
         if (inspected.status === "failed") return { status: "failed", code: inspected.code };
         if (inspected.status !== "inspected") continue;
+        const refuse = refuseFor(entry);
+        if (!authenticated(inspected.view.freshness)) {
+          refuse("suggestion-source-unauthenticated");
+          continue;
+        }
+        if (inspected.version.identity.packageId !== entry.packageId) {
+          refuse("suggestion-identity-mismatch");
+          continue;
+        }
         suggestions.push(view(inspected, entry.reasons, preferences));
       }
       return { status: "resolved", suggestions, refusals };
@@ -312,9 +331,10 @@ export function createPackageSuggestionResolver(options: PackageSuggestionResolv
               {
                 sourceId: listingView.sourceId,
                 listingId: listingView.listing.listingId,
+                packageId,
                 packageVersion: null,
+                origin: `relevance:${signal.kind}`,
               },
-              packageId,
               [{ kind: "relevance", signal: signal.kind, rule }],
             );
           }
@@ -420,6 +440,13 @@ export function createPackageSuggestionSession(resolver: () => PackageSuggestion
       for (const path of paths)
         if (path.length > 0 && path.length <= 1_024 && !path.startsWith("/"))
           add(`signal:file:${path}`, { kind: "signal", signal: { kind: "file", path } });
+    },
+    /** Note the kind of a capability a completed, non-hook call used; never its input or output. */
+    observeCapability(capability: ToolCapabilityKind) {
+      add(`signal:capability:${capability}`, {
+        kind: "signal",
+        signal: { kind: "capability", capability },
+      });
     },
     observations: (): readonly SuggestionObservation[] => [...observations],
     omitted: () => omitted,

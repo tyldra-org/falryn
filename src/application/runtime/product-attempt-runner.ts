@@ -976,6 +976,7 @@ export function createProductAttemptRunner(
       const gateway = createProductToolGateway({
         ...(input.instructionsCurrent ? { instructionsCurrent: input.instructionsCurrent } : {}),
         ...(input.userSelection ? { userSelection: input.userSelection } : {}),
+        ...(input.observeCapability ? { observeCapability: input.observeCapability } : {}),
         trust: {
           inspect: (id) =>
             options.capabilities?.entries.find((entry) => entry.capabilityId === id)?.trust ?? null,

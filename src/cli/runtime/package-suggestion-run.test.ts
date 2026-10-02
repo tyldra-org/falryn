@@ -10,10 +10,11 @@ import {
   curatedDocument,
   curatedEntry,
 } from "../../domain/extensions/curated-catalog-fixtures.ts";
-import { createStaticEnvironment, streamId } from "../../domain/foundation/index.ts";
+import { createStaticEnvironment, sessionId, streamId } from "../../domain/foundation/index.ts";
 import { localPath } from "../../domain/workspace/filesystem/contracts.ts";
 import { createDeterministicProviderAdapter, type ModelRequest } from "../../providers/index.ts";
 import { runExtensionSuggestion } from "../commands/extension-suggestion.ts";
+import { runReplay } from "../commands/import-replay-commands.ts";
 import { LIVE_TURN_MATRIX_CONFIRMATION } from "../live-turn-matrix.test-support.ts";
 import type { GlobalOptions } from "../options.ts";
 import { createRecordingCliStreams } from "../output/streams.ts";
@@ -114,10 +115,13 @@ async function publish(services: ReturnType<typeof createServiceProvider>, entri
   }
 }
 
-function provider(tool: string | null) {
+function provider(tool: string | null, onRequest?: (index: number) => void) {
   const requests: ModelRequest[] = [];
   const adapter = createDeterministicProviderAdapter({
-    onRequest: (request) => requests.push(request),
+    onRequest: (request) => {
+      requests.push(request);
+      onRequest?.(requests.length - 1);
+    },
     script: (_request, index) =>
       index === 0 && tool !== null
         ? {
@@ -131,20 +135,67 @@ function provider(tool: string | null) {
   return { adapter, requests };
 }
 
-async function run(home: Awaited<ReturnType<typeof seeded>>, tool: string | null, session: string) {
-  const model = provider(tool);
+async function run(
+  home: Awaited<ReturnType<typeof seeded>>,
+  tool: string | null,
+  session: string,
+  options: {
+    /** Resume this existing session instead of starting it. */
+    readonly resume?: boolean;
+    readonly signal?: AbortSignal;
+    readonly onRequest?: (index: number) => void;
+  } = {},
+) {
+  const model = provider(tool, options.onRequest);
   const result = await runCoding(
     home.services,
-    { promptParts: ["run the linter"] },
+    { promptParts: ["run the linter"], ...(options.resume ? { session } : {}) },
     {
       input: createRecordingCliStreams({ stdin: null }).input,
       globals: home.globals,
       providerAdapter: model.adapter,
       toolConfirmation: LIVE_TURN_MATRIX_CONFIRMATION,
-      identities: { sessionId: session, turnId: `turn-${session}`, traceId: `trace-${session}` },
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+      ...(options.resume
+        ? {}
+        : {
+            identities: {
+              sessionId: session,
+              turnId: `turn-${session}`,
+              traceId: `trace-${session}`,
+            },
+          }),
     },
   );
   return { result, requests: model.requests };
+}
+
+/** Recorded suggestion events in one session's stream. */
+async function recordedCount(home: Awaited<ReturnType<typeof seeded>>, session: string) {
+  const durable = await openProductArtifactSession(home.services());
+  if (durable === null) throw new Error("product session unavailable");
+  try {
+    const events = await durable.eventStore.readFrom(
+      { streamId: streamId.from(`live-turn:${session}`), afterSequence: null },
+      500,
+    );
+    if (!events.ok) throw new Error("stream unavailable");
+    return events.value.filter((event) => event.kind === "extension.suggestion.recorded").length;
+  } finally {
+    await durable.close();
+  }
+}
+
+async function expectNothingInstalled(home: Awaited<ReturnType<typeof seeded>>) {
+  const database = await openProductStoreOrThrow(localPath(home.state));
+  try {
+    for (const table of ["installed_packages", "package_versions", "package_operations"]) {
+      const rows = database.read(`SELECT COUNT(*) AS count FROM ${table}`);
+      expect(rows.ok && rows.value[0]?.count).toBe(0);
+    }
+  } finally {
+    await database.close();
+  }
 }
 
 const lintListing = (relevance: Record<string, unknown>) => ({
@@ -322,4 +373,119 @@ test(
     });
   },
   { timeout: 90_000 }, // Two live product turns and two CLI actions over one SQLite home.
+);
+
+test(
+  "a resumed or replayed session surfaces nothing from its historical output",
+  async () => {
+    const home = await seeded({ sources: ["market"] });
+    await publish(home.services, [
+      lintListing({ files: ["*.never-matched"] }),
+      // Relevant to the kind of capability the command used, not to any name.
+      {
+        ...curatedEntry("tools/proc", { versions: ["1.0.0"] }),
+        relevance: { capabilities: ["process"] },
+      },
+    ]);
+    const first = await run(home, home.tool, "session-restart");
+    expect(first.result.payload?.suggestion).toMatchObject({
+      surfaced: { listingId: "tools/lint", reasons: [{ kind: "hint", executable: "lint-tool" }] },
+      additional: [
+        {
+          listingId: "tools/proc",
+          reasons: [{ kind: "relevance", signal: "capability", rule: "process" }],
+        },
+      ],
+    });
+    expect(await recordedCount(home, "session-restart")).toBe(1);
+
+    // A resumed session starts with no observations; its stored output is never rescanned.
+    const resumed = await run(home, null, "session-restart", { resume: true });
+    expect(resumed.result.payload?.stage, JSON.stringify(resumed.result.errors)).toBe(
+      "attempt-completed",
+    );
+    expect(resumed.result.payload?.sessionId).toBe("session-restart");
+    expect(resumed.result.payload?.suggestion).toBeUndefined();
+
+    const replay = await runReplay(home.services, {
+      sessionId: sessionId.from("session-restart"),
+    });
+    expect(replay.outcome.kind).toBe("completed");
+    expect(replay.payload?.effectFree).toBe(true);
+    expect(await recordedCount(home, "session-restart")).toBe(1);
+    await expectNothingInstalled(home);
+  },
+  { timeout: 90_000 }, // Two live product turns and a replay over one SQLite home.
+);
+
+test(
+  "a cancelled turn records no suggestion and leaves the source command's capture intact",
+  async () => {
+    const home = await seeded({ sources: ["market"] });
+    await publish(home.services, [lintListing({ executables: ["lint-tool"] })]);
+    const controller = new AbortController();
+    // Cancel once the command has run and its stderr was observed: the continuation request.
+    const cancelled = await run(home, home.tool, "session-cancelled", {
+      signal: controller.signal,
+      onRequest: (index) => {
+        if (index === 1) controller.abort();
+      },
+    });
+    expect(cancelled.result.outcome.kind).toBe("cancelled");
+    expect(cancelled.result.payload?.suggestion).toBeUndefined();
+    // Cancelling ended only the subscription: the command finished and its exact output was kept.
+    expect(JSON.stringify(cancelled.requests[1])).toContain("falryn-package-hint/1");
+    expect(JSON.stringify(cancelled.requests[1])).toContain("checked");
+    expect(await recordedCount(home, "session-cancelled")).toBe(0);
+    await expectNothingInstalled(home);
+  },
+  { timeout: 60_000 }, // One live product turn with a real command.
+);
+
+test(
+  "two concurrent dismissals cannot lose either update",
+  async () => {
+    const home = await seeded({ sources: ["market"] });
+    const read = await runExtensionSuggestion(
+      home.services,
+      {
+        operation: "inspect",
+        sourceId: "market",
+        listingId: "tools/lint",
+        packageId: "tools-lint",
+        packageVersion: null,
+      },
+      home.globals,
+    );
+    const revision =
+      read.payload?.status === "inspected" ? read.payload.preferences.revision : null;
+    expect(typeof revision).toBe("string");
+    const dismiss = (packageId: string, expectedRevision: string | null) =>
+      runExtensionSuggestion(
+        home.services,
+        { operation: "dismiss", sourceId: "market", packageId, expectedRevision },
+        home.globals,
+      );
+
+    // Two sessions holding the same revision race; exactly one write can win.
+    const raced = await Promise.all([dismiss("tools-a", revision), dismiss("tools-b", revision)]);
+    const statuses = raced.map((result) => result.payload?.status).sort();
+    expect(statuses).toEqual(["dismissed", "failed"]);
+    const loser = raced.find((result) => result.payload?.status === "failed");
+    expect(loser?.payload).toEqual({ status: "failed", code: "suggestion-preferences-stale" });
+    const winner = raced.find((result) => result.payload?.status === "dismissed");
+    if (winner?.payload?.status !== "dismissed") throw new Error("expected a winner");
+    const winnerId = winner.payload.preferences.dismissed[0]?.packageId;
+    const loserId = winnerId === "tools-a" ? "tools-b" : "tools-a";
+
+    // The refused writer rereads and retries; both dismissals are kept.
+    const retried = await dismiss(loserId, winner.payload.preferences.revision);
+    expect(retried.payload).toMatchObject({ status: "dismissed", changed: true });
+    const finalIds =
+      retried.payload?.status === "dismissed"
+        ? retried.payload.preferences.dismissed.map((item) => item.packageId).sort()
+        : [];
+    expect(finalIds).toEqual(["tools-a", "tools-b"]);
+  },
+  { timeout: 30_000 }, // Four CLI actions over one configuration file.
 );

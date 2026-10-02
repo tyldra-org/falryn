@@ -144,6 +144,13 @@ export type ProductToolGatewayOptions = {
    * confirmation, resources and receipts apply as to any other invocation.
    */
   readonly hookLineage?: { readonly point: ToolHookPoint; readonly depth: number };
+  /**
+   * Package suggestions (#1094): told the kind of each capability a completed call used.
+   * Hook-origin work is hook output and never reports one.
+   */
+  readonly observeCapability?: (
+    kind: import("../../domain/tools/tool-registry.ts").ToolCapabilityKind,
+  ) => void;
 };
 
 function terminalOutcome(outcome: ToolInvocationOutcome): TerminalOutcome {
@@ -1180,6 +1187,11 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
               effect: ready.effect,
               input: ready.input,
               signal,
+            })
+            .then((outcome) => {
+              if (outcome.status === "completed" && options.hookLineage === undefined)
+                options.observeCapability?.(manifest.capabilityKind);
+              return outcome;
             })
             .catch(
               (): ToolInvocationOutcome => ({

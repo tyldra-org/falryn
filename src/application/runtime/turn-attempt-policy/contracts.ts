@@ -53,6 +53,10 @@ export type AttemptModelInput = {
   readonly instructionsCurrent?: (signal: AbortSignal) => Promise<boolean>;
   /** The user's `$` selection for this turn (#1206); reaches every tool request. */
   readonly userSelection?: import("../tool-call-loop/contracts.ts").ToolRunnerRequest["userSelection"];
+  /** Package suggestions (#1094): the kind of each capability a completed call used. */
+  readonly observeCapability?: (
+    kind: import("../../../domain/tools/tool-registry.ts").ToolCapabilityKind,
+  ) => void;
   readonly history?: import("../../sessions/conversation-history.ts").ConversationHistorySnapshot;
   readonly messages: readonly ModelMessage[];
   readonly tools: readonly ModelToolDefinition[];

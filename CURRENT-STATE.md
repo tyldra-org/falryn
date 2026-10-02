@@ -1719,7 +1719,11 @@ observations count, and neither is trusted:
   matched by the discovery glob codec against workspace-relative paths that
   `read_file`, `read_compact_document`, `stat_path`, `write_files` or `mutate_paths`
   completed on. Shell text has no admitted program, so `run_shell` contributes hints but
-  no executable name. Entries without the field keep their stored digest.
+  no executable name. A declaration may also list capability kinds (`capabilities`,
+  from the tool vocabulary such as `process`, `lsp` or `mcp`), matched when a
+  call through the product tool gateway completed with a tool of that kind. Failed
+  calls and hook-origin calls report no kind. Entries without the field keep their
+  stored digest.
 
 Suggestions use only sources named in user configuration
 `connections.packageSuggestions.sources` (flat key `tools.packageSuggestions`) that are
@@ -1731,7 +1735,10 @@ refused. A file-imported catalog is never a suggestion source
 which must list that exact `packageId` (`suggestion-identity-mismatch`); unknown
 sources, listings and versions are refusals, never installable suggestions. Every read
 inspects the listing again, so a withdrawal, removal, disabled marketplace or removed
-opt-in takes effect immediately. A stale catalog keeps its freshness and offers no
+opt-in takes effect immediately. Package identity and source authentication are
+checked again on the facts actually shown, so a catalog replaced between admission and
+presentation produces a refusal, not a suggestion under the earlier reason. A stale
+catalog keeps its freshness and offers no
 install (`source-not-current`). Matching runs locally: it makes no model call, sends
 nothing to a marketplace and reads no file content.
 
@@ -1756,7 +1763,9 @@ reasons, catalog freshness, install state and refusals. Requests are:
 
 List and inspect report the user configuration file's `revision`. Dismiss and reset
 write only `tools.packageSuggestions.dismissed` (at most 256 entries) and are refused as
-`suggestion-preferences-stale` when the file changed after that revision was read. A
+`suggestion-preferences-stale` when the file changed after that revision was read. The
+revision is read before the preferences it guards, so of two concurrent writers holding
+the same revision one is refused and neither update is lost. A
 dismissal names a source and package, so a package update does not reset it. An
 available suggestion carries only a `listing` handoff for `falryn package install`,
 which inspects, downloads and asks for confirmation itself. Nothing in this path

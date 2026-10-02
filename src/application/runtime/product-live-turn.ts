@@ -256,7 +256,7 @@ export type ProductLiveTurnExecutorOptions = {
   /** The session's package suggestion observations; consulted only when a root turn settles. */
   readonly suggestions?: Pick<
     import("../extensions/package-suggestions.ts").PackageSuggestionSession,
-    "settleRootTurn"
+    "settleRootTurn" | "observeCapability"
   >;
   readonly artifacts?: ArtifactStorePort;
   readonly initialExecutionProfile?: ExecutionProfileId;
@@ -1521,6 +1521,9 @@ export function createProductLiveTurnExecutor(
               ...((input.mentions?.mcpServers.length ?? 0) === 0
                 ? {}
                 : { userSelection: { mcpServers: [...(input.mentions?.mcpServers ?? [])] } }),
+              ...(options.suggestions === undefined
+                ? {}
+                : { observeCapability: options.suggestions.observeCapability }),
             },
           });
           let instructionHistoryFailed = false;

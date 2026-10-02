@@ -77,10 +77,16 @@ test("duplicate markers collapse and a stream keeps at most the per-stream limit
   expect(scan.omitted).toBe(3);
 });
 
-test("relevance compares executable names exactly and files through the workspace glob codec", () => {
-  const declaration = { executables: ["eslint"], files: ["*.lint.json", "config/**/*.yml"] };
+test("relevance compares executable names and capability kinds exactly and files through the glob codec", () => {
+  const declaration = {
+    executables: ["eslint"],
+    files: ["*.lint.json", "config/**/*.yml"],
+    capabilities: ["lsp" as const],
+  };
   expect(relevanceMatch(declaration, { kind: "executable", name: "eslint" })).toBe("eslint");
   expect(relevanceMatch(declaration, { kind: "executable", name: "eslint.js" })).toBeNull();
+  expect(relevanceMatch(declaration, { kind: "capability", capability: "lsp" })).toBe("lsp");
+  expect(relevanceMatch(declaration, { kind: "capability", capability: "dap" })).toBeNull();
   expect(relevanceMatch(declaration, { kind: "file", path: "pkg/app.lint.json" })).toBe(
     "*.lint.json",
   );
@@ -102,11 +108,16 @@ test("catalog relevance is optional, normalized and validated per entry", () => 
       curatedDocument([
         {
           ...curatedEntry("tools/lint"),
-          relevance: { executables: ["eslint", "eslint"], files: ["*.ts", "*.js"] },
+          relevance: {
+            executables: ["eslint", "eslint"],
+            files: ["*.ts", "*.js"],
+            capabilities: ["process", "lsp", "lsp"],
+          },
         },
         { ...curatedEntry("tools/bad"), relevance: { executables: ["../sh"] } },
         { ...curatedEntry("tools/empty"), relevance: {} },
         { ...curatedEntry("tools/regex"), relevance: { files: ["src/[a-"] } },
+        { ...curatedEntry("tools/kind"), relevance: { capabilities: ["shell-script"] } },
       ]),
     ),
   );
@@ -115,8 +126,9 @@ test("catalog relevance is optional, normalized and validated per entry", () => 
   expect(declared.catalog.entries[0]?.relevance).toEqual({
     executables: ["eslint"],
     files: ["*.js", "*.ts"],
+    capabilities: ["lsp", "process"],
   });
-  expect(declared.rejected).toEqual(["tools/bad", "tools/empty", "tools/regex"]);
+  expect(declared.rejected).toEqual(["tools/bad", "tools/empty", "tools/kind", "tools/regex"]);
 });
 
 test("preferences refuse duplicates, and a suggestion's identity ignores the version", () => {

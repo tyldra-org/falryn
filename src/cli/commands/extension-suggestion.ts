@@ -218,6 +218,10 @@ async function execute(
   onMutationStart: (() => void) | undefined,
 ): Promise<ExtensionSuggestionPayload> {
   const graph = services();
+  // Read the revision before the preferences it guards. A writer landing in between then
+  // makes this request's write stale instead of letting it overwrite newer dismissals
+  // with older contents under the newer revision.
+  const revision = await userFileRevision(services, signal);
   let values: ConfigurationValues;
   let record: ReturnType<typeof graph.loader.current>;
   try {
@@ -235,7 +239,6 @@ async function execute(
   }
   const preferences = packageSuggestionPreferences(values, record);
   if (preferences === null) return { status: "failed", code: "suggestion-preferences-unavailable" };
-  const revision = await userFileRevision(services, signal);
   const view = (next: PackageSuggestionPreferences, at: string | null) => ({
     ...next,
     revision: at,
