@@ -59,7 +59,9 @@ A status question during delivery does not cancel delivery. A correction changes
 the affected facts. An explicit narrower stopping point limits subsequent work.
 After interruption, inspect actual branches, PRs and effects before resuming.
 Approving a draft shown earlier ("apply the draft") authorizes exactly that draft.
-Re-read the affected records first, and show a material change before applying it.
+Re-read the affected records and complete
+[the coverage check](issues.md#prove-coverage-before-applying) first, and show a
+material change before applying it.
 
 A broad Next request selects across the current Roadmap. An earlier discussion
 of a blocked issue does not turn it into a dependency-chain request. Conversely,

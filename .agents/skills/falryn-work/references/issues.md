@@ -21,11 +21,16 @@ parent rather than copying them.
   layer, shared services, tools, engines, agents, workflows and every consumer
   that depends on it. Extend existing owners instead of adding parallel ones.
 - Review open issues in both repositories for missing requirements,
-  contradictions, duplicate ownership and integration gaps. Fetch every open
-  issue once per repository into restrictive private temporary storage, for
-  example `gh issue list --state open --limit 1000 --json number,title,body,labels`,
-  search it for the affected owners, source paths, issue references and
-  contract terms, and read the matches in full.
+  contradictions, duplicate ownership and integration gaps. Run
+  `python3 <skill-root>/scripts/review_open_issues.py` with a `--term` for each
+  affected owner, source path and contract term and an `--issue` for each
+  related issue. It searches every open issue in both repositories and reports
+  how many each had; read every relevant match in full.
+- Check the consumers beyond the direct owner that reach the same behavior:
+  other runtimes and providers, delegated agents, workflows, schedules,
+  configuration and settings owners, extensions and external hosts. Each one
+  either gets its integration written down or is named as unaffected, with the
+  reason.
 - Change only the issues the evidence shows are affected. Do not add
   repetitive boilerplate to unrelated work.
 
@@ -66,3 +71,24 @@ dependency or an unverifiable fact is named with its owner and question, and it
 keeps the issue out of Ready. Never guess, and never check a readiness checklist
 to make work look deliverable.
 
+## Prove coverage before applying
+
+Run this check before any issue or Docs change is applied. That includes a draft
+the user approved with "apply": a draft written before this check ran is
+completed first, not applied as written.
+
+1. The open-issue review above ran at the current state of both repositories.
+   Keep its searched counts and the matches read.
+2. Every affected issue is checked against each item of
+   [the complete handoff](#make-the-handoff-complete). Each interface (CLI, TUI,
+   headless, model, extension) and each failure class (partial failure,
+   cancellation, stale state, concurrency, restart) is either covered by a named
+   behavior and acceptance scenario, or stated as not applicable with the reason.
+   Every new entry point, setting or stored value names its source owner.
+3. The canonical Docs owner of the proposed behavior is updated and labeled as a
+   design target.
+4. A material change the check finds in an approved draft is shown before it is
+   applied.
+
+Report the searched counts, the issues changed and the issues reviewed but left
+unchanged, and any requirement still open with its owner.
