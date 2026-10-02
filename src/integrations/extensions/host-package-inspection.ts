@@ -205,7 +205,8 @@ export async function readHostSkillEntrypoint(
   if (!stat.isFile()) return { kind: "read", ok: false, problem: "not-a-file" };
   signal?.throwIfAborted();
   try {
-    const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    // Read-only and never through a link; O_NOFOLLOW is 0 where a platform lacks it.
+    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
     try {
       const limit = 1_048_577;
       const buffer = new Uint8Array(Math.min(Number(stat.size), limit));
