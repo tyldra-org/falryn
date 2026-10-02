@@ -454,6 +454,11 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
               describe:
                 "bounded trust, notice, scope, catalog, listing, suggestion or skill usage JSON request file",
             })
+            .option("installed", {
+              type: "string",
+              describe:
+                "inspect, trust or read notices for an installed package by ID instead of a local path",
+            })
             .positional("path", { type: "string", describe: "local package directory path" }),
         () => {},
       )
@@ -985,11 +990,22 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     (command === "extension.inspect" ||
       command === "extension.trust" ||
       command === "extension.notices") &&
-    parsed.path === undefined
+    (parsed.path === undefined) === (parsed.installed === undefined)
   )
     return {
       kind: "invalid",
-      message: "Extension inspection, trust and notices require a local path.",
+      message:
+        "Extension inspection, trust and notices require either a local path or --installed <package-id>.",
+    };
+  if (
+    parsed.installed !== undefined &&
+    command !== "extension.inspect" &&
+    command !== "extension.trust" &&
+    command !== "extension.notices"
+  )
+    return {
+      kind: "invalid",
+      message: "--installed applies to extension inspect, trust and notices.",
     };
   if (command === "extension.catalog" || command === "extension.scope") {
     if (parsed.path !== undefined)
@@ -1306,6 +1322,12 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
       command === "extension.notices") &&
     parsed.path !== undefined
       ? { extensionPath: parsed.path }
+      : {}),
+    ...((command === "extension.inspect" ||
+      command === "extension.trust" ||
+      command === "extension.notices") &&
+    parsed.installed !== undefined
+      ? { extensionInstalled: parsed.installed }
       : {}),
   };
 }

@@ -21,6 +21,7 @@ import { loadProductConfiguration } from "../runtime/product-configuration.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import { FALRYN_VERSION } from "../version.ts";
 import { runPackageTrust } from "./extension-trust.ts";
+import { type ExtensionTarget, readInstalledPackage } from "./installed-package.ts";
 import { resultFor } from "./shared.ts";
 import { DEFAULT_SKILL_FINDINGS_LOAD } from "./skill-findings.ts";
 
@@ -144,7 +145,7 @@ export async function inspectStandaloneSkill(
 }
 
 export async function runExtensionInspect(
-  path: string,
+  target: ExtensionTarget,
   signal?: AbortSignal,
   services?: ServiceProvider,
   request?: TrustRequest,
@@ -152,19 +153,45 @@ export async function runExtensionInspect(
   deep: { readonly deadlineMs?: number } = {},
 ): Promise<CommandResultOf<"extension.inspect" | "extension.trust", PackageInspectionReport>> {
   let snapshot: PackageSnapshot | null = null;
-  const host = createHostPackageSource(path);
-  const prepared = await preparePackage(
-    {
-      // Keep the bytes preparation reads, so skill findings need no second read.
-      async read(readSignal) {
-        snapshot = await host.read(readSignal);
-        return snapshot;
-      },
-    },
-    { falryn: FALRYN_VERSION, bun: Bun.version, os: process.platform, arch: process.arch },
-    signal === undefined ? {} : { signal },
-  );
-  if (!prepared.ok && prepared.code === "missing-plugin-manifest" && request === undefined) {
+  const host = {
+    falryn: FALRYN_VERSION,
+    bun: Bun.version,
+    os: process.platform,
+    arch: process.arch,
+  };
+  const installed =
+    typeof target === "string"
+      ? null
+      : services === undefined
+        ? ({ ok: false, code: "package-store-unavailable" } as const)
+        : await readInstalledPackage(services, target.installed, signal);
+  const prepared =
+    installed === null
+      ? await preparePackage(
+          {
+            // Keep the bytes preparation reads, so skill findings need no second read.
+            async read(readSignal) {
+              snapshot = await createHostPackageSource(target as string).read(readSignal);
+              return snapshot;
+            },
+          },
+          host,
+          signal === undefined ? {} : { signal },
+        )
+      : installed.ok
+        ? await preparePackage({ read: async () => installed.snapshot }, host, {
+            candidates: installed.dependencies,
+            ...(signal === undefined ? {} : { signal }),
+          })
+        : ({ ok: false, code: installed.code } as const);
+  if (installed?.ok) snapshot = installed.snapshot;
+  const path = typeof target === "string" ? target : null;
+  if (
+    path !== null &&
+    !prepared.ok &&
+    prepared.code === "missing-plugin-manifest" &&
+    request === undefined
+  ) {
     const entrypoint = await readHostSkillEntrypoint(path, signal).catch(() => ({
       kind: "absent" as const,
     }));

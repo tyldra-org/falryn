@@ -202,12 +202,37 @@ export function composeNativePackages(options: {
     ) {
       if (stopped.signal.aborted) throw new ExtensionInputError("native-host-closed");
       const captured = await context.registered(signal);
+      /**
+       * Why a changed catalog refuses this activation. When its own package lost trust, the call
+       * states that shared reason, as discovery and standing do; any other change stays stale.
+       */
+      function changedCatalogReason(
+        fresh: Awaited<ReturnType<typeof context.capture>>,
+        activationDigest: string,
+      ): string {
+        const expected = [...captured.activations.values()].find(
+          (activation) => canonicalDigest(activation) === activationDigest,
+        );
+        const lost =
+          expected === undefined
+            ? undefined
+            : fresh.catalog.entries.find(
+                (entry) =>
+                  entry.source.kind === "package" &&
+                  canonicalDigest(entry.source.owner) === expected.package &&
+                  entry.trust !== "accepted",
+              );
+        return lost !== undefined &&
+          (lost.reason.startsWith("ecosystem-") || lost.reason === "dependency-not-eligible")
+          ? lost.reason
+          : "stale-native-catalog";
+      }
       /** Recheck the catalog and exact stored activation before any package bytes are used. */
       async function admittedActivation(activationDigest: string, signal: AbortSignal) {
         if (current !== publication) throw new ExtensionInputError("stale-native-catalog");
         const fresh = await context.capture(signal);
         if (fresh.catalog.identity !== captured.catalog.identity)
-          throw new ExtensionInputError("stale-native-catalog");
+          throw new ExtensionInputError(changedCatalogReason(fresh, activationDigest));
         const control = captured.controls.get(activationDigest);
         const expected = [...captured.activations.values()].find(
           (activation) => canonicalDigest(activation) === activationDigest,

@@ -1240,6 +1240,15 @@ apply the normal schema migrations. An absent database stays absent on inspectio
 Invalid portable components leave valid siblings inspectable; malformed core
 or Falryn metadata rejects the package.
 
+`extension inspect`, `extension trust` and `extension notices` accept
+`--installed <package-id>` instead of a path (#1279). The command then prepares the
+package's current installed version from its exact cached bytes with the source the
+lifecycle recorded, so it addresses the installed identity, including a package
+acquired from a marketplace listing, which has no local path. Exactly one of a path or
+`--installed` is required; other `extension` actions refuse `--installed`. A package
+that is not installed, or no product database, answers `not-installed`; the read never
+creates the database or contacts a source.
+
 `falryn extension trust <path> --input <request.json>` previews an `approve`,
 `revoke`, `quarantine`, `release`, or evidence `refresh` decision. The JSON request is bounded to 65,536
 UTF-8 bytes and contains `action`, `expiresAt`
@@ -1254,7 +1263,7 @@ approval occurs in headless mode.
 Evidence refresh uses `expiresAt: null` and a strict version-1 `verification`
 object containing `keys`, nullable `signature`, and nullable `advisory`. Keys
 are explicitly selected by the invoking user/host, never read from package
-metadata. Each has `role: publisher | advisory`, `id: sha256:<DER bytes>`, and
+metadata. Each has `role: publisher | advisory | curator`, `id: sha256:<DER bytes>`, and
 `publicKey` containing canonical base64 DER/SPKI Ed25519 bytes. At most 16
 distinct role/key pairs are accepted; each encoded key is at most 1,024
 characters. A proof contains `algorithm: ed25519`, `keyId`, the canonical base64
@@ -1982,6 +1991,13 @@ trust projection: `ecosystem-trust-required`, `ecosystem-trust-revoked`,
 diagnostic message and the gateway's `denied` reason are that value. Revoked and
 quarantined trust reports health `quarantined`, incompatible trust reports
 `incompatible` and any other ineligible trust reports `denied`; none is selectable.
+`falryn extension catalog` entries, `package health` and native admission refusals,
+and a native tool call that was already disclosed when its package lost trust state
+that value too (#1279); the catalog's dependency-blocked entries state
+`dependency-not-eligible`, and so does such a refused native call. A native call
+refused for any other catalog change stays `stale-native-catalog`. A revoked or
+quarantined package's tools are no longer offered
+to the model in later turns.
 
 `--input <request.json>` accepts one strict request of at most 16,384 bytes:
 `{"action":"acknowledge","noticeId":"sha256:...","expiresAt":<epoch ms>}`. The
@@ -1998,7 +2014,7 @@ ones on the next write. Session export does not carry acknowledgements.
 A corrupt acknowledgement row is read as unacknowledged and can be replaced by a new
 acknowledgement.
 
-Limits: notices are per package path. No OpenTUI view, export or replay projection
+Limits: notices are per package path or installed package (`--installed`). No OpenTUI view, export or replay projection
 exists yet, and `falryn doctor` does not report them; the capability doctor reports
 the same reasons through health diagnostics. Package health records carry no
 timestamp, so a health notice's freshness is `unrecorded`.

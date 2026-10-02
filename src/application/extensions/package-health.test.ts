@@ -259,6 +259,8 @@ test("unknown native memory usage cannot bypass an inherited memory ceiling", as
 });
 for (const [change, code] of [
   [{ trusted: false }, "package-trust-required"],
+  // A refusal states the shared trust reason when the authority supplies one (#1279).
+  [{ trusted: false, reason: "ecosystem-trust-revoked" }, "ecosystem-trust-revoked"],
   [{ enabled: false }, "dependency-disabled"],
   [{ strict: false }, "strict-sandbox-policy-required"],
 ] as const)

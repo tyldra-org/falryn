@@ -50,6 +50,7 @@ export interface PackageHealthHost {
 }
 export type PackageHealthAuthority = {
   trusted: boolean;
+  reason?: string;
   enabled: boolean;
   inputs: string;
   strict: boolean;

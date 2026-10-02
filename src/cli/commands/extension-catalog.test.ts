@@ -193,7 +193,10 @@ test("CLI scope preview, confirmation, restart pagination and revocation share c
   });
   const revoked = await invoke(["extension", "catalog"]);
   expect(
-    revoked.page?.entries.every((entry) => !entry.enabled && entry.reason === "trust-revoked"),
+    // The catalog states the shared trust reason, the same value standing and notices report.
+    revoked.page?.entries.every(
+      (entry) => !entry.enabled && entry.reason === "ecosystem-trust-revoked",
+    ),
   ).toBe(true);
   expect(revoked.page?.catalog).not.toBe(first.page?.catalog);
   await expect(invoke(["extension", "catalog"], { action: "catalog", query })).rejects.toThrow(
