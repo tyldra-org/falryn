@@ -17,7 +17,7 @@ only when an issue, PR or delivery scope needs resolution.
 
 | Command | Authorized work and stopping point |
 | --- | --- |
-| Plan | Complete the issue contract and applicable planning records; stop before implementation |
+| Plan | Complete the issue contract and applicable planning records; stop before implementation. An `Idea` target stops at its draft unless the request says to apply |
 | Implement | Complete one admitted issue, review and verify acceptance, repair in-scope gaps, and prepare its PR; stop before merge |
 | Review | Assess the exact PR diff and report findings; no editing or posting |
 | Verify | Establish acceptance or merge readiness; only separately authorized governance reconciliation |
