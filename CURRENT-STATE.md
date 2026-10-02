@@ -23,7 +23,7 @@ application. The current command surface includes:
 | falryn data backup / inspect / restore / diagnostics / retention / gc / reset / uninstall | Inspect, preserve, repair, retain, collect, or preview/apply confirmed removal of Falryn-owned local data |
 | falryn workspace list / show / save / load | Inspect or persist named workspace sets |
 | falryn model | Inspect and revision-safely edit model policy through the shared settings service |
-| falryn package | Inspect, install, activate, update, disable or remove governed packages, inspect their data/health/standing, and quarantine or revoke one |
+| falryn package | Inspect, install, activate, update, disable or remove governed packages, inspect their data/health/standing, evaluate them against the curation rubric, and quarantine or revoke one |
 | falryn peer | Inspect authorized peers, exchange messages, and read delivery history |
 | falryn extension inspect / trust / notices / scope / catalog / listing / suggestion / skills | Inspect local declarations and skill directories, confirm trust or scoped metadata preferences, list or acknowledge package notices, query the inert catalog with skill findings, curated listings and verified package suggestions, and report skill usage |
 | falryn export / import | Preview or write a versioned local export package, or import one after verification |
@@ -1279,9 +1279,15 @@ remove it, or change its statement at the same sequence. Rejected refreshes
 leave prior evidence intact; inspect the failure before retrying. A signed
 withdrawal needs a higher sequence and does not restore an old approval.
 
+A refresh may also carry a `curation` proof: a `falryn.package-curation.v1`
+statement (`subject`, `decision: curated | declined`, an embedded evaluation
+`report`, `issuedAt`, `expiresAt`) signed by a key the request pins with role
+`curator`. It is described under
+[package evaluation and curation evidence](#package-evaluation-and-curation-evidence).
+
 `falryn package <action> --input <request.json>` implements local package
 installation transactions, explicit health checks and package standing. Actions are `inspect`, `data`, `health`, `install`, `update`,
-`rollback`, `disable`, `uninstall`, `recover`, `enable`, `standing`, `quarantine`, `release`, and `revoke`. Every request names
+`rollback`, `disable`, `uninstall`, `recover`, `enable`, `standing`, `quarantine`, `release`, `revoke`, and `evaluate`. Every request names
 `packageId`, a UUID `operationId`, and `expectedRevision`. Install/update also
 name `sourcePath` or, exclusively, a marketplace `listing` (see Marketplace package
 acquisition); rollback names a previously returned `versionDigest`.
@@ -1376,6 +1382,72 @@ Unavailable: fetching advisories, an OpenTUI view, export and replay projections
 standing, and any `doctor` package section (diagnostics do not open the database).
 Package-contributed MCP servers have no connection path, so MCP clients remain
 configured by the user.
+
+### Package evaluation and curation evidence
+
+`falryn package evaluate --input request.json` (#168) evaluates the current installed
+version of `packageId` against the rubric `falryn.package-rubric.v1` and retains the
+report. It reads installed records only: the cached bytes against the recorded identity,
+the shared trust projection, package standing, host compatibility and the newest native
+health or tool attempt per contribution recorded for that exact identity. It never runs
+package code, downloads, approves, enables or installs, and it never creates the product
+database; with none, the answer is `not-installed`. `confirmation` and `reason` are
+refused.
+
+The report lists thirteen criteria in fixed order (provenance, ownership, integrity,
+effects, privacy, security, compatibility, maintenance, documentation, tests,
+accessibility, resources, quality), each with an outcome (`pass`, `fail`,
+`inconclusive` or `not-applicable`), a basis (`observed`, `curator` or
+`behavioral-report`) and a closed code. The decision is derived: any failure is
+`not-eligible`, otherwise any open criterion is `inconclusive`, otherwise `eligible`.
+The receipt code is `evaluated-<decision>`.
+
+| Criterion | Local observation |
+| --- | --- |
+| provenance, ownership | Verified publisher signature and publisher, or inconclusive; an invalid signature fails |
+| integrity | Cached bytes prepare to the recorded identity, or fail as `bytes-unverifiable` |
+| effects | Declarative packages are `not-applicable`. Any failed attempt fails as `native-failed`; full-user contributions are `full-user-opaque`; a missing attempt, an unsettled attempt or one completed without strict enforcement is inconclusive; every governed contribution completed under strict enforcement passes |
+| security | A quarantined or revoked standing or advisory fails; a clear signed advisory passes; otherwise inconclusive |
+| compatibility | Host compatibility of the installed bytes |
+| privacy, maintenance, documentation, accessibility, quality | `curator-review-required` |
+| tests | `behavioral-report-unavailable` |
+| resources | `resource-measurement-unavailable`: attempts record CPU and memory as unavailable |
+
+A local report is therefore never `eligible`. Each native attempt appears in
+`observations` (at most 64, with `omittedObservations`) with its contribution digest,
+mode, state, attempt code and enforcement (`strict`, `off` or `unavailable`), so a
+denied undeclared effect that made an attempt fail is preserved. A full-user
+contribution is reported but its effects stay opaque.
+
+Migration 0036 retains reports in `package_evaluations`: at most 32 per identity and
+1,024 in total, oldest first out. The report digest excludes `evaluatedAt`, so an
+unchanged repeat keeps one record and reports `recorded: false`. The receipt's
+`data.evaluation` carries the `report`, its `reportDigest`, `recorded` and up to 8
+newest `history` entries for the package, each with its identity, evaluator, decision,
+curation status and `stale: true` when it describes other bytes. One unreadable record
+fails the answer (`evaluation-store-malformed`); a cancelled evaluation writes nothing;
+an unconfirmed write is `uncertain`.
+
+A curator signs a `falryn.package-curation.v1` statement embedding a report with
+evaluator `curator`. Through `falryn extension trust` refresh, curation evidence becomes
+`verified` only when the statement verifies with a pinned `curator` key, its lifetime is
+at most 30 days, the statement and report subjects equal the exact package identity, the
+statement says `curated`, the report is `eligible` and was evaluated no later than the
+statement was issued. Otherwise curation stays `unavailable` and the evidence record
+names `curationStatus`: `declined`, `ineligible-report`, `subject-mismatch` or
+`invalid`. Verified curation expires with its statement. An applied refresh stores the
+curator report in the same history and transaction; unauthenticated statements and
+statements about other bytes are not retained. Evidence refreshed without a curation
+proof keeps its earlier record shape.
+
+Curation never approves, enables, installs or grants execution. The trust state
+`curated` appears only without a user decision and with verified integrity and
+signature; eligibility still needs the user's matching approval, and a refresh that
+changes evidence leaves an earlier approval stale as before. Updated bytes are a new
+identity, so earlier reports and curation do not describe them.
+
+Unavailable: behavioral evaluation reports (#1092), an OpenTUI view, model-caller
+access, and export or replay projections of evaluations.
 
 ### Marketplace package acquisition
 

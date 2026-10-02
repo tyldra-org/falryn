@@ -77,6 +77,7 @@ const GROUP_ACTIONS: Readonly<Record<string, readonly string[]>> = {
     "quarantine",
     "release",
     "revoke",
+    "evaluate",
   ],
   config: ["show", "validate", "path", "set"],
   data: ["reset", "uninstall", "backup", "restore", "inspect", "diagnostics", "retention", "gc"],

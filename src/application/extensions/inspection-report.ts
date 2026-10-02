@@ -127,6 +127,7 @@ export function packageInspectionLines(report: PackageInspectionReport): string[
                   `Signer key: ${report.trust.provenance.signingKey ?? "unavailable"}; signature digest: ${report.trust.provenance.signatureDigest ?? "unavailable"}.`,
                   `Advisory state: ${report.trust.provenance.evidence.advisory}; sequence: ${report.trust.provenance.advisorySequence}; evidence revision: ${report.trust.provenance.revision}.`,
                   "A verified signature proves the supplied key signed these bytes, not publisher safety or curation. Attestation and transparency verification are unavailable.",
+                  `Curation evidence: ${report.trust.provenance.evidence.curation}; statement: ${report.trust.provenance.curationStatus ?? "none"}; curator key: ${report.trust.provenance.curationKey ?? "unavailable"}. Curation never approves, enables or installs a package.`,
                 ]),
             `Health: ${report.trust.trust.health}; availability: ${report.trust.trust.availability}; trust does not grant execution permission.`,
             `Scope: ${report.trust.trust.scope.kind}/${report.trust.trust.scope.authority}; policy generation: ${report.trust.trust.policyGeneration}.`,

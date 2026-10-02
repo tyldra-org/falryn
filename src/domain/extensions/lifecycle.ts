@@ -26,6 +26,8 @@ export const PACKAGE_ACTIONS = [
   "quarantine",
   "release",
   "revoke",
+  /** Evaluate the installed version against the curation rubric and retain the report (#168). */
+  "evaluate",
 ] as const;
 export const packageRequestSchema = z
   .strictObject({

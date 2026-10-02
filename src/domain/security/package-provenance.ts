@@ -9,6 +9,11 @@ import {
   trustEvidenceSchema,
   trustScopeSchema,
 } from "./ecosystem-trust.ts";
+import {
+  CURATION_STATUSES,
+  curationStatementSchema,
+  type EvaluationRecord,
+} from "./package-evaluation.ts";
 
 const time = z.int().nonnegative();
 const lifetime = { issuedAt: time, expiresAt: time };
@@ -42,7 +47,7 @@ export const packageVerificationSchema = z
         z.strictObject({
           id: digestSchema,
           publicKey: z.string().min(1).max(1024),
-          role: z.enum(["publisher", "advisory"]),
+          role: z.enum(["publisher", "advisory", "curator"]),
         }),
       )
       .max(16),
@@ -52,6 +57,11 @@ export const packageVerificationSchema = z
     advisory: z
       .strictObject({ ...signatureProofShape, statement: advisoryStatementSchema })
       .nullable(),
+    /** A curator's signed evaluation (#168). Absent and null both mean no curation evidence. */
+    curation: z
+      .strictObject({ ...signatureProofShape, statement: curationStatementSchema })
+      .nullable()
+      .optional(),
   })
   .refine(
     (input) => new Set(input.keys.map((key) => `${key.role}:${key.id}`)).size === input.keys.length,
@@ -82,6 +92,13 @@ export const packageProvenanceSchema = z
     advisoryDigest: digestSchema.nullable(),
     advisoryIds: z.array(identityText).max(32),
     authorityDigest: digestSchema,
+    /**
+     * Present only when a curation proof was supplied, so records refreshed without one keep the
+     * shape and reference digest they had before curation evidence existed.
+     */
+    curationKey: digestSchema.nullable().optional(),
+    curationDigest: digestSchema.optional(),
+    curationStatus: z.enum(CURATION_STATUSES).optional(),
   })
   .refine(
     (value) =>
@@ -92,14 +109,31 @@ export const packageProvenanceSchema = z
         actor: value.actor,
         scope: value.scope,
       }),
-  );
+  )
+  .refine((value) => {
+    const present = [value.curationKey, value.curationDigest, value.curationStatus].filter(
+      (field) => field !== undefined,
+    ).length;
+    if (present !== 0 && present !== 3) return false;
+    // Only a verified status may claim verified curation evidence, and it needs a signing key.
+    const verified = value.curationStatus === "verified";
+    return (
+      (value.evidence.curation === "verified") === verified &&
+      (!verified || (value.curationKey !== null && value.curationKey !== undefined))
+    );
+  });
 export type PackageProvenance = z.infer<typeof packageProvenanceSchema>;
 export interface PackageProvenanceStore {
   get(key: string): Result<PackageProvenance | null, TrustStoreError>;
+  /**
+   * Compare and replace the evidence record. A curator report carried by the same refresh is
+   * retained in the evaluation history within the same transaction, so neither lands alone.
+   */
   replace(
     record: PackageProvenance,
     expectedRevision: number,
     signal?: AbortSignal,
+    evaluation?: EvaluationRecord,
   ): Result<null, TrustStoreError>;
 }
 export function packageProvenanceKey(observation: TrustObservation): string {

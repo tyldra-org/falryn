@@ -10,6 +10,7 @@ import {
   packageProvenanceSchema,
 } from "../../domain/security/package-provenance.ts";
 import type { SqliteStorePort } from "../../domain/storage/index.ts";
+import { appendEvaluation } from "./evaluation-repository.ts";
 
 function json(row: Record<string, unknown>, maximum: number): unknown {
   if (typeof row.record_json !== "string" || Buffer.byteLength(row.record_json) > maximum)
@@ -49,7 +50,7 @@ export function createPackageProvenanceRepository(store: SqliteStorePort): Packa
       const value = provenance(row);
       return value === null ? err({ code: "malformed" }) : ok(value);
     },
-    replace(record, expectedRevision, signal) {
+    replace(record, expectedRevision, signal, evaluation) {
       if (signal?.aborted) return err({ code: "cancelled" });
       if (
         !packageProvenanceSchema.safeParse(record).success ||
@@ -86,6 +87,8 @@ export function createPackageProvenanceRepository(store: SqliteStorePort): Packa
             json: JSON.stringify(record),
           },
         );
+        // The curator report lands with the evidence that verified it, or neither does.
+        if (evaluation !== undefined) appendEvaluation(sql, evaluation);
         return null;
       }, signal);
       if (!result.ok)

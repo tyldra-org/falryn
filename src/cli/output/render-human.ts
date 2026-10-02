@@ -75,6 +75,7 @@ import {
   renderSessionResume,
   renderSessionShow,
 } from "./render-human/history.ts";
+import { packageEvaluationLines } from "./render-human/package-evaluation.ts";
 import { packageStandingLines } from "./render-human/package-standing.ts";
 import type { RenderedPayload } from "./render-human/payload.ts";
 import { renderCodingRun, renderProviderConnections } from "./render-human/product.ts";
@@ -532,7 +533,8 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
                     ]),
                 ...(result.payload.data === undefined
                   ? []
-                  : (packageStandingLines(result.payload.data) ?? [
+                  : (packageStandingLines(result.payload.data) ??
+                    packageEvaluationLines(result.payload.data) ?? [
                       safe(JSON.stringify(result.payload.data)),
                     ])),
               ],
