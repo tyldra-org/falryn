@@ -8,19 +8,18 @@ observed effects and remaining work. Do not create another tracker or controller
 ## Establish the contract
 
 Read the owning issue, native blockers and hierarchy, existing PRs, and the
-relevant source and tests. The handoff must explain its baseline, remaining
-acceptance, non-goals, boundaries, applicable failure and recovery behavior,
-resource limits, real consumers, validation and documentation impact.
+relevant source and tests. The handoff must meet [issue contracts](issues.md),
+which owns what a complete issue states and when work is split.
 
 Public Falryn issues must be implementable without private documents. For private
 docs work, use its canonical owners and source evidence. Resolve conflicting
-contracts at their owners. Size the work and complete any missing contract with
-[issue contracts](issues.md) before writing code; a split discovered halfway
-through implementation costs far more than one made up front.
+contracts at their owners. Size the work and complete any missing contract
+before writing code; a split discovered halfway through implementation costs far
+more than one made up front.
 
-Plan may repair derivable contract facts and planning records. A human-owned
-choice must be named; do not guess it. An open prerequisite prevents dependent
-implementation. Preserve the outcome, identify what is missing and resolve only
+Plan may repair derivable contract facts and planning records. An open
+prerequisite prevents dependent implementation. Preserve the outcome, identify
+what is missing and resolve only
 prerequisite work covered by the user's scope. Do not downgrade acceptance to
 make a task appear deliverable.
 
@@ -132,13 +131,9 @@ to stay active.
 
 ## Keep delivery fast
 
-Speed comes from removing repeated and idle work, never from skipping proof.
+Speed comes from removing idle and repeated work, never from skipping proof; the
+check rules above still decide what runs.
 
-- Read the issue, its owners and their tests once, in batched reads, and keep
-  the findings in the working record instead of re-reading them.
-- Iterate with focused tests. Run `bun run check` once on the complete
-  candidate, plus the build and compiled smoke only where `DEVELOPMENT.md`
-  requires them.
 - Overlap waiting with writing. Start long local checks in the background when
   the candidate is complete, and write `CURRENT-STATE.md`, the docs companion
   and pull-request bodies while they run. While CI runs, prepare reconciliation.
