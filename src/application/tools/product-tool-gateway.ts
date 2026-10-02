@@ -1089,6 +1089,7 @@ export function createProductToolGateway(options: ProductToolGatewayOptions): To
                 ? { authorityCurrent: options.instructionsCurrent }
                 : {}),
               taskResources: task,
+              ...(options.hookLineage === undefined ? {} : { hookOrigin: true }),
               ...(options.delegation === undefined ? {} : { delegation: options.delegation }),
               ...(options.userSelection === undefined
                 ? {}

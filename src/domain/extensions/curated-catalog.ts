@@ -16,6 +16,11 @@ import {
 } from "./canonical.ts";
 import { digestSchema, exactVersionSchema, packageIdentityV1Schema } from "./identity.ts";
 import { type HostFacts, hostCompatible, packageCompatibilitySchema } from "./manifest.ts";
+import {
+  normalizeRelevance,
+  relevanceDeclarationSchema,
+  storedRelevanceSchema,
+} from "./package-suggestion.ts";
 
 export const CURATED_CATALOG_SCHEMA = "falryn.curated-catalog";
 export const CURATED_CATALOG_GENERATION = 1;
@@ -77,6 +82,7 @@ const ENTRY_FIELDS = [
   "versions",
   "claims",
   "editorial",
+  "relevance",
   "requires",
 ] as const;
 const DOCUMENT_FIELDS = [
@@ -171,6 +177,8 @@ const entrySchema = z.strictObject({
       featured: z.boolean().default(false),
     })
     .default({ labels: [], rank: null, featured: false }),
+  /** Opt-in suggestion relevance (#1094); only used for sources the user enabled. */
+  relevance: relevanceDeclarationSchema.optional(),
   requires: z.array(z.string().max(64)).max(CURATED_LIMITS.requires).default([]),
 });
 
@@ -219,6 +227,8 @@ const listingSchema = z.strictObject({
     rank: z.int().nullable(),
     featured: z.boolean(),
   }),
+  /** Absent when undeclared, so records stored before #1094 keep their digest. */
+  relevance: storedRelevanceSchema.optional(),
 });
 export type CuratedListing = z.infer<typeof listingSchema>;
 export const curatedListingSchema = listingSchema;
@@ -324,6 +334,7 @@ function normalizeEntry(entry: z.infer<typeof entrySchema>): CuratedListing {
       rank: entry.editorial.rank,
       featured: entry.editorial.featured,
     },
+    ...(entry.relevance === undefined ? {} : { relevance: normalizeRelevance(entry.relevance) }),
   };
 }
 

@@ -1,4 +1,5 @@
 import type { ProductSchedulePorts } from "../../application/runtime/schedule-product-runtime.ts";
+import { createCuratedCatalogRepository } from "../../data/extensions/curated-catalog-repository.ts";
 import { createScheduleStore } from "../../data/orchestration/schedule-store.ts";
 import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import {
@@ -146,6 +147,8 @@ export type ProductArtifactSession = {
     resources: ProductTaskResources,
   ): ReturnType<typeof createReflectionActions>;
   readonly modelCatalogs: ModelCatalogGenerationRepository;
+  /** Stored curated catalogs, read by package suggestions (#1094); never fetched here. */
+  readonly curatedCatalogs: import("../../domain/extensions/curated-catalog.ts").CuratedCatalogStore;
   readonly providerContinuations: ProviderContinuationStatePort;
   readonly scratch: ScratchResourcePort;
   readonly tasks: ProcessTaskSupervisor;
@@ -600,6 +603,7 @@ export async function openProductArtifactSession(
       return createReflectionActions(createReflectionRepository(store), { authority, resources });
     },
     modelCatalogs: createModelCatalogGenerationRepository(store),
+    curatedCatalogs: createCuratedCatalogRepository(store),
     providerContinuations: createProviderContinuationStateRepository(store),
     scratch,
     async openWorkspaceIndex(workspaceRoot, openSignal) {

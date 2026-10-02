@@ -34,6 +34,7 @@ function carriesTurnIdentity(event: RuntimeEvent): boolean {
     case "instructions.revoked":
     case "instructions.resolved":
     case "history.recorded":
+    case "extension.suggestion.recorded":
     case "turn.started":
     case "turn.completed":
     case "model.processing.recorded":

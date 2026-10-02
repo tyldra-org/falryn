@@ -799,6 +799,21 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
     [options.submission?.listSkills],
   );
 
+  /** Shows the session's suggestions; it never installs, dismisses or prompts. */
+  const listSuggestions = useCallback((): boolean => {
+    const list = options.submission?.listSuggestions;
+    dispatch({ kind: "close-overlay" });
+    if (!list) {
+      dispatch({ kind: "notice", message: "Package suggestions are unavailable in this session." });
+      return false;
+    }
+    void list().then(
+      (lines) => dispatch({ kind: "notice", message: lines.join("\n") }),
+      () => dispatch({ kind: "notice", message: "Package suggestions are unavailable." }),
+    );
+    return true;
+  }, [options.submission?.listSuggestions]);
+
   /** Bare reports the current Brief mode; a mode sets it for upcoming turns. */
   const setBrief = useCallback(
     (argument: string | null): boolean => {
@@ -979,6 +994,8 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
           return runJsonAction(id === "schedule.controls" ? "schedule" : "peer", argument);
         case "skills.list":
           return listSkills(argument);
+        case "extensions.suggestions":
+          return listSuggestions();
         case "brief.set":
           return setBrief(argument);
         case "hush.set":
@@ -1252,6 +1269,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       reopenQuestion,
       runJsonAction,
       listSkills,
+      listSuggestions,
       setBrief,
       setOutputEngine,
       selectMode,

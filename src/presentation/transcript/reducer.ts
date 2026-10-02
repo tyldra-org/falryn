@@ -1,5 +1,6 @@
 import { artifactId } from "../../domain/artifacts/index.ts";
 import { describeMentionReceipt } from "../../domain/context/composer-mentions.ts";
+import { suggestionReasonText } from "../../domain/extensions/package-suggestion.ts";
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
 import type { HistoryPayload } from "../../domain/sessions/history.ts";
 import { historyReferences } from "../../domain/sessions/history.ts";
@@ -325,6 +326,25 @@ export function blockFor(
           `${event.payload.terminal.reason}. Inspect the exact attempt ${event.payload.attempt}.`,
         ),
       };
+    case "extension.suggestion.recorded": {
+      const { surfaced, additional } = event.payload;
+      return {
+        ...spine,
+        kind: "notice",
+        anchor: { of: "declared", key: `suggestion:${String(event.eventId)}` },
+        source: "runtime",
+        status: "final",
+        summary: complete(
+          `Suggested package ${surfaced.title} (${surfaced.sourceId}:${surfaced.listingId}).`,
+        ),
+        invocationId: null,
+        note: bound(
+          `Because of ${surfaced.reasons.map(suggestionReasonText).join("; ")}. ` +
+            (additional.length > 0 ? `${additional.length} more match. ` : "") +
+            "Nothing was installed; inspect or dismiss it with `falryn extension suggestion`.",
+        ),
+      };
+    }
     case "workflow.changed":
     case "work.queue.changed":
       // The queue journal is available to its store consumers; #161 owns shared projections.

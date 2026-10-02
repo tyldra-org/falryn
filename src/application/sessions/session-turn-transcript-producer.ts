@@ -131,6 +131,11 @@ export type SessionTurnTranscriptProducer = {
     readonly configurationGeneration: ConfigurationGeneration;
     readonly outcome: TerminalOutcome;
   }): Promise<ProducerResult<{ readonly turnId: TurnId }>>;
+  /** Persist a settled root turn's package suggestion (#1094); it starts nothing. */
+  recordPackageSuggestion(input: {
+    readonly correlation: SessionCorrelation & { readonly turnId: TurnId };
+    readonly record: import("../../domain/extensions/package-suggestion.ts").PackageSuggestionRecord;
+  }): Promise<ProducerResult<void>>;
   /** Persist a completed model attempt pair (start + complete). */
   recordModelAttempt(
     input: ProducerModelAttemptInput,
@@ -289,6 +294,17 @@ export function createSessionTurnTranscriptProducer(
         return persisted;
       }
       return { ok: true, value: { profileId: input.profileId } };
+    },
+
+    async recordPackageSuggestion(input) {
+      const persisted = await persistFacts([
+        {
+          kind: "extension.suggestion.recorded",
+          correlation: input.correlation,
+          payload: input.record,
+        },
+      ]);
+      return persisted.ok ? { ok: true, value: undefined } : persisted;
     },
 
     async startTurn(input) {

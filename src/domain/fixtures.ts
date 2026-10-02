@@ -516,6 +516,25 @@ export function everyEventKind(): readonly RuntimeEvent[] {
         },
       },
     },
+    {
+      ...spine({ eventId: "event-suggestion", sequence: 21, idempotencyKey: "key-suggestion" }),
+      kind: "extension.suggestion.recorded",
+      correlation: FIXTURE_TURN_CORRELATION,
+      payload: {
+        version: 1,
+        surfaced: {
+          suggestionId: `sha256:${"b".repeat(64)}`,
+          sourceId: "fixture-market",
+          listingId: "fixture/lint",
+          packageId: "fixture-lint",
+          packageVersion: "1.0.0",
+          identityDigest: `sha256:${"c".repeat(64)}`,
+          title: "Fixture lint",
+          reasons: [{ kind: "relevance", signal: "executable", rule: "eslint" }],
+        },
+        additional: [],
+      },
+    },
   ];
 }
 

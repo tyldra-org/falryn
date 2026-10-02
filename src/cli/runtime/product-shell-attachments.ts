@@ -4,6 +4,10 @@ import { createSkillActivations } from "../../application/context/skill-activati
 import { createMcpUserInput } from "../../application/extensions/mcp-input.ts";
 import { createPromptTemplateCatalog } from "../../application/extensions/native-prompt-owner.ts";
 import type { NativePublication } from "../../application/extensions/native-registration.ts";
+import {
+  createPackageSuggestionSession,
+  packageSuggestionLines,
+} from "../../application/extensions/package-suggestions.ts";
 import { withProcessingSession } from "../../application/providers/model-settings.ts";
 import { productAgentHost } from "../../application/runtime/product-agent-runtime.ts";
 import {
@@ -203,6 +207,12 @@ export type ProductShellAttachmentPorts = {
   readonly memoryRecords?: MemoryRecords;
   /** Selected, authenticated provider handoff from the application-owned profile service. */
   readonly provider?: ProductProviderConnectionHandoff;
+  /** Package suggestions over stored catalogs and current configuration (#1094). */
+  readonly packageSuggestions?: () =>
+    | import("../../application/extensions/package-suggestions.ts").PackageSuggestionResolver
+    | null;
+  /** Sources the workspace's project configuration proposes; listed for review only. */
+  readonly packageSuggestionProposals?: () => readonly string[];
 };
 
 export type ProductShellAttachments = {
@@ -318,6 +328,8 @@ export async function composeProductShellAttachments(
     const generation = ports.modelConfigurationGeneration?.() ?? ports.configurationGeneration;
     const sessionId =
       selection?.record.sessionId ?? sessionIdCodec.from(`session-shell-${randomUUID()}`);
+    // Each session starts with no observations; a resumed one never replays old output.
+    const suggestions = createPackageSuggestionSession(() => ports.packageSuggestions?.() ?? null);
     const traceId = traceIdCodec.from(`trace-shell-${randomUUID()}`);
     const mcpServices = sessionManagedServices(managedServices);
     let profileSession: WorkingProfileSession | undefined;
@@ -414,6 +426,7 @@ export async function composeProductShellAttachments(
       workspaceRoot === null
         ? null
         : composeProductWorkspaceTools({
+            observePaths: suggestions.observePaths,
             ...(ports.scratch === undefined ? {} : { scratch: ports.scratch }),
             generation,
             fileSystem: ports.fileSystem,
@@ -451,6 +464,7 @@ export async function composeProductShellAttachments(
             sessionId: String(sessionId),
             ...(ports.scratch === undefined ? {} : { scratch: ports.scratch }),
             userOutputMode: output.getHushMode,
+            suggestions,
           });
     const scratchTools =
       ports.scratch === undefined
@@ -943,6 +957,7 @@ export async function composeProductShellAttachments(
             : { contextCandidates: workspaceTools.contextCandidates }
           : { contextSource }),
         ...(memory === undefined ? {} : { memory }),
+        suggestions,
         ...(ports.artifacts === undefined ? {} : { artifacts: ports.artifacts }),
         initialExecutionProfile: selectedExecutionProfile,
         ...(selectedModel === null || !selectedModelExplicit
@@ -959,6 +974,7 @@ export async function composeProductShellAttachments(
           return prompts;
         },
         skills: skillControl,
+        suggestions,
         mentions,
         profileSession,
         async close() {
@@ -1080,6 +1096,11 @@ export async function composeProductShellAttachments(
       active.skills?.lines(page, AbortSignal.any([hostSignal, signal])) ??
       Promise.resolve(["Skills are unavailable in this session."]),
     skillCandidates: () => active.skills?.candidates() ?? null,
+    listSuggestions: async () =>
+      packageSuggestionLines(active.suggestions.list(), {
+        proposals: ports.packageSuggestionProposals?.() ?? [],
+        omitted: active.suggestions.omitted(),
+      }),
     mentionSources,
     workingProfile: (
       argument: string | null,

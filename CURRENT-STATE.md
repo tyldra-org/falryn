@@ -25,7 +25,7 @@ application. The current command surface includes:
 | falryn model | Inspect and revision-safely edit model policy through the shared settings service |
 | falryn package | Inspect, install, activate, update, disable or remove governed packages, inspect their data/health/standing, and quarantine or revoke one |
 | falryn peer | Inspect authorized peers, exchange messages, and read delivery history |
-| falryn extension inspect / trust / notices / scope / catalog | Inspect local declarations, confirm trust or scoped metadata preferences, list or acknowledge package notices, and query the inert catalog |
+| falryn extension inspect / trust / notices / scope / catalog / listing / suggestion / skills | Inspect local declarations, confirm trust or scoped metadata preferences, list or acknowledge package notices, query the inert catalog, curated listings and verified package suggestions, and report skill usage |
 | falryn export / import | Preview or write a versioned local export package, or import one after verification |
 | falryn replay | Rebuild one stored session projection without repeating effects |
 | falryn session list / show / resume / fork / rewind / replay | Inspect or navigate durable session history while preserving lineage |
@@ -1697,6 +1697,70 @@ valid and unrevoked. Trust records are local authority, not portable grants in
 session exports. Older binaries refuse the newer database schema; downgrade
 requires a compatible backup. Restoring a whole database can restore its old
 decisions, so inspect and revoke them before continuing.
+
+### Verified package suggestions
+
+Falryn can suggest an uninstalled package from a marketplace the user opted into. Two
+observations count, and neither is trusted:
+
+- A hint line on the stderr of a command the model ran through `run_process` or
+  `run_shell`. The line must start at the beginning of a line with
+  `falryn-package-hint/1 ` followed by one JSON object: `sourceId`, `listingId`,
+  `packageId` and an optional exact `packageVersion`. Any other field, including a URL or
+  command, makes the line malformed. A whole line is at most 4 KiB and a stream yields
+  at most 8 distinct hints. Indented, quoted or embedded copies, other versions
+  (`marker-codec-unknown`), invalid UTF-8 and oversized lines stay inert text. Only the
+  exact inline capture of the admitted command is scanned: hook output, projections,
+  replay and exports are never read, and the capture and the model's view of it are
+  unchanged.
+- A catalog entry's optional `relevance` declaration, compared with facts Falryn
+  already observed: up to 16 exact executable names (`executables`), matched against an
+  argv-mode command's file name, and up to 16 bounded workspace globs (`files`),
+  matched by the discovery glob codec against workspace-relative paths that
+  `read_file`, `read_compact_document`, `stat_path`, `write_files` or `mutate_paths`
+  completed on. Shell text has no admitted program, so `run_shell` contributes hints but
+  no executable name. Entries without the field keep their stored digest.
+
+Suggestions use only sources named in user configuration
+`connections.packageSuggestions.sources` (flat key `tools.packageSuggestions`) that are
+also configured marketplaces. Project configuration
+`defaults.capabilities.packageSuggestionProposals` can only propose sources; they are
+listed as proposals and enable nothing, and the user-only key in a project file is
+refused. A file-imported catalog is never a suggestion source
+(`suggestion-source-unauthenticated`). A hint is resolved against the stored catalog,
+which must list that exact `packageId` (`suggestion-identity-mismatch`); unknown
+sources, listings and versions are refusals, never installable suggestions. Every read
+inspects the listing again, so a withdrawal, removal, disabled marketplace or removed
+opt-in takes effect immediately. A stale catalog keeps its freshness and offers no
+install (`source-not-current`). Matching runs locally: it makes no model call, sends
+nothing to a marketplace and reads no file content.
+
+A session keeps at most 128 distinct observations and counts the rest. Suggestions are
+identified by source and package, so duplicate output or a newer version is the same
+suggestion. When a root turn settles, at most one installable, undismissed suggestion
+not shown before in the session is recorded as an `extension.suggestion.recorded` event,
+with up to 8 other eligible matches. Child, evaluator and cancelled turns record
+nothing. The terminal transcript and `falryn run` show it as a notice that says nothing
+was installed; JSON output carries it as `suggestion`. Replay and export read the record
+and never match or notify again. A new or resumed session starts with no observations.
+
+`/suggestions` in the terminal and
+`falryn extension suggestion --input request.json` show the same projection: identity,
+reasons, catalog freshness, install state and refusals. Requests are:
+
+- `{ "operation": "list", "sessionId": "id" }`: that session's recorded suggestions,
+  checked against current catalogs and preferences.
+- `{ "operation": "inspect", "sourceId", "listingId", "packageId", "packageVersion"? }`.
+- `{ "operation": "dismiss", "sourceId", "packageId", "expectedRevision" }` and
+  `{ "operation": "reset", "sourceId"?, "packageId"?, "expectedRevision" }`.
+
+List and inspect report the user configuration file's `revision`. Dismiss and reset
+write only `tools.packageSuggestions.dismissed` (at most 256 entries) and are refused as
+`suggestion-preferences-stale` when the file changed after that revision was read. A
+dismissal names a source and package, so a package update does not reset it. An
+available suggestion carries only a `listing` handoff for `falryn package install`,
+which inspects, downloads and asks for confirmation itself. Nothing in this path
+installs, enables, trusts or refreshes a package or catalog.
 
 ### Extension notices
 

@@ -87,6 +87,7 @@ type Probe = {
   readonly selected: string[];
   readonly peers: unknown[];
   readonly skillPages: unknown[];
+  suggestionLists: number;
   turns: number;
   exits: number;
 };
@@ -110,6 +111,13 @@ function probedSubmission(probe: Probe): SubmissionPort & {
     async listSkills(page) {
       probe.skillPages.push(page);
       return ["review — Review a diff"];
+    },
+    async listSuggestions() {
+      probe.suggestionLists += 1;
+      return [
+        "market:tools/lint · skill · Lint rules",
+        "Suggestions install, enable and trust nothing.",
+      ];
     },
     // `goal` is also a user skill here, so the planned `/goal` must yield to it.
     skillCandidates: () => ({ invocable: new Set(["goal"]), templates: new Set<string>() }),
@@ -139,6 +147,7 @@ async function open(options: { readonly activeTurn?: boolean; readonly failSelec
     selected: [],
     peers: [],
     skillPages: [],
+    suggestionLists: 0,
     turns: 0,
     exits: 0,
     ...(options.failSelect === undefined ? {} : { failSelect: options.failSelect }),
@@ -216,6 +225,16 @@ describe("one dispatcher for every caller", () => {
     await slash(shell, "/skills rev after 20");
     expect(await shell.frame("review — Review a diff")).toContain("review — Review a diff");
     expect(shell.probe.skillPages).toEqual([{ filter: "rev", offset: 20 }]);
+  });
+
+  test("/suggestions shows the session's suggestions without starting a turn", async () => {
+    using shell = await open();
+    await slash(shell, "/suggestions");
+    expect(await shell.frame("market:tools/lint")).toContain(
+      "market:tools/lint · skill · Lint rules",
+    );
+    expect(shell.probe.suggestionLists).toBe(1);
+    expect(shell.probe.turns).toBe(0);
   });
 });
 

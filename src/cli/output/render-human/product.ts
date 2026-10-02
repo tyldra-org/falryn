@@ -1,3 +1,4 @@
+import { suggestionReasonText } from "../../../domain/extensions/package-suggestion.ts";
 /** Human projections for provider management and coding runs. */
 
 import { generationDetail } from "../../../presentation/index.ts";
@@ -105,6 +106,15 @@ export function renderCodingRun(
   }
   for (const timing of payload.generation ?? []) {
     lines.push(`  Generation   ${safe(generationDetail(timing))}`);
+  }
+  if (payload.suggestion !== undefined) {
+    const { surfaced, additional } = payload.suggestion;
+    lines.push(
+      `  Suggestion   ${safe(`${surfaced.sourceId}:${surfaced.listingId}`)} ${safe(surfaced.packageVersion ?? "")} ${safe(surfaced.title)}`,
+      `               because of ${safe(surfaced.reasons.map(suggestionReasonText).join("; "))}` +
+        (additional.length > 0 ? `; ${additional.length} more` : ""),
+      "               Nothing was installed. Inspect it with `falryn extension suggestion`.",
+    );
   }
   return { lines, diagnostics: [] };
 }

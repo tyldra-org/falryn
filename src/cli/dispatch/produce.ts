@@ -71,6 +71,7 @@ export type DispatchProduceOptions = {
   readonly workingConfigurationArgs?: import("../commands/profile.ts").WorkingConfigurationArguments;
   readonly extensionCatalogArgs?: ExtensionCatalogArguments;
   readonly extensionListingArgs?: import("../commands/extension-listing.ts").ExtensionListingArguments;
+  readonly extensionSuggestionArgs?: import("../commands/extension-suggestion.ts").ExtensionSuggestionArguments;
   readonly extensionSkillsArgs?: import("../commands/extension-skills.ts").ExtensionSkillsArguments;
   readonly packageArgs?: PackageArguments;
   readonly scheduleArgs?: ScheduleArguments;
@@ -161,6 +162,18 @@ export async function produce(
         signal,
         options.governance?.ownedProcesses,
       );
+    case "extension.suggestion": {
+      if (options.extensionSuggestionArgs === undefined)
+        throw new Error("Missing extension suggestion arguments.");
+      const { runExtensionSuggestion } = await import("../commands/extension-suggestion.ts");
+      return runExtensionSuggestion(
+        services,
+        options.extensionSuggestionArgs,
+        globals,
+        signal,
+        onMutationStart,
+      );
+    }
     case "extension.notices":
       if (options.extensionPath === undefined) throw new Error("Missing extension package path.");
       if (options.extensionNotice?.confirmation !== undefined) onMutationStart?.();

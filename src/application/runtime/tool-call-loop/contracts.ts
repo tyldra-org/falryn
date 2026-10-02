@@ -81,6 +81,8 @@ export type ToolRunnerRequest = {
   readonly captureExactOutput?: (value: Readonly<Record<string, unknown>>) => void;
   /** Product-owned parent allowance for composition; never supplied by a model. */
   readonly taskResources?: ProductTaskResources;
+  /** Set by the gateway when a hook asked for this call; its output is hook output (#1094). */
+  readonly hookOrigin?: true;
   /** Gateway-owned task lineage and commit-before-receipt lifetime transfer. */
   readonly processTask?: {
     readonly owner: import("../../../domain/orchestration/process-task.ts").ProcessTaskOwner;
