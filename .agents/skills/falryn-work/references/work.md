@@ -8,18 +8,18 @@ observed effects and remaining work. Do not create another tracker or controller
 ## Establish the contract
 
 Read the owning issue, native blockers and hierarchy, existing PRs, and the
-relevant source and tests. The handoff must explain its baseline, remaining
-acceptance, non-goals, boundaries, applicable failure and recovery behavior,
-resource limits, real consumers, validation and documentation impact.
+relevant source and tests. The handoff must meet [issue contracts](issues.md),
+which owns what a complete issue states and when work is split.
 
 Public Falryn issues must be implementable without private documents. For private
 docs work, use its canonical owners and source evidence. Resolve conflicting
-contracts at their owners. Split independently reviewable work into native
-children rather than hiding it in a large checklist or PR.
+contracts at their owners. Size the work and complete any missing contract
+before writing code; a split discovered halfway through implementation costs far
+more than one made up front.
 
-Plan may repair derivable contract facts and planning records. A human-owned
-choice must be named; do not guess it. An open prerequisite prevents dependent
-implementation. Preserve the outcome, identify what is missing and resolve only
+Plan may repair derivable contract facts and planning records. An open
+prerequisite prevents dependent implementation. Preserve the outcome, identify
+what is missing and resolve only
 prerequisite work covered by the user's scope. Do not downgrade acceptance to
 make a task appear deliverable.
 
@@ -128,6 +128,18 @@ Batch independent reads with stable inputs. Keep one writer per checkout,
 dependent effects sequential and sibling delivery serial. Use the
 github-operations CI waiter instead of busy polling. Do not create work merely
 to stay active.
+
+## Keep delivery fast
+
+Speed comes from removing idle and repeated work, never from skipping proof; the
+check rules above still decide what runs.
+
+- Overlap waiting with writing. Start long local checks in the background when
+  the candidate is complete, and write `CURRENT-STATE.md`, the docs companion
+  and pull-request bodies while they run. While CI runs, prepare reconciliation.
+- Run unattended commands non-interactively, with standard input closed, so a
+  test can never wait on a terminal, and poll them with a bounded waiter.
+- Group related edits to a file into one change and verify them with one diff.
 
 ## Shepherd the pull request
 
