@@ -1,4 +1,4 @@
-import { generateKeyPairSync, sign } from "node:crypto";
+import { generateKeyPairSync, type KeyObject, sign } from "node:crypto";
 import { bytesDigest, canonicalDigest, canonicalJson } from "../../domain/extensions/canonical.ts";
 import type { PackageIdentityV1 } from "../../domain/extensions/identity.ts";
 import { PACKAGE_TOOL_PROTOCOL } from "../../domain/extensions/package-health.ts";
@@ -108,6 +108,11 @@ export function curatorReport(
   };
 }
 
+/** One Ed25519 key a journey reuses, so later evidence comes from the same publisher. */
+export function fixtureSigner(): { readonly privateKey: KeyObject; readonly publicKey: KeyObject } {
+  return generateKeyPairSync("ed25519");
+}
+
 /**
  * Publisher, advisory and curator evidence signed with one real Ed25519 key. `curatorRole` decides
  * which role the host pins that key under for the curation proof.
@@ -118,9 +123,16 @@ export function curatedVerification(
     readonly statement?: Partial<CurationStatement>;
     readonly curatorRole?: "curator" | "publisher";
     readonly lifetimeMs?: number;
+    readonly signer?: ReturnType<typeof fixtureSigner>;
+    readonly advisory?: {
+      readonly sequence: number;
+      readonly status: "clear" | "quarantined" | "revoked";
+    };
+    /** Leave the curation proof out, as a plain publisher and advisory refresh would. */
+    readonly curation?: false;
   } = {},
 ): PackageVerification {
-  const { privateKey, publicKey } = generateKeyPairSync("ed25519");
+  const { privateKey, publicKey } = options.signer ?? fixtureSigner();
   const der = publicKey.export({ format: "der", type: "spki" });
   const id = bytesDigest(der);
   const lifetime = {
@@ -163,12 +175,12 @@ export function curatedVerification(
     advisory: proof({
       type: "falryn.package-advisory.v1" as const,
       subject: observation.subject.identity,
-      sequence: 1,
-      status: "clear" as const,
+      sequence: options.advisory?.sequence ?? 1,
+      status: options.advisory?.status ?? ("clear" as const),
       advisoryIds: [],
       issuedAt: observation.now,
       expiresAt: observation.now + 60_000,
     }),
-    curation: proof(curation),
+    ...(options.curation === false ? {} : { curation: proof(curation) }),
   };
 }

@@ -51,6 +51,8 @@ int main(int argc,char **argv) {
   }
   while(fgets(line,sizeof(line),stdin)) {
     size_t n=strlen(line); while(n && (line[n-1]=='\\n'||line[n-1]=='\\r')) n--;
+    /* Slow: every response waits, so authority can change while an attempt runs. */
+    if(argc>1 && strcmp(argv[1],"slow")==0) usleep(700000);
     if(n<2 || line[n-1]!='}') return 30;
     if(argc>1 && strcmp(argv[1],"forged")==0) { puts("{\\"protocol\\":\\"forged\\"}"); continue; }
     if(argc>1 && strcmp(argv[1],"wrong-binding")==0) { char *digest=strstr(line,"sha256:"); if(digest) digest[7]=digest[7]=='a'?'b':'a'; }

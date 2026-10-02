@@ -23,6 +23,7 @@ import {
 } from "../../domain/extensions/native-activation.ts";
 import { PACKAGE_TOOL_PROTOCOL } from "../../domain/extensions/package-health.ts";
 import { type ScopeControl, scopeControlKey } from "../../domain/extensions/scope-controls.ts";
+import { ecosystemTrustReason } from "../../domain/security/ecosystem-notice.ts";
 import { qualifiedHookPython } from "../../integrations/extensions/host-hook-command.ts";
 import { createHostPackageCache } from "../../integrations/extensions/host-package-cache.ts";
 import { validateHealthExecutable } from "../../integrations/extensions/host-package-health.ts";
@@ -103,6 +104,9 @@ export function createNativePackageContext(options: {
     const trust = await metadata.trustProjection(installed);
     return {
       trusted: trust?.eligible === true,
+      ...(trust?.eligible === true
+        ? {}
+        : { reason: ecosystemTrustReason(trust) ?? "package-trust-required" }),
       enabled: captured.authority.actor === control.actor && entries.some((entry) => entry.enabled),
       inputs: canonicalDigest({
         catalog: captured.catalog.inputs,

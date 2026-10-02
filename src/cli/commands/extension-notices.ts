@@ -24,6 +24,7 @@ import type { CommandResultOf } from "../output/result.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import { FALRYN_VERSION } from "../version.ts";
 import { createExtensionStateStore } from "./extension-state.ts";
+import { type ExtensionTarget, readInstalledPackage } from "./installed-package.ts";
 import { resultFor } from "./shared.ts";
 import { openSessionStore } from "./storage.ts";
 
@@ -38,17 +39,30 @@ const absentOwners: PackageNoticeOwners = {
 };
 
 async function executeNotices(
-  path: string,
+  target: ExtensionTarget,
   services: ServiceProvider,
   request: NoticeRequest | undefined,
   signal: AbortSignal,
 ): Promise<PackageNoticesResult> {
   const resolved = services();
-  const prepared = await preparePackage(
-    createHostPackageSource(path),
-    { falryn: FALRYN_VERSION, bun: Bun.version, os: process.platform, arch: process.arch },
-    { signal },
-  );
+  const host = {
+    falryn: FALRYN_VERSION,
+    bun: Bun.version,
+    os: process.platform,
+    arch: process.arch,
+  };
+  let prepared: Awaited<ReturnType<typeof preparePackage>>;
+  if (typeof target === "string")
+    prepared = await preparePackage(createHostPackageSource(target), host, { signal });
+  else {
+    const installed = await readInstalledPackage(services, target.installed, signal);
+    prepared = installed.ok
+      ? await preparePackage({ read: async () => installed.snapshot }, host, {
+          candidates: installed.dependencies,
+          signal,
+        })
+      : { ok: false, code: installed.code };
+  }
   if (!prepared.ok) return { status: "failed", code: prepared.code };
   // The local actor comes from composition; package metadata cannot supply it.
   const actor = canonicalDigest({
@@ -98,7 +112,7 @@ async function executeNotices(
 }
 
 export async function runExtensionNotices(
-  path: string,
+  target: ExtensionTarget,
   signal: AbortSignal | undefined,
   services: ServiceProvider,
   request?: NoticeRequest,
@@ -118,7 +132,12 @@ export async function runExtensionNotices(
         id: workUnitId("extension-notices"),
         effect: request?.confirmation === undefined ? "observation" : "mutation",
         priority: "interactive",
-        conflictKeys: [conflictKey("extension-notices", path)],
+        conflictKeys: [
+          conflictKey(
+            "extension-notices",
+            typeof target === "string" ? target : `installed:${target.installed}`,
+          ),
+        ],
         dependencies: [],
         deadline: null,
         expectedOutputBytes: 262_144,
@@ -127,7 +146,7 @@ export async function runExtensionNotices(
       },
       async run(admittedSignal) {
         return {
-          value: await executeNotices(path, services, request, admittedSignal),
+          value: await executeNotices(target, services, request, admittedSignal),
           terminated: true,
         };
       },

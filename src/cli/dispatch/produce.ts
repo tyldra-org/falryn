@@ -80,6 +80,8 @@ export type DispatchProduceOptions = {
   readonly compactArgs?: CompactArguments;
   readonly modelRequest?: ModelSettingsRequest;
   readonly extensionPath?: string;
+  /** An installed package targeted by ID instead of a local path (#1279). */
+  readonly extensionInstalled?: string;
   readonly extensionTrust?: import("../../application/extensions/package-trust.ts").TrustRequest;
   readonly extensionNotice?: import("../../application/extensions/package-notices.ts").NoticeRequest;
   readonly streams: CliStreams;
@@ -175,9 +177,15 @@ export async function produce(
       );
     }
     case "extension.notices":
-      if (options.extensionPath === undefined) throw new Error("Missing extension package path.");
+      if (options.extensionPath === undefined && options.extensionInstalled === undefined)
+        throw new Error("Missing extension package path.");
       if (options.extensionNotice?.confirmation !== undefined) onMutationStart?.();
-      return runExtensionNotices(options.extensionPath, signal, services, options.extensionNotice);
+      return runExtensionNotices(
+        options.extensionPath ?? { installed: options.extensionInstalled ?? "" },
+        signal,
+        services,
+        options.extensionNotice,
+      );
     case "extension.skills":
       if (options.extensionSkillsArgs === undefined)
         throw new Error("Missing extension skills arguments.");
@@ -396,11 +404,17 @@ export async function produce(
       return runModel(services, options.modelRequest, globals, signal, onMutationStart);
     case "extension.inspect":
     case "extension.trust":
-      if (options.extensionPath === undefined) throw new Error("Missing extension package path.");
+      if (options.extensionPath === undefined && options.extensionInstalled === undefined)
+        throw new Error("Missing extension package path.");
       if (command === "extension.trust" && options.extensionTrust === undefined)
         throw new Error("Missing trust request.");
       if (options.extensionTrust?.confirmation !== undefined) onMutationStart?.();
-      return runExtensionInspect(options.extensionPath, signal, services, options.extensionTrust);
+      return runExtensionInspect(
+        options.extensionPath ?? { installed: options.extensionInstalled ?? "" },
+        signal,
+        services,
+        options.extensionTrust,
+      );
     case "provider":
       if (providerArgs === null) {
         throw new Error("Missing parsed provider arguments.");

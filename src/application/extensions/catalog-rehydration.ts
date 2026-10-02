@@ -43,6 +43,11 @@ export const catalogContextSchema = z.strictObject({
 export type CatalogContext = z.infer<typeof catalogContextSchema>;
 export const catalogTrustSchema = z.strictObject({
   trust: z.enum(CATALOG_TRUST_STATES),
+  /**
+   * The shared trust reason when not accepted (`ecosystem-trust-*` or `dependency-not-eligible`),
+   * so the catalog states the same value as standing, notices and a refused invocation.
+   */
+  reason: z.string().min(1).max(64).optional(),
   inputs: digestSchema,
 });
 export type CatalogTrust = z.infer<typeof catalogTrustSchema>;
@@ -105,7 +110,7 @@ function packageEntries(
     if (lifecycle !== "current") reason = `package-${lifecycle}`;
     else if (!scopeCurrent) reason = "scope-authority-stale";
     else if (compatibility !== "compatible") reason = "compatibility-unavailable";
-    else if (trust.trust !== "accepted") reason = `trust-${trust.trust}`;
+    else if (trust.trust !== "accepted") reason = trust.reason ?? `trust-${trust.trust}`;
     else if (!enabled) reason = "scope-disabled";
     return {
       source: {

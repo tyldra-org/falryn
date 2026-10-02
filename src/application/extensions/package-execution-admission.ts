@@ -17,6 +17,8 @@ import { type InspectionHost, nativeDeclaration, preparePackage } from "./prepar
 
 export type PackageExecutionAuthority = {
   trusted: boolean;
+  /** Why trust was refused, from the shared trust projection; a refusal states this value. */
+  reason?: string;
   enabled: boolean;
   inputs: string;
   strict: boolean;
@@ -99,7 +101,9 @@ export function createPackageExecutionAdmission(options: PackageAdmissionOptions
         if (!authority.trusted || !authority.enabled) {
           if (next.optional) continue;
           throw new ExtensionInputError(
-            !authority.trusted ? "package-trust-required" : "dependency-disabled",
+            !authority.trusted
+              ? (authority.reason ?? "package-trust-required")
+              : "dependency-disabled",
           );
         }
         if (!authority.strict && options.declarationKind === undefined)

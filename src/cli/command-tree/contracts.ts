@@ -212,6 +212,7 @@ export type Invocation =
       readonly workingConfigurationArgs?: import("../commands/profile.ts").WorkingConfigurationArguments;
       readonly modelArgs?: ModelSettingsRequest;
       readonly extensionPath?: string;
+      readonly extensionInstalled?: string;
       readonly extensionCatalogArgs?: import("../commands/extension-catalog.ts").ExtensionCatalogArguments;
       readonly extensionListingArgs?: import("../commands/extension-listing.ts").ExtensionListingArguments;
       readonly extensionSuggestionArgs?: import("../commands/extension-suggestion.ts").ExtensionSuggestionArguments;
@@ -242,6 +243,8 @@ export type RawArguments = {
   readonly fallback?: string;
   readonly role?: string;
   readonly path: string | undefined;
+  /** `extension inspect | trust | notices --installed <package-id>` (#1279). */
+  readonly installed?: string;
   readonly _: readonly (string | number)[];
   /** Bound by name from `config <action>`; it never appears in `_`. */
   readonly action: string | undefined;

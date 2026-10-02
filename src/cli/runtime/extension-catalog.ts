@@ -168,6 +168,9 @@ export function composeExtensionCatalog(options: {
                 : standing.state === "expired"
                   ? "expired"
                   : "required",
+      ...(standing.state === "eligible" || standing.reason === null
+        ? {}
+        : { reason: standing.reason }),
       inputs: canonicalDigest({
         decision: projection.decision,
         evidence: trustEvidenceBinding(projection.evidence),
@@ -258,6 +261,7 @@ export function composeExtensionCatalog(options: {
           : [];
       return {
         trusted: trusted.trust === "accepted",
+        ...(trusted.reason === undefined ? {} : { reason: trusted.reason }),
         enabled: entries.some((entry) => entry.enabled),
         catalogGeneration: refreshed.status === "rehydrated" ? refreshed.catalog.generation : 0,
         inputs: canonicalDigest({
