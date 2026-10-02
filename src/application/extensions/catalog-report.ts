@@ -1,9 +1,18 @@
+import {
+  type SkillFindingsReport,
+  skillFindingsLines,
+} from "../../domain/context/skill-findings.ts";
 import type { CatalogPage } from "../../domain/extensions/catalog.ts";
 import type { ScopeChangeResult } from "./scope-controls.ts";
 
 export type ExtensionCatalogReport =
   | ScopeChangeResult
-  | { readonly status: "inspected"; readonly page: CatalogPage };
+  | {
+      readonly status: "inspected";
+      readonly page: CatalogPage;
+      /** Discovered skills and their validity findings, when the request asked (#1124). */
+      readonly skills?: SkillFindingsReport;
+    };
 
 /** Shared inspection text contains compact identity facts, never instructions or executable grants. */
 export function extensionCatalogLines(payload: ExtensionCatalogReport): readonly string[] {
@@ -21,5 +30,6 @@ export function extensionCatalogLines(payload: ExtensionCatalogReport): readonly
         `${entry.contribution.nativeKind} ${entry.contribution.namespace}/${entry.contribution.localId}: ${entry.enabled ? "enabled" : "disabled"}; ${entry.reason}${entry.hookHealth ? `; hook ${entry.hookHealth.status}; failures ${entry.hookHealth.failures ?? "unknown"}; generation ${entry.hookHealth.generation}` : ""}; owner ${entry.contribution.owner.digest}`,
     ),
     ...(payload.page.next === null ? [] : [`next: ${JSON.stringify(payload.page.next)}`]),
+    ...(payload.skills === undefined ? [] : skillFindingsLines(payload.skills)),
   ];
 }

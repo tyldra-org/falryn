@@ -44,6 +44,11 @@ export type SkillEntrypoint =
   | {
       readonly ok: false;
       readonly problem: "malformed-metadata" | "name-mismatch" | "malformed-eligibility";
+      /**
+       * The frontmatter field at fault, for diagnosis (#1124): a header field, an
+       * invocation control, or null when the header as a whole is not an object.
+       */
+      readonly field: string | null;
     };
 
 /** Read decoded frontmatter for the bundle directory it was found in. */
@@ -52,14 +57,20 @@ export function readSkillEntrypoint(
   directory: string,
 ): SkillEntrypoint {
   const header = skillHeaderSchema.safeParse(metadata);
-  if (!header.success) return { ok: false, problem: "malformed-metadata" };
-  if (header.data.name !== directory) return { ok: false, problem: "name-mismatch" };
-  if (
-    INVOCATION_FIELDS.some(
-      (field) => Object.hasOwn(metadata, field) && typeof metadata[field] !== "boolean",
-    )
-  )
-    return { ok: false, problem: "malformed-eligibility" };
+  if (!header.success) {
+    const field = header.error.issues[0]?.path[0];
+    return {
+      ok: false,
+      problem: "malformed-metadata",
+      field: typeof field === "string" ? field : null,
+    };
+  }
+  if (header.data.name !== directory) return { ok: false, problem: "name-mismatch", field: "name" };
+  const eligibility = INVOCATION_FIELDS.find(
+    (field) => Object.hasOwn(metadata, field) && typeof metadata[field] !== "boolean",
+  );
+  if (eligibility !== undefined)
+    return { ok: false, problem: "malformed-eligibility", field: eligibility };
   return {
     ok: true,
     name: header.data.name,

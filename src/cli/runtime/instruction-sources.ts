@@ -4,6 +4,7 @@ import {
   InstructionSourceFailure,
 } from "../../application/context/instruction-source-owner.ts";
 import { markdownMetadata } from "../../application/extensions/portable-components.ts";
+import { skillScanFacts } from "../../application/extensions/skill-findings.ts";
 import {
   type DISCOVERY_PROBLEMS,
   EMPTY_SOURCE_PREFERENCES,
@@ -15,7 +16,9 @@ import {
   sourcePathSchema,
   sourcePreferencesSchema,
 } from "../../domain/context/instruction-sources.ts";
+import type { SkillReferenceState, SkillScanFacts } from "../../domain/context/skill-findings.ts";
 import {
+  resolveSkillResourcePath,
   SKILL_RESOURCE_LIMITS,
   type SkillResourceRead,
 } from "../../domain/context/skill-resources.ts";
@@ -36,6 +39,8 @@ export function composeInstructionSources(
 ) {
   const roots = new Map<string, LocalPath>();
   const files = new Map<string, LocalPath>();
+  /** Diagnosis facts from the last scan's own reads (#1124), keyed by source. */
+  let skillFacts = new Map<string, SkillScanFacts>();
   let authorized = new Set<string>();
   /** Discovered (conventional) sources from the last scan, and the user home of a user-wide one. */
   let discovered = new Map<string, { readonly user: UserHome | null }>();
@@ -157,6 +162,7 @@ export function composeInstructionSources(
       // Conventional files need no registration. Explicit registrations of the same
       // identity take precedence in the owner.
       const nextDiscovered = new Map<string, { readonly user: UserHome | null }>();
+      const nextFacts = new Map<string, SkillScanFacts>();
       const trust = graph.workspaceTrust.current().status;
       /** Read one discovered entrypoint unless untrusted; failures become named problems. */
       const readDiscovered = async (
@@ -285,14 +291,17 @@ export function composeInstructionSources(
         const loaded = await readDiscovered(root, found.path, trusted, found.problem);
         let problem = loaded.problem;
         let entry: ReturnType<typeof readSkillEntrypoint> | null = null;
+        let metadata: Readonly<Record<string, unknown>> | null = null;
         if (loaded.bytes !== null) {
           try {
-            entry = readSkillEntrypoint(markdownMetadata(loaded.bytes, true), found.bundle);
+            metadata = markdownMetadata(loaded.bytes, true);
+            entry = readSkillEntrypoint(metadata, found.bundle);
           } catch {
-            entry = { ok: false, problem: "malformed-metadata" };
+            entry = { ok: false, problem: "malformed-metadata", field: null };
           }
           if (!entry.ok) problem = entry.problem;
           else if (entry.unsupported !== null) problem = "unsupported-control";
+          nextFacts.set(key, skillScanFacts(loaded.bytes, entry, metadata));
         }
         const admitted = loaded.bytes !== null && entry?.ok === true;
         nextRoots.set(identity.root, root);
@@ -344,6 +353,7 @@ export function composeInstructionSources(
       for (const [key, value] of nextFiles) files.set(key, value);
       authorized = nextAuthorized;
       discovered = nextDiscovered;
+      skillFacts = nextFacts;
       return {
         configuration: String(captured?.generation ?? "0"),
         workspace: canonicalDigest(workspace.value.set),
@@ -542,6 +552,35 @@ export function composeInstructionSources(
       return null;
     return { root, directory };
   }
+  /**
+   * Where one relative link from a skill's entrypoint leads, found with `stat` only: no
+   * file is read and no symlink is followed (#1124). The link resolves exactly as
+   * `skill_resource` would resolve it.
+   */
+  async function skillReference(
+    sourceKey: string,
+    link: string,
+    signal: AbortSignal,
+  ): Promise<SkillReferenceState> {
+    const entrypoint = files.get(sourceKey);
+    const directory = entrypoint === undefined ? null : parentPath(entrypoint);
+    if (directory === null) return "unreadable";
+    const resolved = resolveSkillResourcePath("", link);
+    if (!resolved.ok) return resolved.reason;
+    const segments = resolved.path.split("/");
+    for (let index = 1; index <= segments.length; index++) {
+      signal.throwIfAborted();
+      const path = joinPath(directory, ...segments.slice(0, index));
+      if (!path.ok || !isInside(directory, path.value)) return "escaped";
+      const stat = await graph.fileSystem.stat(path.value, signal);
+      if (!stat.ok) return "unreadable";
+      if (stat.value === null) return "missing";
+      if (stat.value.kind === "symlink") return "symlink";
+      if (stat.value.kind === "other") return "not-a-file";
+      if (index < segments.length && stat.value.kind !== "directory") return "missing";
+    }
+    return "present";
+  }
   async function probe(root: LocalPath, path: LocalPath, signal: AbortSignal) {
     const currentRoot = await graph.fileSystem.realPath(root, signal);
     if (!currentRoot.ok || currentRoot.value !== root) throw new Error("source-root-changed");
@@ -592,5 +631,11 @@ export function composeInstructionSources(
       throw new Error("source-content-changed");
     return bytes.value;
   }
-  return owner;
+  return Object.assign(owner, {
+    /** Skill diagnosis (#1124): the last scan's facts and stat-only link checks. */
+    skillDiagnostics: {
+      facts: (sourceKey: string): SkillScanFacts | null => skillFacts.get(sourceKey) ?? null,
+      reference: skillReference,
+    },
+  });
 }

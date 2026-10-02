@@ -7,6 +7,7 @@ import {
   isUnreadSource,
   type SourceReport,
 } from "../../../domain/configuration/index.ts";
+import { skillFindingLine } from "../../../domain/context/skill-findings.ts";
 import { assertNever } from "../../../domain/foundation/index.ts";
 import type { DoctorPayload, RunCommandResult } from "../../commands.ts";
 import type { RenderedPayload } from "./payload.ts";
@@ -323,6 +324,7 @@ export function renderDoctor(
       "             ",
       `unregistered: ${payload.unregisteredClasses.length === 0 ? "none" : payload.unregisteredClasses.join(", ")}`,
     ),
+    ...doctorSkillLines(session, payload.skills),
   ];
 
   return {
@@ -397,4 +399,22 @@ export function doctorFindings(payload: DoctorPayload): readonly string[] {
     );
   }
   return findings;
+}
+
+/** The skills section (#1124): counts, the top findings and where the full listing is. */
+function doctorSkillLines(session: Session, skills: DoctorPayload["skills"]): readonly string[] {
+  if (skills === undefined) return [];
+  if (skills.status === "unavailable")
+    return [`  Skills     findings unavailable (${safe(skills.code)})`];
+  const { counts } = skills;
+  return [
+    `  Skills     ${counts.error} error, ${counts.warning} warning, ${counts.info} info across ${skills.skills} ${plural(skills.skills, "skill", "skills")}${skills.complete ? "" : ` (incomplete: ${safe(skills.omissions.join(", "))})`}`,
+    ...skills.top.flatMap((finding) =>
+      hanging(session, "             ", safe(skillFindingLine(finding))),
+    ),
+    ...(skills.omitted > 0 ? [`             ${skills.omitted} more findings not shown.`] : []),
+    ...(counts.error + counts.warning + counts.info > 0
+      ? hanging(session, "             ", `Full listing: ${skills.listing}`)
+      : []),
+  ];
 }

@@ -265,7 +265,7 @@ export async function produce(
       }
       return runDataGc(services, dataLifecycleArgs, signal, onMutationStart);
     case "doctor":
-      return runDoctor(services, globals);
+      return runDoctor(services, globals, signal);
     case "commands":
       return runShellCommands();
     case "export":

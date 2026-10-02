@@ -13,13 +13,18 @@ import type {
 } from "../../domain/extensions/package-source.ts";
 
 /** Reject links rather than following an untrusted package into another tree. */
-export function createHostPackageSource(directory: string): PackageSource {
+export function createHostPackageSource(
+  directory: string,
+  /** The inspection deadline; tests shorten it to prove the timeout path. */
+  options: { readonly deadlineMs?: number } = {},
+): PackageSource {
+  const deadlineMs = options.deadlineMs ?? 30_000;
   return {
     async read(signal) {
       const started = performance.now();
       const guard = () => {
         if (signal?.aborted) throw new ExtensionInputError("cancelled");
-        if (performance.now() - started > 30_000)
+        if (performance.now() - started > deadlineMs)
           throw new ExtensionInputError("inspection-deadline");
       };
       guard();
@@ -168,4 +173,48 @@ function same(
     a.mtimeNs === b.mtimeNs &&
     a.ctimeNs === b.ctimeNs
   );
+}
+
+/**
+ * One standalone skill directory's SKILL.md (#1124), read without following a link and
+ * bounded one byte past the 1 MiB entrypoint limit so an oversized file is reported,
+ * not loaded.
+ */
+export async function readHostSkillEntrypoint(
+  directory: string,
+  signal?: AbortSignal,
+): Promise<
+  | { readonly kind: "absent" }
+  | { readonly kind: "read"; readonly ok: true; readonly bytes: Uint8Array }
+  | {
+      readonly kind: "read";
+      readonly ok: false;
+      readonly problem: "symlink" | "not-a-file" | "unreadable";
+    }
+> {
+  const path = join(resolve(directory), "SKILL.md");
+  let stat: BigIntStats;
+  try {
+    stat = await lstat(path, { bigint: true });
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === "ENOENT"
+      ? { kind: "absent" }
+      : { kind: "read", ok: false, problem: "unreadable" };
+  }
+  if (stat.isSymbolicLink()) return { kind: "read", ok: false, problem: "symlink" };
+  if (!stat.isFile()) return { kind: "read", ok: false, problem: "not-a-file" };
+  signal?.throwIfAborted();
+  try {
+    const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    try {
+      const limit = 1_048_577;
+      const buffer = new Uint8Array(Math.min(Number(stat.size), limit));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.byteLength, 0);
+      return { kind: "read", ok: true, bytes: buffer.subarray(0, bytesRead) };
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return { kind: "read", ok: false, problem: "unreadable" };
+  }
 }
