@@ -75,6 +75,8 @@ function plan(
     )[];
     readonly schemaTokenBudget?: number;
     readonly preferredCapabilityIds?: readonly string[];
+    readonly pinned?: readonly string[];
+    readonly selectionLimit?: number;
   } = {},
 ) {
   const registry = fixture(...documents);
@@ -116,10 +118,66 @@ function plan(
     ...(options.schemaTokenBudget === undefined
       ? {}
       : { schemaTokenBudget: options.schemaTokenBudget }),
+    ...(options.selectionLimit === undefined ? {} : { selectionLimit: options.selectionLimit }),
+    ...(options.pinned === undefined
+      ? {}
+      : {
+          pinnedCapabilityIds: options.pinned.map(
+            (value) =>
+              registry.entries.find((entry) => entry.name === value)?.capabilityId ??
+              (() => {
+                throw new Error(`missing pinned capability fixture: ${value}`);
+              })(),
+          ),
+        }),
   });
 }
 
 describe("deterministic opportunity planning", () => {
+  test("a pinned capability holds a slot without winning ties or becoming a fallback (#947)", () => {
+    const documents = [
+      document("read_file"),
+      document("read_many"),
+      document("discover_capabilities", { family: "read", summary: "Find capabilities" }),
+    ];
+    const result = plan("read the file", documents, {
+      pinned: ["discover_capabilities"],
+      selectionLimit: 2,
+    });
+    expect(result.selected.map((entry) => entry.name)).toEqual([
+      "read_file",
+      "discover_capabilities",
+    ]);
+    expect(result.selected[1]?.reasons[0]).toBe("catalog-discovery");
+    expect(result.fallbacks.map((entry) => entry.name)).toEqual(["read_many"]);
+    expect(
+      result.degradation.transitions.some(
+        (transition) => transition.toCapabilityId === result.selected[1]?.capabilityId,
+      ),
+    ).toBe(false);
+    expect(result.modelAssistance.candidateIds).not.toContain(result.selected[1]?.capabilityId);
+
+    const unavailable = plan(
+      "read the file",
+      [
+        document("read_file"),
+        document("discover_capabilities", {
+          state: {
+            availability: "unavailable",
+            availabilityReason: "not bound",
+            health: "unavailable",
+            healthReason: "not bound",
+            executable: false,
+            executionReason: "not bound",
+            operational: defaultCapabilityOperationalState(),
+          },
+        }),
+      ],
+      { pinned: ["discover_capabilities"] },
+    );
+    expect(unavailable.selected.map((entry) => entry.name)).toEqual(["read_file"]);
+  });
+
   test("honours an explicit shell override while keeping typed search available", () => {
     const result = plan("Run this shell command: rg composeTurn src", [
       document("search_text", { family: "search" }),

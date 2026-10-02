@@ -69,6 +69,7 @@ import {
   type ProductToolConfirmationPort,
 } from "../../application/tools/index.ts";
 import { composePeerTool } from "../../application/tools/peer-tool.ts";
+import { composeProductDiscoveryTool } from "../../application/tools/product-capability-discovery.ts";
 import {
   composeProductIndexLifecycle,
   PRODUCT_INDEX_LIFECYCLE_OWNER,
@@ -1034,6 +1035,7 @@ export async function runCoding(
               languageTools,
               memoryTools,
               composePeerTool(generation, peer),
+              composeProductDiscoveryTool(generation),
               ...(options.globals
                 ? [
                     composeModelRouteTool(

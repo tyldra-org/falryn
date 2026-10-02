@@ -16,6 +16,7 @@ import {
 import type { EffectiveExecutionPolicy } from "../../domain/sessions/index.ts";
 import type { ToolRegistry } from "../../domain/tools/index.ts";
 import type { WorkIntent } from "../../providers/index.ts";
+import { PRODUCT_DISCOVERY_TOOL_NAME } from "../tools/product-capability-discovery.ts";
 import { languageToolPrerequisites } from "../tools/product-language-tools/disclosure.ts";
 import {
   isClosedProductToolSchema,
@@ -101,6 +102,9 @@ export function createProductOpportunityPlan(
     ...mcpControls,
   ];
   const taskFingerprint = createHash("sha256").update(task).digest("hex").slice(0, 24);
+  // The built-in discovery operation always holds one slot (#947), so a later
+  // step can reach a capability the eager set left out.
+  const discovery = tools.resolveByName(PRODUCT_DISCOVERY_TOOL_NAME);
   return planCapabilityOpportunities({
     task,
     taskFingerprint,
@@ -130,6 +134,9 @@ export function createProductOpportunityPlan(
     }),
     intentFamilies: productOpportunityIntentFamilies(options.intent),
     preferredCapabilityIds,
+    ...(discovery === null || discovery.manifest.source !== "builtin"
+      ? {}
+      : { pinnedCapabilityIds: [discovery.manifest.capabilityId] }),
     ...(options.selectionLimit === undefined ? {} : { selectionLimit: options.selectionLimit }),
     ...(options.schemaTokenBudget === undefined
       ? {}

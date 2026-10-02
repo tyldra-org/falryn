@@ -85,6 +85,7 @@ export const OPPORTUNITY_REASON_CODES = [
   "schema-budget",
   "selection-limit",
   "stable-tie-break",
+  "catalog-discovery",
 ] as const;
 
 export type OpportunityReasonCode = (typeof OPPORTUNITY_REASON_CODES)[number];
@@ -224,6 +225,12 @@ export type OpportunityPlanInput = {
   readonly candidates: readonly CapabilityOpportunityCandidate[];
   readonly intentFamilies?: readonly CapabilityFamily[];
   readonly preferredCapabilityIds?: readonly CapabilityId[];
+  /**
+   * Capabilities that always hold a selected slot when they are selectable and
+   * schema-eligible, such as the catalog discovery operation (#947). They never
+   * count against a family budget and never win a semantic tie.
+   */
+  readonly pinnedCapabilityIds?: readonly CapabilityId[];
   readonly selectionLimit?: number;
   readonly schemaTokenBudget?: number;
 };

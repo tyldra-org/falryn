@@ -55,6 +55,7 @@ import {
   type ModelMessage,
   type ModelRequest,
   type ModelResponseDensityControl,
+  type ModelToolDefinition,
   modelRequestId,
   type ProviderAdapterPort,
   providerTransportCompatibilityReceiptMatchesPlan,
@@ -74,12 +75,14 @@ import {
 } from "../providers/generation-timing.ts";
 import {
   processingPromptCache,
+  promptCacheForWidenedTools,
   promptCacheStablePrefixDigest,
 } from "../providers/provider-prompt-cache.ts";
 import {
   createProviderStreamConsumer,
   type ProviderStreamConsumeOutcome,
 } from "../providers/provider-stream-consumer.ts";
+import { createCapabilityDiscoverySession } from "../tools/product-capability-discovery.ts";
 import {
   operationProfileDefinition,
   PRODUCT_OPERATION_PROFILES,
@@ -832,20 +835,29 @@ function modelRequest(
   budgets: ModelBudgets,
   responseDensityControl: ModelResponseDensityControl | null,
   sequence: number,
+  discovered: readonly ModelToolDefinition[],
 ): ModelRequest {
+  // Tools found through discovery (#947) follow the bound disclosure.
+  const tools = [...input.tools, ...discovered];
+  const promptCache = promptCacheForWidenedTools(
+    request.promptCache,
+    messages,
+    tools,
+    discovered.length,
+  );
   return {
     requestId: modelRequestId.from(`${request.identity.modelAttemptId}-request-${sequence}`),
     providerId: request.receipt.providerId,
     modelId: request.receipt.modelId,
     messages: [...messages],
-    tools: [...input.tools],
+    tools,
     output: input.output,
     budgets,
     reasoning: request.receipt.reasoning,
     reasoningControl: request.receipt.reasoningControl,
     ...(request.receipt.namedRoute ? { namedRoute: request.receipt.namedRoute } : {}),
     responseDensityControl,
-    ...(request.promptCache === undefined ? {} : { promptCache: request.promptCache }),
+    ...(promptCache === undefined ? {} : { promptCache }),
     metadata: {
       role: request.receipt.role,
       ...(request.receipt.intent === null ? {} : { workIntent: request.receipt.intent }),
@@ -972,6 +984,19 @@ export function createProductAttemptRunner(
       let responseDensityControl: ModelResponseDensityControl | null = null;
       let briefFailure: string | null = null;
       const continuation: { terminal: ProviderStreamConsumeOutcome | null } = { terminal: null };
+      // One live disclosed set: the gateway and composition admit exactly what the
+      // provider has been offered, including tools discovered at a step boundary.
+      const disclosedNames = new Set(input.disclosure.toolNames);
+      const discovery = createCapabilityDiscoverySession({
+        tools: options.registry,
+        capabilities: options.capabilities,
+        policy:
+          input.executionPolicy ??
+          resolveExecutionProfile("agent", request.boundConfigurationGeneration),
+        disclosed: disclosedNames,
+        clock: options.clock,
+      });
+      const nativeRunner = discovery.wrap(options.toolRunner);
 
       const gateway = createProductToolGateway({
         ...(input.instructionsCurrent ? { instructionsCurrent: input.instructionsCurrent } : {}),
@@ -1030,7 +1055,7 @@ export function createProductAttemptRunner(
         // Hook observers are owned and settled by this runtime's resource owner.
         ...(options.resources === undefined ? {} : { resources: options.resources }),
         registry: options.registry,
-        runner: options.toolRunner,
+        runner: nativeRunner,
         hooks: options.hooks,
         journal: options.journal,
         ...(options.historyArtifacts === undefined
@@ -1039,7 +1064,7 @@ export function createProductAttemptRunner(
         correlation: options.correlation,
         turnId: request.turnId,
         attemptId: String(request.identity.modelAttemptId),
-        disclosedToolNames: new Set(input.disclosure.toolNames),
+        disclosedToolNames: disclosedNames,
         policy: toolPolicyForExecution(
           input.executionPolicy ??
             resolveExecutionProfile("agent", request.boundConfigurationGeneration),
@@ -1054,14 +1079,14 @@ export function createProductAttemptRunner(
       const composition = createCapabilityComposition({
         ...(options.capabilities === undefined ? {} : { capabilities: options.capabilities }),
         registry: options.registry,
-        nativeRunner: options.toolRunner,
+        nativeRunner,
         gateway,
         taskResources,
         journal: options.journal,
         clock: options.clock,
         correlation: options.correlation,
         turnId: request.turnId,
-        disclosedToolNames: new Set(input.disclosure.toolNames),
+        disclosedToolNames: disclosedNames,
       });
       const history = createSessionHistory({
         journal: options.journal,
@@ -1092,7 +1117,7 @@ export function createProductAttemptRunner(
             throw new Error("resource-admission:history-authority-changed");
           const budget = conversationBudget(
             messages,
-            input.tools,
+            [...input.tools, ...discovery.admitted()],
             budgets,
             request.resourceCapability,
           );
@@ -1107,6 +1132,7 @@ export function createProductAttemptRunner(
           budgets,
           responseDensityControl,
           requestSequence,
+          discovery.admitted(),
         );
         const inputMaximum =
           budgets.maxInputTokens ?? request.resourceCapability?.contextTokens ?? undefined;
@@ -1233,7 +1259,7 @@ export function createProductAttemptRunner(
             if (input.history) {
               const budget = conversationBudget(
                 messages,
-                input.tools,
+                [...input.tools, ...discovery.admitted()],
                 budgets,
                 request.resourceCapability,
               );
@@ -1561,6 +1587,8 @@ export function createProductAttemptRunner(
                 ),
               ),
             );
+            // Executable tools discovered in this step join the next request (#947).
+            discovery.admitPending();
             if (briefRequest !== null && input.brief !== undefined) {
               const nextRequest = {
                 ...briefRequest,

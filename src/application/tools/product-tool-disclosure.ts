@@ -7,8 +7,6 @@
  * in the receipt as omitted; it is never silently executable.
  */
 
-import { z } from "zod";
-
 import type {
   CapabilityCard,
   CapabilityConsumer,
@@ -43,9 +41,15 @@ import {
   operationProfileDefinition,
   PRODUCT_OPERATION_PROFILES,
 } from "./product-operation-profiles.ts";
-import { isClosedProductToolSchema, measureProductToolSchema } from "./product-tool-schema.ts";
+import {
+  isClosedProductToolSchema,
+  jsonSchemaFor,
+  measureProductToolSchema,
+  policyOmissionReason,
+  RAW_PROTOCOL_ESCAPES,
+} from "./product-tool-schema.ts";
 
-export { measureProductToolSchema } from "./product-tool-schema.ts";
+export { jsonSchemaFor, measureProductToolSchema } from "./product-tool-schema.ts";
 
 export const PRODUCT_TOOL_DISCLOSURE_SCHEMA_VERSION = 1;
 /** Hard schema-count guard; profile ordering, not a per-mode quota, selects below it. */
@@ -169,15 +173,6 @@ export type ProductToolDisclosureOptions = {
   readonly deferredSchemaTokenBudget?: number;
 };
 
-const RAW_PROTOCOL_ESCAPES = new Set(["run_process", "run_shell"]);
-
-/** The provider-facing JSON schema of a native tool's input. */
-export function jsonSchemaFor(
-  schema: z.ZodType<Readonly<Record<string, unknown>>>,
-): Readonly<Record<string, unknown>> {
-  return z.toJSONSchema(schema) as Readonly<Record<string, unknown>>;
-}
-
 function familyAvailability(
   health: readonly CapabilityHealthEntry[],
   policy: EffectiveExecutionPolicy | undefined,
@@ -195,22 +190,6 @@ function familyAvailability(
         ? "no available descriptor in this catalog generation"
         : `no ${policy.profileId}-eligible descriptor available in this catalog generation`,
   }));
-}
-
-function policyOmissionReason(
-  entry: ToolRegistry["entries"][number],
-  policy: EffectiveExecutionPolicy | undefined,
-): string | null {
-  if (policy === undefined) {
-    return null;
-  }
-  if (policy.deniedToolNames.includes(entry.manifest.name)) {
-    return `denied by ${policy.profileId} profile tool policy`;
-  }
-  if (policy.deniedEffects.includes(entry.manifest.effect)) {
-    return `effect ${entry.manifest.effect} denied by ${policy.profileId} profile`;
-  }
-  return null;
 }
 
 /** Select one task-aware, generation-bound schema set for a provider attempt. */

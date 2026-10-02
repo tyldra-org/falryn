@@ -1,6 +1,37 @@
-/** Shared measurement and closed-schema checks for model-bound tools. */
+/** Shared measurement, closed-schema and policy checks for model-bound tools. */
 
 import { createHash } from "node:crypto";
+import { z } from "zod";
+
+import type { EffectiveExecutionPolicy } from "../../domain/sessions/index.ts";
+import type { ToolRegistry } from "../../domain/tools/index.ts";
+
+/** Process escapes whose open argument shapes are bounded by their own runners. */
+export const RAW_PROTOCOL_ESCAPES: ReadonlySet<string> = new Set(["run_process", "run_shell"]);
+
+/** The provider-facing JSON schema of a native tool's input. */
+export function jsonSchemaFor(
+  schema: z.ZodType<Readonly<Record<string, unknown>>>,
+): Readonly<Record<string, unknown>> {
+  return z.toJSONSchema(schema) as Readonly<Record<string, unknown>>;
+}
+
+/** Why the execution profile withholds a registered tool, or null when it does not. */
+export function policyOmissionReason(
+  entry: ToolRegistry["entries"][number],
+  policy: EffectiveExecutionPolicy | undefined,
+): string | null {
+  if (policy === undefined) {
+    return null;
+  }
+  if (policy.deniedToolNames.includes(entry.manifest.name)) {
+    return `denied by ${policy.profileId} profile tool policy`;
+  }
+  if (policy.deniedEffects.includes(entry.manifest.effect)) {
+    return `effect ${entry.manifest.effect} denied by ${policy.profileId} profile`;
+  }
+  return null;
+}
 
 export function measureProductToolSchema(schema: Readonly<Record<string, unknown>>) {
   const encoded = JSON.stringify(schema);
