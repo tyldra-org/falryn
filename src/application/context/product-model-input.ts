@@ -7,6 +7,7 @@ import { callableName } from "../../domain/tools/index.ts";
 import type { ModelMessage, OutputContract } from "../../providers/index.ts";
 import { promptCacheStablePrefixDigest } from "../providers/provider-prompt-cache.ts";
 import type { AttemptModelInput } from "../runtime/turn-attempt-policy.ts";
+import { PRODUCT_DISCOVERY_TOOL_NAME } from "../tools/product-capability-discovery.ts";
 import type { ProductToolDisclosure } from "../tools/product-tool-disclosure.ts";
 
 const STABLE_SYSTEM_ROLES = new Set([
@@ -102,7 +103,9 @@ function capabilityBrief(disclosure: ProductToolDisclosure): string {
     `Other disclosed capabilities: ${otherCapabilities || "none"}`,
     `Capability routing facts: ${routingFacts || "none"}`,
     `Registry inventory: ${disclosure.receipt.registryTotal} validated contributions in this generation.`,
-    `Additional capabilities are discoverable through ${disclosure.receipt.discoveryHandle}; registered tools omitted here are not executable in this attempt.`,
+    disclosure.receipt.disclosed.some((tool) => tool.name === PRODUCT_DISCOVERY_TOOL_NAME)
+      ? `Use the tools above directly. When none fits, call ${PRODUCT_DISCOVERY_TOOL_NAME} with catalog ${disclosure.receipt.discoveryHandle} and a few task words; an executable tool it reports as callable-next-step can be called by name in your next step. Other registered tools are not executable in this attempt.`
+      : "Registered tools omitted here are not executable in this attempt.",
   ].join("\n");
 }
 

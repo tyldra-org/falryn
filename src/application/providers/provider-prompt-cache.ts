@@ -41,6 +41,29 @@ export function promptCacheStablePrefixDigest(
 }
 
 /**
+ * Rebind a policy to a tool set widened inside the attempt (#947). A cached
+ * prefix holds the tools it was created with, so a widened set needs its own
+ * key; reusing the old one could serve a prefix without the added tools.
+ */
+export function promptCacheForWidenedTools(
+  policy: PromptCachePolicy | undefined,
+  messages: readonly ModelMessage[],
+  tools: readonly ModelToolDefinition[],
+  added: number,
+): PromptCachePolicy | undefined {
+  if (policy === undefined || added === 0) return policy;
+  const stablePrefixDigest = promptCacheStablePrefixDigest(
+    messages.slice(0, policy.stableMessageCount),
+    tools,
+  );
+  return {
+    ...policy,
+    key: sha256(JSON.stringify([policy.key, stablePrefixDigest])),
+    stablePrefixDigest,
+  };
+}
+
+/**
  * Route and generation changes deliberately produce another key. Retries and
  * tool continuations on the same bound route retain it.
  */

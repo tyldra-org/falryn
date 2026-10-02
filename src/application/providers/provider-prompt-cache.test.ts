@@ -10,7 +10,11 @@ import {
   defaultProviderTransportCompatibility,
   type RoutingReceipt,
 } from "../../providers/index.ts";
-import { providerPromptCachePolicy } from "./provider-prompt-cache.ts";
+import {
+  promptCacheForWidenedTools,
+  promptCacheStablePrefixDigest,
+  providerPromptCachePolicy,
+} from "./provider-prompt-cache.ts";
 
 const generation = configurationGeneration.from(7);
 
@@ -109,5 +113,31 @@ describe("providerPromptCachePolicy", () => {
         },
       }),
     ).toThrow("requires a routed cache mechanism");
+  });
+
+  test("a tool set widened by discovery gets its own cache identity (#947)", () => {
+    const base = policy();
+    const messages = [
+      { role: "system" as const, parts: [{ kind: "text" as const, text: "stable one" }] },
+      { role: "system" as const, parts: [{ kind: "text" as const, text: "stable two" }] },
+      { role: "user" as const, parts: [{ kind: "text" as const, text: "dynamic" }] },
+    ];
+    const tools = [
+      { name: "read_file", description: "Read", parameters: { type: "object" } },
+      { name: "deploy_preview", description: "Deploy", parameters: { type: "object" } },
+    ];
+    expect(promptCacheForWidenedTools(base, messages, tools.slice(0, 1), 0)).toBe(base);
+    expect(promptCacheForWidenedTools(undefined, messages, tools, 1)).toBeUndefined();
+    const widened = promptCacheForWidenedTools(base, messages, tools, 1);
+    expect(widened?.key).not.toBe(base.key);
+    expect(widened?.stablePrefixDigest).toBe(
+      promptCacheStablePrefixDigest(messages.slice(0, 2), tools),
+    );
+    expect(widened).toMatchObject({
+      stableMessageCount: base.stableMessageCount,
+      mode: base.mode,
+      toolCatalogGeneration: base.toolCatalogGeneration,
+    });
+    expect(promptCacheForWidenedTools(base, messages, tools, 1)).toEqual(widened);
   });
 });

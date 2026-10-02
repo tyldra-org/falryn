@@ -481,6 +481,17 @@ describe("runCoding", () => {
             part.text.includes("Registry inventory:"),
         ),
     ).toBe(true);
+    // The ordinary path is disclosed up front; discovery is offered beside it (#947).
+    expect(requests[0]?.tools.map((tool) => tool.name)).toContain("discover_capabilities");
+    expect(
+      requests[0]?.messages
+        .flatMap((message) => message.parts)
+        .some(
+          (part) =>
+            part.kind === "text" &&
+            part.text.includes("call discover_capabilities with catalog capability-catalog:0"),
+        ),
+    ).toBe(true);
     expect(
       requests[0]?.messages
         .flatMap((message) => message.parts)

@@ -13,7 +13,7 @@ import {
   turnId,
   workspaceId,
 } from "../../domain/foundation/index.ts";
-import { createInMemoryEventStore } from "../../domain/sessions/index.ts";
+import { createInMemoryEventStore, type ModelAttemptBinding } from "../../domain/sessions/index.ts";
 import type { ModelCatalog } from "../../providers/catalog/discovery.ts";
 import type { ModelPolicy } from "../../providers/configuration/policy.ts";
 import { parseModelPolicy } from "../../providers/configuration/policy-schema.ts";
@@ -24,6 +24,7 @@ import {
   type AttemptRunnerRequest,
   attemptCategoryForProviderFailure,
   attemptFactFromProviderFailure,
+  boundedAttemptBinding,
   createTurnAttemptPolicy,
 } from "./turn-attempt-policy.ts";
 import { createTurnCoordinator } from "./turn-coordinator.ts";
@@ -734,5 +735,29 @@ describe("turn attempt policy", () => {
         tools: [{ name: "read_file", schemaDigest: "sha-256:read" }],
       });
     }
+  });
+});
+
+describe("boundedAttemptBinding", () => {
+  test("keeps the highest-ranked rejected candidates and counts the rest", () => {
+    const rejected = Array.from({ length: 40 }, (_, index) => ({
+      name: `candidate_${index}`,
+      reasons: ["not-task-relevant"],
+      padding: "x".repeat(200),
+    }));
+    const binding = {
+      schemaVersion: 1,
+      opportunityPlan: { selected: [], rejected, omittedRejected: 3 },
+    } as unknown as ModelAttemptBinding;
+    const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+
+    expect(boundedAttemptBinding(binding, bytes(binding))).toBe(binding);
+    const bounded = boundedAttemptBinding(binding, 4_000);
+    expect(bytes(bounded)).toBeLessThanOrEqual(4_000);
+    const plan = bounded.opportunityPlan;
+    expect(plan?.rejected.length).toBeGreaterThan(0);
+    expect(plan?.rejected.length).toBeLessThan(40);
+    expect(plan?.rejected[0]?.name).toBe("candidate_0");
+    expect((plan?.rejected.length ?? 0) + (plan?.omittedRejected ?? 0)).toBe(43);
   });
 });

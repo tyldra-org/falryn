@@ -503,13 +503,34 @@ export function planCapabilityOpportunities(input: OpportunityPlanInput): ModelC
     );
 
   const selected: OpportunityCandidateDecision[] = [];
+  const pinnedSelected: OpportunityCandidateDecision[] = [];
   const fallbacks: OpportunityCandidateDecision[] = [];
   const rejected: OpportunityCandidateDecision[] = [];
   const familyCounts = new Map<CapabilityFamily, number>();
   let selectedSchemaTokens = 0;
+  const pinned = new Set(input.pinnedCapabilityIds ?? []);
+  for (const { candidate, health, overlap, score } of ranked) {
+    if (!pinned.has(candidate.capabilityId)) continue;
+    if (!health.selectable || !candidate.modelSchemaEligible) continue;
+    if (pinnedSelected.length >= selectionLimit) continue;
+    if (selectedSchemaTokens + candidate.schemaTokensEstimated > schemaTokenBudget) continue;
+    const reasons = candidateReasons(candidate, health, signals, input.policy, preferred, overlap);
+    pinnedSelected.push(
+      decision(
+        candidate,
+        health,
+        "selected",
+        score,
+        ["catalog-discovery" as const, ...reasons].slice(0, MAX_OPPORTUNITY_REASON_CODES),
+      ),
+    );
+    selectedSchemaTokens += candidate.schemaTokensEstimated;
+  }
+  const pinnedIds = new Set(pinnedSelected.map((entry) => entry.capabilityId));
 
   for (const rankedCandidate of ranked) {
     const { candidate, health, overlap, score } = rankedCandidate;
+    if (pinnedIds.has(candidate.capabilityId)) continue;
     const reasons = candidateReasons(candidate, health, signals, input.policy, preferred, overlap);
     if (!health.selectable) {
       const terminalReason = health.health === "denied" ? "policy-denied" : "not-selectable";
@@ -559,7 +580,7 @@ export function planCapabilityOpportunities(input: OpportunityPlanInput): ModelC
     }
     const wouldExceedTokens =
       selectedSchemaTokens + candidate.schemaTokensEstimated > schemaTokenBudget;
-    if (selected.length >= selectionLimit || wouldExceedTokens) {
+    if (selected.length + pinnedSelected.length >= selectionLimit || wouldExceedTokens) {
       const reason: OpportunityReasonCode = wouldExceedTokens ? "schema-budget" : "selection-limit";
       fallbacks.push(decision(candidate, health, "fallback", score, [...reasons, reason]));
       continue;
@@ -570,6 +591,8 @@ export function planCapabilityOpportunities(input: OpportunityPlanInput): ModelC
   }
 
   const boundedRejected = rejected.slice(0, MAX_OPPORTUNITY_REJECTIONS);
+  // Ranked choices compete for the semantic tie; pinned entries follow them.
+  const allSelected = [...selected, ...pinnedSelected];
   const selectedTop = selected[0];
   const nextTop = selected[1];
   const semanticTie =
@@ -604,12 +627,13 @@ export function planCapabilityOpportunities(input: OpportunityPlanInput): ModelC
         (family) => family !== primary && signals.families.includes(family),
       ),
     ),
-    selected: Object.freeze(selected),
+    selected: Object.freeze(allSelected),
     fallbacks: Object.freeze(fallbacks.slice(0, MAX_OPPORTUNITY_REJECTIONS)),
     rejected: Object.freeze(boundedRejected),
     omittedRejected: Math.max(0, rejected.length - boundedRejected.length),
-    opportunities: automationOpportunities(selected, fallbacks, rejected, signals),
+    opportunities: automationOpportunities(allSelected, fallbacks, rejected, signals),
     modelAssistance,
+    // A pinned lookup is never a substitute for another operation's contract.
     degradation: degradationPlan(input.health.generation, selected, rejected),
     schemaTokensEstimated: selectedSchemaTokens,
     selectionLimit,

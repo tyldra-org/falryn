@@ -15,6 +15,7 @@
 import {
   assertNever,
   type ConfigurationGeneration,
+  MAX_EVENT_BYTES,
   modelAttemptId,
   NO_CORRELATION,
   type TurnId,
@@ -372,7 +373,50 @@ function correlationFor(snapshot: TurnSnapshot): TurnCorrelation {
   };
 }
 
+/** Room kept for the attempt event's envelope around its binding. */
+const ATTEMPT_BINDING_ENVELOPE_BYTES = 4_096;
+
+function bindingBytes(binding: ModelAttemptBinding): number {
+  return new TextEncoder().encode(JSON.stringify(binding)).byteLength;
+}
+
+/**
+ * Keep the durable attempt record within one event. The plan's rejected
+ * candidates are its only open-ended list; the record keeps the highest-ranked
+ * ones and counts the rest in `omittedRejected`, as the plan already does.
+ */
+export function boundedAttemptBinding(
+  binding: ModelAttemptBinding,
+  budget = MAX_EVENT_BYTES - ATTEMPT_BINDING_ENVELOPE_BYTES,
+): ModelAttemptBinding {
+  const plan = binding.opportunityPlan;
+  if (plan === undefined || bindingBytes(binding) <= budget) return binding;
+  let kept = plan.rejected.length;
+  while (kept > 0) {
+    kept = Math.floor(kept / 2);
+    const trimmed: ModelAttemptBinding = {
+      ...binding,
+      opportunityPlan: {
+        ...plan,
+        rejected: plan.rejected.slice(0, kept),
+        omittedRejected: plan.omittedRejected + plan.rejected.length - kept,
+      },
+    };
+    if (bindingBytes(trimmed) <= budget) return trimmed;
+  }
+  return binding;
+}
+
 function attemptBinding(
+  receipt: RoutingReceipt,
+  modelInput: AttemptModelInput | undefined,
+  generation: ConfigurationGeneration,
+  promptCache: PromptCachePolicy | undefined,
+): ModelAttemptBinding {
+  return boundedAttemptBinding(fullAttemptBinding(receipt, modelInput, generation, promptCache));
+}
+
+function fullAttemptBinding(
   receipt: RoutingReceipt,
   modelInput: AttemptModelInput | undefined,
   generation: ConfigurationGeneration,

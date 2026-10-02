@@ -40,7 +40,12 @@ import { createProductCapabilityRegistry } from "../capabilities/product-capabil
 import { createProductResources } from "../orchestration/product-resources.ts";
 import { createScopeTree } from "../orchestration/scope-tree.ts";
 import { promptCacheStablePrefixDigest } from "../providers/provider-prompt-cache.ts";
+import {
+  composeProductDiscoveryTool,
+  PRODUCT_DISCOVERY_TOOL_NAME,
+} from "../tools/product-capability-discovery.ts";
 import { discloseProductTools } from "../tools/product-tool-disclosure.ts";
+import { mergeProductToolBundles } from "../tools/product-tools-merge.ts";
 import { composeProductProcessTools } from "../tools/product-tools-process.ts";
 import { composeProductWorkspaceTools } from "../tools/product-tools-workspace.ts";
 import { composeProductAgentRuntime } from "./product-agent-runtime.ts";
@@ -56,6 +61,7 @@ function setup(
   wrapRunner: (base: ToolRunnerPort) => ToolRunnerPort = (base) => base,
   disclosureOptions: Parameters<typeof discloseProductTools>[2] = {},
   toolHooks?: ToolHookRegistry,
+  withDiscovery = false,
 ) {
   const correlation = {
     workspaceId: workspaceId.from("workspace-attempt-product"),
@@ -63,12 +69,15 @@ function setup(
     traceId: traceId.from("trace-attempt-product"),
     configurationGeneration: generation,
   };
-  const tools = composeProductWorkspaceTools({
+  const workspace = composeProductWorkspaceTools({
     generation,
     fileSystem: createInMemoryFileSystem({ nodes: { "/work": { kind: "directory" } } }),
     commands: createStubCommandRunner(() => ({ kind: "exited", exitCode: 1, stdout: "" })),
     workspaceRoot: localPath("/work"),
   });
+  const tools = withDiscovery
+    ? mergeProductToolBundles(generation, [workspace, composeProductDiscoveryTool(generation)])
+    : workspace;
   const eventStore = createInMemoryEventStore();
   const runtimeStreamId = streamId.from("session:attempt-product");
   const runtime = composeProductAgentRuntime({
@@ -1099,6 +1108,162 @@ describe("createProductAttemptRunner", () => {
       effect: "none",
     });
     expect(providerRequests).toBe(0);
+  });
+
+  test("a later step discovers an omitted tool and invokes it through the same gateway", async () => {
+    const requests: ModelRequest[] = [];
+    const executed: string[] = [];
+    let catalog = "";
+    const adapter = createDeterministicProviderAdapter({
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "discover-call",
+              name: PRODUCT_DISCOVERY_TOOL_NAME,
+              argumentFragments: [JSON.stringify({ catalog, query: "search text" })],
+            }
+          : index === 1
+            ? {
+                kind: "tool",
+                toolCallId: "search-call",
+                name: "search_text",
+                argumentFragments: ['{"query":"needle"}'],
+              }
+            : { kind: "text", text: "found it" },
+      onRequest: (request) => {
+        requests.push(request);
+      },
+    });
+    const product = setup(
+      adapter,
+      (base) => ({
+        ...base,
+        async execute(request) {
+          executed.push(request.toolName);
+          return base.execute(request);
+        },
+      }),
+      { maximum: 3, task: "write the release note file", intent: "edit" },
+      undefined,
+      true,
+    );
+    catalog = product.disclosure.receipt.discoveryHandle;
+    const eager = product.disclosure.receipt.disclosed.map((tool) => tool.name);
+    expect(eager).toContain(PRODUCT_DISCOVERY_TOOL_NAME);
+    expect(eager).not.toContain("search_text");
+    const turn = await start(product, "turn-attempt-discovery");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) throw new Error(runner.error.code);
+
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-discovery"),
+        fallbackPosition: 0,
+        providerKey: adapter.identity.providerId,
+        modelKey: String(adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "find needle" }] }],
+        tools: product.disclosure.modelTools.filter((tool) => tool.deferred !== true),
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: {
+          ...disclosureInput(product),
+          toolNames: product.disclosure.receipt.disclosed.map((tool) => tool.name),
+          deferred: [],
+        },
+      },
+    });
+
+    expect(result.fact.kind).not.toBe("failed");
+    expect(requests).toHaveLength(3);
+    expect(requests[0]?.tools.map((tool) => tool.name)).not.toContain("search_text");
+    expect(requests[1]?.tools.map((tool) => tool.name)).toContain("search_text");
+    const discovered = requests[1]?.tools.find((tool) => tool.name === "search_text");
+    expect(discovered?.deferred).toBeUndefined();
+    // The discovery itself is answered at the attempt boundary; the discovered
+    // tool reaches the native runner through the gateway.
+    expect(executed).toEqual(["search_text"]);
+    const results = requests[2]?.messages.filter((message) => message.role === "tool") ?? [];
+    expect(results).toHaveLength(2);
+    expect(JSON.stringify(results[0])).toContain("callable-next-step");
+    expect(JSON.stringify(results[1])).not.toContain("tool-not-disclosed");
+  });
+
+  test("a stale catalog handle discovers nothing, widens nothing and lets the model continue", async () => {
+    const requests: ModelRequest[] = [];
+    const executed: string[] = [];
+    let catalog = "";
+    const adapter = createDeterministicProviderAdapter({
+      script: (_request, index) =>
+        index === 0
+          ? {
+              kind: "tool",
+              toolCallId: "discover-call",
+              name: PRODUCT_DISCOVERY_TOOL_NAME,
+              argumentFragments: [JSON.stringify({ catalog: `${catalog}0`, query: "search" })],
+            }
+          : { kind: "text", text: "stale" },
+      onRequest: (request) => {
+        requests.push(request);
+      },
+    });
+    const product = setup(
+      adapter,
+      (base) => ({
+        ...base,
+        async execute(request) {
+          executed.push(request.toolName);
+          return base.execute(request);
+        },
+      }),
+      { maximum: 3, task: "write the release note file", intent: "edit" },
+      undefined,
+      true,
+    );
+    catalog = product.disclosure.receipt.discoveryHandle;
+    const turn = await start(product, "turn-attempt-discovery-stale");
+    const runner = product.runtime.requireAttemptRunner();
+    if (!runner.ok) throw new Error(runner.error.code);
+    const result = await runner.value.run({
+      turnId: turn,
+      identity: {
+        attemptNumber: 1,
+        modelAttemptId: modelAttemptId.from("attempt-discovery-stale"),
+        fallbackPosition: 0,
+        providerKey: adapter.identity.providerId,
+        modelKey: String(adapter.supportedModels[0]),
+      },
+      receipt: receipt(product),
+      boundConfigurationGeneration: generation,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      modelInput: {
+        messages: [{ role: "user", parts: [{ kind: "text", text: "find needle" }] }],
+        tools: product.disclosure.modelTools.filter((tool) => tool.deferred !== true),
+        output: { kind: "text" },
+        budgets: {},
+        disclosure: {
+          ...disclosureInput(product),
+          toolNames: product.disclosure.receipt.disclosed.map((tool) => tool.name),
+          deferred: [],
+        },
+      },
+    });
+    expect(result.fact.kind).not.toBe("failed");
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.tools.map((tool) => tool.name)).toEqual(
+      requests[0]?.tools.map((tool) => tool.name),
+    );
+    expect(JSON.stringify(requests[1]?.messages)).toContain("stale-catalog-generation");
+    expect(executed).toEqual([]);
   });
 
   test("unqualified native search keeps eager bounds and refuses an undisclosed deferred call", async () => {

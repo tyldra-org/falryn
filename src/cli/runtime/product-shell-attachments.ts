@@ -84,6 +84,7 @@ import {
   type ProductToolConfirmationPort,
 } from "../../application/tools/index.ts";
 import { composePeerTool } from "../../application/tools/peer-tool.ts";
+import { composeProductDiscoveryTool } from "../../application/tools/product-capability-discovery.ts";
 import { composeProductIndexLifecycle } from "../../application/workspace/index.ts";
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import { skillFindingsNoticeLines } from "../../domain/context/skill-findings.ts";
@@ -549,6 +550,7 @@ export async function composeProductShellAttachments(
                 languageTools,
                 memoryTools,
                 composePeerTool(generation, peer),
+                composeProductDiscoveryTool(generation),
                 ...(routeSettings
                   ? [
                       composeModelRouteTool(generation, {

@@ -2281,6 +2281,35 @@ omission receipt. Either way a deferred call is admitted through the same
 generation-bound gateway validation as a disclosed tool; policy-denied,
 unavailable, or schema-ineligible candidates are never deferred.
 
+Capability discovery (#947) lets a later step reach what the eager set left
+out. When terminal and headless turns register the built-in
+`discover_capabilities` observation, the opportunity plan always selects it
+in a reserved slot. That slot never counts against a family budget, never wins
+a semantic tie and is never a degradation target. The capability brief tells
+the model to use the disclosed tools first and to call it with the
+disclosure's `capability-catalog:<generation>` handle only when none fits. A
+call runs through the normal gateway and answers from the attempt's current
+capability and tool registries. Results are ranked by matching task words,
+paged and bounded. Each entry reports registered, enabled, preparable,
+prepared, disclosed and executable separately, with the runtime's reasons and
+recovery handles. The status comes from runtime state, not from the
+contribution's description: a skill is instruction content, a non-operation
+contribution is not callable, a disconnected or unprepared server tool is
+unavailable or needs preparation, and policy-denied or open-schema tools stay
+unavailable. Discovery itself never prepares, starts, installs or runs
+anything. An executable native tool that is not yet disclosed is added to the
+next provider request at the step boundary and to the gateway's disclosed set
+at the same time, so it is refused within the step that found it and admitted
+by its exact name afterwards. An attempt allows six discovery calls, eight
+discovered tools and 6,000 estimated schema tokens. A handle from another
+generation, or a call beyond the bound, returns an empty result naming the
+refusal and the current handle. Preparing a lazy contribution on demand,
+choosing tools before generic command execution and suggesting next operations
+remain separately tracked.
+The durable attempt-start record keeps its opportunity plan within one event:
+when the record would not fit, it keeps the highest-ranked rejected candidates
+and adds the rest to the plan's `omittedRejected` count.
+
 Operation profiles (#946) group related native tools into one model-facing
 definition. The Git tools form three: `git_inspect` (discover, status, diff,
 log, blame, list worktrees), `git_branch` (create, switch and delete branches,
