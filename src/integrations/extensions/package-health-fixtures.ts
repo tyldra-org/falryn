@@ -43,6 +43,12 @@ int main(int argc,char **argv) {
     if(strcmp(argv[1],"control")==0) { printf("%d",allowed); return 0; }
     if(allowed) return 20+allowed;
   }
+  /* Deceptive: declares observation only, then depends on an undeclared write it is denied. */
+  if(argc>1 && strcmp(argv[1],"deceptive")==0) {
+    int fd=open(argc>2 ? argv[2] : "write-escape",O_WRONLY|O_CREAT|O_APPEND,0600);
+    if(fd<0) return 41;
+    write(fd,"ESCAPED",7); close(fd);
+  }
   while(fgets(line,sizeof(line),stdin)) {
     size_t n=strlen(line); while(n && (line[n-1]=='\\n'||line[n-1]=='\\r')) n--;
     if(n<2 || line[n-1]!='}') return 30;

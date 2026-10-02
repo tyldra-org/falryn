@@ -4,6 +4,13 @@ import type {
   TrustObservation,
 } from "../../domain/security/ecosystem-trust.ts";
 import {
+  type CurationStatus,
+  curationStatus,
+  type EvaluationRecord,
+  evaluationRecordSchema,
+  evaluationReportDigest,
+} from "../../domain/security/package-evaluation.ts";
+import {
   type PackageProvenance,
   type PackageProvenanceStore,
   type PackageVerification,
@@ -19,6 +26,10 @@ import {
 } from "./package-trust.ts";
 
 const MAX_EVIDENCE_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
+type Proof =
+  | NonNullable<PackageVerification["signature"]>
+  | NonNullable<PackageVerification["advisory"]>
+  | NonNullable<PackageVerification["curation"]>;
 /** Produces facts only. Refreshing facts cannot approve a package or execute quarantine itself. */
 export function verifyPackageProvenance(
   observation: TrustObservation,
@@ -27,12 +38,8 @@ export function verifyPackageProvenance(
   revision: number,
 ): PackageProvenance {
   const key = packageProvenanceKey(observation);
-  const valid = (
-    role: "publisher" | "advisory",
-    proof:
-      | NonNullable<PackageVerification["signature"]>
-      | NonNullable<PackageVerification["advisory"]>,
-  ) => {
+  /** A host-selected key of this role signed this statement within the evidence lifetime. */
+  const authentic = (role: "publisher" | "advisory" | "curator", proof: Proof) => {
     const selected = input.keys.find(
       (candidate) => candidate.id === proof.keyId && candidate.role === role,
     );
@@ -40,7 +47,6 @@ export function verifyPackageProvenance(
       selected !== undefined &&
       proof.statement.expiresAt > proof.statement.issuedAt &&
       proof.statement.expiresAt - proof.statement.issuedAt <= MAX_EVIDENCE_LIFETIME_MS &&
-      canonicalDigest(proof.statement.subject) === canonicalDigest(observation.subject.identity) &&
       verifier.verify(
         selected.publicKey,
         selected.id,
@@ -49,11 +55,26 @@ export function verifyPackageProvenance(
       )
     );
   };
+  const identityDigest = canonicalDigest(observation.subject.identity);
+  const valid = (role: "publisher" | "advisory", proof: Proof) =>
+    canonicalDigest(proof.statement.subject) === identityDigest && authentic(role, proof);
   const signed = input.signature !== null && valid("publisher", input.signature);
   const advisory = input.advisory !== null && valid("advisory", input.advisory);
-  const proofTimes = [input.signature?.statement, input.advisory?.statement].filter(
-    (value) => value !== undefined,
-  );
+  const curationProof = input.curation ?? null;
+  const curation: CurationStatus | null =
+    curationProof === null
+      ? null
+      : curationStatus(
+          curationProof.statement,
+          identityDigest,
+          authentic("curator", curationProof),
+        );
+  // Verified curation expires with its statement, so a curated label cannot outlive its evidence.
+  const proofTimes = [
+    input.signature?.statement,
+    input.advisory?.statement,
+    curation === "verified" ? curationProof?.statement : undefined,
+  ].filter((value) => value !== undefined);
   const record = {
     version: 1 as const,
     revision,
@@ -85,13 +106,20 @@ export function verifyPackageProvenance(
               : 0,
         ),
     ),
+    ...(curationProof === null || curation === null
+      ? {}
+      : {
+          curationKey: curation === "invalid" ? null : curationProof.keyId,
+          curationDigest: canonicalDigest(curationProof.statement),
+          curationStatus: curation,
+        }),
   };
   return {
     ...record,
     evidence: {
       integrity: signed ? "verified" : "computed",
       signature: input.signature === null ? "unsigned" : signed ? "verified" : "invalid",
-      curation: "unavailable",
+      curation: curation === "verified" ? "verified" : "unavailable",
       advisory:
         input.advisory === null
           ? "unavailable"
@@ -154,8 +182,51 @@ export function inspectProvenanceTrust(
     return { ...projected, status: "preview", confirmation, provenance: facts };
   if (request.confirmation !== confirmation)
     return { status: "failed", code: "stale-trust-confirmation" };
-  const updated = owners.provenance.replace(facts, current.value?.revision ?? 0, signal);
+  const updated = owners.provenance.replace(
+    facts,
+    current.value?.revision ?? 0,
+    signal,
+    curatorEvaluationRecord(facts, request.verification) ?? undefined,
+  );
   return updated.ok
     ? { ...projected, status: "applied", confirmation: null, provenance: facts }
     : { status: "failed", code: updated.error.code };
+}
+
+/**
+ * The curator report an applied refresh retains in the evaluation history. Unauthenticated
+ * statements and statements about another identity are reported in provenance but never retained
+ * as evaluation evidence for this package.
+ */
+export function curatorEvaluationRecord(
+  facts: PackageProvenance,
+  input: PackageVerification,
+): EvaluationRecord | null {
+  const proof = input.curation ?? null;
+  const status = facts.curationStatus;
+  if (
+    proof === null ||
+    status === undefined ||
+    status === "invalid" ||
+    status === "subject-mismatch" ||
+    facts.curationDigest === undefined
+  )
+    return null;
+  const parsed = evaluationRecordSchema.safeParse({
+    version: 1,
+    packageId: facts.identity.packageId,
+    identityDigest: canonicalDigest(facts.identity),
+    reportDigest: evaluationReportDigest(proof.statement.report),
+    report: proof.statement.report,
+    curation: {
+      keyId: proof.keyId,
+      statementDigest: facts.curationDigest,
+      decision: proof.statement.decision,
+      status,
+      issuedAt: proof.statement.issuedAt,
+      expiresAt: proof.statement.expiresAt,
+    },
+    recordedAt: facts.evidence.observedAt,
+  });
+  return parsed.success ? parsed.data : null;
 }

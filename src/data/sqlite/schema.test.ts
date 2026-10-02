@@ -120,6 +120,8 @@ describe("a fresh database", () => {
       "package_data_artifacts_owner",
       "package_data_operations_owner",
       "package_dependency_consumers",
+      "package_evaluations_by_identity",
+      "package_evaluations_by_package",
       "package_health_generation",
       "package_health_package_pending",
       "package_health_pending",

@@ -98,6 +98,7 @@ import {
   MODEL_CATALOG_GENERATIONS_TABLE,
   MODEL_CATALOG_ROUTE_BINDINGS_TABLE,
 } from "../providers/model-catalog-schema.ts";
+import { MIGRATION_0036, PACKAGE_EVALUATIONS_TABLE } from "../security/evaluation-repository.ts";
 import { MIGRATION_0035, NOTICE_ACKNOWLEDGEMENTS_TABLE } from "../security/notice-repository.ts";
 import { MIGRATION_0017, PROVENANCE_TABLES } from "../security/provenance-schema.ts";
 import { MIGRATION_0012, TRUST_DECISIONS_TABLE } from "../security/trust-schema.ts";
@@ -153,6 +154,7 @@ export const PRODUCTION_MIGRATIONS: readonly Migration[] = [
   MIGRATION_0033,
   MIGRATION_0034,
   MIGRATION_0035,
+  MIGRATION_0036,
 ];
 
 /** Every product table the registered set creates, in creation order. */
@@ -195,6 +197,7 @@ export const PRODUCT_TABLES: readonly string[] = [
   ...AGENT_EDIT_SCOPE_TABLES,
   CURATED_CATALOG_TABLE,
   NOTICE_ACKNOWLEDGEMENTS_TABLE,
+  PACKAGE_EVALUATIONS_TABLE,
 ];
 
 function issue(

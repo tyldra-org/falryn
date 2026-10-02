@@ -45,6 +45,7 @@ import { composeNativePackages } from "../runtime/native-packages.ts";
 import { validatePackageConfigurationCandidate } from "../runtime/package-configuration-candidate.ts";
 import { inspectPackageConfiguration } from "../runtime/package-configuration-inspection.ts";
 import { runPackageDataControl, runPackageDataImport } from "../runtime/package-data.ts";
+import { runPackageEvaluation } from "../runtime/package-evaluation.ts";
 import { runPackageHealth } from "../runtime/package-health.ts";
 import {
   absentPackageStanding,
@@ -208,7 +209,8 @@ export async function runPackage(
       action !== "health" &&
       action !== "standing" &&
       !PACKAGE_STANDING_ACTIONS.has(action) &&
-      action !== "enable"
+      action !== "enable" &&
+      action !== "evaluate"
     ) {
       const roots = await resolved.localData.prepareRoots(["state"], operationSignal);
       if (!roots.every(isRootUsable)) return failure("package-root-unavailable");
@@ -264,6 +266,15 @@ export async function runPackage(
                 request,
                 operationSignal,
               );
+      } else if (action === "evaluate") {
+        result = await runPackageEvaluation(
+          resolved,
+          stateRoot,
+          opened.kind === "open" ? opened.store : null,
+          request,
+          failure("not-started"),
+          operationSignal,
+        );
       } else if (PACKAGE_STANDING_ACTIONS.has(action)) {
         result =
           standing === null
