@@ -4,6 +4,7 @@ import { packageInspectionLines } from "../../../application/extensions/inspecti
 import { packageNoticeLines } from "../../../application/extensions/package-notices-report.ts";
 import { skillUsageLines } from "../../../application/extensions/skill-usage.ts";
 import { modelSettingsLines } from "../../../application/providers/model-settings-format.ts";
+import { extensionSuggestionLines } from "./extension-suggestion.ts";
 /** Primary-result projection for quiet CLI output. */
 
 import { assertNever } from "../../../domain/foundation/index.ts";
@@ -157,6 +158,8 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
       return result.payload === null ? [] : extensionCatalogLines(result.payload).map(safe);
     case "extension.listing":
       return result.payload === null ? [] : curatedCatalogLines(result.payload).map(safe);
+    case "extension.suggestion":
+      return result.payload === null ? [] : extensionSuggestionLines(result.payload).map(safe);
     case "extension.notices":
       return result.payload === null ? [] : packageNoticeLines(result.payload).map(safe);
     case "extension.skills":

@@ -101,6 +101,11 @@ export type TurnLifecycleFact =
       readonly outcome: TerminalOutcome;
     }
   | {
+      readonly kind: "extension.suggestion.recorded";
+      readonly correlation: TurnCorrelation;
+      readonly payload: import("../extensions/package-suggestion.ts").PackageSuggestionRecord;
+    }
+  | {
       readonly kind: "model.attempt.started";
       readonly correlation: TurnCorrelation;
       readonly modelAttemptId: ModelAttemptId;
@@ -169,6 +174,9 @@ export function factIdentity(fact: TurnLifecycleFact): string {
       return `turn:${fact.correlation.turnId}:started`;
     case "turn.completed":
       return `turn:${fact.correlation.turnId}:completed`;
+    case "extension.suggestion.recorded":
+      // One record per settled root turn; a retried persist is the same fact.
+      return `turn:${fact.correlation.turnId}:suggestion`;
     case "model.attempt.started":
       return `attempt:${fact.modelAttemptId}:started`;
     case "model.processing.recorded":
@@ -277,6 +285,8 @@ export function buildTurnLifecycleEvent(input: BuildTurnEventInput): RuntimeEven
       return event;
     }
     case "instructions.rejected":
+      return { ...spine, kind: fact.kind, correlation: fact.correlation, payload: fact.payload };
+    case "extension.suggestion.recorded":
       return { ...spine, kind: fact.kind, correlation: fact.correlation, payload: fact.payload };
     case "instructions.revoked":
     case "instructions.resolved":
@@ -634,6 +644,7 @@ export function reduceTurnEvents(events: readonly RuntimeEvent[]): TurnEventRedu
       case "workflow.changed":
       case "work.queue.changed":
       case "process.task.changed":
+      case "extension.suggestion.recorded":
         // Task ownership outlives the initiating turn. Its events never reopen or finish a turn.
         break;
       default:

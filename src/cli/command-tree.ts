@@ -438,12 +438,21 @@ function build(argv: readonly string[], lenientPositionals = false): ReturnType<
           group
             .positional("action", {
               type: "string",
-              choices: ["inspect", "trust", "notices", "catalog", "scope", "listing", "skills"],
+              choices: [
+                "inspect",
+                "trust",
+                "notices",
+                "catalog",
+                "scope",
+                "listing",
+                "suggestion",
+                "skills",
+              ],
             })
             .option("input", {
               type: "string",
               describe:
-                "bounded trust, notice, scope, catalog, listing or skill usage JSON request file",
+                "bounded trust, notice, scope, catalog, listing, suggestion or skill usage JSON request file",
             })
             .positional("path", { type: "string", describe: "local package directory path" }),
         () => {},
@@ -1040,6 +1049,36 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
       };
     extensionListingArgs = checked.data;
   }
+  let extensionSuggestionArgs:
+    | import("./commands/extension-suggestion.ts").ExtensionSuggestionArguments
+    | undefined;
+  if (command === "extension.suggestion") {
+    if (parsed.path !== undefined || parsed.input === undefined)
+      return {
+        kind: "invalid",
+        message: "extension suggestion requires --input and no package path.",
+      };
+    const loaded = await loadTaskInputFile(parsed.input);
+    if (!loaded.ok || Buffer.byteLength(loaded.value) > 16_384)
+      return { kind: "invalid", message: "Invalid extension request file (maximum 16384 bytes)." };
+    let input: unknown;
+    try {
+      input = JSON.parse(loaded.value);
+    } catch {
+      return { kind: "invalid", message: "Invalid extension request JSON." };
+    }
+    const { extensionSuggestionArgumentsSchema } = await import(
+      "./commands/extension-suggestion.ts"
+    );
+    const checked = extensionSuggestionArgumentsSchema.safeParse(input);
+    if (!checked.success)
+      return {
+        kind: "invalid",
+        message:
+          "The suggestion request must list a session, inspect one listed package, or dismiss or reset with the preferences revision.",
+      };
+    extensionSuggestionArgs = checked.data;
+  }
   let extensionSkillsArgs:
     | import("./commands/extension-skills.ts").ExtensionSkillsArguments
     | undefined;
@@ -1253,6 +1292,7 @@ export async function parseInvocation(argv: readonly string[]): Promise<Invocati
     ...(modelArgs === undefined ? {} : { modelArgs }),
     ...(extensionCatalogArgs === undefined ? {} : { extensionCatalogArgs }),
     ...(extensionListingArgs === undefined ? {} : { extensionListingArgs }),
+    ...(extensionSuggestionArgs === undefined ? {} : { extensionSuggestionArgs }),
     ...(extensionSkillsArgs === undefined ? {} : { extensionSkillsArgs }),
     ...(extensionTrust === undefined ? {} : { extensionTrust }),
     ...(extensionNotice === undefined ? {} : { extensionNotice }),

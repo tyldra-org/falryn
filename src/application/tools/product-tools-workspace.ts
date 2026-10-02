@@ -289,6 +289,29 @@ function pathConflictKeys(
   return typeof path === "string" && path.length > 0 ? [conflictKey("file", path)] : [];
 }
 
+/** The workspace-relative paths a completed operation named; never content or search text. */
+function observedPaths(
+  toolName: string,
+  input: Readonly<Record<string, unknown>>,
+): readonly string[] {
+  switch (toolName) {
+    case "read_file":
+    case "read_compact_document":
+    case "stat_path":
+      return typeof input.path === "string" ? [input.path] : [];
+    case "write_files":
+      return targetPaths(input)?.paths ?? [];
+    case "mutate_paths": {
+      const targets = mutationTargets(input);
+      return targets === null
+        ? []
+        : [...targets.paths, ...targets.moves.flatMap((move) => [move.from, move.to])];
+    }
+    default:
+      return [];
+  }
+}
+
 /** Every path a target list writes; schema-validated input always carries its paths. */
 function targetPaths(input: Readonly<Record<string, unknown>>): WorkspaceWriteTargets | null {
   const targets = input.targets;
@@ -384,6 +407,8 @@ export type ProductWorkspaceToolPorts = {
   readonly virtualResources?: ResourceResolverOptions["virtual"];
   /** Session/user preference. `raw` is authoritative over a model request for Loom. */
   readonly userReadOutputMode?: () => ProductReadOutputMode;
+  /** Workspace-relative paths a completed operation resolved, for package suggestions (#1094). */
+  readonly observePaths?: (paths: readonly string[]) => void;
 };
 
 export type ProductWorkspaceTools = {
@@ -715,7 +740,7 @@ export function composeProductWorkspaceTools(
   const registry = registryResult.value;
   const root = ports.workspaceRoot;
 
-  const runner: ToolRunnerPort = {
+  const tools: ToolRunnerPort = {
     hasBinding: (id) => registry.resolveByCapabilityId(id) !== null,
     async execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
       if (request.signal.aborted) {
@@ -845,6 +870,18 @@ export function composeProductWorkspaceTools(
             effect: "none",
           };
       }
+    },
+  };
+
+  const runner: ToolRunnerPort = {
+    hasBinding: (id) => registry.resolveByCapabilityId(id) !== null,
+    async execute(request) {
+      const outcome = await tools.execute(request);
+      if (outcome.status === "completed" && ports.observePaths !== undefined) {
+        const paths = observedPaths(request.toolName, request.input);
+        if (paths.length > 0) ports.observePaths(paths);
+      }
+      return outcome;
     },
   };
 

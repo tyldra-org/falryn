@@ -66,6 +66,7 @@ export const EVENT_KINDS = [
   "instructions.revoked",
   "instructions.rejected",
   "schedule.settled",
+  "extension.suggestion.recorded",
 ] as const;
 
 export type EventKind = (typeof EVENT_KINDS)[number];
@@ -388,6 +389,12 @@ export type ProcessTaskChangedEvent = Envelope<
 export type WorkQueueChangedEvent = Envelope<"work.queue.changed", SessionCorrelation, WorkReceipt>;
 
 export type HistoryRecordedEvent = Envelope<"history.recorded", TurnCorrelation, HistoryPayload>;
+/** A settled root turn's package suggestion (#1094); passive in replay and export. */
+export type PackageSuggestionRecordedEvent = Envelope<
+  "extension.suggestion.recorded",
+  TurnCorrelation,
+  import("../extensions/package-suggestion.ts").PackageSuggestionRecord
+>;
 
 export type ConfigurationTransitionRecordedEvent = Envelope<
   "configuration.transition.recorded",
@@ -408,6 +415,7 @@ export type RuntimeEvent =
     >
   | ConfigurationTransitionRecordedEvent
   | HistoryRecordedEvent
+  | PackageSuggestionRecordedEvent
   | Envelope<"workflow.changed", SessionCorrelation, WorkflowReceipt>
   | Envelope<
       "schedule.settled",

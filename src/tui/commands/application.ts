@@ -86,6 +86,21 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
     availability: () => AVAILABLE,
   },
   {
+    id: "extensions.suggestions",
+    title: "Package suggestions",
+    description:
+      "List this session's verified package suggestions with their reasons, freshness and install state. Installs nothing.",
+    context: "global",
+    defaultBinding: null,
+    keywords: ["suggestions", "packages", "marketplace", "extensions"],
+    ...SHELL_DEFAULTS,
+    timing: "immediate",
+    effect: "observation",
+    slash: [{ form: "/suggestions" }],
+    argument: { kind: "none" },
+    availability: () => AVAILABLE,
+  },
+  {
     id: "session.export",
     title: "Export session",
     description: "Preview a versioned session package and its artifact omissions before writing.",

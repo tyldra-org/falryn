@@ -1525,3 +1525,53 @@ test("hook-origin work runs through the gateway once, suppresses its own point a
     ),
   ).toHaveLength(1);
 });
+
+test("package suggestions learn the kind of a completed call, never a failed or hook-origin one", async () => {
+  const f = setup();
+  const hooks = createToolHookRegistry(generation, []);
+  if (!hooks.ok) throw new Error(hooks.error.code);
+  const observed: string[] = [];
+  const gateway = (hookLineage?: {
+    readonly point: "before-capability-invocation";
+    readonly depth: number;
+  }) =>
+    createProductToolGateway({
+      clock: f.clock,
+      resources: createProductResources(f.clock),
+      registry: f.tools.registry,
+      hooks: hooks.value,
+      runner: f.tools.runner,
+      journal: f.journal,
+      correlation,
+      turnId: turn,
+      disclosedToolNames: new Set(["read_file"]),
+      effectLedger: new Map(),
+      observeCapability: (kind) => observed.push(kind),
+      ...(hookLineage === undefined ? {} : { hookLineage }),
+    });
+  const read = (id: string, path: string) => {
+    const entry = f.tools.registry.resolveByName("read_file");
+    if (!entry) throw new Error("missing tool");
+    return {
+      invocationId: invocationId.from(id),
+      toolCallId: id,
+      toolName: "read_file",
+      capabilityId: entry.manifest.capabilityId,
+      version: entry.manifest.version,
+      effect: entry.manifest.effect,
+      input: { path },
+      signal: new AbortController().signal,
+    };
+  };
+
+  expect((await gateway().execute(read("observed-read", "a.ts"))).status).toBe("completed");
+  expect(observed).toEqual(["filesystem"]);
+  expect((await gateway().execute(read("missing-read", "missing.ts"))).status).not.toBe(
+    "completed",
+  );
+  const hookRead = await gateway({ point: "before-capability-invocation", depth: 1 }).execute(
+    read("hook-read", "a.ts"),
+  );
+  expect(hookRead.status).toBe("completed");
+  expect(observed).toEqual(["filesystem"]);
+});

@@ -152,6 +152,8 @@ export type ProductLiveTurnResult = {
   readonly contextStatus: ProductContextReceipt["status"] | "static";
   readonly contextGeneration: string | null;
   readonly recalledMemories: number;
+  /** The package suggestion this settled root turn recorded (#1094); it installed nothing. */
+  readonly suggestion?: import("../../domain/extensions/package-suggestion.ts").PackageSuggestionRecord;
   /** Whether this settled turn woke deterministic reflection; learning is reported separately. */
   readonly reflection: import("../memory/product-memory-turn.ts").ProductReflectionRequest;
   readonly executionProfile: ExecutionProfileId;
@@ -251,6 +253,11 @@ export type ProductLiveTurnExecutorOptions = {
   readonly contextSource?: ProductContextSource;
   readonly contextCandidates?: () => readonly EvidenceCandidate[];
   readonly memory?: ProductMemoryTurn;
+  /** The session's package suggestion observations; consulted only when a root turn settles. */
+  readonly suggestions?: Pick<
+    import("../extensions/package-suggestions.ts").PackageSuggestionSession,
+    "settleRootTurn" | "observeCapability"
+  >;
   readonly artifacts?: ArtifactStorePort;
   readonly initialExecutionProfile?: ExecutionProfileId;
   /** Process-local initial model. Persistent role configuration remains owned by #273. */
@@ -1514,6 +1521,9 @@ export function createProductLiveTurnExecutor(
               ...((input.mentions?.mcpServers.length ?? 0) === 0
                 ? {}
                 : { userSelection: { mcpServers: [...(input.mentions?.mcpServers ?? [])] } }),
+              ...(options.suggestions === undefined
+                ? {}
+                : { observeCapability: options.suggestions.observeCapability }),
             },
           });
           let instructionHistoryFailed = false;
@@ -1580,6 +1590,29 @@ export function createProductLiveTurnExecutor(
           const committedHead = succeeded
             ? runtime.historyEvents.head?.(runtime.streamId)
             : undefined;
+          // A delegated, evaluator or other admitted child is never a root turn, and a
+          // cancelled turn ends this subscription without touching the producing command.
+          const suggestion =
+            options.suggestions === undefined ||
+            input.childAdmission !== undefined ||
+            !completed.ok ||
+            input.signal?.aborted === true
+              ? null
+              : options.suggestions.settleRootTurn();
+          const suggestionRecorded =
+            suggestion !== null &&
+            (
+              await producer.recordPackageSuggestion({
+                correlation: {
+                  sessionId: correlation.sessionId,
+                  workspaceId: correlation.workspaceId,
+                  traceId: correlation.traceId,
+                  configurationGeneration: generation,
+                  turnId: input.turnId,
+                },
+                record: suggestion,
+              })
+            ).ok;
           const reflection =
             !succeeded || options.memory === undefined
               ? ("skipped" as const)
@@ -1631,6 +1664,7 @@ export function createProductLiveTurnExecutor(
             contextGeneration: prepared.receipt?.generation ?? null,
             recalledMemories,
             reflection,
+            ...(suggestionRecorded && suggestion !== null ? { suggestion } : {}),
             executionProfile: executionPolicy.profileId,
             executionProfileVersion: executionPolicy.profileVersion,
             completionCriterion: executionPolicy.completion,

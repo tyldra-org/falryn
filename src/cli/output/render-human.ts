@@ -5,6 +5,7 @@ import { packageInspectionLines } from "../../application/extensions/inspection-
 import { packageNoticeLines } from "../../application/extensions/package-notices-report.ts";
 import { skillUsageLines } from "../../application/extensions/skill-usage.ts";
 import { modelSettingsLines } from "../../application/providers/model-settings-format.ts";
+import { extensionSuggestionLines } from "./render-human/extension-suggestion.ts";
 /**
  * The human and quiet projections of a `CommandResult`.
  *
@@ -548,6 +549,11 @@ function renderPayload(session: Session, result: RunCommandResult): RenderedPayl
         lines: result.payload === null ? [] : curatedCatalogLines(result.payload).map(safe),
         diagnostics: [],
       };
+    case "extension.suggestion":
+      return {
+        lines: result.payload === null ? [] : extensionSuggestionLines(result.payload).map(safe),
+        diagnostics: [],
+      };
     case "extension.notices":
       return {
         lines: result.payload === null ? [] : packageNoticeLines(result.payload).map(safe),
@@ -661,6 +667,7 @@ function quietFindingLines(result: RunCommandResult): readonly string[] {
     case "extension.catalog":
     case "extension.scope":
     case "extension.listing":
+    case "extension.suggestion":
     case "extension.notices":
     case "extension.skills":
     case "package":

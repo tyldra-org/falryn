@@ -292,6 +292,14 @@ export type ProductProcessToolPorts = {
   readonly scratch?: ScratchResourcePort;
   /** Session/user preference. `raw` is authoritative over a model request for Hush. */
   readonly userOutputMode?: () => ProductProcessOutputMode;
+  /**
+   * The session's package suggestion observer (#1094). It reads the exact captured
+   * stderr of this admitted command only; projections, hooks and replay never reach it.
+   */
+  readonly suggestions?: Pick<
+    import("../extensions/package-suggestions.ts").PackageSuggestionSession,
+    "observeCommand"
+  >;
 };
 
 export type ProductProcessTools = {
@@ -397,6 +405,14 @@ export function composeProductProcessTools(ports: ProductProcessToolPorts): Prod
         }
         return { capture: null, outcome: failed(errorCode(observed.error)) };
       }
+      // A hook's own command is hook output, never a package hint.
+      if (request.hookOrigin !== true)
+        ports.suggestions?.observeCommand({
+          stderr: observed.value.capture.stderr.inlineBytes,
+          // Shell text admits no single program, so only argv commands have an identity.
+          executablePath: command.mode === "argv" ? command.executable : null,
+          invocationId: String(request.invocationId),
+        });
       if (ownership === undefined) {
         const capture = observed.value.capture;
         // Capture owns process liveness. A later output-retention failure must not

@@ -128,6 +128,8 @@ export type SubmissionPort = {
     page: { readonly filter: string | null; readonly offset: number },
     signal: AbortSignal,
   ) => Promise<readonly string[]>;
+  /** Human lines for `/suggestions` (#1094): this session's verified package suggestions. */
+  readonly listSuggestions?: () => Promise<readonly string[]>;
   /** Skills the user can invoke now, for Tab completion; null when unknown. */
   readonly skillCandidates?: () =>
     | import("../../domain/context/skill-invocation.ts").SkillCompletionCatalog

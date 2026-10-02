@@ -129,6 +129,13 @@ const GENERATION_9 = [
     outcome: null,
     disclosure: null,
   },
+  {
+    kind: "notice",
+    key: "declared:suggestion:event-suggestion",
+    status: "final",
+    outcome: null,
+    disclosure: null,
+  },
 ] as const;
 
 function snapshot(): readonly unknown[] {

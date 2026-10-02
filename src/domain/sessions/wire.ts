@@ -34,6 +34,7 @@ import {
   CAPABILITY_SOURCES,
 } from "../capabilities/capability-registry.ts";
 import { catalogHistorySchema } from "../extensions/catalog-history.ts";
+import { packageSuggestionRecordSchema } from "../extensions/package-suggestion.ts";
 import {
   brandedInteger,
   brandedString,
@@ -445,6 +446,12 @@ const runtimeEventSchema: z.ZodType<RuntimeEvent> = z.discriminatedUnion("kind",
   }),
   z.object({
     ...envelopeSpine,
+    kind: z.literal("extension.suggestion.recorded"),
+    correlation: turnCorrelationSchema,
+    payload: packageSuggestionRecordSchema,
+  }),
+  z.object({
+    ...envelopeSpine,
     kind: z.literal("session.started"),
     correlation: sessionCorrelationSchema,
     payload: z.object({ extensionCatalog: catalogHistorySchema.optional() }),
@@ -694,6 +701,7 @@ function payloadToJson(event: RuntimeEvent): Record<string, unknown> {
     case "work.queue.changed":
     case "schedule.settled":
     case "workflow.changed":
+    case "extension.suggestion.recorded":
       return event.payload;
     case "execution.profile.selected":
       return {

@@ -1,5 +1,6 @@
 import { refreshRuntimeInstructions } from "../../application/context/product-instructions.ts";
 import { createSkillActivations } from "../../application/context/skill-activations.ts";
+import { createPackageSuggestionSession } from "../../application/extensions/package-suggestions.ts";
 import { processProductResources } from "../../application/orchestration/product-resources.ts";
 import {
   type PreparedSessionSelection,
@@ -11,6 +12,7 @@ import { admitCommand } from "../../domain/commands/index.ts";
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
 import { createEnvironmentProcessContext } from "./environment-process-context.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
+import { createConfiguredSuggestionResolver } from "./package-suggestion-configuration.ts";
 import { composeProductMcp } from "./product-mcp.ts";
 import { composeProductModelSettings } from "./product-model-settings.ts";
 import { productToolHost } from "./product-tool-host.ts";
@@ -208,6 +210,8 @@ export type CodingRunPayload = {
   readonly reflection?: string;
   /** What the worker settled for this run; codes and counts, never candidate text. */
   readonly reflectionReceipts?: readonly import("../../application/memory/reflection-worker.ts").ReflectionReceipt[];
+  /** The package suggestion this run's turn recorded (#1094); reported, never installed or prompted. */
+  readonly suggestion?: import("../../domain/extensions/package-suggestion.ts").PackageSuggestionRecord;
   /** Final assistant text from the terminal model attempt. */
   readonly response?: string;
   readonly modelAttempts?: number;
@@ -785,7 +789,21 @@ export async function runCoding(
         return trust.status === "accepted" || trust.status === "empty";
       },
     });
+    // Observations stay in this run; resolution reads the stored catalogs and the
+    // configuration in force when the turn settles.
+    const curatedCatalogs = productArtifactSession.curatedCatalogs;
+    const suggestions = createPackageSuggestionSession(() =>
+      createConfiguredSuggestionResolver({
+        store: curatedCatalogs,
+        now: () => Number(graph.clock.now()),
+        configuration: () => ({
+          values: graph.loader.current()?.values ?? configuration.values,
+          record: graph.loader.current(),
+        }),
+      }),
+    );
     const workspaceTools = composeProductWorkspaceTools({
+      observePaths: suggestions.observePaths,
       scratch: productArtifactSession.scratch,
       generation,
       fileSystem: graph.fileSystem,
@@ -812,6 +830,7 @@ export async function runCoding(
       sessionId: String(sessionId),
       scratch: productArtifactSession.scratch,
       userOutputMode: outputControls.getHushMode,
+      suggestions,
     });
     const scratchTools = composeProductScratchTools({
       generation,
@@ -1236,6 +1255,7 @@ export async function runCoding(
       providerCatalog,
       contextSource,
       memory: memoryTurn,
+      suggestions,
       artifacts: options.artifacts ?? productArtifactSession.artifacts,
       initialExecutionProfile: selectedExecutionProfile,
     });
@@ -1332,6 +1352,7 @@ export async function runCoding(
         recalledMemories: attempted.recalledMemories,
         reflection: attempted.reflection,
         reflectionReceipts,
+        ...(attempted.suggestion === undefined ? {} : { suggestion: attempted.suggestion }),
         response: attempted.response,
         modelAttempts: attempted.modelAttempts,
         toolResults: attempted.toolResults,

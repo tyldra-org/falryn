@@ -61,11 +61,13 @@ export function commandFrom(
             ? "extension.scope"
             : action === "listing"
               ? "extension.listing"
-              : action === "skills"
-                ? "extension.skills"
-                : action === "notices"
-                  ? "extension.notices"
-                  : null;
+              : action === "suggestion"
+                ? "extension.suggestion"
+                : action === "skills"
+                  ? "extension.skills"
+                  : action === "notices"
+                    ? "extension.notices"
+                    : null;
   if (group === "provider") {
     return action === null ? null : "provider";
   }

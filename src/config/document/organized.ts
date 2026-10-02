@@ -14,6 +14,7 @@ export function documentSettingPath(key: string, scope: ConfigurationScope): str
   if (key === "tools.languageServices") return "connections.languageServices";
   if (key === "tools.mcpConnections") return "connections.mcp";
   if (key === "tools.marketplaces") return "connections.marketplaces";
+  if (key === "tools.packageSuggestions") return "connections.packageSuggestions";
   if (key === "tools.sandbox") return "policy.sandbox";
   const prefix = scope === "profile" ? "overrides" : "defaults";
   if (key.startsWith("diagnostics.")) return `${prefix}.privacy.${key}`;

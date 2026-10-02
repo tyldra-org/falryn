@@ -1,5 +1,9 @@
 import { sessionExportControl } from "./commands/session-export-control.ts";
 import { runTaskCommitPlan } from "./commands/task-commit-plan-commands.ts";
+import {
+  createConfiguredSuggestionResolver,
+  packageSuggestionProposals,
+} from "./runtime/package-suggestion-configuration.ts";
 import { productWorkingProfileSessions } from "./runtime/product-working-profiles.ts";
 import { createProductSandbox } from "./runtime/sandbox-configuration.ts";
 /**
@@ -271,6 +275,9 @@ async function runCommand(
       ...(invocation.extensionListingArgs === undefined
         ? {}
         : { extensionListingArgs: invocation.extensionListingArgs }),
+      ...(invocation.extensionSuggestionArgs === undefined
+        ? {}
+        : { extensionSuggestionArgs: invocation.extensionSuggestionArgs }),
       ...(invocation.extensionSkillsArgs === undefined
         ? {}
         : { extensionSkillsArgs: invocation.extensionSkillsArgs }),
@@ -540,6 +547,7 @@ async function launchShell(
 
         try {
           if (productArtifactSession !== null) {
+            const curatedCatalogs = productArtifactSession.curatedCatalogs;
             productAttachments = await composeProductShellAttachments({
               instructionSources: (configuration) =>
                 composeInstructionSources(graph, configuration),
@@ -622,6 +630,17 @@ async function launchShell(
               peers: productArtifactSession.peers,
               taskNotices: productArtifactSession.taskNotices,
               memoryRecords: productArtifactSession.memoryRecords,
+              packageSuggestions: () =>
+                createConfiguredSuggestionResolver({
+                  store: curatedCatalogs,
+                  now: () => Number(graph.clock.now()),
+                  configuration: () => ({
+                    values: graph.loader.current()?.values ?? configuration,
+                    record: graph.loader.current(),
+                  }),
+                }),
+              packageSuggestionProposals: () =>
+                packageSuggestionProposals(graph.loader.current()?.values ?? configuration),
               ...(productWorkspaceIndex === null ? {} : { index: productWorkspaceIndex }),
               ...(governance.ownedProcesses === undefined
                 ? {}

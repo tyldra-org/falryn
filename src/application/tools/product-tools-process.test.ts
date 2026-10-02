@@ -192,6 +192,63 @@ function processTools(capture: ProcessCapturePort = capturePort()) {
 }
 
 describe("composeProductProcessTools", () => {
+  test("hands each admitted command's exact stderr to suggestions, but never a hook's", async () => {
+    const marker = 'falryn-package-hint/1 {"sourceId":"m","listingId":"t/l","packageId":"p"}\n';
+    const observed: { executablePath: string | null; invocationId: string; text: string }[] = [];
+    const artifacts = memoryArtifacts();
+    const tools = composeProductProcessTools({
+      generation: configurationGeneration.from(0),
+      capture: {
+        async run(request) {
+          return { ok: true, value: { ...report(request), stderr: stream("stderr", marker) } };
+        },
+      },
+      workspaceCwd: "/work",
+      artifacts,
+      workspaceId: "ws-1",
+      sessionId: "session-1",
+      suggestions: {
+        observeCommand(input) {
+          observed.push({
+            executablePath: input.executablePath,
+            invocationId: input.invocationId,
+            text: new TextDecoder().decode(input.stderr),
+          });
+          return { hints: [], diagnostics: [], omitted: 0 };
+        },
+      },
+    });
+    const call = (toolName: "run_process" | "run_shell", id: string, hookOrigin?: true) =>
+      tools.runner.execute({
+        invocationId: invocationId.from(id),
+        toolCallId: id,
+        toolName,
+        capabilityId: capabilityId.from(`builtin:workspace/${toolName}@1`),
+        version: 1,
+        effect: "mutation",
+        input:
+          toolName === "run_process"
+            ? { executable: "/usr/local/bin/lint-tool", argv: [], outputMode: "raw" }
+            : { command: "lint-tool", outputMode: "raw" },
+        signal: new AbortController().signal,
+        ...(hookOrigin === undefined ? {} : { hookOrigin }),
+      });
+    for (const outcome of [
+      await call("run_process", "inv-argv"),
+      await call("run_shell", "inv-shell"),
+      await call("run_process", "inv-hook", true),
+    ]) {
+      expect(outcome.status).toBe("completed");
+      // The model still receives the exact stderr; nothing is stripped or rewritten.
+      if (outcome.status === "completed")
+        expect(JSON.stringify(outcome.output)).toContain("falryn-package-hint/1");
+    }
+    expect(observed).toEqual([
+      { executablePath: "/usr/local/bin/lint-tool", invocationId: "inv-argv", text: marker },
+      { executablePath: null, invocationId: "inv-shell", text: marker },
+    ]);
+  });
+
   test.skipIf(process.platform === "win32").each(["run_process", "run_shell"] as const)(
     "%s keeps unsupported repeated output raw and retains exact oversized recovery",
     async (toolName) => {

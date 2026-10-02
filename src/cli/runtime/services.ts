@@ -1,5 +1,6 @@
 import { MARKETPLACE_CONFIGURATION_KEYS } from "./marketplace-configuration.ts";
 import { MCP_CONFIGURATION_KEYS } from "./mcp-configuration.ts";
+import { PACKAGE_SUGGESTION_CONFIGURATION_KEYS } from "./package-suggestion-configuration.ts";
 import { SANDBOX_CONFIGURATION_KEYS } from "./sandbox-configuration.ts";
 /**
  * What a command may reach, and when it is allowed to reach it.
@@ -114,6 +115,7 @@ export const PRODUCT_CONFIGURATION_KEYS = [
   ...ENVIRONMENT_CONFIGURATION_KEYS,
   ...MCP_CONFIGURATION_KEYS,
   ...MARKETPLACE_CONFIGURATION_KEYS,
+  ...PACKAGE_SUGGESTION_CONFIGURATION_KEYS,
 ] as const;
 
 export type Services = {

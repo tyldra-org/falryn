@@ -1,3 +1,4 @@
+import type { ExtensionSuggestionPayload } from "./commands/extension-suggestion.ts";
 import type { SchedulePayload } from "./commands/schedule.ts";
 /**
  * The command surfaces this build can honestly ship.
@@ -327,6 +328,14 @@ export function stoppedResult(
         outcome,
         effect,
       );
+    case "extension.suggestion":
+      return resultFor<"extension.suggestion", ExtensionSuggestionPayload>(
+        command,
+        null,
+        [],
+        outcome,
+        effect,
+      );
     case "extension.skills":
       return resultFor<"extension.skills", ExtensionSkillsPayload>(
         command,
@@ -429,6 +438,7 @@ export type RunCommandResult =
   | Awaited<ReturnType<typeof runModel>>
   | Awaited<ReturnType<typeof runExtensionCatalog>>
   | Awaited<ReturnType<typeof runExtensionListing>>
+  | CommandResultOf<"extension.suggestion", ExtensionSuggestionPayload>
   | Awaited<ReturnType<typeof runExtensionSkills>>
   | Awaited<ReturnType<typeof runExtensionInspect>>
   | Awaited<ReturnType<typeof runExtensionNotices>>
