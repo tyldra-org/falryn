@@ -291,11 +291,31 @@ test(
     });
     try {
       const submission = shell.attached.submission;
-      const listed =
-        (await submission.listSkills?.(
-          { filter: null, offset: 0 },
-          new AbortController().signal,
-        )) ?? [];
+      const actions = submission.commandActions?.() ?? null;
+      if (actions === null) throw new Error("the shell session has no command actions");
+      const run = async (
+        caller: "interactive" | "model",
+        target: Parameters<typeof actions.invoke>[0]["target"],
+      ) => {
+        const outcome = await actions.invoke({
+          caller,
+          target,
+          turnActive: caller === "model",
+          signal: new AbortController().signal,
+        });
+        if (outcome.kind !== "completed") throw new Error(`not completed: ${outcome.kind}`);
+        return outcome;
+      };
+      const slashed = await run("interactive", { kind: "slash", text: "/skills" });
+      // The model's action-ID call reaches the same owner with the same normalized intent (#948).
+      const modelled = await run("model", { kind: "action", id: "skills.list", argument: null });
+      expect(modelled.invocation).toEqual({ ...slashed.invocation, caller: "model" });
+      expect(modelled.lines).toEqual(slashed.lines);
+      const filtered = await run("model", { kind: "slash", text: "/skills dep" });
+      expect(filtered.invocation.argument).toBe("dep");
+      expect(filtered.lines.join("\n")).toContain("deploy");
+      expect(filtered.lines.join("\n")).not.toContain("triage — not user-invocable");
+      const listed = slashed.lines;
       const text = listed.join("\n");
       expect(text).toContain("deploy — /skill:deploy");
       expect(text).toContain("triage — not user-invocable");

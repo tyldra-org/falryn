@@ -641,6 +641,135 @@ describe("runCoding", () => {
     // runners have taken over 5 s here while the same test takes about 0.35 s locally.
   }, 20_000);
 
+  test("a model discovers and runs registered actions through the shared dispatcher (#948)", async () => {
+    const seeded = await seededHome();
+    const services = providerFor(seeded)(globalsFor(seeded));
+    const requests: ModelRequest[] = [];
+    const calls = [
+      {
+        name: "discover_capabilities",
+        arguments: { catalog: "capability-catalog:0", query: "registered action slash" },
+      },
+      { name: "command_action", arguments: { operation: "list" } },
+      {
+        name: "command_action",
+        arguments: { operation: "invoke", action: "skills.list", argument: "dep" },
+      },
+      { name: "command_action", arguments: { operation: "invoke", slash: "/suggestions" } },
+      // A presenter-only action and shell-looking text are refused as data, never run.
+      { name: "command_action", arguments: { operation: "invoke", slash: "/mode plan" } },
+      { name: "command_action", arguments: { operation: "invoke", slash: "ls -la" } },
+    ] as const;
+    const result = await runCoding(
+      services,
+      { promptParts: ["Show which skills match dep and any package suggestions."] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+          script: (_request, requestIndex) => {
+            const call = calls[requestIndex];
+            return call === undefined
+              ? { kind: "text", text: "done", finishReason: "stop" }
+              : {
+                  kind: "tool",
+                  toolCallId: `call-action-${requestIndex}`,
+                  name: call.name,
+                  argumentFragments: [JSON.stringify(call.arguments)],
+                };
+          },
+        }),
+        identities: {
+          sessionId: "session-run-actions",
+          turnId: "turn-run-actions",
+          traceId: "trace-run-actions",
+        },
+      },
+    );
+
+    expect(result.outcome.kind).toBe("completed");
+    expect(result.payload?.toolResults).toBe(calls.length);
+    const output = (index: number) => {
+      const message = requests[index + 1]?.messages.findLast(
+        (candidate) => candidate.role === "tool" && candidate.toolCallId === `call-action-${index}`,
+      );
+      const text = message?.parts.find((part) => part.kind === "text")?.text ?? "{}";
+      return (
+        (JSON.parse(text) as { readonly output?: { readonly value?: Record<string, unknown> } })
+          .output?.value ?? {}
+      );
+    };
+    const discovered = output(0) as {
+      readonly entries?: readonly { readonly tool: string | null; readonly status: string }[];
+    };
+    expect(discovered.entries?.find((entry) => entry.tool === "command_action")?.status).toMatch(
+      /^callable/u,
+    );
+    expect(requests.at(-1)?.tools.map((tool) => tool.name)).toContain("command_action");
+    const listed = output(1) as {
+      readonly status?: string;
+      readonly actions?: readonly { readonly id: string; readonly forms: readonly string[] }[];
+    };
+    expect(listed.status).toBe("listed");
+    expect(listed.actions?.map((action) => action.id)).toEqual([
+      "skills.list",
+      "extensions.suggestions",
+    ]);
+    expect(output(2)).toMatchObject({
+      status: "completed",
+      action: "skills.list",
+      form: "/skills",
+      argument: "dep",
+    });
+    expect(output(3)).toMatchObject({
+      status: "completed",
+      action: "extensions.suggestions",
+      form: "/suggestions",
+    });
+    expect(output(4)).toMatchObject({
+      status: "refused",
+      code: "interactive-only",
+      action: "mode.select",
+    });
+    expect(output(5)).toMatchObject({ status: "refused", code: "not-a-command" });
+
+    // A headless run of the same slash text reaches the same owner and returns the
+    // same lines, without a model request.
+    const before = requests.length;
+    const headless = await runCoding(
+      services,
+      { promptParts: ["/skills dep"] },
+      {
+        input: createRecordingCliStreams({ stdin: null }).input,
+        globals: globalsFor(seeded),
+        providerAdapter: createDeterministicProviderAdapter({
+          onRequest: (request) => requests.push(request),
+          script: () => ({ kind: "text", text: "unused", finishReason: "stop" }),
+        }),
+        identities: {
+          sessionId: "session-run-actions-headless",
+          turnId: "turn-run-actions-headless",
+          traceId: "trace-run-actions-headless",
+        },
+      },
+    );
+    expect(headless.errors).toEqual([]);
+    expect(headless.payload).toMatchObject({
+      stage: "command-completed",
+      turnId: null,
+      commandAction: {
+        action: "skills.list",
+        form: "/skills",
+        argument: "dep",
+        status: "completed",
+      },
+    });
+    expect(headless.payload?.commandAction?.lines).toEqual(output(2).lines as readonly string[]);
+    expect(headless.payload?.commandAction?.lines).toEqual(['No skills match "dep".']);
+    expect(requests).toHaveLength(before);
+  }, 20_000);
+
   /** A Debug run with a real Git repository and a scripted model, for operation profiles. */
   async function gitProfileRun(
     calls: (

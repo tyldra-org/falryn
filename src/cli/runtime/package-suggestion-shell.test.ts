@@ -214,7 +214,13 @@ test(
     expect(JSON.stringify(notices)).toContain("Suggested package Lint rules (market:tools/lint).");
     expect(JSON.stringify(notices)).toContain("Nothing was installed");
 
-    const lines = (await attached.submission.listSuggestions?.()) ?? [];
+    const listed = await attached.submission.commandActions?.()?.invoke({
+      caller: "interactive",
+      target: { kind: "slash", text: "/suggestions" },
+      turnActive: false,
+      signal: new AbortController().signal,
+    });
+    const lines = listed?.kind === "completed" ? listed.lines : [];
     expect(lines.join("\n")).toContain("market:tools/lint · skill · Lint rules · 1.0.0");
     expect(lines.join("\n")).toContain("lint-tool's hint");
     expect(lines.join("\n")).toMatch(/Source: fetched \d{4}-/);

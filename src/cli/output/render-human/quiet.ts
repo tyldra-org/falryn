@@ -198,14 +198,17 @@ export function quietResultLines(result: RunCommandResult): readonly string[] {
     case "run":
       return result.payload === null
         ? []
-        : [
-            [
-              safe(result.payload.stage),
-              safe(result.payload.sessionId === "" ? "-" : result.payload.sessionId),
-              result.payload.turnId === null ? "-" : safe(result.payload.turnId),
-              String(result.payload.eventCount),
-            ].join("\t"),
-          ];
+        : // A built-in action's own lines are its primary result (#948).
+          result.payload.commandAction !== undefined
+          ? result.payload.commandAction.lines.map((line) => safe(line))
+          : [
+              [
+                safe(result.payload.stage),
+                safe(result.payload.sessionId === "" ? "-" : result.payload.sessionId),
+                result.payload.turnId === null ? "-" : safe(result.payload.turnId),
+                String(result.payload.eventCount),
+              ].join("\t"),
+            ];
     default:
       return assertNever(result, "unhandled command result");
   }
