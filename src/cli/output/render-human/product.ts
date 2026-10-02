@@ -72,6 +72,12 @@ export function renderCodingRun(
     `  Events       ${payload.eventCount}`,
   ];
   if (payload.activation !== undefined) lines.push(`  ${safe(payload.activation)}`);
+  if (payload.commandAction !== undefined) {
+    lines.push(
+      `  Action       ${safe(payload.commandAction.action)}  ${safe(payload.commandAction.status)}`,
+      ...payload.commandAction.lines.map((line) => `  ${safe(line)}`),
+    );
+  }
   if (payload.sandbox !== undefined) lines.push(`  ${safe(payload.sandbox)}`);
   if (payload.executionProfile !== undefined) {
     lines.push(

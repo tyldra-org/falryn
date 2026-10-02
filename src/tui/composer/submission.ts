@@ -123,13 +123,14 @@ export type SubmissionPort = {
   readonly skillCommand?: (
     text: string,
   ) => import("../../domain/context/skill-invocation.ts").SkillCommand | null;
-  /** Human lines for one page of `/skills`; never reads a skill body. */
-  readonly listSkills?: (
-    page: { readonly filter: string | null; readonly offset: number },
-    signal: AbortSignal,
-  ) => Promise<readonly string[]>;
-  /** Human lines for `/suggestions` (#1094): this session's verified package suggestions. */
-  readonly listSuggestions?: () => Promise<readonly string[]>;
+  /**
+   * The session's shared action dispatcher (#948). Actions with a headless or model
+   * caller run here for slash text and the palette too, so every caller reaches
+   * the same owner once. Null while no session owns it.
+   */
+  readonly commandActions?: () =>
+    | import("../../application/commands/index.ts").CommandActionDispatcher
+    | null;
   /** Skills the user can invoke now, for Tab completion; null when unknown. */
   readonly skillCandidates?: () =>
     | import("../../domain/context/skill-invocation.ts").SkillCompletionCatalog

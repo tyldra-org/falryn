@@ -1,4 +1,9 @@
 import { createSecretResolver } from "../../application/authentication/credential-resolver.ts";
+import {
+  builtinCommandActions,
+  type CommandActionDispatcher,
+  createCommandActionDispatcher,
+} from "../../application/commands/index.ts";
 import { checkpointControl } from "../../application/compression/checkpoint-request.ts";
 import { createSkillActivations } from "../../application/context/skill-activations.ts";
 import { createMcpUserInput } from "../../application/extensions/mcp-input.ts";
@@ -18,10 +23,12 @@ import {
   type SessionActivationFact,
   type SessionActivationPort,
 } from "../../application/sessions/session-activation.ts";
+import { composeCommandActionTool } from "../../application/tools/command-action-tool.ts";
 import { composeModelRouteTool } from "../../application/tools/model-route-tool.ts";
 import { settleHookObservers } from "../../application/tools/tool-hook-observers.ts";
 import type { ConfigurationValues } from "../../domain/configuration/index.ts";
 import type { SessionId } from "../../domain/foundation/index.ts";
+import { SHELL_REGISTRY } from "../../tui/commands/registry.ts";
 import { agentRegistryFrom } from "./agent-configuration.ts";
 import { createEnvironmentProcessContext } from "./environment-process-context.ts";
 import { composeHookEvaluatorSession } from "./hook-evaluator-session.ts";
@@ -56,6 +63,10 @@ import {
   createProductContextSource,
   createUnavailableProductContextSource,
 } from "../../application/context/index.ts";
+import {
+  refreshSkillCatalog,
+  skillCatalogPageLines,
+} from "../../application/context/skill-catalog-listing.ts";
 import { createDebugAdapterSupervisor } from "../../application/debugging/index.ts";
 import type { CatalogRehydration } from "../../application/extensions/catalog-rehydration.ts";
 import { createSkillFindings } from "../../application/extensions/skill-findings.ts";
@@ -88,7 +99,7 @@ import { composeProductDiscoveryTool } from "../../application/tools/product-cap
 import { composeProductIndexLifecycle } from "../../application/workspace/index.ts";
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
 import { skillFindingsNoticeLines } from "../../domain/context/skill-findings.ts";
-import { resolveSkillCommand, skillCatalogLines } from "../../domain/context/skill-invocation.ts";
+import { resolveSkillCommand } from "../../domain/context/skill-invocation.ts";
 import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { projectCatalogHistory } from "../../domain/extensions/catalog-history.ts";
 import { MCP_DEADLINE_MS } from "../../domain/extensions/mcp.ts";
@@ -337,6 +348,8 @@ export async function composeProductShellAttachments(
       selection?.record.sessionId ?? sessionIdCodec.from(`session-shell-${randomUUID()}`);
     // Each session starts with no observations; a resumed one never replays old output.
     const suggestions = createPackageSuggestionSession(() => ports.packageSuggestions?.() ?? null);
+    // Slash text, the palette and the model route share this session's action owners (#948).
+    let commandActions: CommandActionDispatcher | null = null;
     const traceId = traceIdCodec.from(`trace-shell-${randomUUID()}`);
     const mcpServices = sessionManagedServices(managedServices);
     let profileSession: WorkingProfileSession | undefined;
@@ -551,6 +564,7 @@ export async function composeProductShellAttachments(
                 memoryTools,
                 composePeerTool(generation, peer),
                 composeProductDiscoveryTool(generation),
+                composeCommandActionTool(generation, () => commandActions),
                 ...(routeSettings
                   ? [
                       composeModelRouteTool(generation, {
@@ -819,15 +833,7 @@ export async function composeProductShellAttachments(
           ? null
           : (() => {
               const refresh = (signal: AbortSignal) =>
-                instructions.owner
-                  .prepare(
-                    { ...instructions.scope, execution: `skill-catalog:${randomUUID()}` },
-                    [],
-                    signal,
-                    undefined,
-                    true,
-                  )
-                  .catch(() => undefined);
+                refreshSkillCatalog(instructions.owner, instructions.scope, signal);
               void refresh(hostSignal);
               // Findings (#1124) read the session's own owner, so they describe exactly the
               // generation this session's turns use. Admission history is not read here.
@@ -886,13 +892,11 @@ export async function composeProductShellAttachments(
                   page: { readonly filter: string | null; readonly offset: number },
                   signal: AbortSignal,
                 ) {
-                  await refresh(signal);
-                  const catalog = skillCatalogLines(
-                    instructions.owner.skillCatalog(
-                      { ...instructions.scope, execution: "skill-catalog" },
-                      page,
-                    ),
-                    page.filter,
+                  const catalog = await skillCatalogPageLines(
+                    instructions.owner,
+                    instructions.scope,
+                    page,
+                    signal,
                   );
                   if (findings === null) return catalog;
                   const collected = await findings.collect(signal);
@@ -902,6 +906,22 @@ export async function composeProductShellAttachments(
                 },
               };
             })();
+      commandActions = createCommandActionDispatcher(
+        SHELL_REGISTRY,
+        builtinCommandActions(() => ({
+          ...(skillControl === null
+            ? {}
+            : {
+                listSkills: (page, listSignal) =>
+                  skillControl.lines(page, AbortSignal.any([hostSignal, listSignal])),
+              }),
+          listSuggestions: async () =>
+            packageSuggestionLines(suggestions.list(), {
+              proposals: ports.packageSuggestionProposals?.() ?? [],
+              omitted: suggestions.omitted(),
+            }),
+        })),
+      );
       // `$` mentions read the same owners the turn admits through (#1206).
       const mentions = composeCapabilityMentions({
         skills: async (skillsSignal) => {
@@ -1018,6 +1038,9 @@ export async function composeProductShellAttachments(
         },
         skills: skillControl,
         suggestions,
+        get commandActions() {
+          return commandActions;
+        },
         mentions,
         profileSession,
         async close() {
@@ -1132,18 +1155,8 @@ export async function composeProductShellAttachments(
     },
     binding: () => `${active.sessionId}:${activationGeneration}`,
     skillCommand: (text: string) => active.skills?.command(text) ?? null,
-    listSkills: (
-      page: { readonly filter: string | null; readonly offset: number },
-      signal: AbortSignal,
-    ) =>
-      active.skills?.lines(page, AbortSignal.any([hostSignal, signal])) ??
-      Promise.resolve(["Skills are unavailable in this session."]),
     skillCandidates: () => active.skills?.candidates() ?? null,
-    listSuggestions: async () =>
-      packageSuggestionLines(active.suggestions.list(), {
-        proposals: ports.packageSuggestionProposals?.() ?? [],
-        omitted: active.suggestions.omitted(),
-      }),
+    commandActions: () => active.commandActions,
     mentionSources,
     workingProfile: (
       argument: string | null,

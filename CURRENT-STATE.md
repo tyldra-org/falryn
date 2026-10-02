@@ -90,14 +90,42 @@ notice to run them after the turn; the mid-turn queue that would hold them is
 execution-mode, model and compression pickers obey the same rule: a change
 picked during a turn is refused with the same notice.
 
-The shell commands are interactive. `falryn run` resolves a prompt that starts
-with a built-in command through the same registry and refuses it with stage
-`command-refused` and no provider request. A shipped command or malformed
-command text is refused before any workspace, trust or provider work, with
-error code `command.caller-unsupported` or the parse error
-(`command.argument-invalid` and similar). A planned command is refused with
-`command.command-planned` after the skill and template catalogs are read, unless
-a skill or template of that name takes it.
+Each entry declares which callers may invoke it: the interactive shell, a
+headless run, or a model. Most shell commands are interactive only. `falryn run`
+resolves a prompt that starts with a built-in command through the same
+registry, with no provider request. An action whose entry admits headless
+callers, currently `/skills` and `/suggestions`, runs through the shared
+action dispatcher (#948) and returns stage `command-completed` with its
+`commandAction` (action ID, matched form, normalized argument, status and
+lines); quiet output prints just the lines. Any other shipped command or
+malformed command text is refused with stage `command-refused` before any
+workspace, trust or provider work, with error code `command.caller-unsupported`
+or the parse error (`command.argument-invalid` and similar). A planned command
+is refused with `command.command-planned` after the skill and template catalogs
+are read, unless a skill or template of that name takes it.
+
+The shared action dispatcher (#948) is the one path for every caller of an
+action with a non-interactive caller. Slash text, the palette, a headless run
+and the model all resolve the action through the registry, by canonical ID with
+an argument or by literal slash text. They normalize the argument with the
+registry's codec, pass admission for their caller and timing, and run the
+action's application owner once. Shell and headless sessions register the
+`command_action` model tool as explicit-only, so it never takes an eager slot
+from ordinary work; a model reaches it through `discover_capabilities`, or a
+user selects it with a `$` mention. Its `list` operation returns bounded cards
+for the
+actions the model may call: ID, slash forms, argument, effect, timing,
+confirmation and the registry generation. Its `invoke` operation takes an
+action ID and argument, or literal slash text. Slash text is parsed by the
+registry grammar; it is never a shell command and never enters the composer.
+An unknown action, invalid argument, stale registry generation, planned
+command, presenter-only action (`interactive-only`) or a state change during
+the turn (`unavailable-while-turn-active`) is returned as a typed refusal that
+ran nothing. A call is classified with its action's declared effect only when
+the model would be admitted to run it, so gateway policy and confirmation
+apply to what actually runs. Skill, prompt-template and extension commands, and
+per-option effects for actions such as `/profile`, `/fast` and `/env`, are
+separately tracked in #1268 and #1269.
 
 `falryn commands` prints the reference: registry generation, then each
 command's usage, aliases, key, timing, effect and owner when planned.

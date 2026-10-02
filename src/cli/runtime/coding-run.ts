@@ -1,18 +1,31 @@
+import {
+  builtinCommandActions,
+  createCommandActionDispatcher,
+} from "../../application/commands/index.ts";
 import { refreshRuntimeInstructions } from "../../application/context/product-instructions.ts";
 import { createSkillActivations } from "../../application/context/skill-activations.ts";
-import { createPackageSuggestionSession } from "../../application/extensions/package-suggestions.ts";
+import { skillCatalogPageLines } from "../../application/context/skill-catalog-listing.ts";
+import {
+  createPackageSuggestionSession,
+  packageSuggestionLines,
+} from "../../application/extensions/package-suggestions.ts";
 import { processProductResources } from "../../application/orchestration/product-resources.ts";
 import {
   type PreparedSessionSelection,
   prepareSessionSelection,
 } from "../../application/sessions/session-activation.ts";
+import { composeCommandActionTool } from "../../application/tools/command-action-tool.ts";
 import { composeModelRouteTool } from "../../application/tools/model-route-tool.ts";
 import { settleHookObservers } from "../../application/tools/tool-hook-observers.ts";
 import { admitCommand } from "../../domain/commands/index.ts";
 import { sandboxSummary } from "../../domain/security/sandbox.ts";
+import { SHELL_REGISTRY } from "../../tui/commands/registry.ts";
 import { createEnvironmentProcessContext } from "./environment-process-context.ts";
 import { languageServiceConfiguration } from "./language-service-configuration.ts";
-import { createConfiguredSuggestionResolver } from "./package-suggestion-configuration.ts";
+import {
+  createConfiguredSuggestionResolver,
+  packageSuggestionProposals,
+} from "./package-suggestion-configuration.ts";
 import { composeProductMcp } from "./product-mcp.ts";
 import { composeProductModelSettings } from "./product-model-settings.ts";
 import { productToolHost } from "./product-tool-host.ts";
@@ -183,6 +196,7 @@ export type CodingRunPayload = {
   readonly stage:
     | "prompt-missing"
     | "command-refused"
+    | "command-completed"
     | "template-failed"
     | "skill-failed"
     | "workspace-refused"
@@ -192,6 +206,17 @@ export type CodingRunPayload = {
     | "attempt-completed"
     | "attempt-failed";
   readonly eventCount: number;
+  /**
+   * A built-in action this run executed instead of a turn (#948): the same owner,
+   * normalized identity and lines the shell and a model caller receive.
+   */
+  readonly commandAction?: {
+    readonly action: string;
+    readonly form: string;
+    readonly argument: string | null;
+    readonly status: "completed" | "unavailable";
+    readonly lines: readonly string[];
+  };
   /** Evidence items admitted by the live context planner (#715), when composed. */
   readonly contextPackItems?: number;
   /** Whether the live prompt composition included a planner-built evidence path. */
@@ -397,7 +422,20 @@ export async function runCoding(
     builtin.entry?.status.kind === "planned"
       ? builtin
       : null;
-  if ((builtin.kind === "invalid" || builtin.kind === "command") && plannedCommand === null) {
+  // An action whose declared contract admits headless callers runs below through the
+  // shared dispatcher (#948), once the session owners it reads exist.
+  const headlessAction =
+    builtin.kind === "command" &&
+    plannedCommand === null &&
+    admitCommand(builtin.entry, { caller: "headless", timing: builtin.timing, turnActive: false })
+      .ok
+      ? builtin
+      : null;
+  if (
+    (builtin.kind === "invalid" || builtin.kind === "command") &&
+    plannedCommand === null &&
+    headlessAction === null
+  ) {
     return codingResult(
       {
         prompt: resolved.prompt,
@@ -916,6 +954,65 @@ export async function runCoding(
       selection ? String(sessionId) : undefined,
       { mcp, evaluator: evaluator.session },
     );
+    // Built-in actions read this run's owners (#948): the shell and the model route
+    // resolve the same registry and run the same handlers.
+    const commandActions = createCommandActionDispatcher(
+      SHELL_REGISTRY,
+      builtinCommandActions(() => ({
+        listSkills: (page, listSignal) =>
+          skillCatalogPageLines(instructionOwner, instructionScope, page, listSignal),
+        listSuggestions: async () =>
+          packageSuggestionLines(suggestions.list(), {
+            proposals: packageSuggestionProposals(
+              graph.loader.current()?.values ?? configuration.values,
+            ),
+            omitted: suggestions.omitted(),
+          }),
+      })),
+    );
+    if (headlessAction !== null) {
+      const outcome = await commandActions.invoke({
+        caller: "headless",
+        target: { kind: "action", id: headlessAction.entry.id, argument: headlessAction.argument },
+        turnActive: false,
+        signal: options.signal ?? new AbortController().signal,
+      });
+      const payload = {
+        prompt: resolved.prompt,
+        sessionId: ids.sessionId,
+        turnId: null,
+        workspaceId: String(workspaceId),
+        eventCount: 0,
+      };
+      if (outcome.kind === "completed" || outcome.kind === "unavailable")
+        return codingResult(
+          {
+            ...payload,
+            stage: "command-completed",
+            commandAction: {
+              action: outcome.invocation.commandId,
+              form: outcome.invocation.form,
+              argument: outcome.invocation.argument,
+              status: outcome.kind,
+              lines: outcome.kind === "completed" ? outcome.lines : [outcome.message],
+            },
+          },
+          [],
+        );
+      return codingResult({ ...payload, stage: "command-refused" }, [
+        adoptForeignError(
+          {
+            code: `command.${outcome.kind === "refused" ? outcome.code : outcome.kind}`,
+            category: outcome.kind === "cancelled" ? "cancellation" : "context",
+            message:
+              outcome.kind === "cancelled"
+                ? `${headlessAction.form} was cancelled.`
+                : outcome.message,
+          },
+          { operation: "run shell command" },
+        ),
+      ]);
+    }
     // Built-in commands were refused above. A skill command is resolved next against
     // the current catalog; otherwise a template expands before any turn state exists.
     let prompt = resolved.prompt;
@@ -1036,6 +1133,7 @@ export async function runCoding(
               memoryTools,
               composePeerTool(generation, peer),
               composeProductDiscoveryTool(generation),
+              composeCommandActionTool(generation, () => commandActions),
               ...(options.globals
                 ? [
                     composeModelRouteTool(
@@ -1406,7 +1504,7 @@ function headlessCommandRefusal(
   if (!admission.ok) {
     return { code: `command.${admission.code}`, category: "context", message: admission.message };
   }
-  // No entry declares a headless action yet; the registry would admit one here.
+  // Admitted headless actions run through the shared dispatcher before this refusal.
   return {
     code: "command.caller-unsupported",
     category: "context",

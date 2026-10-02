@@ -49,7 +49,7 @@ import {
   MAX_EVIDENCE_INLINE_BYTES,
   parseMentions,
 } from "../../domain/context/index.ts";
-import { completeSkillCommand, parseSkillsCommand } from "../../domain/context/skill-invocation.ts";
+import { completeSkillCommand } from "../../domain/context/skill-invocation.ts";
 import { isExecutionProfileId } from "../../domain/sessions/index.ts";
 import type { TranscriptBlock } from "../../presentation/index.ts";
 import { providerModelIdentityKey } from "../../providers/index.ts";
@@ -778,41 +778,50 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
   );
 
   /** `/skills [filter] [after N]` lists the catalog; it never reads a skill body or sends anything. */
-  const listSkills = useCallback(
-    (argument: string | null): boolean => {
-      const page = parseSkillsCommand(argument === null ? "/skills" : `/skills ${argument}`) ?? {
-        filter: null,
-        offset: 0,
-      };
-      const list = options.submission?.listSkills;
+  /**
+   * Actions any non-interactive caller may also run (#948) go through the session's
+   * shared dispatcher, so slash text, the palette, headless runs and the model
+   * reach the same owner. The shell only renders the outcome.
+   */
+  const runCommandAction = useCallback(
+    (invocation: SlashInvocation<ShellCommand>, turnActive: boolean): boolean => {
+      const actions = options.submission?.commandActions?.() ?? null;
       dispatch({ kind: "close-overlay" });
-      if (!list) {
-        dispatch({ kind: "notice", message: "Skills are unavailable in this session." });
+      if (actions === null) {
+        dispatch({
+          kind: "notice",
+          message: `${invocation.entry.title} is unavailable in this session.`,
+        });
         return false;
       }
-      void list(page, new AbortController().signal).then(
-        (lines) => dispatch({ kind: "notice", message: lines.join("\n") }),
-        () => dispatch({ kind: "notice", message: "The skill catalog is unavailable." }),
-      );
+      void actions
+        .invoke({
+          caller: "interactive",
+          target: { kind: "action", id: invocation.entry.id, argument: invocation.argument },
+          turnActive,
+          signal: new AbortController().signal,
+        })
+        .then(
+          (outcome) =>
+            dispatch({
+              kind: "notice",
+              message:
+                outcome.kind === "completed"
+                  ? outcome.lines.join("\n")
+                  : outcome.kind === "cancelled"
+                    ? `${invocation.entry.title} was cancelled.`
+                    : outcome.message,
+            }),
+          () =>
+            dispatch({
+              kind: "notice",
+              message: `${invocation.entry.title} is unavailable.`,
+            }),
+        );
       return true;
     },
-    [options.submission?.listSkills],
+    [options.submission],
   );
-
-  /** Shows the session's suggestions; it never installs, dismisses or prompts. */
-  const listSuggestions = useCallback((): boolean => {
-    const list = options.submission?.listSuggestions;
-    dispatch({ kind: "close-overlay" });
-    if (!list) {
-      dispatch({ kind: "notice", message: "Package suggestions are unavailable in this session." });
-      return false;
-    }
-    void list().then(
-      (lines) => dispatch({ kind: "notice", message: lines.join("\n") }),
-      () => dispatch({ kind: "notice", message: "Package suggestions are unavailable." }),
-    );
-    return true;
-  }, [options.submission?.listSuggestions]);
 
   /** Bare reports the current Brief mode; a mode sets it for upcoming turns. */
   const setBrief = useCallback(
@@ -986,16 +995,17 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
         return false;
       }
 
+      if (command.callers.some((caller) => caller !== "interactive"))
+        return runCommandAction(
+          invocation,
+          activeTurn !== null || commandStateRef.current.hasInFlightSubmission,
+        );
       if (id.startsWith("model.processing."))
         return runProcessing(id.slice("model.processing.".length));
       switch (id) {
         case "schedule.controls":
         case "peer.action":
           return runJsonAction(id === "schedule.controls" ? "schedule" : "peer", argument);
-        case "skills.list":
-          return listSkills(argument);
-        case "extensions.suggestions":
-          return listSuggestions();
         case "brief.set":
           return setBrief(argument);
         case "hush.set":
@@ -1268,8 +1278,7 @@ export function useShellRuntime(options: ShellRuntimeOptions): ShellRuntime {
       leaveQuestion,
       reopenQuestion,
       runJsonAction,
-      listSkills,
-      listSuggestions,
+      runCommandAction,
       setBrief,
       setOutputEngine,
       selectMode,

@@ -79,6 +79,8 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
     defaultBinding: null,
     keywords: ["skills", "catalog", "list"],
     ...SHELL_DEFAULTS,
+    // One owner answers every caller (#948).
+    callers: ["interactive", "headless", "model"],
     timing: "immediate",
     effect: "observation",
     slash: [{ form: "/skills" }],
@@ -94,6 +96,7 @@ export const APPLICATION_COMMANDS: readonly ShellCommand[] = [
     defaultBinding: null,
     keywords: ["suggestions", "packages", "marketplace", "extensions"],
     ...SHELL_DEFAULTS,
+    callers: ["interactive", "headless", "model"],
     timing: "immediate",
     effect: "observation",
     slash: [{ form: "/suggestions" }],

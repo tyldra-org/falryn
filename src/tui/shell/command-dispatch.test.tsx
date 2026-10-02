@@ -8,6 +8,10 @@
 
 import { describe, expect, test } from "bun:test";
 import {
+  builtinCommandActions,
+  createCommandActionDispatcher,
+} from "../../application/commands/index.ts";
+import {
   createInterruptionPolicy,
   createMidTurnInputService,
   createTurnCoordinator,
@@ -22,6 +26,7 @@ import {
   turnId,
   workspaceId,
 } from "../../domain/foundation/index.ts";
+import { SHELL_REGISTRY } from "../commands/registry.ts";
 import { type SubmissionPort, UNAVAILABLE_SUBMISSION } from "../composer/index.ts";
 import { mount, type Rendered } from "../runtime/harness.tsx";
 import { ShellApp } from "./shell-app.tsx";
@@ -108,17 +113,24 @@ function probedSubmission(probe: Probe): SubmissionPort & {
       probe.peers.push(input);
       return { ok: true };
     },
-    async listSkills(page) {
-      probe.skillPages.push(page);
-      return ["review — Review a diff"];
-    },
-    async listSuggestions() {
-      probe.suggestionLists += 1;
-      return [
-        "market:tools/lint · skill · Lint rules",
-        "Suggestions install, enable and trust nothing.",
-      ];
-    },
+    // The shell reaches these through the same dispatcher a model caller uses (#948).
+    commandActions: () =>
+      createCommandActionDispatcher(
+        SHELL_REGISTRY,
+        builtinCommandActions(() => ({
+          async listSkills(page) {
+            probe.skillPages.push(page);
+            return ["review — Review a diff"];
+          },
+          async listSuggestions() {
+            probe.suggestionLists += 1;
+            return [
+              "market:tools/lint · skill · Lint rules",
+              "Suggestions install, enable and trust nothing.",
+            ];
+          },
+        })),
+      ),
     // `goal` is also a user skill here, so the planned `/goal` must yield to it.
     skillCandidates: () => ({ invocable: new Set(["goal"]), templates: new Set<string>() }),
     skillCommand: (text) =>

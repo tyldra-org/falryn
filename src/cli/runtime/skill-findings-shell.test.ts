@@ -26,13 +26,15 @@ test("/skills shows the same findings and names earlier ones stale after a reloa
     instructions: true,
   });
   try {
-    const list = async () =>
-      (
-        (await shell.attached.submission.listSkills?.(
-          { filter: null, offset: 0 },
-          new AbortController().signal,
-        )) ?? []
-      ).join("\n");
+    const list = async () => {
+      const listed = await shell.attached.submission.commandActions?.()?.invoke({
+        caller: "interactive",
+        target: { kind: "slash", text: "/skills" },
+        turnActive: false,
+        signal: new AbortController().signal,
+      });
+      return (listed?.kind === "completed" ? listed.lines : []).join("\n");
+    };
     const first = await list();
     expect(first).toMatch(/Findings \(generation [0-9a-f]{12}\): 1 error, 1 warning, 0 info\./u);
     expect(first).toContain(
