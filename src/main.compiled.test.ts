@@ -192,6 +192,53 @@ test.skipIf(!built)(
   },
 );
 
+test.skipIf(!built)(
+  "compiled and source skill findings are one projection of the same discovery generation",
+  async () => {
+    const root = await temporaryRoot();
+    const work = join(root, "work");
+    await mkdir(work);
+    for (const [name, text] of [
+      ["broken", "---\nname: broken\n---\nBody.\n"],
+      ["linked", "---\nname: linked\ndescription: Linked\n---\nSee [x](references/x.md).\n"],
+    ] as const) {
+      await mkdir(join(root, ".agents", "skills", name), { recursive: true });
+      await writeFile(join(root, ".agents", "skills", name, "SKILL.md"), text);
+    }
+    const request = join(root, "skills.json");
+    await writeFile(request, JSON.stringify({ action: "catalog", skills: {} }));
+    const args = [
+      "extension",
+      "catalog",
+      "--input",
+      request,
+      "--workspace",
+      work,
+      "--format",
+      "json",
+    ];
+    const skillsOf = (stdout: string) => JSON.parse(stdout).payload?.skills;
+    const compiled = spawnCompiled(root, args);
+    expect(compiled.exitCode, compiled.stderr).toBe(EXIT_CODES.COMPLETED);
+    const source = Bun.spawnSync(["bun", "run", join(import.meta.dir, "main.ts"), ...args], {
+      env: { PATH: process.env.PATH ?? "", HOME: root, USERPROFILE: root, FALRYN_STATE_DIR: root },
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    expect(source.exitCode, source.stderr.toString()).toBe(EXIT_CODES.COMPLETED);
+    const fromCompiled = skillsOf(compiled.stdout);
+    expect(fromCompiled).toMatchObject({
+      status: "inspected",
+      complete: true,
+      counts: { error: 1, warning: 1, info: 0 },
+    });
+    expect(skillsOf(source.stdout.toString())).toEqual(fromCompiled);
+    const doctor = spawnCompiled(root, ["doctor", "--workspace", work, "--format", "json"]);
+    expect(JSON.parse(doctor.stdout).payload?.skills?.counts).toEqual(fromCompiled.counts);
+  },
+  30_000, // Two compiled runs and one source run, each loading configuration and scanning skills.
+);
+
 if (selectedSmokeTarget !== undefined) {
   test("requires the selected standalone executable to exist", () => {
     // The regular suite records a missing binary as skipped for source-only

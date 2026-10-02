@@ -27,23 +27,29 @@ test("the invocation matrix: each restriction removes exactly one kind of invoca
     });
 });
 
-test("malformed restrictions fail closed instead of defaulting to permissive", () => {
+test("malformed restrictions fail closed instead of defaulting to permissive, naming the field", () => {
   for (const value of ["true", 1, null, "false"])
     for (const field of ["disable-model-invocation", "user-invocable"])
       expect(readSkillEntrypoint({ ...base, [field]: value }, "release-notes")).toEqual({
         ok: false,
         problem: "malformed-eligibility",
+        field,
       });
 });
 
 test("the header, directory name and execution controls are checked; inert metadata is kept", () => {
-  expect(readSkillEntrypoint(base, "other-name")).toEqual({ ok: false, problem: "name-mismatch" });
+  expect(readSkillEntrypoint(base, "other-name")).toEqual({
+    ok: false,
+    problem: "name-mismatch",
+    field: "name",
+  });
   expect(readSkillEntrypoint({ name: "Release Notes", description: "x" }, "Release Notes")).toEqual(
-    { ok: false, problem: "malformed-metadata" },
+    { ok: false, problem: "malformed-metadata", field: "name" },
   );
   expect(readSkillEntrypoint({ name: "release-notes" }, "release-notes")).toEqual({
     ok: false,
     problem: "malformed-metadata",
+    field: "description",
   });
   expect(
     readSkillEntrypoint({ ...base, model: "opus", context: "fork" }, "release-notes"),

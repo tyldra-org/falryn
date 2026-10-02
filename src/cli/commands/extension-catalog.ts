@@ -4,6 +4,11 @@ import type { ExtensionCatalogReport } from "../../application/extensions/catalo
 import { createCatalogRepositories } from "../../data/extensions/catalog-repositories.ts";
 import { createNativeActivationRepository } from "../../data/extensions/native-activation-repository.ts";
 import { createPackageHealthRepository } from "../../data/extensions/package-health-repository.ts";
+import {
+  pageSkillFindings,
+  type SkillFindingsReport,
+  skillFindingsQuerySchema,
+} from "../../domain/context/skill-findings.ts";
 import { ExtensionInputError } from "../../domain/extensions/canonical.ts";
 import { catalogQuerySchema, queryExtensionCatalog } from "../../domain/extensions/catalog.ts";
 import { EXTENSION_SCOPES, identityText } from "../../domain/extensions/identity.ts";
@@ -15,6 +20,7 @@ import { composeExtensionCatalog } from "../runtime/extension-catalog.ts";
 import { composeNativePackages } from "../runtime/native-packages.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import { resultFor } from "./shared.ts";
+import { collectSkillFindings, DEFAULT_SKILL_FINDINGS_LOAD } from "./skill-findings.ts";
 import { openSessionStore } from "./storage.ts";
 
 export const extensionCatalogArgumentsSchema = z.discriminatedUnion("action", [
@@ -22,6 +28,8 @@ export const extensionCatalogArgumentsSchema = z.discriminatedUnion("action", [
     action: z.literal("catalog"),
     session: identityText.optional(),
     query: catalogQuerySchema.optional(),
+    /** List discovered skills with their validity findings (#1124), one page at a time. */
+    skills: skillFindingsQuerySchema.optional(),
   }),
   z.strictObject({
     action: z.literal("scope"),
@@ -89,6 +97,9 @@ export async function runExtensionCatalog(
                   result.catalog,
                   args.query ?? { catalog: result.catalog.identity },
                 ),
+                ...(args.skills === undefined
+                  ? {}
+                  : { skills: await skillFindingsPage(services, args.skills, signal) }),
               };
       }
     } catch (error) {
@@ -133,4 +144,15 @@ export async function runExtensionCatalog(
       observed: effect,
     },
   );
+}
+
+/** The same application action the Extensions view reads, paged for the catalog. */
+export async function skillFindingsPage(
+  services: ServiceProvider,
+  query: z.output<typeof skillFindingsQuerySchema>,
+  signal: AbortSignal,
+): Promise<SkillFindingsReport> {
+  const collected = await collectSkillFindings(services, DEFAULT_SKILL_FINDINGS_LOAD, signal);
+  if (collected.status === "unavailable") return collected;
+  return pageSkillFindings(collected, collected.entries, query);
 }

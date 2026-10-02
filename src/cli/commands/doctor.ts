@@ -9,6 +9,12 @@ import {
   type StorageProbe,
   sqliteDatabasePath,
 } from "../../data/index.ts";
+import {
+  countFindings,
+  type SkillFinding,
+  type SkillFindingCounts,
+  topFindings,
+} from "../../domain/context/skill-findings.ts";
 import type { WorkspaceTrustReport } from "../../domain/security/workspace-trust.ts";
 import {
   blocksLocalData,
@@ -22,9 +28,34 @@ import type { LocalPath } from "../../domain/workspace/index.ts";
 import { openBunSqlite } from "../../integrations/index.ts";
 import type { GlobalOptions } from "../options.ts";
 import type { CommandResultOf } from "../output/result.ts";
+import { productConfigurationLoadRequest } from "../runtime/product-configuration.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import { inspectWorkspaceTrust } from "../runtime/workspace-trust.ts";
 import { resultFor } from "./shared.ts";
+import { collectSkillFindings, DEFAULT_SKILL_FINDINGS_LOAD } from "./skill-findings.ts";
+
+/** Where the complete skill findings listing is, named by every doctor summary. */
+export const SKILL_FINDINGS_LISTING =
+  'falryn extension catalog --input <file> with {"action":"catalog","skills":{}}';
+
+/**
+ * The skills section (#1124): counts by severity and the most severe findings for the
+ * current discovery generation. It never changes doctor's verdict: a broken skill is a
+ * finding about that skill, not a reason Falryn cannot hold data.
+ */
+export type DoctorSkills =
+  | { readonly status: "unavailable"; readonly code: string }
+  | {
+      readonly status: "inspected";
+      readonly generation: string;
+      readonly complete: boolean;
+      readonly omissions: readonly string[];
+      readonly skills: number;
+      readonly counts: SkillFindingCounts;
+      readonly top: readonly SkillFinding[];
+      readonly omitted: number;
+      readonly listing: string;
+    };
 
 export type DoctorStorage =
   | StorageProbe
@@ -33,6 +64,7 @@ export type DoctorStorage =
 export type DoctorPayload = {
   readonly sandbox?: Awaited<ReturnType<typeof inspectProductSandbox>>;
   readonly workspaceTrust?: WorkspaceTrustReport;
+  readonly skills?: DoctorSkills;
   /** Effective user-authored configuration home selected without mutation. */
   readonly configurationHome: ConfigurationHomeResolution;
   /**
@@ -83,6 +115,7 @@ export type DoctorPayload = {
 export async function runDoctor(
   services: ServiceProvider,
   globals?: GlobalOptions,
+  signal: AbortSignal = new AbortController().signal,
 ): Promise<CommandResultOf<"doctor", DoctorPayload>> {
   try {
     const { configurationHomeForRead, localData } = services();
@@ -133,6 +166,7 @@ export async function runDoctor(
         ...(globals === undefined
           ? {}
           : { workspaceTrust: await inspectWorkspaceTrust(services(), globals) }),
+        skills: await doctorSkills(services, globals, signal),
         roots,
         rootIssues: localData.resolutionIssues.map((issue) => issue.code),
         databasePath,
@@ -176,6 +210,37 @@ async function storageFor(
     return { kind: "undetermined", reason: "state-root-not-viable" };
   }
   return probeStorage({ open: openBunSqlite, databasePath });
+}
+
+async function doctorSkills(
+  services: ServiceProvider,
+  globals: GlobalOptions | undefined,
+  signal: AbortSignal,
+): Promise<DoctorSkills> {
+  try {
+    const collected = await collectSkillFindings(
+      services,
+      globals === undefined
+        ? DEFAULT_SKILL_FINDINGS_LOAD
+        : productConfigurationLoadRequest(globals),
+      signal,
+    );
+    if (collected.status === "unavailable") return collected;
+    const top = topFindings(collected.entries);
+    return {
+      status: "inspected",
+      generation: collected.generation,
+      complete: collected.complete,
+      omissions: collected.omissions,
+      skills: collected.entries.length,
+      counts: countFindings(collected.entries),
+      top: top.findings,
+      omitted: top.omitted,
+      listing: SKILL_FINDINGS_LISTING,
+    };
+  } catch {
+    return { status: "unavailable", code: signal.aborted ? "cancelled" : "skill-findings-failed" };
+  }
 }
 
 /* -------------------------------------------------------------------------- */

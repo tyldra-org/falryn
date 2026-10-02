@@ -14,7 +14,7 @@ application. The current command surface includes:
 | falryn | Open the interactive terminal interface on a capable terminal |
 | falryn --help / --version | Print usage or build identity |
 | falryn run [--mode ask\|plan\|debug\|agent] <prompt> | Run one headless coding turn through the selected execution profile and provider |
-| falryn doctor | Run bounded environment and local-storage diagnostics |
+| falryn doctor | Run bounded environment, local-storage and skill validity diagnostics |
 | falryn commands | Print the interactive shell's command reference, generated from its command registry |
 | falryn config show / validate / path / set / reset / migrate | Inspect, validate, update, or remove a scoped configuration override |
 | falryn profile list / show / default / use | Inspect working profiles, save defaults, or request an exact session target |
@@ -25,7 +25,7 @@ application. The current command surface includes:
 | falryn model | Inspect and revision-safely edit model policy through the shared settings service |
 | falryn package | Inspect, install, activate, update, disable or remove governed packages, inspect their data/health/standing, and quarantine or revoke one |
 | falryn peer | Inspect authorized peers, exchange messages, and read delivery history |
-| falryn extension inspect / trust / notices / scope / catalog / listing / suggestion / skills | Inspect local declarations, confirm trust or scoped metadata preferences, list or acknowledge package notices, query the inert catalog, curated listings and verified package suggestions, and report skill usage |
+| falryn extension inspect / trust / notices / scope / catalog / listing / suggestion / skills | Inspect local declarations and skill directories, confirm trust or scoped metadata preferences, list or acknowledge package notices, query the inert catalog with skill findings, curated listings and verified package suggestions, and report skill usage |
 | falryn export / import | Preview or write a versioned local export package, or import one after verification |
 | falryn replay | Rebuild one stored session projection without repeating effects |
 | falryn session list / show / resume / fork / rewind / replay | Inspect or navigate durable session history while preserving lineage |
@@ -555,6 +555,70 @@ only when nothing else answers to that name; several matches extend to their com
 prefix and are listed in a notice. Otherwise Tab moves focus as before. Completion
 reads the latest catalog, and admission still rechecks the pick. There is no
 completion popup for `/`.
+
+### Skill validity findings
+
+`falryn doctor`, `falryn extension catalog`, `falryn extension inspect <path>` and
+`/skills` answer why a skill cannot load or work, with one deterministic finding
+model. Each finding has a stable code and severity, the exact skill (name, source key,
+origin, relative path and SKILL.md content digest), a message, evidence and a suggested
+fix. Evidence holds names, codes, counts and relative paths only: no skill body,
+configuration value or secret. Findings never judge quality: rare use, size or style
+are not failures, and SKILL.md size is reported as a fact on the entry.
+
+| Code | Severity | Raised when |
+| --- | --- | --- |
+| `metadata-invalid` | error | Missing or malformed frontmatter, `name` or `description`, a name that does not match its directory, a non-boolean invocation control, invalid UTF-8 or a lookalike entrypoint name; the field is named |
+| `version-incompatible` | error | The skill declares an execution control this version does not honor (`model`, `effort`, `context`, `agent` or `hooks`) |
+| `reference-missing` | warning | A relative link in SKILL.md is missing, hidden, outside the skill directory, a symlink or not a regular file; links resolve exactly as `skill_resource` resolves them |
+| `capability-unavailable` | warning | `allowed-tools` names an MCP server (`mcp__<server>__<tool>`) that is not configured and enabled in `tools.mcpConnections`; other entries are hints for other hosts and are not judged |
+| `name-conflict` | warning | Equal-priority skills share a name and need a choice in `instructions.preferences` |
+| `shadowed` | info | A higher-priority skill of the same name wins; the winner is named |
+| `activation-failed` | error | The entrypoint is untrusted, oversized, unreadable, a symlink or not a file, or a stored admission refused this exact content (with the recorded reason and count) |
+| `restricted` | info | `disable-model-invocation: true` or a preference restriction keeps the skill out of automatic selection |
+
+Default checks reuse the discovery generation a turn would publish: discovery reads
+each entrypoint once, and findings add no read. Links are checked with `stat` only,
+at most 4,096 per check. The generation and its catalog decisions are read together,
+so a reload publishing during a check cannot mix generations; restarting re-derives the
+same findings from the same files. Stored refusals come from the skill usage report's
+bounded history. Nothing starts a script, MCP server, provider or network request, and
+nothing is rewritten, disabled or installed. A check that is cancelled, cannot read
+history or configuration, or leaves links unchecked reports `complete: false` with
+its omissions, and a missing generation is `unavailable`, never healthy.
+
+Untrusted project skills are never read, so each reports
+`activation-failed: workspace-untrusted` with the workspace trust status and reason.
+A project SKILL.md without `name` and `description` fails the workspace trust review
+itself (`inventory-malformed`); the fix names `falryn extension inspect` to find it.
+Conventional discovery cannot produce equal-priority duplicates: a name must match its
+directory, each location has its own priority, and another root's project skill is
+excluded for the primary root rather than conflicting. `name-conflict` therefore
+appears only for sources a resolver receives at equal priority.
+
+`falryn doctor` adds a `skills` section: counts by severity, the 20 most severe
+findings with the number not shown, and where the full listing is. A skill finding does
+not change doctor's exit status. `falryn extension catalog --input` with
+`{ "action": "catalog", "skills": {} }` lists every discovered skill with its findings.
+The optional `skills` filter takes `code`, `severity`, an exact `name`,
+`findingsOnly` and an `offset`; pages hold at most 100 entries or 256 KiB, unknown
+fields are refused, and requests without `skills` are unchanged. Human, JSON and
+JSONL output carry the same projection, and the source and compiled executables
+produce the same JSON for the same files.
+
+`falryn extension inspect <path>` is the deep check. For a package, the report adds
+each `skills/*/SKILL.md` from the bytes inspection already read. A directory with a
+`SKILL.md` and no package manifest is inspected as a standalone skill: its entrypoint
+is read (no symlink, at most 1 MiB), then the directory is listed within the package
+inspection limits (4,096 entries, 64 levels, 64 MiB, 30 seconds) to check links. A walk
+that is cancelled or times out keeps the metadata findings and reports itself
+incomplete. Name resolution, shadowing and admission history do not apply to an
+inspected path.
+
+`/skills` appends the same findings for the session's own discovery generation, read
+from the instruction owner its turns use, without admission history. When a reload
+changed the generation since the session last listed findings, it says the earlier
+findings are stale. There is no Extensions view for findings yet (#274).
 
 ### Composer capability mentions
 

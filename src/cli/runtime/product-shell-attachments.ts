@@ -58,6 +58,7 @@ import {
 } from "../../application/context/index.ts";
 import { createDebugAdapterSupervisor } from "../../application/debugging/index.ts";
 import type { CatalogRehydration } from "../../application/extensions/catalog-rehydration.ts";
+import { createSkillFindings } from "../../application/extensions/skill-findings.ts";
 import { createLanguageServerSupervisor } from "../../application/language/index.ts";
 import { composeProductMemoryTurn, type MemoryRecords } from "../../application/memory/index.ts";
 import {
@@ -85,6 +86,7 @@ import {
 import { composePeerTool } from "../../application/tools/peer-tool.ts";
 import { composeProductIndexLifecycle } from "../../application/workspace/index.ts";
 import type { ArtifactStorePort } from "../../domain/artifacts/index.ts";
+import { skillFindingsNoticeLines } from "../../domain/context/skill-findings.ts";
 import { resolveSkillCommand, skillCatalogLines } from "../../domain/context/skill-invocation.ts";
 import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { projectCatalogHistory } from "../../domain/extensions/catalog-history.ts";
@@ -128,6 +130,7 @@ import {
 import type { ControlCatalog } from "../../tui/controls/index.ts";
 import type { SessionCreationPort } from "../../tui/shell/session-creation.ts";
 import type { TranscriptFeed } from "../../tui/transcript/transcript-feed.ts";
+import { mcpConfiguration } from "./mcp-configuration.ts";
 import type { ProductProviderConnectionHandoff } from "./product-provider-connections.ts";
 import { composeSessionReflection } from "./session-reflection.ts";
 
@@ -137,7 +140,10 @@ export type ProductShellAttachmentPorts = {
     configuration: () =>
       | import("../../domain/configuration/index.ts").ConfigurationGenerationRecord
       | null,
-  ) => import("../../application/context/instruction-source-owner.ts").InstructionSourceOwner;
+  ) => import("../../application/context/instruction-source-owner.ts").InstructionSourceOwner & {
+    /** Discovery facts and stat-only link checks for skill findings (#1124). */
+    readonly skillDiagnostics?: import("../../application/extensions/skill-findings.ts").SkillFindingsPorts["diagnostics"];
+  };
   readonly authorizeMcp?: (signal: AbortSignal) => Promise<boolean>;
   /**
    * The shared resolver MCP credential references are scoped through. Hosts without
@@ -821,6 +827,36 @@ export async function composeProductShellAttachments(
                   )
                   .catch(() => undefined);
               void refresh(hostSignal);
+              // Findings (#1124) read the session's own owner, so they describe exactly the
+              // generation this session's turns use. Admission history is not read here.
+              const diagnostics = instructions.owner.skillDiagnostics;
+              const findings =
+                diagnostics === undefined
+                  ? null
+                  : createSkillFindings({
+                      owner: instructions.owner,
+                      scope: instructions.scope,
+                      diagnostics,
+                      mcpServers() {
+                        const record =
+                          profileSession?.configuration() ?? ports.sandboxConfiguration?.();
+                        try {
+                          const configured = mcpConfiguration(
+                            record?.values ?? ports.configurationValues?.() ?? {},
+                            Number(record?.generation ?? generation),
+                            record ?? undefined,
+                          );
+                          return new Set(
+                            configured.servers
+                              .filter((server) => server.enabled)
+                              .map((server) => server.id),
+                          );
+                        } catch {
+                          return null;
+                        }
+                      },
+                    });
+              let shownGeneration: string | null = null;
               return {
                 refresh,
                 command: (text: string) =>
@@ -849,13 +885,18 @@ export async function composeProductShellAttachments(
                   signal: AbortSignal,
                 ) {
                   await refresh(signal);
-                  return skillCatalogLines(
+                  const catalog = skillCatalogLines(
                     instructions.owner.skillCatalog(
                       { ...instructions.scope, execution: "skill-catalog" },
                       page,
                     ),
                     page.filter,
                   );
+                  if (findings === null) return catalog;
+                  const collected = await findings.collect(signal);
+                  const notice = skillFindingsNoticeLines(collected, page.filter, shownGeneration);
+                  if (collected.status === "collected") shownGeneration = collected.generation;
+                  return [...catalog, ...notice];
                 },
               };
             })();

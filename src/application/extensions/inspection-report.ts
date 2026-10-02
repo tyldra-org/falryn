@@ -1,8 +1,32 @@
+import {
+  countFindings,
+  type SkillFindingEntry,
+  skillFindingLine,
+} from "../../domain/context/skill-findings.ts";
 import type { PackageTrustResult } from "./package-trust.ts";
 import type { PackagePreparation } from "./prepare-package.ts";
 
+/** Skill findings from inspecting a path (#1124); `complete` is false when a step was cut short. */
+export type SkillInspectionFindings = {
+  readonly complete: boolean;
+  readonly omissions: readonly string[];
+  readonly entries: readonly SkillFindingEntry[];
+};
+
+/** A standalone skill directory: no package manifest, one SKILL.md at its root. */
+export type SkillDirectoryInspection = {
+  readonly status: "skill-inspected";
+  readonly state: "declared";
+  readonly bundle: string;
+  readonly skills: SkillInspectionFindings;
+};
+
 /** Deliberately excludes raw manifests, instructions, arguments, environment, and header values. */
-export function packageInspectionReport(result: PackagePreparation, trust?: PackageTrustResult) {
+export function packageInspectionReport(
+  result: PackagePreparation,
+  trust?: PackageTrustResult,
+  skills?: SkillInspectionFindings,
+) {
   if (!result.ok) return { status: "failed" as const, code: result.code };
   const prepared = result.package;
   return {
@@ -56,12 +80,31 @@ export function packageInspectionReport(result: PackagePreparation, trust?: Pack
       : { status: "unresolved" as const, code: prepared.dependencies.code },
     diagnostics: prepared.diagnostics.map((entry) => ({ code: entry.code })),
     omittedDiagnostics: prepared.omittedDiagnostics,
+    skills: skills ?? null,
   };
 }
-export type PackageInspectionReport = ReturnType<typeof packageInspectionReport>;
+export type PackageInspectionReport =
+  | ReturnType<typeof packageInspectionReport>
+  | SkillDirectoryInspection;
+
+function skillInspectionLines(skills: SkillInspectionFindings): string[] {
+  const counts = countFindings(skills.entries);
+  return [
+    `Skills: ${skills.entries.length}; findings ${counts.error} error, ${counts.warning} warning, ${counts.info} info${skills.complete ? "" : `; incomplete (${skills.omissions.join(", ")})`}.`,
+    ...skills.entries.flatMap((entry) => [
+      `Skill ${entry.name}: ${entry.path}${entry.digest === null ? "" : `; digest ${entry.digest}`}${entry.bytes === null ? "" : `; ${entry.bytes} bytes`}`,
+      ...entry.findings.map((finding) => `  ${skillFindingLine(finding)}`),
+    ]),
+  ];
+}
 
 export function packageInspectionLines(report: PackageInspectionReport): string[] {
   if (report.status === "failed") return [`Extension inspection failed: ${report.code}`];
+  if (report.status === "skill-inspected")
+    return [
+      `Standalone skill ${report.bundle}; state: declared; nothing loaded, run or installed.`,
+      ...skillInspectionLines(report.skills),
+    ];
   return [
     `Package ${report.packageId}${report.packageVersion === null ? " (unversioned)" : `@${report.packageVersion}`}`,
     `State: declared; ${report.fileCount} files; ${report.contributions.length} contributions; nothing activated.`,
@@ -115,6 +158,7 @@ export function packageInspectionLines(report: PackageInspectionReport): string[
     ...(report.omittedDiagnostics === 0
       ? []
       : [`Additional diagnostics: ${report.omittedDiagnostics}`]),
+    ...(report.skills === null ? [] : skillInspectionLines(report.skills)),
   ];
 }
 
