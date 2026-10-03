@@ -97,18 +97,21 @@ Choose one recommended copy-ready `Suggested next prompt: ...` from the evidence
 Prefer a concrete target when evidence supports it. Do not default to Next merely
 because the selector has not been run, or force Deliver by guessing an issue.
 
-After the recommendation, list every other copy-ready `Command - Target: ...`
-combination the evidence supports, each with what it covers and where it stops.
-Draw combinations from the [command boundaries](references/targets.md#apply-the-command-boundary)
-and every applicable target spelling: the issue alone, `Parent issue #P` for
-the next child, `Parent chain #P` for the remaining children, Docs issues,
-parents or chains, an existing PR, and manual stopping points such as Plan for an
-unplanned child, Implement to stop before merge, Review or Merge for an open PR,
-Verify for a parent, or a scoped Next. Name where a chain would stop, such as
-a child that needs a decision. Omit combinations the command boundary rejects
-or the evidence does not support; do not pad the list.
-Order alternatives by usefulness: delivery scopes from narrowest to widest,
-then manual stopping points, then selection.
+Add an alternative only when it covers materially different work, each in its
+own copy block with one line on what it covers and where it stops. When a Deliver
+recommendation names a parent's next child, offer `Deliver - Target: Parent chain #P`
+if other children remain, naming the child where it would stop, such as one that
+needs a decision. Otherwise usually offer nothing more.
+
+Omit a prompt that resolves to the same work as another, such as
+`Parent issue #P` when its next child is the recommended issue. Omit sibling or
+Docs issues that the chain or the recommended delivery already covers; Next
+selects one unit, not a menu. Omit Plan, Implement, Review, Verify and Merge when
+Deliver already includes them. Recommend one of those only when the user is
+working in manual stages, or when it is the only useful remaining step (such as
+Merge for a verified PR awaiting authorization). Never offer a prompt that
+contradicts a pending proposal, such as delivering an issue proposed for closure;
+state the proposal and its question instead.
 
 An audit result alone is not a selection. Distinguish uncertainty from a known
 failure: repeating Next cannot fix denied access, an unchanged audit defect or
