@@ -7,9 +7,13 @@
 | [`pr-labels.yml`](pr-labels.yml) | Which area, size and author-trust labels apply? | PR opened or updated, a `/recheck-vouch` comment, and trust-list changes |
 | [`issue-governance.yml`](issue-governance.yml) | Is the public issue contract complete and are declared labels reconciled? | issue opened, edited, reopened, closed or relabeled |
 
-Branch protection on `main` and release branches requires `All CI checks` and the
-CodeQL `Analyze (…)` checks. Adding, renaming or splitting a CI job never needs a
-ruleset change.
+Branch protection on `main` and release branches requires `All CI checks`,
+`Validate contribution metadata` and the CodeQL `Analyze (actions)`,
+`Analyze (javascript-typescript)` and `Analyze (python)` checks. It does not
+require a branch to be up to date with its base: every push to `main` runs the
+`full` tier, which is the backstop for a change that only conflicts with newer
+work semantically. Adding, renaming or splitting a CI job never needs a ruleset
+change.
 
 ## `ci.yml`
 

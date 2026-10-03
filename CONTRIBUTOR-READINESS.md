@@ -14,8 +14,9 @@ Keep these safeguards:
 
 1. require pull requests and linear history on `main`;
 2. block force pushes and branch deletion;
-3. require every job in `.github/workflows/ci.yml` and the **Validate
-   contribution metadata** check;
+3. require `All CI checks`, which passes only when every job in
+   `.github/workflows/ci.yml` passes, the **Validate contribution metadata**
+   check, and the CodeQL `Analyze (…)` checks;
 4. require conversation resolution; and
 5. require one approval and CODEOWNERS review only after a second maintainer can
    satisfy those rules independently.
