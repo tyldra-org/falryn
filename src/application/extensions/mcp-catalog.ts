@@ -130,6 +130,11 @@ export type McpInputHookEvent =
 export type McpToolInput = {
   readonly ask?: McpInputAsk;
   readonly observe?: (event: McpInputHookEvent) => void;
+  /**
+   * The schema digest the caller's tool definition was published with (#1157). A different
+   * current digest is a stale selection and nothing is sent.
+   */
+  readonly expectedSchemaDigest?: string;
 };
 const UNANSWERED: McpInputAnswer = { response: { action: "cancel" }, disposition: "cancel" };
 /** Per-call identity supplied by the invoking tool; the catalog adds server generations. */
@@ -421,9 +426,10 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
     async discover(
       serverId: string,
       context: McpCatalogCall,
-    ): Promise<McpCatalogResult<McpCatalogSummary>> {
+    ): Promise<McpCatalogResult<McpCatalogSummary> & { readonly requests: number }> {
       const snapshot = snapshotOf(serverId);
-      if (snapshot?.state !== "available") return failure("unavailable", "mcp-not-ready");
+      if (snapshot?.state !== "available")
+        return { ...failure("unavailable", "mcp-not-ready"), requests: 0 };
       const ticket = ++tickets;
       latest.set(serverId, ticket);
       const record: Published = {
@@ -439,8 +445,11 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
         resolved: [],
       };
       const results: Record<string, unknown> = {};
+      // List requests sent, for the caller's accounting; SDK pagination stays inside one.
+      let requests = 0;
       for (const feature of snapshot.features)
         for (const [method, key] of LISTS[feature]) {
+          requests++;
           const outcome = await ports.lifecycle.request(
             call(record, { ...context, requestId: context.requestId + ":" + method }),
             record.transportGeneration,
@@ -459,10 +468,10 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
                 : { ...record, failure: "mcp-catalog-refresh-" + outcome.code },
             );
           }
-          return fromOutcome(outcome);
+          return { ...fromOutcome(outcome), requests };
         }
       if (latest.get(serverId) !== ticket)
-        return failure("stale", "mcp-catalog-refresh-superseded");
+        return { ...failure("stale", "mcp-catalog-refresh-superseded"), requests };
       const normalized = normalizeMcpCatalog(serverId, results);
       publish({
         ...record,
@@ -471,7 +480,33 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
         entries: normalized.entries,
         counts: normalized.counts,
       });
-      return { kind: "completed", value: summary(serverId) };
+      return { kind: "completed", value: summary(serverId), requests };
+    },
+
+    /**
+     * Tool entries of every current catalog, for publication as model tools (#1157). A stale or
+     * never-discovered catalog contributes nothing; its retained entries are evidence only.
+     */
+    currentTools(): readonly {
+      readonly serverId: string;
+      readonly catalogGeneration: number;
+      readonly entry: Extract<McpCatalogEntry, { readonly kind: "tool" }>;
+    }[] {
+      return [...published.values()].flatMap((record) =>
+        record.discovered && stateOf(record, snapshotOf(record.serverId)).state === "current"
+          ? record.entries.flatMap((entry) =>
+              entry.kind === "tool"
+                ? [
+                    {
+                      serverId: record.serverId,
+                      catalogGeneration: record.catalogGeneration,
+                      entry,
+                    },
+                  ]
+                : [],
+            )
+          : [],
+      );
     },
 
     /** Page retained entries. The cursor is bound to one catalog publication and filter. */
@@ -635,6 +670,11 @@ export function createMcpCatalog(ports: McpCatalogPorts) {
       if (entry.kind !== "tool") return failure("malformed", "mcp-catalog-entry-kind-mismatch");
       if (entry.inputSchema === null || entry.schemaDigest === null)
         return failure("unsupported", "mcp-tool-schema-unsupported");
+      if (
+        input.expectedSchemaDigest !== undefined &&
+        input.expectedSchemaDigest !== entry.schemaDigest
+      )
+        return failure("stale", "mcp-tool-schema-changed");
       let validator = validators.get(entry.schemaDigest);
       if (!validator) {
         validator = z.fromJSONSchema(entry.inputSchema as Parameters<typeof z.fromJSONSchema>[0]);

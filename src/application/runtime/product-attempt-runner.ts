@@ -1006,6 +1006,9 @@ export function createProductAttemptRunner(
           inspect: (id) =>
             options.capabilities?.entries.find((entry) => entry.capabilityId === id)?.trust ?? null,
         },
+        userAuthorized: (id) =>
+          options.capabilities?.entries.find((entry) => entry.capabilityId === id)
+            ?.userAuthorized === true,
         ...(options.toolHost === undefined ? {} : { toolHost: options.toolHost }),
         ...(options.sandbox === undefined ? {} : { sandbox: options.sandbox }),
         delegation: {

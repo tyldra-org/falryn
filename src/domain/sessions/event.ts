@@ -1,6 +1,7 @@
 import type { CompositionProvenance } from "../capabilities/composition.ts";
 import type { ProfileTransitionReceipt } from "../configuration/profile-transition.ts";
 import type { CatalogHistory } from "../extensions/catalog-history.ts";
+import type { McpPreparationReceipt } from "../extensions/mcp-preparation-receipt.ts";
 import type { SandboxReceipt } from "../security/sandbox.ts";
 import type { HistoryPayload } from "./history.ts";
 /**
@@ -215,6 +216,8 @@ export type ModelAttemptBinding = {
         readonly cards: number;
       }
     | undefined;
+  /** MCP preparation and catalog-tool counts (#1157); absent on older and MCP-free attempts. */
+  readonly mcpPreparation?: McpPreparationReceipt | undefined;
   /** Secret-safe prompt-cache receipt; absent on legacy and uncached attempts. */
   readonly promptCache?:
     | {

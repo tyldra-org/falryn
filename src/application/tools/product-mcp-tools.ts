@@ -102,6 +102,22 @@ const definitions = {
 } as const;
 type McpToolName = keyof typeof definitions;
 const names = Object.keys(definitions) as McpToolName[];
+
+/** The MCP tool owner's bundle plus the call path catalog tools (#1157) execute through. */
+export type ProductMcpTools = ProductToolSourceBundle & {
+  /**
+   * Call one published catalog tool with already validated arguments. The selection is the
+   * exact entry, catalog generation and schema digest its definition was published with.
+   */
+  callCatalogTool(
+    request: ToolRunnerRequest,
+    selection: {
+      readonly entryId: string;
+      readonly catalogGeneration: number;
+      readonly schemaDigest: string;
+    },
+  ): Promise<ToolInvocationOutcome>;
+};
 /** A tool call may wait for the user's input, so it may run until its ceiling; others keep one request. */
 const timeoutOf = (name: McpToolName) =>
   name === "mcp_call_tool" ? MCP_INPUT_LIMITS.callCeilingMs : MCP_DEADLINE_MS;
@@ -129,7 +145,7 @@ export function composeProductMcpTools(
   catalog: McpCatalog,
   /** The interactive host's way to ask the user; absent hosts cancel every input request. */
   userInput?: McpUserInput,
-): ProductToolSourceBundle {
+): ProductMcpTools {
   const entries = names.map((name) => {
     const definition = definitions[name];
     const entry = createToolRegistryEntry(
@@ -165,11 +181,53 @@ export function composeProductMcpTools(
   const registered = createToolRegistry(generation, entries);
   if (!registered.ok) throw new Error("mcp-registry-" + registered.error.code);
   const registry = registered.value;
+  /** Call identity, deadline and input answering shared by `mcp_call_tool` and catalog tools. */
+  const callContext = (
+    request: ToolRunnerRequest,
+    serverId: string,
+    timeoutMs: number,
+  ): { context: McpCatalogCall; answering: McpToolInput } => {
+    const context: McpCatalogCall = {
+      // A server the user picked for this turn is their selection, not the model's.
+      origin: request.userSelection?.mcpServers.includes(serverId) ? "user" : "model",
+      requestId: String(request.invocationId),
+      deadline: Math.min(Date.now() + timeoutMs, request.processTask?.deadline ?? Infinity),
+      signal: request.signal,
+    };
+    // Questions belong to this call's task: closing its resources cancels them.
+    const owner = request.processTask?.owner;
+    const resources = request.taskResources;
+    const answering: McpToolInput =
+      userInput && owner && resources
+        ? {
+            ask: userInput({
+              owner: { ...owner, generation: resources.generation },
+              resources,
+            }),
+          }
+        : {};
+    return { context, answering };
+  };
   return {
     registry,
     catalog: registry.catalog,
     explicitOnly: new Set(entries.map((entry) => entry.manifest.capabilityId)),
     toolNames: names,
+    async callCatalogTool(request, selection) {
+      if (request.signal.aborted) return { status: "cancelled", effect: "none" };
+      const serverId = /^mcp:([^/]+)\//u.exec(selection.entryId)?.[1] ?? "";
+      const { context, answering } = callContext(request, serverId, timeoutOf("mcp_call_tool"));
+      const called = await catalog.callTool(
+        selection.entryId,
+        selection.catalogGeneration,
+        request.input,
+        context,
+        { ...answering, expectedSchemaDigest: selection.schemaDigest },
+      );
+      // As for `mcp_call_tool`: the request has settled, so nothing of it still runs locally.
+      request.processTask?.reportTermination?.(true);
+      return called.kind === "completed" ? completed(called.value) : fromCatalog(called);
+    },
     runner: {
       hasBinding: (id) => registry.resolveByCapabilityId(id) !== null,
       async execute(request: ToolRunnerRequest): Promise<ToolInvocationOutcome> {
@@ -185,32 +243,11 @@ export function composeProductMcpTools(
         if (!parsed.success)
           return { status: "malformed", reason: "mcp-malformed-input", effect: "none" };
         if (request.signal.aborted) return { status: "cancelled", effect: "none" };
-        const context: McpCatalogCall = {
-          // A server the user picked for this turn is their selection, not the model's.
-          origin: request.userSelection?.mcpServers.includes(
-            serverIdOf(parsed.data as Record<string, unknown>),
-          )
-            ? "user"
-            : "model",
-          requestId: String(request.invocationId),
-          deadline: Math.min(
-            Date.now() + timeoutOf(name),
-            request.processTask?.deadline ?? Infinity,
-          ),
-          signal: request.signal,
-        };
-        // Questions belong to this call's task: closing its resources cancels them.
-        const owner = request.processTask?.owner;
-        const resources = request.taskResources;
-        const answering: McpToolInput =
-          userInput && owner && resources
-            ? {
-                ask: userInput({
-                  owner: { ...owner, generation: resources.generation },
-                  resources,
-                }),
-              }
-            : {};
+        const { context, answering } = callContext(
+          request,
+          serverIdOf(parsed.data as Record<string, unknown>),
+          timeoutOf(name),
+        );
         const result = await run(name, parsed.data as Record<string, unknown>, context, answering);
         // The lifecycle returns only after the SDK request has settled, so nothing of this call is
         // still running locally. An uncertain effect is about the server, and the outcome says so;

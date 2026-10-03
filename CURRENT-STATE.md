@@ -2130,7 +2130,9 @@ Headless and terminal model runtimes publish `mcp_inspect`, `mcp_connect`,
 `mcp_catalog`, `mcp_resource_template`, `mcp_get_prompt`, `mcp_call_tool` and
 `mcp_stop` through the existing registry, confirmation, resource admission and tool
 runner. MCP-related tasks or explicit discovery disclose the controls. No peer
-starts until an admitted connect request. The model has no untyped protocol
+starts until an admitted connect request: an explicit `mcp_connect` or
+`falryn mcp probe`, or the host's preparation of a relevant server before a
+turn (see MCP catalog tools below). The model has no untyped protocol
 request tool; each MCP operation has a typed owner. Results use normal invocation
 history, projection and replay; replay never reconnects or repeats a remote effect.
 
@@ -2181,8 +2183,48 @@ evidence stays readable, reported as historical, after its handle becomes stale,
 is denied once the server is removed or disabled. Results larger than 1 MiB fail as
 `mcp-result-too-large` and non-converging pagination as
 `mcp-list-pagination-exceeded`. User-input requests, task-backed tool calls, MCP
-Skills, MCP Apps, MCP-proposed workspace changes and provider-native disclosure of
-MCP tools are separate capabilities.
+Skills, MCP Apps and MCP-proposed workspace changes are separate capabilities.
+
+### MCP catalog tools and cold discovery
+
+Before each terminal or `falryn run` turn, the host looks at configured servers
+whose catalog is not current. A server is prepared (connected if needed, then
+discovered) only when the task names one of its summary words (its ID, its HTTP
+host labels, or its stdio executable and leading argument names, at most 32,
+generic words ignored) or the user selected it with a `$` mention. At most two
+servers are prepared per turn, within one 30-second deadline. Preparation uses
+the `discovery` admission origin, or `user` for a selected server, with the
+normal authorization, credentials and cancellation. Disabled servers,
+explicit-only servers the user did not select, and servers the task does not
+name start nothing. A current catalog is reused with no server work.
+Preparation never submits a prompt, starts a model turn or calls a tool; a
+failure is recorded with its code and the turn continues.
+
+Each tool of a current catalog with a supported schema then becomes a model
+tool for that turn, at most 64, user-selected servers first, then configuration
+order. Its name is `mcp_<server>_<tool>_<hash>` (at most 64 characters; the
+hash binds the entry and schema digest), its description names the server and
+tool and carries the server's description as bounded untrusted text, and its
+effect is external. Explicit-only servers publish tools only in a turn where the
+user selected them; a stale catalog publishes none. These tools enter the
+existing opportunity planning as `mcp-tool` candidates: a task that matches one
+discloses it eagerly, and others may travel as deferred definitions to
+transports with native tool search or stay omitted. The attempt receipt
+summarizes undisclosed MCP tools in one `mcp-catalog` omission. User-configured
+servers are authorized by the user's configuration, so package ecosystem trust
+does not apply to their tools.
+
+A published tool calls through the same path as `mcp_call_tool`: arguments
+validate against the normalized schema, confirmation, resources, user input and
+receipts are the same, and the exact catalog generation and schema digest are
+rechecked before dispatch. A changed schema returns `mcp-tool-schema-changed`
+and a changed generation `mcp-catalog-entry-stale`, both with no call. The
+`model.attempt.started` record carries an `mcpPreparation` receipt: per server
+the decision (`reused`, `prepared`, `failed`, `skipped`) with reason and
+origin, discovery requests, transport and process starts and the catalog
+generation; published, overflow, unsupported and withheld tool counts; and the
+number and schema bytes of MCP tools disclosed eagerly and deferred. Tool calls
+remain ordinary invocation records.
 
 ### MCP tool invocation
 

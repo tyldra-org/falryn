@@ -148,6 +148,8 @@ export type AttemptModelInput = {
     readonly omitted: readonly { readonly name: string; readonly reason: string }[];
     readonly schemaBytes: number;
     readonly schemaTokensEstimated: number;
+    /** This turn's MCP preparation and catalog-tool counts (#1157). */
+    readonly mcpPreparation?: import("../../../domain/extensions/mcp-preparation-receipt.ts").McpPreparationReceipt;
   };
 };
 

@@ -41,6 +41,8 @@ async function fixture(
   mode = "environment",
   preparation?: unknown,
   processEnvironment: Record<string, string> = {},
+  /** Replace the configured servers; receives the default `fixture` server. */
+  servers: (base: Record<string, unknown>) => readonly unknown[] = (base) => [base],
 ) {
   const root = await mkdtemp(join(tmpdir(), "falryn-mcp-"));
   cleanups.push(() => rm(root, { recursive: true, force: true }));
@@ -48,6 +50,13 @@ async function fixture(
   const workspace = join(root, "workspace");
   await mkdir(config);
   await mkdir(workspace);
+  const base = {
+    id: "fixture",
+    transport: "stdio",
+    executable: process.execPath,
+    args: mode === "delayed" ? [fixturePath, mode, join(root, "release")] : [fixturePath, mode],
+    environmentNames: ["SELECTED"],
+  };
   const document = {
     schemaVersion: 2,
     minimumReaderSchemaVersion: 2,
@@ -65,16 +74,7 @@ async function fixture(
     },
     connections: {
       mcp: {
-        servers: [
-          {
-            id: "fixture",
-            transport: "stdio",
-            executable: process.execPath,
-            args:
-              mode === "delayed" ? [fixturePath, mode, join(root, "release")] : [fixturePath, mode],
-            environmentNames: ["SELECTED"],
-          },
-        ],
+        servers: servers(base),
       },
     },
   };
@@ -299,7 +299,12 @@ type ToolReply = { readonly status: string; readonly text: string };
 /** Run one deterministic terminal turn whose next tool call may depend on earlier results. */
 async function terminalTurn(
   f: Awaited<ReturnType<typeof fixture>>,
-  steps: (replies: readonly ToolReply[], generation: number) => ToolStep | null,
+  steps: (
+    replies: readonly ToolReply[],
+    generation: number,
+    /** Names of the tool definitions this model request offered. */
+    offered: readonly string[],
+  ) => ToolStep | null,
   prompt = "Use the configured MCP fixture",
   options: {
     /** Present questions locally, and answer them the way the question sheet does. */
@@ -335,7 +340,11 @@ async function terminalTurn(
         seen.add(id);
         replies.push({ status: JSON.parse(part.text).status, text: part.text });
       }
-      const step = steps(replies, Number(record.generation));
+      const step = steps(
+        replies,
+        Number(record.generation),
+        request.tools.map((tool) => tool.name),
+      );
       if (!step) return { kind: "text", text: "MCP work complete." };
       return {
         kind: "tool",
@@ -468,6 +477,131 @@ function resultOf(reply: ToolReply | undefined): Record<string, unknown> {
   };
   return parsed.output?.value?.result ?? {};
 }
+
+/** Every attempt's durable MCP preparation receipt, in order (#1157). */
+async function preparations(turn: Awaited<ReturnType<typeof terminalTurn>>) {
+  const first = turn.attached.transcriptFeed.events()[0];
+  if (!first) throw new Error("missing transcript");
+  type Page = Awaited<ReturnType<typeof turn.history.eventStore.readFrom>>;
+  const events: Extract<Page, { ok: true }>["value"][number][] = [];
+  let afterSequence: (typeof events)[number]["sequence"] | null = null;
+  for (;;) {
+    const page = await turn.history.eventStore.readFrom(
+      { streamId: first.streamId, afterSequence },
+      256,
+    );
+    if (!page.ok) throw new Error("history unreadable");
+    events.push(...page.value);
+    if (page.value.length < 256) break;
+    afterSequence = page.value.at(-1)?.sequence ?? null;
+  }
+  return events.flatMap((event) =>
+    event.kind === "model.attempt.started" && event.payload.binding?.mcpPreparation
+      ? [event.payload.binding.mcpPreparation]
+      : [],
+  );
+}
+
+posix(
+  "a relevant unknown server is prepared before the turn and its published tool is called; the next turn reuses it",
+  async () => {
+    const f = await fixture("normal");
+    let budget = 1;
+    const turn = await terminalTurn(
+      f,
+      (_replies, _generation, offered) => {
+        const name = offered.find((item) => item.startsWith("mcp_fixture_echo_"));
+        if (budget === 0 || name === undefined) return null;
+        budget--;
+        return { name, input: { value: "hello" } };
+      },
+      "Echo hello through the fixture server",
+    );
+    expect(turn.result).toMatchObject({ kind: "accepted" });
+    expect(turn.replies.map((reply) => reply.status)).toEqual(["completed"]);
+    expect(resultOf(turn.replies[0])).toMatchObject({ isError: false });
+    // Every MCP tool call is an external effect that went through confirmation.
+    expect(turn.confirmations).toHaveLength(1);
+    const [cold] = await preparations(turn);
+    expect(cold?.servers).toEqual([
+      expect.objectContaining({
+        serverId: "fixture",
+        decision: "prepared",
+        origin: "discovery",
+        processStarts: 1,
+      }),
+    ]);
+    expect(cold?.servers[0]?.discoveryRequests).toBeGreaterThan(0);
+    expect(cold?.tools.published).toBeGreaterThan(0);
+    expect((cold?.disclosure?.eager ?? 0) + (cold?.disclosure?.deferred ?? 0)).toBeGreaterThan(0);
+
+    budget = 1;
+    expect((await turn.submit("Echo again through the fixture")).kind).toBe("accepted");
+    expect(turn.replies.map((reply) => reply.status)).toEqual(["completed", "completed"]);
+    const warm = (await preparations(turn)).at(-1);
+    expect(warm?.servers).toEqual([
+      expect.objectContaining({
+        decision: "reused",
+        discoveryRequests: 0,
+        processStarts: 0,
+        transportStarts: 0,
+      }),
+    ]);
+  },
+);
+
+posix("an unrelated task starts no MCP server and publishes no catalog tool", async () => {
+  const f = await fixture("normal");
+  const offeredNames: string[] = [];
+  const turn = await terminalTurn(
+    f,
+    (_replies, _generation, offered) => {
+      offeredNames.push(...offered);
+      return null;
+    },
+    "Summarize the workspace notes",
+  );
+  expect(turn.result.kind).toBe("accepted");
+  const [receipt] = await preparations(turn);
+  expect(receipt?.servers).toEqual([
+    expect.objectContaining({ decision: "skipped", reason: "not-relevant", processStarts: 0 }),
+  ]);
+  expect(receipt?.tools.published).toBe(0);
+  expect(offeredNames.some((name) => name.startsWith("mcp_fixture_"))).toBe(false);
+});
+
+posix(
+  "disabled, unselected explicit-only and credential-less servers start nothing even when named",
+  async () => {
+    const f = await fixture("normal", undefined, {}, (base) => [
+      { ...base, enabled: false },
+      { ...base, id: "vault", explicitOnly: true },
+      {
+        id: "tracker",
+        transport: "http",
+        url: "https://tracker.example.com/mcp",
+        credentialEnvironment: "MISSING_TRACKER_TOKEN",
+      },
+    ]);
+    const turn = await terminalTurn(
+      f,
+      () => null,
+      "Use the fixture, the vault and the tracker together",
+    );
+    expect(turn.result.kind).toBe("accepted");
+    const [receipt] = await preparations(turn);
+    // No credential resolves, so no request is sent; this host has no credential store.
+    expect(receipt?.servers.map((row) => [row.serverId, row.decision, row.reason])).toEqual([
+      ["fixture", "skipped", "disabled"],
+      ["vault", "skipped", "explicit-only"],
+      ["tracker", "failed", expect.stringMatching(/^mcp-credential-(missing|unavailable)$/u)],
+    ]);
+    expect(
+      receipt?.servers.every((row) => row.processStarts === 0 && row.discoveryRequests === 0),
+    ).toBe(true);
+    expect(receipt?.tools.published).toBe(0);
+  },
+);
 
 posix(
   "a turn whose prompt names an MCP server still records its attempt start (#1267)",

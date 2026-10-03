@@ -441,6 +441,48 @@ test("stale, changed and revoked tool selections fail before any call", async ()
   expect(calls()).toBe(1);
 });
 
+test("published catalog tools follow current state; bursts only mark them stale (#1157)", async () => {
+  const h = harness();
+  expect(h.catalog.currentTools()).toEqual([]);
+  await h.connect();
+  const discovered = await h.catalog.discover("s", h.call());
+  // tools, resources, resource templates and prompts: one list request each.
+  expect(discovered).toMatchObject({ kind: "completed", requests: 4 });
+  const current = h.catalog.currentTools();
+  expect(current.map((item) => item.entry.name)).toEqual(["echo", "union"]);
+  const sent = h.calls.length;
+  for (let index = 0; index < 5; index++) h.change();
+  // A burst publishes nothing and asks the server nothing; the catalog is just stale.
+  expect(h.catalog.currentTools()).toEqual([]);
+  expect(h.catalog.summaries()[0]).toMatchObject({ state: "stale", code: "mcp-catalog-changed" });
+  expect(h.calls).toHaveLength(sent);
+  await h.catalog.discover("s", h.call());
+  expect(h.catalog.currentTools()).toHaveLength(2);
+});
+
+test("a schema digest that changed after publication fails before dispatch (#1157)", async () => {
+  const h = harness();
+  await h.connect();
+  const generation = (await h.discover()).catalogGeneration ?? 0;
+  const [echo] = h.catalog.currentTools();
+  if (!echo?.entry.schemaDigest) throw new Error("missing echo");
+  const calls = () => h.calls.filter((method) => method === "tools/call").length;
+  expect(
+    await h.catalog.callTool(echo.entry.id, generation, { value: "x" }, h.call(), {
+      expectedSchemaDigest: "sha-256:other",
+    }),
+  ).toMatchObject({ kind: "stale", code: "mcp-tool-schema-changed", effect: "none" });
+  expect(calls()).toBe(0);
+  expect(
+    (
+      await h.catalog.callTool(echo.entry.id, generation, { value: "x" }, h.call(), {
+        expectedSchemaDigest: echo.entry.schemaDigest,
+      })
+    ).kind,
+  ).toBe("completed");
+  expect(calls()).toBe(1);
+});
+
 describe("tool calls that need user input", () => {
   const FORM = {
     method: "elicitation/create",

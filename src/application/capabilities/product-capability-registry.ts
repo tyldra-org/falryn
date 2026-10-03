@@ -88,8 +88,9 @@ export function capabilityEntryFromTool(
   trustPort?: CapabilityTrustPort,
   family?: CapabilityFamily,
   explicitOnly = false,
+  userAuthorized = false,
 ): CapabilityRegistryEntry {
-  const required = requiresEcosystemTrust(entry.manifest.source);
+  const required = !userAuthorized && requiresEcosystemTrust(entry.manifest.source);
   const trust = required ? (trustPort?.inspect(String(entry.manifest.capabilityId)) ?? null) : null;
   const eligible = !required || trust?.eligible === true;
   const trustCause =
@@ -161,7 +162,7 @@ export function capabilityEntryFromTool(
         outputDigest: digestSchema(entry.manifest.outputSchema),
       },
     },
-    { capabilityId: entry.manifest.capabilityId, trust },
+    { capabilityId: entry.manifest.capabilityId, trust, userAuthorized },
   );
   if (!created.ok) {
     throw new Error(`tool capability publication failed: ${created.error.code}`);
@@ -178,6 +179,7 @@ export function createProductCapabilityRegistry(
   trust?: CapabilityTrustPort,
   families?: ReadonlyMap<CapabilityId, CapabilityFamily>,
   explicitOnly?: ReadonlySet<CapabilityId>,
+  userAuthorized?: ReadonlySet<CapabilityId>,
 ): CapabilityRegistry {
   if (tools.generation !== generation) {
     throw new Error("tool and capability catalog generations do not match");
@@ -190,6 +192,7 @@ export function createProductCapabilityRegistry(
         trust,
         families?.get(entry.manifest.capabilityId),
         explicitOnly?.has(entry.manifest.capabilityId),
+        userAuthorized?.has(entry.manifest.capabilityId),
       ),
     ),
     ...contributions,

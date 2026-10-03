@@ -245,6 +245,9 @@ export function attemptModelInputFromPrompt(
       omitted: disclosure.receipt.omitted,
       schemaBytes: disclosure.receipt.schemaBytes,
       schemaTokensEstimated: disclosure.receipt.schemaTokensEstimated,
+      ...(disclosure.receipt.mcpPreparation === undefined
+        ? {}
+        : { mcpPreparation: disclosure.receipt.mcpPreparation }),
     },
   };
 }

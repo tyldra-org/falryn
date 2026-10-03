@@ -24,6 +24,7 @@ import {
   inspectCapabilityHealth,
 } from "../../domain/capabilities/index.ts";
 import type { PromptToolInput } from "../../domain/context/index.ts";
+import type { McpPreparationReceipt } from "../../domain/extensions/mcp-preparation-receipt.ts";
 import type { CapabilityId, ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type { EffectClass, ModelCapabilityBrief } from "../../domain/orchestration/index.ts";
 import { isDeferrablePlanCandidate } from "../../domain/orchestration/opportunity-plan.ts";
@@ -150,6 +151,11 @@ export type CapabilityDisclosureReceipt = {
    * Origin `user-mention`; empty when the prompt had none.
    */
   readonly userMentioned: readonly CapabilityId[];
+  /**
+   * This turn's MCP preparation and catalog-tool publication (#1157), with how many published
+   * MCP tools this attempt disclosed eagerly or deferred. Absent when no MCP host composed one.
+   */
+  readonly mcpPreparation?: McpPreparationReceipt;
 };
 
 export type ProductToolDisclosure = {
@@ -171,6 +177,8 @@ export type ProductToolDisclosureOptions = {
   readonly schemaTokenBudget?: number;
   readonly deferredMaximum?: number;
   readonly deferredSchemaTokenBudget?: number;
+  /** The turn's MCP preparation receipt; disclosure adds its MCP counts. */
+  readonly mcpPreparation?: McpPreparationReceipt;
 };
 
 function familyAvailability(
@@ -324,12 +332,20 @@ export function discloseProductTools(
     omittedNames.add(entry.manifest.name);
   }
 
+  // Undisclosed MCP catalog tools are summarized, not listed, so a large catalog cannot grow
+  // the attempt record past its event bound (#1157, #1267).
+  let mcpOmitted = 0;
   for (const entry of registry.entries) {
     const name = entry.manifest.name;
     if (
       selected.some((candidate) => candidate.entry.manifest.name === name) ||
       omittedNames.has(name)
     ) {
+      continue;
+    }
+    if (entry.manifest.source === "mcp") {
+      mcpOmitted++;
+      omittedNames.add(name);
       continue;
     }
     const policyReason = policyOmissionReason(entry, executionPolicy);
@@ -351,6 +367,11 @@ export function discloseProductTools(
     omitted.push({ name, reason });
     omittedNames.add(name);
   }
+  if (mcpOmitted > 0)
+    omitted.push({
+      name: "mcp-catalog",
+      reason: `${mcpOmitted} published MCP catalog tools not disclosed to this attempt`,
+    });
 
   // Group disclosed native tools into operation profiles (#946). The members stay
   // disclosed by their native names; the model sees one definition per profile.
@@ -551,6 +572,29 @@ export function discloseProductTools(
       ),
       discoveryHandle: `capability-catalog:${capabilityRegistry.generation}`,
       userMentioned: [...(options.userMentionedCapabilityIds ?? [])],
+      ...(options.mcpPreparation === undefined
+        ? {}
+        : {
+            mcpPreparation: {
+              ...options.mcpPreparation,
+              disclosure: {
+                eager: selected.filter(({ entry }) => entry.manifest.source === "mcp").length,
+                deferred: deferred.filter(({ entry }) => entry.manifest.source === "mcp").length,
+                eagerSchemaBytes: selected
+                  .filter(({ entry }) => entry.manifest.source === "mcp")
+                  .reduce(
+                    (total, { parameters }) => total + measureProductToolSchema(parameters).bytes,
+                    0,
+                  ),
+                deferredSchemaBytes: deferred
+                  .filter(({ entry }) => entry.manifest.source === "mcp")
+                  .reduce(
+                    (total, { parameters }) => total + measureProductToolSchema(parameters).bytes,
+                    0,
+                  ),
+              },
+            },
+          }),
     },
   };
 }
