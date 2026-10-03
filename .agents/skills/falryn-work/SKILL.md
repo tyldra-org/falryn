@@ -96,6 +96,13 @@ Choose one copy-ready `Suggested next prompt: ...` from the evidence:
 
 Prefer a concrete target when evidence supports it. Do not default to Next merely
 because the selector has not been run, or force Deliver by guessing an issue.
+
+When the recommended Deliver target is a child of an open parent with other
+remaining children, also offer the copy-ready chain alternative,
+`Deliver - Target: Parent chain #P` (or the Docs equivalent), and state which
+children it would deliver and where it would stop. Keep the single-issue prompt
+as the suggestion; the chain form is an option, not a default.
+
 An audit result alone is not a selection. Distinguish uncertainty from a known
 failure: repeating Next cannot fix denied access, an unchanged audit defect or
 a human-owned decision. Name the recovery step or required answer; use Next again
