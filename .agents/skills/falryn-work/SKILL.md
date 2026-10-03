@@ -97,24 +97,15 @@ Choose one recommended copy-ready `Suggested next prompt: ...` from the evidence
 Prefer a concrete target when evidence supports it. Do not default to Next merely
 because the selector has not been run, or force Deliver by guessing an issue.
 
-Rank prompts by superiority: a superior prompt already includes the inferior one.
+Prompts form a hierarchy; a higher prompt includes the ones below it:
 
-- Command: Deliver includes Plan, Implement, Review, Verify and Merge.
-- Target: `Parent chain #P` includes its remaining children, including Docs
-  children; application delivery includes its required Docs companions.
-- Same work: `Parent issue #P` equals its next child.
+- Commands: Deliver > Implement > Plan, Review, Verify, Merge.
+- Targets: `Parent chain #P` > its child issues and Docs companions.
 
-Offer the most superior prompt that fits, and drop every prompt a listed prompt
-already includes. A wider scope with a different stopping point is a real choice,
-not a duplicate: beside a recommended child, offer
-`Deliver - Target: Parent chain #P` when other children remain, naming the child
-where it stops, such as one that needs a decision. Otherwise usually offer nothing
-more. Put each prompt in its own copy block with one line on what it covers.
-
-An inferior command appears only when the user works in manual stages or it is
-the only useful remaining step, such as Merge for a verified PR awaiting
-authorization. Never offer a prompt that contradicts a pending proposal, such as
-delivering an issue proposed for closure; state the proposal and its question.
+Suggest the highest prompt that fits and skip what it already includes. Beside
+the recommended issue, also offer `Deliver - Target: Parent chain #P` when more
+children remain, naming where it stops. Use a lower command only for manual-stage
+work or when it is the only step left.
 
 An audit result alone is not a selection. Distinguish uncertainty from a known
 failure: repeating Next cannot fix denied access, an unchanged audit defect or
