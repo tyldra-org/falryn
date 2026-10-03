@@ -25,6 +25,7 @@ import type {
   RetryPolicy,
   TerminalOutcome,
 } from "../../domain/orchestration/index.ts";
+import type { EventStoreError } from "../../domain/sessions/event-store.ts";
 import {
   type AttemptClassification,
   type AttemptFact,
@@ -67,7 +68,7 @@ import type {
   TurnAttemptPolicyOutcome,
 } from "./turn-attempt-policy/contracts.ts";
 import type { TurnCoordinator, TurnCoordinatorError } from "./turn-coordinator.ts";
-import type { TurnEventJournalPort } from "./turn-event-journal.ts";
+import type { PersistTurnEventsOutcome, TurnEventJournalPort } from "./turn-event-journal.ts";
 
 export * from "./turn-attempt-policy/contracts.ts";
 
@@ -380,31 +381,116 @@ function bindingBytes(binding: ModelAttemptBinding): number {
   return new TextEncoder().encode(JSON.stringify(binding)).byteLength;
 }
 
+type TrimStep = {
+  readonly length: (binding: ModelAttemptBinding) => number;
+  readonly keep: (binding: ModelAttemptBinding, kept: number) => ModelAttemptBinding;
+};
+
+function counted(
+  binding: ModelAttemptBinding,
+  key: keyof NonNullable<ModelAttemptBinding["trimmed"]>,
+  removed: number,
+): ModelAttemptBinding {
+  const previous = binding.trimmed ?? { fallbacks: 0, transitions: 0, omitted: 0, cards: 0 };
+  return { ...binding, trimmed: { ...previous, [key]: previous[key] + removed } };
+}
+
 /**
- * Keep the durable attempt record within one event. The plan's rejected
- * candidates are its only open-ended list; the record keeps the highest-ranked
- * ones and counts the rest in `omittedRejected`, as the plan already does.
+ * Open-ended lists in trimming order (#1267). Each keeps its highest-ranked entries; route
+ * identity, `selected`, `tools`, `families` and budgets are never trimmed.
+ */
+const TRIM_STEPS: readonly TrimStep[] = [
+  {
+    length: (binding) => binding.opportunityPlan?.rejected.length ?? 0,
+    keep: (binding, kept) => {
+      const plan = binding.opportunityPlan;
+      if (plan === undefined) return binding;
+      return {
+        ...binding,
+        opportunityPlan: {
+          ...plan,
+          rejected: plan.rejected.slice(0, kept),
+          omittedRejected: plan.omittedRejected + plan.rejected.length - kept,
+        },
+      };
+    },
+  },
+  {
+    length: (binding) => binding.opportunityPlan?.fallbacks.length ?? 0,
+    keep: (binding, kept) => {
+      const plan = binding.opportunityPlan;
+      if (plan === undefined) return binding;
+      return counted(
+        { ...binding, opportunityPlan: { ...plan, fallbacks: plan.fallbacks.slice(0, kept) } },
+        "fallbacks",
+        plan.fallbacks.length - kept,
+      );
+    },
+  },
+  {
+    length: (binding) => binding.opportunityPlan?.degradation.transitions.length ?? 0,
+    keep: (binding, kept) => {
+      const plan = binding.opportunityPlan;
+      if (plan === undefined) return binding;
+      const transitions = plan.degradation.transitions;
+      return counted(
+        {
+          ...binding,
+          opportunityPlan: {
+            ...plan,
+            degradation: { ...plan.degradation, transitions: transitions.slice(0, kept) },
+          },
+        },
+        "transitions",
+        transitions.length - kept,
+      );
+    },
+  },
+  {
+    length: (binding) => binding.omitted.length,
+    keep: (binding, kept) =>
+      counted(
+        { ...binding, omitted: binding.omitted.slice(0, kept) },
+        "omitted",
+        binding.omitted.length - kept,
+      ),
+  },
+  {
+    length: (binding) => binding.capabilityCatalog?.cards.length ?? 0,
+    keep: (binding, kept) => {
+      const catalog = binding.capabilityCatalog;
+      if (catalog === undefined) return binding;
+      return counted(
+        { ...binding, capabilityCatalog: { ...catalog, cards: catalog.cards.slice(0, kept) } },
+        "cards",
+        catalog.cards.length - kept,
+      );
+    },
+  },
+];
+
+/**
+ * Keep the durable attempt record within one event (#947, #1267). Lists are trimmed in
+ * `TRIM_STEPS` order, each halved until the record fits; rejected candidates are counted in
+ * `omittedRejected` and every other trimmed entry in `trimmed`. A record that still cannot
+ * fit is returned whole and the store refuses it; the caller then does not run the attempt.
  */
 export function boundedAttemptBinding(
   binding: ModelAttemptBinding,
   budget = MAX_EVENT_BYTES - ATTEMPT_BINDING_ENVELOPE_BYTES,
 ): ModelAttemptBinding {
-  const plan = binding.opportunityPlan;
-  if (plan === undefined || bindingBytes(binding) <= budget) return binding;
-  let kept = plan.rejected.length;
-  while (kept > 0) {
-    kept = Math.floor(kept / 2);
-    const trimmed: ModelAttemptBinding = {
-      ...binding,
-      opportunityPlan: {
-        ...plan,
-        rejected: plan.rejected.slice(0, kept),
-        omittedRejected: plan.omittedRejected + plan.rejected.length - kept,
-      },
-    };
-    if (bindingBytes(trimmed) <= budget) return trimmed;
+  if (bindingBytes(binding) <= budget) return binding;
+  let current = binding;
+  for (const step of TRIM_STEPS) {
+    const base = current;
+    let kept = step.length(base);
+    while (kept > 0) {
+      kept = Math.floor(kept / 2);
+      current = step.keep(base, kept);
+      if (bindingBytes(current) <= budget) return current;
+    }
   }
-  return binding;
+  return current;
 }
 
 function attemptBinding(
@@ -512,11 +598,17 @@ async function persistFacts(
   journal: TurnEventJournalPort | undefined,
   facts: readonly TurnLifecycleFact[],
   signal: AbortSignal,
-): Promise<void> {
+): Promise<PersistTurnEventsOutcome | null> {
   if (journal === undefined || facts.length === 0) {
-    return;
+    return null;
   }
-  await journal.persist(facts, signal);
+  return journal.persist(facts, signal);
+}
+
+/** A short, secret-free code for a store refusal. */
+function storeErrorCode(error: EventStoreError): string {
+  if (error.code === "codec") return `codec:${error.error.kind}`;
+  return error.code;
 }
 
 function settleFromClassification(
@@ -734,7 +826,7 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
                   seed: input.modelInput.promptCache,
                 });
           if (live !== null) {
-            await persistFacts(
+            const recorded = await persistFacts(
               options.journal,
               [
                 {
@@ -751,6 +843,35 @@ export function createTurnAttemptPolicy(options: TurnAttemptPolicyOptions): Turn
               ],
               input.signal,
             );
+            // An attempt whose start cannot be recorded is not run (#1267): nothing reaches the
+            // provider, so the failure has no effect. A cancelled persist settles below.
+            if (recorded?.kind === "store-error") {
+              const failed = settleFromClassification(
+                options.coordinator,
+                input.turnId,
+                generation,
+                attempts,
+                {
+                  kind: "failed",
+                  effect: "none",
+                  message: `attempt start record could not be stored (${storeErrorCode(recorded.error)})`,
+                },
+              );
+              const settled = options.coordinator.get(input.turnId);
+              if (settled?.status === "terminal")
+                await persistFacts(
+                  turnLifecycleJournal,
+                  [
+                    {
+                      kind: "turn.completed",
+                      correlation: correlationFor(settled),
+                      outcome: settled.outcome,
+                    },
+                  ],
+                  input.signal,
+                );
+              return failed;
+            }
           }
 
           taskResources.tighten(roleResourceLimits(receipt.budgets));

@@ -760,4 +760,119 @@ describe("boundedAttemptBinding", () => {
     expect(plan?.rejected[0]?.name).toBe("candidate_0");
     expect((plan?.rejected.length ?? 0) + (plan?.omittedRejected ?? 0)).toBe(43);
   });
+
+  test("trims fallbacks, transitions, omissions and cards in order and counts each (#1267)", () => {
+    const pad = "x".repeat(200);
+    const list = (prefix: string, length: number) =>
+      Array.from({ length }, (_, index) => ({ name: `${prefix}_${index}`, pad }));
+    const binding = {
+      schemaVersion: 1,
+      tools: list("tool", 4),
+      families: [],
+      omitted: list("omitted", 30),
+      capabilityCatalog: { total: 30, counts: {}, cards: list("card", 30) },
+      opportunityPlan: {
+        selected: list("selected", 4),
+        rejected: list("rejected", 30),
+        omittedRejected: 0,
+        fallbacks: list("fallback", 30),
+        degradation: { transitions: list("transition", 30) },
+      },
+    } as unknown as ModelAttemptBinding;
+    const bytes = (value: unknown) => new TextEncoder().encode(JSON.stringify(value)).byteLength;
+
+    // Enough room once rejected and fallbacks are gone: transitions are trimmed next, never cards.
+    const budget = bytes(binding) - 30 * bytes(list("x", 1)[0]) * 2 - 2_000;
+    const bounded = boundedAttemptBinding(binding, budget);
+    expect(bytes(bounded)).toBeLessThanOrEqual(budget);
+    const plan = bounded.opportunityPlan;
+    expect(plan?.rejected).toHaveLength(0);
+    expect(plan?.omittedRejected).toBe(30);
+    expect(plan?.fallbacks).toHaveLength(0);
+    expect(plan?.degradation.transitions.length).toBeLessThan(30);
+    expect(plan?.degradation.transitions[0]).toMatchObject({ name: "transition_0" });
+    expect(bounded.trimmed).toEqual({
+      fallbacks: 30,
+      transitions: 30 - (plan?.degradation.transitions.length ?? 0),
+      omitted: 0,
+      cards: 0,
+    });
+    // Identity-bearing lists are never trimmed.
+    expect(bounded.tools).toHaveLength(4);
+    expect(plan?.selected).toHaveLength(4);
+
+    // Under a tight budget earlier lists empty first and every entry is kept or counted.
+    const tight = boundedAttemptBinding(binding, 2_500);
+    expect(tight.trimmed).toMatchObject({ fallbacks: 30, transitions: 30, omitted: 30 });
+    expect((tight.capabilityCatalog?.cards.length ?? 0) + (tight.trimmed?.cards ?? 0)).toBe(30);
+    expect(tight.trimmed?.cards).toBeGreaterThan(0);
+    expect(bytes(tight)).toBeLessThanOrEqual(2_500);
+  });
+});
+
+describe("unrecorded attempt starts", () => {
+  test("a refused start record fails the turn before any provider request (#1267)", async () => {
+    const { coordinator, turnId: id } = startTurn();
+    const clock = createManualClock();
+    const eventStore = createInMemoryEventStore();
+    const real = createTurnEventJournal({
+      eventStore,
+      clock,
+      streamId: streamId.from("session:refused-start"),
+      correlation: {
+        workspaceId: workspaceId.from("workspace-1"),
+        sessionId: sessionId.from("session-1"),
+        traceId: traceId.from("trace-1"),
+        configurationGeneration: generation,
+      },
+    });
+    const persisted: string[] = [];
+    const journal = {
+      ...real,
+      async persist(facts: Parameters<typeof real.persist>[0], signal?: AbortSignal) {
+        if (facts.some((fact) => fact.kind === "model.attempt.started"))
+          return {
+            kind: "store-error" as const,
+            error: {
+              code: "codec" as const,
+              error: { kind: "oversized-event", bytes: 70_000, maximum: 65_536 },
+            } as never,
+            events: [],
+            receipts: [],
+          };
+        persisted.push(...facts.map((fact) => fact.kind));
+        return real.persist(facts, signal);
+      },
+    };
+    let runnerCalls = 0;
+    const policy = createTurnAttemptPolicy({
+      clock,
+      coordinator,
+      policy: samplePolicy(),
+      catalogs: catalogs(),
+      journal,
+      backoff: { baseDelayMs: 0, maxDelayMs: 0, jitterRatio: 0 },
+      runner: scriptedRunner([
+        () => {
+          runnerCalls += 1;
+          throw new Error("an unrecorded attempt must not run");
+        },
+      ]),
+    });
+    const outcome = await policy.run({
+      turnId: id,
+      configurationGeneration: generation,
+      signal: new AbortController().signal,
+      intent: "coding",
+      modelInput: sampleModelInput(),
+    });
+    expect(outcome).toMatchObject({
+      kind: "failed",
+      effect: "none",
+      message: "attempt start record could not be stored (codec:oversized-event)",
+    });
+    expect(runnerCalls).toBe(0);
+    expect(coordinator.get(id)?.status).toBe("terminal");
+    expect(persisted).toEqual(["turn.started", "turn.completed"]);
+  });
 });

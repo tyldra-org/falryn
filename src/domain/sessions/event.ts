@@ -202,6 +202,19 @@ export type ModelAttemptBinding = {
   }[];
   readonly schemaBytes: number;
   readonly schemaTokensEstimated: number;
+  /**
+   * Entries the durable record left out to stay within one event (#1267), highest-ranked kept.
+   * Rejected candidates are counted in the plan's `omittedRejected`. Absent when nothing else
+   * was trimmed and on older records.
+   */
+  readonly trimmed?:
+    | {
+        readonly fallbacks: number;
+        readonly transitions: number;
+        readonly omitted: number;
+        readonly cards: number;
+      }
+    | undefined;
   /** Secret-safe prompt-cache receipt; absent on legacy and uncached attempts. */
   readonly promptCache?:
     | {

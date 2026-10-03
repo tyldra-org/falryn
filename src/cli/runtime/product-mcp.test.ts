@@ -470,6 +470,31 @@ function resultOf(reply: ToolReply | undefined): Record<string, unknown> {
 }
 
 posix(
+  "a turn whose prompt names an MCP server still records its attempt start (#1267)",
+  async () => {
+    const f = await fixture("normal");
+    const turn = await terminalTurn(f, () => null, "Use the configured MCP fixture");
+    expect(turn.result.kind).toBe("accepted");
+    const first = turn.attached.transcriptFeed.events()[0];
+    if (!first) throw new Error("missing transcript");
+    const page = await turn.history.eventStore.readFrom(
+      { streamId: first.streamId, afterSequence: null },
+      256,
+    );
+    if (!page.ok) throw new Error("history unreadable");
+    const kinds = page.value.map((event) => event.kind);
+    expect(kinds.filter((kind) => kind === "model.attempt.started")).toHaveLength(
+      kinds.filter((kind) => kind === "model.attempt.completed").length,
+    );
+    const started = page.value.find((event) => event.kind === "model.attempt.started");
+    // This prompt's full binding exceeded the event bound; the stored record is the bounded one.
+    expect(
+      started?.kind === "model.attempt.started" && started.payload.binding?.trimmed,
+    ).toBeTruthy();
+  },
+);
+
+posix(
   "terminal MCP controls persist the same semantic results exposed in its transcript",
   async () => {
     const f = await fixture("normal");
