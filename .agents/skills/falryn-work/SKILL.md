@@ -97,21 +97,24 @@ Choose one recommended copy-ready `Suggested next prompt: ...` from the evidence
 Prefer a concrete target when evidence supports it. Do not default to Next merely
 because the selector has not been run, or force Deliver by guessing an issue.
 
-Add an alternative only when it covers materially different work, each in its
-own copy block with one line on what it covers and where it stops. When a Deliver
-recommendation names a parent's next child, offer `Deliver - Target: Parent chain #P`
-if other children remain, naming the child where it would stop, such as one that
-needs a decision. Otherwise usually offer nothing more.
+Rank prompts by superiority: a superior prompt already includes the inferior one.
 
-Omit a prompt that resolves to the same work as another, such as
-`Parent issue #P` when its next child is the recommended issue. Omit sibling or
-Docs issues that the chain or the recommended delivery already covers; Next
-selects one unit, not a menu. Omit Plan, Implement, Review, Verify and Merge when
-Deliver already includes them. Recommend one of those only when the user is
-working in manual stages, or when it is the only useful remaining step (such as
-Merge for a verified PR awaiting authorization). Never offer a prompt that
-contradicts a pending proposal, such as delivering an issue proposed for closure;
-state the proposal and its question instead.
+- Command: Deliver includes Plan, Implement, Review, Verify and Merge.
+- Target: `Parent chain #P` includes its remaining children, including Docs
+  children; application delivery includes its required Docs companions.
+- Same work: `Parent issue #P` equals its next child.
+
+Offer the most superior prompt that fits, and drop every prompt a listed prompt
+already includes. A wider scope with a different stopping point is a real choice,
+not a duplicate: beside a recommended child, offer
+`Deliver - Target: Parent chain #P` when other children remain, naming the child
+where it stops, such as one that needs a decision. Otherwise usually offer nothing
+more. Put each prompt in its own copy block with one line on what it covers.
+
+An inferior command appears only when the user works in manual stages or it is
+the only useful remaining step, such as Merge for a verified PR awaiting
+authorization. Never offer a prompt that contradicts a pending proposal, such as
+delivering an issue proposed for closure; state the proposal and its question.
 
 An audit result alone is not a selection. Distinguish uncertainty from a known
 failure: repeating Next cannot fix denied access, an unchanged audit defect or
