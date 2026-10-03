@@ -107,6 +107,8 @@ unplanned child, Implement to stop before merge, Review or Merge for an open PR,
 Verify for a parent, or a scoped Next. Name where a chain would stop, such as
 a child that needs a decision. Omit combinations the command boundary rejects
 or the evidence does not support; do not pad the list.
+Order alternatives by usefulness: delivery scopes from narrowest to widest,
+then manual stopping points, then selection.
 
 An audit result alone is not a selection. Distinguish uncertainty from a known
 failure: repeating Next cannot fix denied access, an unchanged audit defect or

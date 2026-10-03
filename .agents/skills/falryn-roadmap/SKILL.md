@@ -34,7 +34,7 @@ request without performing its selection.
 4. Recheck the candidate's live owner, issue state, native blockers and delivery
    PRs. If routing facts changed, capture a new generation and select again.
 5. Report one issue, its original position, why it is actionable and its next
-   prompt. Prefer an existing verified delivery PR, qualified with `Docs` when
+   prompts. Prefer an existing verified delivery PR, qualified with `Docs` when
    appropriate. Never choose among competing PRs without resolving ownership.
 
 ```bash
