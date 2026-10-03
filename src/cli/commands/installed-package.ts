@@ -20,6 +20,30 @@ export type InstalledPackageSnapshot =
   | { readonly ok: false; readonly code: string };
 
 /**
+ * One installed version read back from its exact cached bytes under the state root. Shared by every
+ * reader of an installed package so they address the identity that was installed.
+ */
+export async function readInstalledVersion(
+  stateRoot: string,
+  version: InstalledVersion,
+  signal: AbortSignal,
+): Promise<InstalledPackageSnapshot> {
+  try {
+    const snapshot = await createHostPackageCache(join(stateRoot, "packages")).read(
+      version,
+      signal,
+    );
+    return { ok: true, snapshot, dependencies: version.dependencies };
+  } catch (error) {
+    if (signal.aborted) return { ok: false, code: "cancelled" };
+    return {
+      ok: false,
+      code: error instanceof ExtensionInputError ? error.code : "package-cache-unreadable",
+    };
+  }
+}
+
+/**
  * The current installed version of a package, read back from its exact cached bytes with the
  * source the lifecycle recorded. Inspection, trust and notices that target an installed package
  * therefore address the identity that was installed, including one acquired from a listing, which
@@ -40,11 +64,7 @@ export async function readInstalledPackage(
     if (version === null) return { ok: false, code: "not-installed" };
     const stateRoot = rootChild(services().localData.layout, "state");
     if (stateRoot === null) return { ok: false, code: "package-root-unavailable" };
-    const snapshot = await createHostPackageCache(join(stateRoot, "packages")).read(
-      version,
-      signal,
-    );
-    return { ok: true, snapshot, dependencies: version.dependencies };
+    return await readInstalledVersion(stateRoot, version, signal);
   } catch (error) {
     if (signal.aborted) return { ok: false, code: "cancelled" };
     return {

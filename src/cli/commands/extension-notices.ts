@@ -1,5 +1,4 @@
 /** `falryn extension notices`: derived trust, compatibility and health notices (#166). */
-import { userInfo } from "node:os";
 import { adoptForeignError } from "../../application/diagnostics/index.ts";
 import { preparePackage } from "../../application/extensions/index.ts";
 import {
@@ -14,17 +13,21 @@ import { createPackageHealthRepository } from "../../data/extensions/package-hea
 import { createNoticeAcknowledgementRepository } from "../../data/security/notice-repository.ts";
 import { createPackageProvenanceRepository } from "../../data/security/provenance-repository.ts";
 import { createTrustDecisionRepository } from "../../data/security/trust-repository.ts";
-import { canonicalDigest } from "../../domain/extensions/canonical.ts";
 import { recoveryForEffect } from "../../domain/foundation/index.ts";
 import { err, ok } from "../../domain/foundation/result.ts";
 import { conflictKey, NO_RETRY, workUnitId } from "../../domain/orchestration/work.ts";
 import { isCleanClose } from "../../domain/storage/index.ts";
 import { createHostPackageSource } from "../../integrations/extensions/host-package-inspection.ts";
 import type { CommandResultOf } from "../output/result.ts";
+import { localUserActor } from "../runtime/package-standing.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import { FALRYN_VERSION } from "../version.ts";
 import { createExtensionStateStore } from "./extension-state.ts";
-import { type ExtensionTarget, readInstalledPackage } from "./installed-package.ts";
+import {
+  type ExtensionTarget,
+  type InstalledPackageSnapshot,
+  readInstalledPackage,
+} from "./installed-package.ts";
 import { resultFor } from "./shared.ts";
 import { openSessionStore } from "./storage.ts";
 
@@ -38,6 +41,49 @@ const absentOwners: PackageNoticeOwners = {
   health: { latestPerContribution: () => ok([]) },
 };
 
+/** The open product database, named by the repositories that read it. */
+type ProductStore = Parameters<typeof createTrustDecisionRepository>[0];
+
+/** The notice owners over the product database; an inspection without a request only reads them. */
+export function noticeOwners(store: ProductStore): PackageNoticeOwners {
+  return {
+    decisions: createTrustDecisionRepository(store),
+    provenance: createPackageProvenanceRepository(store),
+    acknowledgements: createNoticeAcknowledgementRepository(store),
+    health: createPackageHealthRepository(store),
+  };
+}
+
+/** The host a package is prepared against, the same one install and inspection use. */
+export function noticeHost() {
+  return { falryn: FALRYN_VERSION, bun: Bun.version, os: process.platform, arch: process.arch };
+}
+
+/**
+ * The notices of one installed version, from its cached bytes, exactly as
+ * `extension notices --installed` lists them. Reads only.
+ */
+export async function installedVersionNotices(
+  store: ProductStore,
+  installed: InstalledPackageSnapshot,
+  now: number,
+  signal: AbortSignal,
+): Promise<PackageNoticesResult> {
+  if (!installed.ok) return { status: "failed", code: installed.code };
+  const prepared = await preparePackage({ read: async () => installed.snapshot }, noticeHost(), {
+    candidates: installed.dependencies,
+    signal,
+  });
+  if (!prepared.ok) return { status: "failed", code: prepared.code };
+  return inspectPackageNotices(
+    noticeOwners(store),
+    prepared.package,
+    packageTrustObservation(prepared.package, localUserActor(), now),
+    undefined,
+    signal,
+  );
+}
+
 async function executeNotices(
   target: ExtensionTarget,
   services: ServiceProvider,
@@ -45,12 +91,7 @@ async function executeNotices(
   signal: AbortSignal,
 ): Promise<PackageNoticesResult> {
   const resolved = services();
-  const host = {
-    falryn: FALRYN_VERSION,
-    bun: Bun.version,
-    os: process.platform,
-    arch: process.arch,
-  };
+  const host = noticeHost();
   let prepared: Awaited<ReturnType<typeof preparePackage>>;
   if (typeof target === "string")
     prepared = await preparePackage(createHostPackageSource(target), host, { signal });
@@ -65,11 +106,7 @@ async function executeNotices(
   }
   if (!prepared.ok) return { status: "failed", code: prepared.code };
   // The local actor comes from composition; package metadata cannot supply it.
-  const actor = canonicalDigest({
-    kind: "local-user",
-    uid: userInfo().uid,
-    username: userInfo().username,
-  });
+  const actor = localUserActor();
   const observation = () =>
     packageTrustObservation(prepared.package, actor, Number(resolved.clock.now()));
   if (signal.aborted) return { status: "failed", code: "cancelled" };
@@ -85,12 +122,7 @@ async function executeNotices(
   let result: PackageNoticesResult;
   try {
     result = inspectPackageNotices(
-      {
-        decisions: createTrustDecisionRepository(opened.store),
-        provenance: createPackageProvenanceRepository(opened.store),
-        acknowledgements: createNoticeAcknowledgementRepository(opened.store),
-        health: createPackageHealthRepository(opened.store),
-      },
+      noticeOwners(opened.store),
       prepared.package,
       observation(),
       request,

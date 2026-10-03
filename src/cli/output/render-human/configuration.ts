@@ -325,6 +325,7 @@ export function renderDoctor(
       `unregistered: ${payload.unregisteredClasses.length === 0 ? "none" : payload.unregisteredClasses.join(", ")}`,
     ),
     ...doctorSkillLines(session, payload.skills),
+    ...doctorPackageLines(session, payload.packages),
   ];
 
   return {
@@ -398,7 +399,63 @@ export function doctorFindings(payload: DoctorPayload): readonly string[] {
       `${payload.unregisteredClasses.length} ownership ${plural(payload.unregisteredClasses.length, "class", "classes")} ${plural(payload.unregisteredClasses.length, "has", "have")} no owner: ${payload.unregisteredClasses.join(", ")}.`,
     );
   }
+  // Advisory: a package that may not run is a finding about that package, never doctor's verdict.
+  if (payload.packages?.status === "unavailable" && payload.packages.code !== "cancelled") {
+    findings.push(`Installed package state could not be read (${safe(payload.packages.code)}).`);
+  }
+  if (payload.packages?.status === "inspected") {
+    for (const entry of payload.packages.packages) {
+      if (entry.standing.status === "unavailable") {
+        findings.push(
+          `Package ${safe(entry.packageId)} standing could not be read (${safe(entry.standing.code)}).`,
+        );
+      } else if (entry.standing.state !== "eligible") {
+        findings.push(
+          `Package ${safe(entry.packageId)} is ${entry.standing.state}${entry.standing.reason === null ? "" : ` (${entry.standing.reason})`}; see falryn package standing.`,
+        );
+      }
+    }
+  }
   return findings;
+}
+
+/** The packages section (#1280): each installed package's standing, notices and latest evaluation. */
+function doctorPackageLines(
+  session: Session,
+  packages: DoctorPayload["packages"],
+): readonly string[] {
+  if (packages === undefined) return [];
+  if (packages.status === "absent") return ["  Packages   none installed (no database)"];
+  if (packages.status === "unavailable")
+    return [`  Packages   unavailable (${safe(packages.code)})`];
+  const eligible = packages.packages.filter(
+    (entry) => entry.standing.status === "read" && entry.standing.state === "eligible",
+  ).length;
+  const total = packages.packages.length + packages.omitted;
+  return [
+    `  Packages   ${total} installed, ${eligible} eligible${packages.omitted > 0 ? `; ${packages.omitted} more not shown` : ""}`,
+    ...packages.packages.flatMap((entry) => {
+      const standing =
+        entry.standing.status === "read"
+          ? `${entry.standing.state}${entry.standing.reason === null ? "" : ` (${entry.standing.reason})`}`
+          : `standing unavailable (${safe(entry.standing.code)})`;
+      const notices =
+        entry.notices.status === "counted"
+          ? `notices: ${entry.notices.blocking} blocking, ${entry.notices.warning} warning${entry.notices.suppressed > 0 ? `, ${entry.notices.suppressed} acknowledged` : ""}`
+          : `notices unavailable (${safe(entry.notices.code)})`;
+      const evaluation =
+        entry.evaluation === null
+          ? "not evaluated"
+          : entry.evaluation.status === "recorded"
+            ? `evaluation: ${entry.evaluation.decision}${entry.evaluation.stale ? " (earlier version)" : ""}`
+            : `evaluation unavailable (${safe(entry.evaluation.code)})`;
+      return hanging(
+        session,
+        "             ",
+        `${safe(entry.packageId)}: ${standing}; ${notices}; ${evaluation}`,
+      );
+    }),
+  ];
 }
 
 /** The skills section (#1124): counts, the top findings and where the full listing is. */

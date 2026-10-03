@@ -336,6 +336,24 @@ export function createPackageLifecycleRepository(store: SqliteStorePort): Packag
         };
       });
     },
+    installed(limit) {
+      return safely(() => {
+        const bounded = Math.max(0, Math.trunc(limit));
+        const rows = read(
+          "SELECT package_id FROM installed_packages WHERE storage_id IS NOT NULL ORDER BY package_id LIMIT $limit",
+          { limit: bounded },
+        );
+        const total = read(
+          "SELECT count(*) AS count FROM installed_packages WHERE storage_id IS NOT NULL",
+          {},
+        )[0];
+        const packageIds = rows.map((row) => {
+          if (typeof row.package_id !== "string") throw new Error("invalid-package-id");
+          return row.package_id;
+        });
+        return { packageIds, omitted: Math.max(0, Number(total?.count ?? 0) - packageIds.length) };
+      });
+    },
   };
   return repository;
 }
