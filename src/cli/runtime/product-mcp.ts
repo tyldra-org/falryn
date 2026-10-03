@@ -1,11 +1,15 @@
 import { createMcpCatalog } from "../../application/extensions/mcp-catalog.ts";
 import type { McpUserInput } from "../../application/extensions/mcp-input.ts";
 import { createMcpLifecycle } from "../../application/extensions/mcp-lifecycle.ts";
+import { prepareMcpServers } from "../../application/extensions/mcp-preparation.ts";
+import { composeMcpCatalogTools } from "../../application/tools/product-mcp-catalog-tools.ts";
 import { composeProductMcpTools } from "../../application/tools/product-mcp-tools.ts";
+import type { ProductToolSourceBundle } from "../../application/tools/product-tools-merge.ts";
 import type {
   ConfigurationGenerationRecord,
   ConfigurationValues,
 } from "../../domain/configuration/index.ts";
+import type { McpPreparationReceipt } from "../../domain/extensions/mcp-preparation.ts";
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type { ManagedServicePort } from "../../domain/process/index.ts";
 import type { SecretResolverPort } from "../../domain/security/credential.ts";
@@ -50,12 +54,46 @@ export function composeProductMcp(options: {
     },
   });
   const catalog = createMcpCatalog({ lifecycle, configuration });
+  const tools = composeProductMcpTools(options.generation, lifecycle, catalog, options.userInput);
   return {
     lifecycle,
     catalog,
     /** The resolved connection configuration, for hosts that list servers. */
     configuration,
-    tools: composeProductMcpTools(options.generation, lifecycle, catalog, options.userInput),
+    tools,
+    /**
+     * Prepare relevant servers for one turn and publish current catalog tools (#1157). With no
+     * configured server this does nothing and returns null.
+     */
+    async prepareTurn(
+      turn: {
+        readonly prompt: string;
+        readonly mcpServers: readonly string[];
+        readonly id: string;
+      },
+      signal: AbortSignal,
+    ): Promise<{
+      readonly bundle: ProductToolSourceBundle;
+      readonly receipt: McpPreparationReceipt;
+    } | null> {
+      const current = configuration();
+      if (current.servers.length === 0) return null;
+      const servers = await prepareMcpServers(
+        { lifecycle, catalog, configuration },
+        { task: turn.prompt, selectedServers: turn.mcpServers, requestId: turn.id, signal },
+      );
+      const published = composeMcpCatalogTools({
+        generation: options.generation,
+        catalog,
+        servers: configuration().servers,
+        owner: tools,
+        selectedServers: turn.mcpServers,
+      });
+      return {
+        bundle: published.bundle,
+        receipt: { schemaVersion: 1, servers, tools: published.counts },
+      };
+    },
     /** Host-owned unified Read port for catalog resources. */
     resources: catalog.resources,
     close: lifecycle.close,

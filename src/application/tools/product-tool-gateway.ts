@@ -121,6 +121,8 @@ export type ProductToolGatewayOptions = {
   readonly toolHost?: import("../../domain/tools/index.ts").HostPlatform;
   readonly sandbox?: SandboxInvocationPort;
   readonly trust?: CapabilityTrustPort;
+  /** Capabilities the user authored (#1157); ecosystem package trust does not govern them. */
+  readonly userAuthorized?: (capabilityId: string) => boolean;
   readonly delegation?: ToolRunnerRequest["delegation"];
   readonly userSelection?: ToolRunnerRequest["userSelection"];
   readonly clock: ClockPort;
@@ -328,6 +330,7 @@ function trustRefusal(
   capabilityId: unknown,
 ): string | null {
   if (!requiresEcosystemTrust(source)) return null;
+  if (options.userAuthorized?.(String(capabilityId)) === true) return null;
   const trust = options.trust?.inspect(String(capabilityId)) ?? null;
   return trust?.eligible === true
     ? null

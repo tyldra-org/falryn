@@ -691,6 +691,8 @@ export async function composeProductShellAttachments(
               ...(skillTools === null ? [] : [skillTools]),
               ...(native === undefined ? [] : [native.tools]),
             ]);
+      // The latest native publication's tools; each turn's refresh may replace them.
+      let nativeTools = native?.tools;
       if (initialTools !== null) evaluator.bindTools(initialTools);
       const composed = compose({
         ...(instructions === null ? {} : { instructions }),
@@ -986,30 +988,47 @@ export async function composeProductShellAttachments(
           ? {}
           : { modelPreferences: ports.modelPreferences }),
         runtime: composed.value,
-        ...(ports.publishNativePackages === undefined || productTools === null
+        ...(productTools === null
           ? {}
           : {
-              async refreshRuntime(signal: AbortSignal, captured = publishedRuntime) {
+              async refreshRuntime(signal: AbortSignal, captured = publishedRuntime, turn) {
                 const generation = captured.correlation.configurationGeneration;
-                const publication = await ports.publishNativePackages?.(
-                  generation,
-                  signal,
-                  String(sessionId),
-                  { mcp, evaluator: evaluator.session },
-                );
-                if (!publication) throw new Error("native-publication-unavailable");
-                prompts = publication.prompts;
-                packageCatalog = publication.catalog;
+                // Relevant MCP servers are prepared and their current tools published (#1157).
+                const prepared =
+                  turn === undefined
+                    ? null
+                    : await mcp.prepareTurn(
+                        { ...turn, id: `turn-prepare:${randomUUID()}` },
+                        signal,
+                      );
+                if (ports.publishNativePackages === undefined && prepared === null)
+                  return { runtime: captured };
+                if (ports.publishNativePackages !== undefined) {
+                  const publication = await ports.publishNativePackages(
+                    generation,
+                    signal,
+                    String(sessionId),
+                    { mcp, evaluator: evaluator.session },
+                  );
+                  if (!publication) throw new Error("native-publication-unavailable");
+                  prompts = publication.prompts;
+                  packageCatalog = publication.catalog;
+                  nativeTools = publication.tools;
+                }
                 const tools = mergeProductToolBundles(generation, [
                   productTools,
                   ...(skillTools === null ? [] : [skillTools]),
-                  publication.tools,
+                  ...(nativeTools === undefined ? [] : [nativeTools]),
+                  ...(prepared === null ? [] : [prepared.bundle]),
                 ]);
                 evaluator.bindTools(tools);
                 const next = captured.recomposeTools(tools);
                 if (!next.ok) throw new Error(next.error.code);
                 publishedRuntime = next.value;
-                return publishedRuntime;
+                return {
+                  runtime: publishedRuntime,
+                  ...(prepared === null ? {} : { mcpPreparation: prepared.receipt }),
+                };
               },
             }),
         clock: ports.clock,

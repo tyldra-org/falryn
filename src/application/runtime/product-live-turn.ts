@@ -230,6 +230,18 @@ export type ProductAdmissionBinding = {
   readonly generation: ConfigurationGeneration;
 };
 
+/** What a host's per-turn refresh knows about the turn it prepares (#1157). */
+export type RuntimeRefreshTurn = {
+  readonly prompt: string;
+  /** MCP servers the user selected with `$` mentions for this turn. */
+  readonly mcpServers: readonly string[];
+};
+
+export type RuntimeRefresh = {
+  readonly runtime: ProductAgentRuntime;
+  readonly mcpPreparation?: import("../../domain/extensions/mcp-preparation.ts").McpPreparationReceipt;
+};
+
 export type ProductLiveTurnExecutorOptions = {
   /** Captured synchronously once per admission; old work never reads a newer binding. */
   readonly admissionBinding?: () => ProductAdmissionBinding;
@@ -244,10 +256,16 @@ export type ProductLiveTurnExecutorOptions = {
   readonly modelPreferences?: () => import("../../providers/configuration/policy-schema.ts").ModelPreferences;
   readonly modelConfigurationGeneration?: () => ConfigurationGeneration;
   readonly runtime: ProductAgentRuntime;
+  /**
+   * Recompose the runtime before each turn from the host's current publications. The turn's
+   * task and user-selected MCP servers let the host prepare relevant MCP servers and publish
+   * their catalog tools (#1157); the receipt is recorded with the turn's attempts.
+   */
   readonly refreshRuntime?: (
     signal: AbortSignal,
     captured?: ProductAgentRuntime,
-  ) => Promise<ProductAgentRuntime>;
+    turn?: RuntimeRefreshTurn,
+  ) => Promise<RuntimeRefresh>;
   readonly clock: ClockPort;
   readonly providerCatalog: ModelCatalog | null;
   readonly contextSource?: ProductContextSource;
@@ -905,18 +923,22 @@ export function createProductLiveTurnExecutor(
           });
         }
 
+        let mcpPreparation: RuntimeRefresh["mcpPreparation"];
         if (options.refreshRuntime) {
           try {
-            const candidate = await options.refreshRuntime(
+            const refreshed = await options.refreshRuntime(
               input.signal ?? new AbortController().signal,
               runtime,
+              { prompt: input.prompt, mcpServers: [...(input.mentions?.mcpServers ?? [])] },
             );
+            const candidate = refreshed.runtime;
             if (
               candidate.attachments.turnProducer !== producer ||
               candidate.correlation !== runtime.correlation
             )
               throw new Error("native-runtime-host-mismatch");
             runtime = candidate;
+            mcpPreparation = refreshed.mcpPreparation;
           } catch {
             return result({
               kind: "unavailable",
@@ -1298,6 +1320,7 @@ export function createProductLiveTurnExecutor(
             consumer: "native-model",
             task: input.prompt,
             intent: input.intent ?? executionPolicy.workIntent,
+            ...(mcpPreparation === undefined ? {} : { mcpPreparation }),
             ...(skillResource === null && (input.mentions?.preferredCapabilityIds.length ?? 0) === 0
               ? {}
               : {

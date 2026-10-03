@@ -181,6 +181,11 @@ export type CapabilityRegistryDocument = {
 
 export type CapabilityRegistryEntry = CapabilityRegistryDocument & {
   readonly trust?: TrustProjection | null;
+  /**
+   * Published from the user's own configuration (#1157), so ecosystem package trust does not
+   * apply. Only a trusted host adapter sets this; untrusted documents cannot supply it.
+   */
+  readonly userAuthorized?: true;
   readonly identity: CapabilityIdentity;
   readonly capabilityId: CapabilityId;
   /** Collision key excludes source and version: only one active owner may publish it. */
@@ -189,6 +194,7 @@ export type CapabilityRegistryEntry = CapabilityRegistryDocument & {
 
 export type CapabilityRegistryEntryOptions = {
   readonly trust?: TrustProjection | null;
+  readonly userAuthorized?: boolean;
   /**
    * Adopt an already-published canonical identity, such as a ToolRegistry ID.
    * The caller is a trusted adapter; untrusted documents cannot supply it.
@@ -429,6 +435,7 @@ export function createCapabilityRegistryEntry(
   return ok({
     ...parsed.value,
     ...(options.trust === undefined ? {} : { trust: options.trust }),
+    ...(options.userAuthorized === true ? { userAuthorized: true as const } : {}),
     identity,
     capabilityId: encoded.value,
     registryKey: capabilityRegistryKey(identity),

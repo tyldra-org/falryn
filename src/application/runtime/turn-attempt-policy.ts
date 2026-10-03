@@ -560,6 +560,9 @@ function fullAttemptBinding(
     omitted: disclosure?.omitted ?? [],
     schemaBytes: disclosure?.schemaBytes ?? 0,
     schemaTokensEstimated: disclosure?.schemaTokensEstimated ?? 0,
+    ...(disclosure?.mcpPreparation === undefined
+      ? {}
+      : { mcpPreparation: disclosure.mcpPreparation }),
     ...(promptCache === undefined ? {} : { promptCache }),
     budgets: {
       attempts: receipt.budgets.attempts ?? null,

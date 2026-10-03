@@ -1338,6 +1338,7 @@ export async function runCoding(
       if (!restored.ok) throw new Error("activation.transcript-unavailable");
     }
     instructionRuntime = composed.value;
+    const runMcp = mcp;
     const executor = createProductLiveTurnExecutor({
       ...(selection ? { resumed: true, historyParents: selection.parents } : {}),
       checkpointEvents: productArtifactSession.eventStore,
@@ -1351,6 +1352,27 @@ export async function runCoding(
           Number(graph.loader.current()?.generation ?? generation),
         ),
       runtime: composed.value,
+      ...(options.toolExposureOverride === "none"
+        ? {}
+        : {
+            // Relevant MCP servers are prepared and their current tools published (#1157).
+            async refreshRuntime(signal: AbortSignal, captured = composed.value, turn) {
+              const prepared =
+                turn === undefined
+                  ? null
+                  : await runMcp.prepareTurn(
+                      { ...turn, id: `run-prepare:${String(ids.turnId ?? sessionId)}` },
+                      signal,
+                    );
+              if (prepared === null) return { runtime: captured };
+              const tools = mergeProductToolBundles(generation, [productTools, prepared.bundle]);
+              evaluator.bindTools(tools);
+              const next = captured.recomposeTools(tools);
+              if (!next.ok) throw new Error(next.error.code);
+              instructionRuntime = next.value;
+              return { runtime: next.value, mcpPreparation: prepared.receipt };
+            },
+          }),
       clock: graph.clock,
       providerCatalog,
       contextSource,

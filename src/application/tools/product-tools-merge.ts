@@ -30,6 +30,12 @@ export type ProductToolSourceBundle = {
   readonly trust?: CapabilityTrustPort;
   readonly families?: ReadonlyMap<CapabilityId, CapabilityFamily>;
   readonly explicitOnly?: ReadonlySet<CapabilityId>;
+  /**
+   * Tools published from the user's own configuration, such as configured MCP connections
+   * (#1157). The user authored them, so ecosystem package trust does not apply; package
+   * publications never set this.
+   */
+  readonly userAuthorized?: ReadonlySet<CapabilityId>;
   readonly registry: ToolRegistry;
   readonly catalog: ToolCatalog;
   readonly runner: ToolRunnerPort;
@@ -63,6 +69,7 @@ export function mergeProductToolBundles(
   const trustOwners = new Map<string, CapabilityTrustPort>();
   const families = new Map<CapabilityId, CapabilityFamily>();
   const explicitOnly = new Set<CapabilityId>();
+  const userAuthorized = new Set<CapabilityId>();
   for (const bundle of bundles) {
     for (const entry of bundle.registry.entries) {
       entries.push(entry);
@@ -72,6 +79,8 @@ export function mergeProductToolBundles(
       if (family) families.set(entry.manifest.capabilityId, family);
       if (bundle.explicitOnly?.has(entry.manifest.capabilityId))
         explicitOnly.add(entry.manifest.capabilityId);
+      if (bundle.userAuthorized?.has(entry.manifest.capabilityId))
+        userAuthorized.add(entry.manifest.capabilityId);
     }
   }
   const registryResult = createToolRegistry(generation, entries);
@@ -100,6 +109,7 @@ export function mergeProductToolBundles(
     { inspect: (id) => trustOwners.get(id)?.inspect(id) ?? null },
     families,
     explicitOnly,
+    userAuthorized,
   );
   const runner: ToolRunnerPort = {
     hasBinding(id) {
@@ -146,5 +156,6 @@ export function mergeProductToolBundles(
     trust: { inspect: (id) => trustOwners.get(id)?.inspect(id) ?? null },
     families,
     explicitOnly,
+    userAuthorized,
   };
 }

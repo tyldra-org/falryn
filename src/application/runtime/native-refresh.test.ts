@@ -136,7 +136,7 @@ for (const delegated of [false, true])
         expect(next.attachments.turnProducer).toBe(original.attachments.turnProducer);
         expect(next.turnCoordinator).toBe(original.turnCoordinator);
         runtime = next;
-        return next;
+        return { runtime: next };
       },
     });
     try {
