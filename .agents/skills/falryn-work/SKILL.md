@@ -73,50 +73,23 @@ proof remains incomplete under either command.
 
 ### Choose the next prompt
 
-Recommend the most useful remaining action, not a fixed command sequence.
-Unfinished selected work keeps its issue or existing PR unless the user redirects;
-an unrelated open issue does not replace missing acceptance or reconciliation.
-Honor manual stopping points without requiring every later manual stage.
+End maintainer reports with the next prompts, each in its own copy block. Unfinished
+work keeps its issue or PR. Otherwise select through
+[falryn-roadmap](../falryn-roadmap/SKILL.md#select-work-with-next), reusing valid
+audits and rechecking the candidate live.
 
-After completed maintainer delivery or Roadmap maintenance, look for eligible
-work through [falryn-roadmap](../falryn-roadmap/SKILL.md#select-work-with-next).
-Reuse valid audits, resolve missing selection evidence when available, run the
-selector and recheck a candidate live before recommending it. A large backlog
-is a reason to seek actionable work, not proof that every issue is eligible.
-Preserve explicit selection scope; otherwise use the generated broad order.
+1. `Deliver - Target: Issue #N` for the next issue (or its PR or Docs equivalent).
+2. When that issue has a parent, also `Deliver - Target: Parent chain #P`, naming
+   where the chain stops.
 
-Choose one recommended copy-ready `Suggested next prompt: ...` from the evidence:
+Deliver already includes Plan, Implement, Review, Verify and Merge, and a chain
+includes its children and Docs companions, so do not list those separately. Use a
+manual command only when the user works in manual stages.
 
-| What is actionable | Recommendation |
-| --- | --- |
-| A clear implementation or delivery outcome, current or newly selected | Prefer `Deliver - Target: Issue #N` or the verified PR/Docs equivalent |
-| New-work selection remains uncertain and a focused selection pass can resolve it | `Next - Target: Falryn Roadmap`, or the explicit scoped Next target; explain what needs checking |
-| A bounded manual action is the useful remaining step, or the user wants that boundary | The appropriate Plan, Implement, Review, Verify or Merge command with its exact issue/PR |
-| No useful delivery, selection or manual action is available | `none`, with the concrete blocker or confirmed absence of actionable work |
-
-Prefer a concrete target when evidence supports it. Do not default to Next merely
-because the selector has not been run, or force Deliver by guessing an issue.
-
-Prompts form a hierarchy; a higher prompt includes the ones below it:
-
-- Commands: Deliver > Implement > Plan, Review, Verify, Merge.
-- Targets: `Parent chain #P` > its child issues and Docs companions.
-
-Suggest the highest prompt that fits and skip what it already includes. Beside
-the recommended issue, also offer `Deliver - Target: Parent chain #P` when more
-children remain, naming where it stops. Use a lower command only for manual-stage
-work or when it is the only step left.
-
-An audit result alone is not a selection. Distinguish uncertainty from a known
-failure: repeating Next cannot fix denied access, an unchanged audit defect or
-a human-owned decision. Name the recovery step or required answer; use Next again
-only when new evidence or that recovery makes another selection pass useful.
-Blocked work is not an empty backlog, and unavailable evidence proves neither.
-
-Keep recommendation limits separate from completed work. A suggestion authorizes
-no execution. Ordinary answers need neither selection nor a command footer;
-public contributions outside the maintainer workflow acquire no private access
-requirement. Honor requests to omit recommendations or stop without selection.
+When no issue is actionable, say why instead: `Next - Target: Falryn Roadmap` when
+a selection pass can resolve it, or the decision, access or audit fix a person must
+supply. Blocked work is not an empty backlog. A suggestion authorizes nothing;
+ordinary answers need no prompts, and requests to omit them are honored.
 
 ## Maintain the design
 
