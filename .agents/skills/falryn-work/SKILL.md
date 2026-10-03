@@ -96,6 +96,9 @@ Choose one copy-ready `Suggested next prompt: ...` from the evidence:
 
 Prefer a concrete target when evidence supports it. Do not default to Next merely
 because the selector has not been run, or force Deliver by guessing an issue.
+When the suggestion is `Deliver - Target: Issue #N` and that issue's parent has
+other open children, also suggest `Deliver - Target: Parent chain #P`. Every other
+case keeps one suggestion.
 An audit result alone is not a selection. Distinguish uncertainty from a known
 failure: repeating Next cannot fix denied access, an unchanged audit defect or
 a human-owned decision. Name the recovery step or required answer; use Next again
