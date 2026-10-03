@@ -1,7 +1,7 @@
 import type { CompositionProvenance } from "../capabilities/composition.ts";
 import type { ProfileTransitionReceipt } from "../configuration/profile-transition.ts";
 import type { CatalogHistory } from "../extensions/catalog-history.ts";
-import type { McpPreparationReceipt } from "../extensions/mcp-preparation.ts";
+import type { McpPreparationReceipt } from "../extensions/mcp-preparation-receipt.ts";
 import type { SandboxReceipt } from "../security/sandbox.ts";
 import type { HistoryPayload } from "./history.ts";
 /**

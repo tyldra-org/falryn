@@ -13,7 +13,7 @@ import { MCP_INPUT_LIMITS } from "../../domain/extensions/mcp-input.ts";
 import {
   MCP_PREPARATION_LIMITS,
   type McpCatalogToolCounts,
-} from "../../domain/extensions/mcp-preparation.ts";
+} from "../../domain/extensions/mcp-preparation-receipt.ts";
 import type { CapabilityId, ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import {
   createToolRegistry,

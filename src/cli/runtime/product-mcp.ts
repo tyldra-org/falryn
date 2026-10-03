@@ -9,7 +9,7 @@ import type {
   ConfigurationGenerationRecord,
   ConfigurationValues,
 } from "../../domain/configuration/index.ts";
-import type { McpPreparationReceipt } from "../../domain/extensions/mcp-preparation.ts";
+import type { McpPreparationReceipt } from "../../domain/extensions/mcp-preparation-receipt.ts";
 import type { ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type { ManagedServicePort } from "../../domain/process/index.ts";
 import type { SecretResolverPort } from "../../domain/security/credential.ts";

@@ -8,11 +8,11 @@
  * tool; its receipt records discovery requests and transport/process starts separately.
  */
 import type { McpConnection } from "../../domain/extensions/mcp.ts";
+import { mcpServerRelevant } from "../../domain/extensions/mcp-preparation.ts";
 import {
   MCP_PREPARATION_LIMITS,
   type McpPreparationServer,
-  mcpServerRelevant,
-} from "../../domain/extensions/mcp-preparation.ts";
+} from "../../domain/extensions/mcp-preparation-receipt.ts";
 import type { McpCatalog } from "./mcp-catalog.ts";
 import type { McpLifecycle } from "./mcp-lifecycle.ts";
 

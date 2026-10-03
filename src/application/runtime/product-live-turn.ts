@@ -239,7 +239,7 @@ export type RuntimeRefreshTurn = {
 
 export type RuntimeRefresh = {
   readonly runtime: ProductAgentRuntime;
-  readonly mcpPreparation?: import("../../domain/extensions/mcp-preparation.ts").McpPreparationReceipt;
+  readonly mcpPreparation?: import("../../domain/extensions/mcp-preparation-receipt.ts").McpPreparationReceipt;
 };
 
 export type ProductLiveTurnExecutorOptions = {

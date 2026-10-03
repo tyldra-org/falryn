@@ -4,7 +4,7 @@ import {
   type McpCatalogEntry,
   normalizeMcpToolSchema,
 } from "../../domain/extensions/mcp-catalog.ts";
-import { MCP_PREPARATION_LIMITS } from "../../domain/extensions/mcp-preparation.ts";
+import { MCP_PREPARATION_LIMITS } from "../../domain/extensions/mcp-preparation-receipt.ts";
 import {
   type CapabilityId,
   configurationGeneration,

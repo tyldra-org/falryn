@@ -5,10 +5,10 @@ import {
   mcpConnectionSchema,
 } from "../../domain/extensions/mcp.ts";
 import {
-  MCP_PREPARATION_LIMITS,
   mcpConnectionSummary,
   mcpServerRelevant,
 } from "../../domain/extensions/mcp-preparation.ts";
+import { MCP_PREPARATION_LIMITS } from "../../domain/extensions/mcp-preparation-receipt.ts";
 import type { McpCatalogSummary } from "./mcp-catalog.ts";
 import { type McpPreparationPorts, prepareMcpServers } from "./mcp-preparation.ts";
 

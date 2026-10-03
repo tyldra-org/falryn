@@ -34,7 +34,7 @@ import {
   CAPABILITY_SOURCES,
 } from "../capabilities/capability-registry.ts";
 import { catalogHistorySchema } from "../extensions/catalog-history.ts";
-import { mcpPreparationReceiptSchema } from "../extensions/mcp-preparation.ts";
+import { mcpPreparationReceiptSchema } from "../extensions/mcp-preparation-receipt.ts";
 import { packageSuggestionRecordSchema } from "../extensions/package-suggestion.ts";
 import {
   brandedInteger,

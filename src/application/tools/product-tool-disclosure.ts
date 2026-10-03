@@ -24,7 +24,7 @@ import {
   inspectCapabilityHealth,
 } from "../../domain/capabilities/index.ts";
 import type { PromptToolInput } from "../../domain/context/index.ts";
-import type { McpPreparationReceipt } from "../../domain/extensions/mcp-preparation.ts";
+import type { McpPreparationReceipt } from "../../domain/extensions/mcp-preparation-receipt.ts";
 import type { CapabilityId, ConfigurationGeneration } from "../../domain/foundation/index.ts";
 import type { EffectClass, ModelCapabilityBrief } from "../../domain/orchestration/index.ts";
 import { isDeferrablePlanCandidate } from "../../domain/orchestration/opportunity-plan.ts";
