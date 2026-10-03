@@ -319,6 +319,14 @@ const modelAttemptBindingSchema: z.ZodType<ModelAttemptBinding> = z.object({
   ),
   schemaBytes: z.int().nonnegative(),
   schemaTokensEstimated: z.int().nonnegative(),
+  trimmed: z
+    .strictObject({
+      fallbacks: z.int().nonnegative(),
+      transitions: z.int().nonnegative(),
+      omitted: z.int().nonnegative(),
+      cards: z.int().nonnegative(),
+    })
+    .optional(),
   promptCache: z
     .object({
       schemaVersion: z.literal(1),

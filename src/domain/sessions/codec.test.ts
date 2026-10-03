@@ -192,6 +192,21 @@ describe("round trip", () => {
     }
     const decoded = decodeRuntimeEvent(encoded.value);
     expect(decoded).toEqual({ ok: true, value: bound });
+    // A bounded record (#1267) carries its trimmed counts; the same binding without them
+    // (above, and every older record) still decodes.
+    const trimmed = {
+      ...bound,
+      payload: {
+        binding: {
+          ...bound.payload.binding,
+          trimmed: { fallbacks: 12, transitions: 4, omitted: 0, cards: 0 },
+        },
+      },
+    };
+    const reencoded = encodeRuntimeEvent(trimmed);
+    expect(reencoded.ok).toBe(true);
+    if (reencoded.ok)
+      expect(decodeRuntimeEvent(reencoded.value)).toEqual({ ok: true, value: trimmed });
   });
 });
 

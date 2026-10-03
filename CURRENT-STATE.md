@@ -2435,9 +2435,15 @@ generation, or a call beyond the bound, returns an empty result naming the
 refusal and the current handle. Preparing a lazy contribution on demand,
 choosing tools before generic command execution and suggesting next operations
 remain separately tracked.
-The durable attempt-start record keeps its opportunity plan within one event:
-when the record would not fit, it keeps the highest-ranked rejected candidates
-and adds the rest to the plan's `omittedRejected` count.
+The durable attempt-start record stays within one event (64 KiB). When it would
+not fit, it trims, in order and keeping the highest-ranked entries, the plan's
+rejected candidates (counted in `omittedRejected`), its fallbacks, its
+degradation transitions, the omitted-tool list and the capability cards; every
+other trimmed entry is counted in the record's `trimmed` field. Route identity,
+selected candidates, disclosed tools and budgets are never trimmed, and trimming
+changes only the stored record, not what the attempt sends. If the store still
+refuses the start record, the attempt is not run: the turn fails with
+`attempt start record could not be stored (<code>)` and no provider request.
 
 Operation profiles (#946) group related native tools into one model-facing
 definition. The Git tools form three: `git_inspect` (discover, status, diff,
