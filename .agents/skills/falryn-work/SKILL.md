@@ -85,7 +85,7 @@ selector and recheck a candidate live before recommending it. A large backlog
 is a reason to seek actionable work, not proof that every issue is eligible.
 Preserve explicit selection scope; otherwise use the generated broad order.
 
-Choose one copy-ready `Suggested next prompt: ...` from the evidence:
+Choose one recommended copy-ready `Suggested next prompt: ...` from the evidence:
 
 | What is actionable | Recommendation |
 | --- | --- |
@@ -97,11 +97,16 @@ Choose one copy-ready `Suggested next prompt: ...` from the evidence:
 Prefer a concrete target when evidence supports it. Do not default to Next merely
 because the selector has not been run, or force Deliver by guessing an issue.
 
-When the recommended Deliver target is a child of an open parent with other
-remaining children, also offer the copy-ready chain alternative,
-`Deliver - Target: Parent chain #P` (or the Docs equivalent), and state which
-children it would deliver and where it would stop. Keep the single-issue prompt
-as the suggestion; the chain form is an option, not a default.
+After the recommendation, list every other copy-ready `Command - Target: ...`
+combination the evidence supports, each with what it covers and where it stops.
+Draw combinations from the [command boundaries](references/targets.md#apply-the-command-boundary)
+and every applicable target spelling: the issue alone, `Parent issue #P` for
+the next child, `Parent chain #P` for the remaining children, Docs issues,
+parents or chains, an existing PR, and manual stopping points such as Plan for an
+unplanned child, Implement to stop before merge, Review or Merge for an open PR,
+Verify for a parent, or a scoped Next. Name where a chain would stop, such as
+a child that needs a decision. Omit combinations the command boundary rejects
+or the evidence does not support; do not pad the list.
 
 An audit result alone is not a selection. Distinguish uncertainty from a known
 failure: repeating Next cannot fix denied access, an unchanged audit defect or
