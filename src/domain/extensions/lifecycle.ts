@@ -161,4 +161,11 @@ export interface PackageLifecycleStore {
   counts(
     packageId: string,
   ): Result<{ retained: number; pending: number; epoch: number }, LifecycleError>;
+  /**
+   * IDs of packages with a current version, by package ID, at most `limit`; `omitted` counts the
+   * rest. Read-only and bounded, for diagnostics that report every installed package.
+   */
+  installed(
+    limit: number,
+  ): Result<{ readonly packageIds: readonly string[]; readonly omitted: number }, LifecycleError>;
 }

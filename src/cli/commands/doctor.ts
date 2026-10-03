@@ -31,6 +31,7 @@ import type { CommandResultOf } from "../output/result.ts";
 import { productConfigurationLoadRequest } from "../runtime/product-configuration.ts";
 import type { ServiceProvider } from "../runtime/services.ts";
 import { inspectWorkspaceTrust } from "../runtime/workspace-trust.ts";
+import { type DoctorPackages, inspectDoctorPackages } from "./doctor-packages.ts";
 import { resultFor } from "./shared.ts";
 import { collectSkillFindings, DEFAULT_SKILL_FINDINGS_LOAD } from "./skill-findings.ts";
 
@@ -65,6 +66,11 @@ export type DoctorPayload = {
   readonly sandbox?: Awaited<ReturnType<typeof inspectProductSandbox>>;
   readonly workspaceTrust?: WorkspaceTrustReport;
   readonly skills?: DoctorSkills;
+  /**
+   * Installed packages' standing, notice counts and latest evaluation (#1280). Advisory: it never
+   * changes `blocked` or the exit status.
+   */
+  readonly packages?: DoctorPackages;
   /** Effective user-authored configuration home selected without mutation. */
   readonly configurationHome: ConfigurationHomeResolution;
   /**
@@ -167,6 +173,7 @@ export async function runDoctor(
           ? {}
           : { workspaceTrust: await inspectWorkspaceTrust(services(), globals) }),
         skills: await doctorSkills(services, globals, signal),
+        packages: await inspectDoctorPackages(services, storage, databasePath, signal),
         roots,
         rootIssues: localData.resolutionIssues.map((issue) => issue.code),
         databasePath,

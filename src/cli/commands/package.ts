@@ -87,6 +87,7 @@ const absent: PackageLifecycleStore = {
   versions: () => ok([]),
   operation: () => ok(null),
   counts: () => ok({ retained: 0, pending: 0, epoch: 0 }),
+  installed: () => ok({ packageIds: [], omitted: 0 }),
   stage: () => err({ code: "store-absent" }),
   publish: () => err({ code: "store-absent" }),
   cleanup: () => err({ code: "store-absent" }),

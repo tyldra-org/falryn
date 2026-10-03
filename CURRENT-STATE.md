@@ -14,7 +14,7 @@ application. The current command surface includes:
 | falryn | Open the interactive terminal interface on a capable terminal |
 | falryn --help / --version | Print usage or build identity |
 | falryn run [--mode ask\|plan\|debug\|agent] <prompt> | Run one headless coding turn through the selected execution profile and provider |
-| falryn doctor | Run bounded environment, local-storage and skill validity diagnostics |
+| falryn doctor | Run bounded environment, local-storage, skill validity and installed package standing diagnostics |
 | falryn commands | Print the interactive shell's command reference, generated from its command registry |
 | falryn config show / validate / path / set / reset / migrate | Inspect, validate, update, or remove a scoped configuration override |
 | falryn profile list / show / default / use | Inspect working profiles, save defaults, or request an exact session target |
@@ -1387,8 +1387,21 @@ and bytes removing it would delete; `purgeQuarantined: true` is the explicit cho
 allows it. `falryn extension catalog` entries report `quarantined` and
 `dependency-blocked` as their own trust labels.
 
+`falryn doctor` adds a `packages` section. For each package with a current version, at
+most 256 by package ID with the rest counted as `omitted`, it reports the standing
+`state` and `reason` that `package standing` reports, notice counts by severity and the
+number acknowledged as `extension notices --installed` derives them, and the newest
+evaluation's decision, evaluator, time and whether it was recorded for an earlier
+version. A part that cannot be read, such as notices whose cached bytes are gone, is
+`unavailable` with a code on that package alone. The section reads only a database
+at this build's schema, opened without creating or migrating it: with no database it
+is `absent`, and at another schema version or when unreadable it is `unavailable`
+with `package-state-unavailable`. Cancellation reports `cancelled`. Package standing is
+advisory: human output adds a finding for each package that is not eligible, and
+neither changes doctor's exit status. No keys, signatures, paths or catalog text appear.
+
 Unavailable: fetching advisories, an OpenTUI view, export and replay projections of
-standing, and any `doctor` package section (diagnostics do not open the database).
+standing.
 Package-contributed MCP servers have no connection path, so MCP clients remain
 configured by the user.
 
